@@ -3713,11 +3713,16 @@
   // Every dialog in the game is one of TWO cards (.familiar-popup-card / .skill-info-card), so this
   // covers settings, offline summary, loot/enhance/dungeon results, death report, transcend, estate
   // pickers, tracker, tower preview, profile, terms, amount modal, inv/unique/item-link details.
+  // v0.0.86.7 (owner request): the green primary retired -- EVERY action button is now the stone frame
+  // over BLACK MARBLE (the base rule; the modal-scoped green override is gone), and the popups' inset
+  // text box (.familiar-popup-spells) wears the same dark marble with the stage ink table.
   suite('modal cards: white marble wells in stone frames, stone-framed buttons', function(){
     var probe = document.createElement('div');
     probe.innerHTML = '<div class="familiar-popup-card"><button class="action-btn">Ok</button>'
-      + '<button class="action-btn stop">X</button><button class="action-btn" disabled>D</button></div>'
-      + '<div class="skill-info-card"><button class="action-btn">Ok</button></div>';
+      + '<button class="action-btn stop">X</button><button class="action-btn" disabled>D</button>'
+      + '<div class="familiar-popup-spells"><div>1. <b>Spell</b> desc</div></div></div>'
+      + '<div class="skill-info-card"><button class="action-btn">Ok</button></div>'
+      + '<button class="action-btn" id="probeBareBtn">Start</button>';
     document.body.appendChild(probe);
     try {
       ['familiar-popup-card','skill-info-card'].forEach(function(cls){
@@ -3731,16 +3736,39 @@
         var b = getComputedStyle(probe.querySelector('.'+cls+' .action-btn'));
         ok(b.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' buttons wear the stone chip frame');
         eq(b.borderTopWidth, '6px', 'at the fine 6px cut');
-        ok(b.backgroundImage.indexOf('rgb(92, 127, 52)') !== -1, 'the primary keeps its GREEN as the fill');
+        ok(b.backgroundImage.indexOf('marble_dark') !== -1 && b.backgroundColor === 'rgb(20, 17, 9)',
+          'the primary fills with the black marble (green retired, v0.0.86.7)');
         ok(b.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
           'the fill clips inside the frame');
       });
+      // The base .action-btn (no modal ancestor -- every card Start button) is the same black marble chip.
+      var bare = getComputedStyle(probe.querySelector('#probeBareBtn'));
+      ok(bare.backgroundImage.indexOf('marble_dark') !== -1 && bare.backgroundColor === 'rgb(20, 17, 9)',
+        'the BASE action button is stone over black marble game-wide');
+      ok(bare.borderImageSource.indexOf('ivy_stretch') !== -1 && bare.borderTopLeftRadius === '0px',
+        'framed in the arena stone with no radius');
+      ok(bare.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'the marble clips to the padding box');
+      eq(bare.color, 'rgb(232, 220, 192)', 'labels ink in the stage parchment (#e8dcc0)');
       var stop = getComputedStyle(probe.querySelector('.action-btn.stop'));
       ok(stop.backgroundImage.indexOf('rgb(176, 80, 63)') !== -1, '.stop keeps its RED as the fill');
       ok(stop.borderImageSource.indexOf('ivy_stretch') !== -1, 'in the same stone');
+      ok(stop.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'and the red clips inside the frame (its shorthand must restate the clip)');
       var dis = getComputedStyle(probe.querySelector('.action-btn[disabled]'));
       ok(dis.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1, 'disabled goes slate');
       eq(dis.color, 'rgb(154, 143, 120)', 'with the dim stone-table ink');
+      var box = getComputedStyle(probe.querySelector('.familiar-popup-spells'));
+      ok(box.backgroundImage.indexOf('marble_dark') !== -1 && box.backgroundColor === 'rgb(20, 17, 9)',
+        'the modal text box sits on the black marble');
+      ok(box.borderImageSource.indexOf('ivy_stretch') !== -1 && box.borderTopLeftRadius === '0px',
+        'in the stone frame, radius dropped');
+      ok(box.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'clipped to the padding box');
+      eq(getComputedStyle(probe.querySelector('.familiar-popup-spells div')).color, 'rgb(154, 143, 120)',
+        'box body ink goes dim stage parchment (#9a8f78)');
+      eq(getComputedStyle(probe.querySelector('.familiar-popup-spells b')).color, 'rgb(232, 220, 192)',
+        'box names ink in the stage parchment (#e8dcc0)');
     } finally { probe.remove(); }
   });
 

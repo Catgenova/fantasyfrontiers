@@ -598,7 +598,7 @@
   .market-buynow:hover{background:rgba(47,138,106,0.22);}
   .market-buynow:disabled{opacity:0.4; cursor:not-allowed;}
   .market-form-btns{display:flex; gap:8px; flex-wrap:wrap;}
-  .action-btn.buynow{background:var(--cat-market); border-color:var(--cat-market);}
+  .action-btn.buynow{background:var(--cat-market); background-clip:padding-box;}
   .market-trade-head{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
   .market-trade-head .market-item-ico svg{width:34px; height:34px;}
   .market-trade-name{font-family:var(--font-display); font-size:16px;}
@@ -679,15 +679,9 @@
     background-size:700px 249px; background-clip:padding-box;
     border:12px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
     max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:14px; text-align:center; box-shadow:0 12px 34px rgba(20,14,4,0.5);}
-  /* Modal buttons in stone: the rail's 6px chip cut. The primary keeps its GREEN as the fill and .stop its
-     red -- the accent-as-fill rule every .on chip follows (v0.0.79.14 sweep) -- and disabled goes slate+dim. */
-  .familiar-popup-card .action-btn, .skill-info-card .action-btn{
-    background:linear-gradient(180deg,#5c7f34,#3c5a24); background-clip:padding-box;
-    border:6px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
-    border-radius:0; box-shadow:0 1px 2px rgba(0,0,0,.35);}
-  .familiar-popup-card .action-btn:hover, .skill-info-card .action-btn:hover{background:linear-gradient(180deg,#6f9538,#4a6b2c); background-clip:padding-box;}
-  .familiar-popup-card .action-btn.stop, .skill-info-card .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24); background-clip:padding-box;}
-  .familiar-popup-card .action-btn:disabled, .skill-info-card .action-btn:disabled{background:linear-gradient(180deg,#242a30,#191e23); background-clip:padding-box; color:#9a8f78; cursor:not-allowed;}
+  /* Modal buttons: the green-primary override retired in v0.0.86.7 -- the BASE .action-btn is now the
+     stone frame over black marble everywhere (with .stop red and disabled slate), so modals need no
+     scoped button rules at all. */
   /* Settings modal: wide multi-column layout, capped to the viewport. The card is a flex column that
      CLIPS; only the inner .settings-scroll body scrolls, so the title/tab-bar stay put and the Close
      footer is pinned in normal flow (a `position:sticky` Close used to float across the screen when the
@@ -713,9 +707,18 @@
   .familiar-popup-icon{font-size:52px; margin-bottom:6px;}
   .familiar-popup-name{font-family:var(--font-display); font-size:22px; color:var(--text); margin-bottom:2px;}
   .familiar-popup-meta{color:var(--text-dim); font-size:12px; margin-bottom:14px;}
-  .familiar-popup-spells{text-align:left; background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; margin-bottom:16px;}
-  .familiar-popup-spells div{font-family:var(--font-mono); font-size:11px; color:var(--text-faint); line-height:1.7;}
-  .familiar-popup-spells b{color:var(--text);}
+  /* Modal text boxes on black marble (owner request, v0.0.86.7): the popups' inset box (spell lists,
+     the offline menagerie roll-up, the shard note) becomes the item-card treatment -- dark marble under
+     a wash in the stone frame -- so its ink flips to the stage table (#e8dcc0 names, #9a8f78 body).
+     Any inline color inside these boxes must come from that table, never the tan-page vars. */
+  .familiar-popup-spells{text-align:left;
+    background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-clip:padding-box;
+    border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    border-radius:0; padding:8px 10px; margin-bottom:16px;}
+  .familiar-popup-spells div{font-family:var(--font-mono); font-size:11px; color:#9a8f78; line-height:1.7;}
+  .familiar-popup-spells b{color:#e8dcc0;}
   .settings-row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--border); text-align:left;}
   .settings-row:last-child{border-bottom:none;}
   .settings-row-label{color:var(--text); font-size:13px;}
@@ -975,14 +978,25 @@
     overflow:hidden;margin:8px 0;
   }
   .progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));width:0%;}
+  /* Action buttons in stone over BLACK MARBLE (owner request, v0.0.86.7): the green fills retire
+     game-wide -- every button becomes the item-card treatment, the commissioned dark marble under a
+     wash inside the 6px ivy_stretch cut. Radius goes (border-image ignores it). .stop keeps its RED
+     as the fill inside the same stone (accent-as-fill, v0.0.79.14) and disabled goes slate+dim.
+     ANY variant that sets its own `background:` shorthand resets background-clip to border-box and
+     bleeds through the frame's open stonework -- it MUST restate background-clip:padding-box
+     (.stop/.buynow/.btn-quiet below all do). Hover overrides background-image ONLY, so the base
+     color/clip/size layers survive. */
   .action-btn{
     width:100%;font-family:var(--font-display);font-size:12px;font-weight:600;letter-spacing:0.5px;
-    background:linear-gradient(180deg,#5c7f34,#3c5a24);border:1px solid #24380f;color:#f2f8e6;
-    padding:8px;border-radius:6px;cursor:pointer;margin-top:4px;box-shadow:0 1px 0 rgba(0,0,0,0.25);
+    background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.45),rgba(10,8,6,.45)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-clip:padding-box;
+    border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    color:#e8dcc0;padding:5px 8px;border-radius:0;cursor:pointer;margin-top:4px;box-shadow:0 1px 2px rgba(0,0,0,.35);
   }
-  .action-btn:hover{background:linear-gradient(180deg,#6f9538,#4a6b2c);}
-  .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24);border-color:#5a1f16;color:#fbeae4;}
-  .action-btn:disabled{background:#b8a374;border-color:#a98f5e;color:#8a7850;cursor:not-allowed;}
+  .action-btn:hover{background-image:linear-gradient(rgba(70,60,40,.35),rgba(70,60,40,.35)),url('art/marble_dark.png');color:#f5edd6;}
+  .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24);background-clip:padding-box;color:#fbeae4;}
+  .action-btn:disabled{background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;color:#9a8f78;cursor:not-allowed;}
   /* Farming plot cards: 4 small green action buttons (Sow/Fertilize/Harvest/Cancel) in one row. */
   .plot-btns{display:flex;gap:5px;margin-top:7px;}
   /* Body font (narrower than the display serif) + tight padding so all four labels fit one row on small cards. */
@@ -2092,8 +2106,8 @@
   .loadout-empty{flex:1 1 auto;min-width:110px;font-size:12px;color:var(--text-dim);font-style:italic;}
   .loadout-row .action-btn{width:auto;flex:0 0 auto;margin-top:0;padding:5px 14px;}
   /* Secondary action inside a row: stone/tan rather than the green primary, so Equip stays the obvious one. */
-  .loadout-row .action-btn.btn-quiet{background:linear-gradient(180deg,#b6a480,#8f7f5e);border-color:#5a4c33;color:#2a2114;}
-  .loadout-row .action-btn.btn-quiet:hover{background:linear-gradient(180deg,#c6b48f,#a08e6b);}
+  .loadout-row .action-btn.btn-quiet{background:linear-gradient(180deg,#b6a480,#8f7f5e);background-clip:padding-box;color:#2a2114;}
+  .loadout-row .action-btn.btn-quiet:hover{background:linear-gradient(180deg,#c6b48f,#a08e6b);background-clip:padding-box;}
   .loadout-row .action-btn.stop{padding:5px 11px;}
   /* Loadout nest above the equipment doll: a small collapsible listing only SAVED presets by name. */
   .loadout-quick{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0 0 10px;}
@@ -26770,7 +26784,7 @@
       fams.forEach(function(f){
         var fd = FAMILIAR_DATA[f.skillId];
         var lbl = SKILL_LABELS[f.skillId] || ((PHYSIQUE_SKILL_MAP[f.skillId]||{}).name) || ((CLASS_DEFS_BY_ID[f.skillId]||{}).name) || f.skillId;
-        html += '<div><span style="display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:4px;">'+fd.icon+'</span><b>'+fd.name+'</b> <span style="color:var(--text-dim)">('+escapeHtml(lbl)+')</span> &mdash; '+(f.leveledUp ? 'grew to Lv '+f.level : 'joined you at Lv '+f.level)+'</div>';
+        html += '<div><span style="display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:4px;">'+fd.icon+'</span><b>'+fd.name+'</b> <span style="color:#c0b394">('+escapeHtml(lbl)+')</span> &mdash; '+(f.leveledUp ? 'grew to Lv '+f.level : 'joined you at Lv '+f.level)+'</div>';
       });
       html += '</div>';
       html += '<button class="action-btn" data-action="dismissPopup">Wonderful!</button>';
@@ -39504,7 +39518,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.6';
+  var GAME_VERSION = '0.0.86.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
