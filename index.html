@@ -5965,7 +5965,15 @@
     { key:'famhaste',    name:'Signet of the Brood',    short:'Brood',    stat:'Reduced Familiar Action Time', base:0.05, icon:svgIcon('paw','#c9a227') }
   ];
   var D1_LEG_RING_MAP = {}; D1_LEG_RING_DEFS.forEach(function(d){ D1_LEG_RING_MAP[d.key] = d; });
-  function legRingItemId(key, rarity){ return 'legring_d1_' + key + '_' + rarity; }
+  // LAYER-AWARE constructors (v0.0.86.21). D2/D3/D4 accessory keys are namespaced ('d2_leech',
+  // 'd4_wyrm'; D1 keys are bare), and every unequip / displaced-on-equip / loadout path rebuilds the
+  // returned inventory id through THESE constructors from the worn slot's legKey. The old hardcoded
+  // 'd1' prefix minted phantom ids for every non-D1 accessory ('legring_d1_d4_wyrm_fantastic' exists
+  // in no item table), so unequipping a D2-D4 Signet/Shroud/Pendant DESTROYED it -- the copy landed
+  // under a key no UI, market bucket, or ledger family recognises. The key's own namespace names its
+  // layer, so read it instead of assuming d1. (initGame reclaims stock stranded under phantom ids.)
+  function legAccessoryLayerOf(key){ var m = /^d([234])_/.exec(String(key||'')); return m ? 'd'+m[1] : 'd1'; }
+  function legRingItemId(key, rarity){ return 'legring_' + legAccessoryLayerOf(key) + '_' + key + '_' + rarity; }
   // One inventory item per (effect x rarity). value = base effect x the rarity multiplier.
   var LEGENDARY_RING_ITEMS = {};
   D1_LEG_RING_DEFS.forEach(function(d){
@@ -5985,7 +5993,7 @@
     { key:'critdmg',    name:"Widow's Shroud",       short:'Widow',     stat:'Critical Damage', base:0.20, icon:svgIcon('crossedswords','#c9a227') }
   ];
   var D1_LEG_CLOAK_MAP = {}; D1_LEG_CLOAK_DEFS.forEach(function(d){ D1_LEG_CLOAK_MAP[d.key] = d; });
-  function legCloakItemId(key, rarity){ return 'legcloak_d1_' + key + '_' + rarity; }
+  function legCloakItemId(key, rarity){ return 'legcloak_' + legAccessoryLayerOf(key) + '_' + key + '_' + rarity; } // layer-aware, see legRingItemId
   var LEGENDARY_CLOAK_ITEMS = {};
   D1_LEG_CLOAK_DEFS.forEach(function(d){
     LEG_RING_RARITIES.forEach(function(r){
@@ -6004,7 +6012,7 @@
     { key:'cheatdeath', name:'Pendant of the Molt',        short:'Molt',        stat:'Cheat Death HP', base:0.15, icon:svgIcon('ghost','#c9a227') }
   ];
   var D1_LEG_AMULET_MAP = {}; D1_LEG_AMULET_DEFS.forEach(function(d){ D1_LEG_AMULET_MAP[d.key] = d; });
-  function legAmuletItemId(key, rarity){ return 'legamulet_d1_' + key + '_' + rarity; }
+  function legAmuletItemId(key, rarity){ return 'legamulet_' + legAccessoryLayerOf(key) + '_' + key + '_' + rarity; } // layer-aware, see legRingItemId
   var LEGENDARY_AMULET_ITEMS = {};
   D1_LEG_AMULET_DEFS.forEach(function(d){
     LEG_RING_RARITIES.forEach(function(r){
@@ -20155,6 +20163,8 @@
               }
             }
           });
+          // Reclaim accessories destroyed by the phantom-id unequip bug (see reclaimPhantomAccessoryIds).
+          reclaimPhantomAccessoryIds(state.inventory);
           state.bodyArmor = Object.assign(newGame().bodyArmor, loaded.bodyArmor||{});
           // Farming plots moved from a 40-slot level-gated array to per-field keyed maps ("x,y" -> crop
           // state) provided by placed Fields. Legacy array saves are dropped (the mechanic changed);
@@ -34550,6 +34560,50 @@
   var itemLastSync = 0;
   var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
   var itemLedgerEarned = null;      // per-item lifetime-earned anchor from the server (for Stage B-2 adoption)
+  // Worn legendary accessories, as their inventory item keys. equipLegRing/Amulet/Cloak DECREMENT
+  // inventory, so a worn Signet/Shroud/Pendant was invisible to item_sync -- and item_sync is the
+  // ledger's ONLY witness of client stock (the payload carries qty>0 held keys, every ~60s). An
+  // injected fantastic could be equipped inside that window and never appear in any snapshot: no
+  // earned_total accrual, nothing for the unexplained-items sweep to judge -- exactly how the
+  // 2026-08-05 AndJustice4All probe (one fake fantastic Signet of the Wyrm, worn) went unseen.
+  // Folding worn copies into the payload closes the gap. No double-count is possible: equipping
+  // removes the inventory copy and unequipping restores it, so held + worn IS the true stock.
+  function wornLegendaryAccessoryKeys(st){
+    st = st || state;
+    var out = [];
+    var js = st.jewelrySlots || {};
+    RING_SLOT_IDS.forEach(function(sid){ var c = js[sid]; if(c && c.leg) out.push(legRingItemId(c.leg, c.rarity)); });
+    if(js.amulet && js.amulet.leg) out.push(legAmuletItemId(js.amulet.leg, js.amulet.rarity));
+    var back = st.bodyArmor && st.bodyArmor.back;
+    if(back && back.leg) out.push(legCloakItemId(back.leg, back.rarity));
+    return out;
+  }
+  // The exact inventory map an item_sync reports: qty>0 held keys plus one copy of each WORN legendary
+  // accessory. Pure, so the sync's witness contract is testable without the network call.
+  function itemSyncPayloadInventory(st){
+    st = st || state;
+    var inv = {}, src = st.inventory || {};
+    for(var k in src){ if(!Object.prototype.hasOwnProperty.call(src, k)) continue; var q = Math.floor(src[k]); if(q > 0) inv[k] = q; }
+    wornLegendaryAccessoryKeys(st).forEach(function(wk){ inv[wk] = (inv[wk] || 0) + 1; });
+    return inv;
+  }
+  // Reclaim accessories destroyed by the phantom-id unequip bug (v0.0.86.21): before the layer-aware
+  // constructors, unequipping a D2-D4 legendary accessory banked it under 'leg*_d1_d[234]_...' -- an id
+  // in no item table, so the copy vanished from every UI. The real id is recoverable (the embedded
+  // namespace names the layer), so move the stock across on load. Guarded on the real id existing, so
+  // junk keys are never re-minted. Called from initGame after the save's inventory loads.
+  function reclaimPhantomAccessoryIds(inv){
+    if(!inv) return;
+    Object.keys(inv).forEach(function(k){
+      var m = /^(legring|legcloak|legamulet)_d1_(d[234]_.+)$/.exec(k);
+      if(!m || !(inv[k] > 0)) return;
+      var real = m[1] + '_' + m[2].slice(0,2) + '_' + m[2];
+      var table = m[1]==='legring' ? LEGENDARY_RING_ITEMS : (m[1]==='legcloak' ? LEGENDARY_CLOAK_ITEMS : LEGENDARY_AMULET_ITEMS);
+      if(!table[real]) return;
+      inv[real] = (inv[real] || 0) + inv[k];
+      delete inv[k];
+    });
+  }
   async function itemSync(force){
     if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
     if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never write this tab's ledger to it
@@ -34558,8 +34612,11 @@
     itemLastSync = now;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     // Compact the inventory to { item_key: positive-integer-qty }.
-    var inv = {}, src = state.inventory || {};
-    for(var k in src){ if(!Object.prototype.hasOwnProperty.call(src, k)) continue; var q = Math.floor(src[k]); if(q > 0) inv[k] = q; }
+    // Held qty>0 keys PLUS one copy of each worn legendary accessory (see itemSyncPayloadInventory):
+    // without the worn fold, an accessory equipped within one sync interval of arriving was never
+    // witnessed by the ledger. itemReconcile stays safe: adoption takes min(local, server...), so a
+    // server qty that includes the worn copy can never mint an inventory duplicate of it.
+    var inv = itemSyncPayloadInventory(state);
     try{
       var res = await chatClient.functions.invoke('items', { body: { action:'sync', inventory: inv } });
       var d = res && res.data;
@@ -40140,7 +40197,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.20';
+  var GAME_VERSION = '0.0.86.21';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40367,7 +40424,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem, applyChipDamage:applyChipDamage,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, legAccessoryLayerOf:legAccessoryLayerOf, wornLegendaryAccessoryKeys:wornLegendaryAccessoryKeys, itemSyncPayloadInventory:itemSyncPayloadInventory, reclaimPhantomAccessoryIds:reclaimPhantomAccessoryIds, unequipLegRing:unequipLegRing, unequipLegCloak:unequipLegCloak, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer, deathBlowChronicle:deathBlowChronicle,
       matchesSpecialCraft:matchesSpecialCraft,

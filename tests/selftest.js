@@ -17997,6 +17997,57 @@
     }
   });
 
+  // ---- Legendary accessories: layer-aware ids, worn stock witnessed, phantoms reclaimed (v0.0.86.21) --
+  // Two live bugs found by AndJustice4All's authorized probe (a fake fantastic Signet of the Wyrm the
+  // sweep never saw). (1) equipLeg* decrements inventory and item_sync only reports held qty>0 keys, so
+  // a WORN accessory was invisible to the item ledger forever -- inject + equip inside one 60s sync
+  // window and the sweep has nothing to judge. itemSyncPayloadInventory now folds worn accessories in.
+  // (2) The id constructors hardcoded 'd1', so unequipping any D2-D4 accessory minted a phantom id
+  // ('legring_d1_d4_wyrm_fantastic' -- in no item table) and silently DESTROYED the item;
+  // reclaimPhantomAccessoryIds restores stranded stock on save load.
+  suite('legendary accessories: layer-aware ids, worn witness, phantom reclamation', function(){
+    var S = FF._state;
+    eq(FF.legAccessoryLayerOf('block'), 'd1', 'bare keys are D1');
+    eq(FF.legAccessoryLayerOf('d2_leech'), 'd2', 'namespaced keys name their layer');
+    eq(FF.legAccessoryLayerOf('d4_wyrm'), 'd4', 'the probe signet resolves to d4');
+    eq(FF.legRingItemId('block', 'rare'), 'legring_d1_block_rare', 'D1 ids are unchanged');
+    eq(FF.legRingItemId('d4_wyrm', 'fantastic'), 'legring_d4_d4_wyrm_fantastic', 'D4 ids rebuild layer-aware');
+    ok(!!FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('d4_wyrm', 'fantastic')], 'the rebuilt id is a REAL item table entry');
+    ok(!!FF.LEGENDARY_AMULET_ITEMS[FF.legAmuletItemId('d4_dragon', 'supreme')], 'amulet constructor is layer-aware too');
+    ok(!!FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('d4_cinders', 'rare')], 'cloak constructor is layer-aware too');
+    var svInv = S.inventory, svJs = JSON.parse(JSON.stringify(S.jewelrySlots)), svBack = JSON.parse(JSON.stringify((S.bodyArmor && S.bodyArmor.back) || {}));
+    try {
+      // Equip -> witnessed -> unequip round-trip on the probe's exact item.
+      var id = 'legring_d4_d4_wyrm_fantastic';
+      S.inventory = {}; S.inventory[id] = 1;
+      ['ring1','ring2','ring3','ring4','ring5'].forEach(function(sid){ S.jewelrySlots[sid] = { typeId:null, tier:0, rarity:'normal' }; });
+      S.jewelrySlots.amulet = { tier:0, rarity:'normal' };
+      S.bodyArmor.back = { tier:0, rarity:'normal', material:null, uid:null };
+      FF.equipLegRing(id);
+      eq(S.inventory[id], 0, 'equipping removes the held copy (the old blind spot)');
+      eq(FF.wornLegendaryAccessoryKeys(S).join(','), id, 'the worn signet is enumerated by its REAL id');
+      eq(FF.itemSyncPayloadInventory(S)[id], 1, 'the sync payload WITNESSES the worn signet -- the probe hole is closed');
+      S.jewelrySlots.amulet = { leg:'d4_dragon', rarity:'supreme' };
+      S.bodyArmor.back = { leg:'d4_cinders', rarity:'rare', tier:0, material:null, uid:null };
+      var wk = FF.wornLegendaryAccessoryKeys(S);
+      ok(wk.indexOf('legamulet_d4_d4_dragon_supreme') !== -1 && wk.indexOf('legcloak_d4_d4_cinders_rare') !== -1,
+         'worn Pendants and Shrouds are witnessed alongside the Signets');
+      FF.unequipLegRing('ring1');
+      eq(S.inventory[id], 1, 'unequip returns the REAL item to inventory');
+      ok(!Object.keys(S.inventory).some(function(k){ return /^legring_d1_d[234]_/.test(k); }), 'no phantom d1-prefixed id was minted');
+      // Reclamation of stock stranded by the old bug.
+      var inv = { legring_d1_d4_wyrm_fantastic:2, legring_d1_block_rare:3, legring_d1_d4_bogus_rare:1 };
+      FF.reclaimPhantomAccessoryIds(inv);
+      eq(inv['legring_d4_d4_wyrm_fantastic'], 2, 'stranded signets move to their real id on load');
+      ok(!('legring_d1_d4_wyrm_fantastic' in inv), 'the phantom key is removed');
+      eq(inv['legring_d1_block_rare'], 3, 'true D1 ids are untouched');
+      eq(inv['legring_d1_d4_bogus_rare'], 1, 'an unknown target is left alone -- junk is never re-minted');
+    } finally {
+      S.inventory = svInv; S.jewelrySlots = svJs;
+      if(S.bodyArmor) S.bodyArmor.back = svBack;
+    }
+  });
+
   // ---- No em dashes in player-facing copy (owner order, v0.0.86.20) --------------------------------
   // Every player-facing description was reworked into short sentences (or comma/colon joins); this
   // guard deep-scans every string reachable from the test seam's exported def tables so a new class,
