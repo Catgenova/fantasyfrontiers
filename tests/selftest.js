@@ -16117,7 +16117,6 @@
     var probe = document.createElement('div');
     probe.innerHTML = '<div class="ff-land-chip"><b>170+</b><span>Skills</span></div>'
       + '<div class="ff-land-card"><div class="ff-land-card-t">t</div><div class="ff-land-card-b">b</div></div>'
-      + '<div class="ff-prev"><span class="ff-prev-name">You</span><span class="ff-prev-dmg crit">-197</span></div>'
       + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div></div>';
     document.body.appendChild(probe);
     try {
@@ -16127,12 +16126,70 @@
       var card = getComputedStyle(probe.querySelector('.ff-land-card'));
       ok(card.backgroundImage.indexOf('marble_dark') !== -1 && card.borderImageSource.indexOf('ivy_stretch') !== -1, 'feature cards take the item-card treatment');
       eq(getComputedStyle(probe.querySelector('.ff-land-card-b')).color, 'rgb(192, 179, 148)', 'card bodies read in parchment on the dark ground');
-      var prev = getComputedStyle(probe.querySelector('.ff-prev'));
-      ok(prev.backgroundImage.indexOf('marble_dark') !== -1 && prev.borderImageSource.indexOf('ivy_stretch') !== -1, 'the combat demo is the arena in miniature');
-      eq(getComputedStyle(probe.querySelector('.ff-prev-dmg.crit')).color, 'rgb(221, 187, 102)', 'crit floats went stage gold (the page green vanished on dark)');
       var auth = getComputedStyle(probe.querySelector('.ff-land-auth'));
       ok(auth.backgroundImage.indexOf('ivy_field') !== -1 && auth.borderImageSource.indexOf('ivy_stretch') !== -1, 'the gate is ONE white-marble plaque in stone (the double frame is gone)');
     } finally { probe.remove(); }
+  });
+
+  // ---- Landing live combat: the REAL stage in miniature (owner request, v0.0.86.19) ----------------
+  // The CSS-only vignette (two bobbing portraits, keyframed damage numbers) is retired: the gate now
+  // mounts renderArena() itself into #ffPrevArena and a demo loop drives it. Pinned here: the demo
+  // activity is FLAGGED (landingPreview) so teardown can recognise it; mounting renders the actual
+  // .ar2 stage markup; the wrap kills all interactivity and hides the two player-only panels; and
+  // landingFightStop restores a clean idle state -- it runs first in startGameOnline precisely so a
+  // brand-new account's first save can never be written from the staged fight.
+  suite('landing live combat: the real arena, mounted small, torn down clean', function(){
+    var S = FF._state;
+    var svAct = S.activity, svHp = S.playerHp;
+    try {
+      // The old vignette is gone from the stylesheet, replaced by the scaled-stage rules.
+      FF.ensureLandingStyle();
+      var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+      ok(css.indexOf('ffPrevArena') !== -1, 'the landing stylesheet targets the arena host');
+      ok(css.indexOf('ffPrevLunge') === -1 && css.indexOf('ff-prev-port') === -1, 'the CSS-only vignette (bobbing portraits) is retired');
+      // Seeding: a flagged, fully-formed combat activity for a real bestiary foe.
+      var m = FF.landingFightSeed(FF.LANDING_FOES[0]);
+      ok(!!m && m.id === FF.LANDING_FOES[0], 'the seed resolves a real bestiary foe');
+      eq(S.activity.type, 'combat', 'the demo fight is a real combat activity');
+      ok(S.activity.landingPreview === true, 'and it is FLAGGED as the landing preview');
+      eq(S.activity.monsterHp, m.hp, 'the foe enters at full health');
+      ok(S.activity.duelStartedAt > 0, 'duelStartedAt is stamped, so the foe orb refills per rotation');
+      ok(FF.landingFightActive(), 'landingFightActive sees the flagged fight');
+      // Every showcase foe is real and carries a NAMED special, so the charge bar always means something.
+      FF.LANDING_FOES.forEach(function(id){
+        var f = FF.monsterById(id);
+        ok(!!(f && f.special && f.special.name), 'showcase foe ' + id + ' exists and has a named special');
+      });
+      // Mounting: the host receives the genuine stage markup, scaled and centered.
+      var wrap = document.createElement('div');
+      wrap.className = 'ff-prev-wrap';
+      wrap.style.width = '600px';
+      wrap.innerHTML = '<div id="ffPrevArena"></div>';
+      document.body.appendChild(wrap);
+      try {
+        FF.landingFightMount();
+        var host = document.getElementById('ffPrevArena');
+        ok(host.innerHTML.indexOf('ar2 ivy') !== -1, 'the host holds the REAL combat stage (.ar2 ivy), not a mockup');
+        ok(host.innerHTML.indexOf('ar2Orb-foe') !== -1 && host.innerHTML.indexOf('arenaMiniLog') !== -1, 'orbs and the mini feed are the live ones');
+        ok(/scale\(/.test(host.style.transform), 'the stage is transform-scaled down to the wrap');
+        ok(parseInt(wrap.style.height, 10) > 0, 'the wrap takes the SCALED height so the page lays out around it');
+        eq(getComputedStyle(wrap).pointerEvents, 'none', 'the whole preview is inert -- no control can be clicked');
+        var btn = host.querySelector('.action-btn');
+        ok(btn && getComputedStyle(btn).display === 'none', 'Retreat (and every stage button) is display-gated in the preview');
+        var tray = host.querySelector('.ar2-tray');
+        ok(tray && getComputedStyle(tray).display === 'none', 'the consumables/Auto-Eat tray is hidden -- meaningless logged out');
+      } finally {
+        FF.landingFightStop();
+        wrap.remove();
+      }
+      // Teardown: the demo leaves NO trace on the guest state.
+      eq(S.activity.type, null, 'stop() restores the idle activity');
+      ok(!FF.landingFightActive(), 'no preview fight remains');
+      // stop() only tears down ITS OWN flagged fight -- a real one is never touched.
+      S.activity = { type:'combat', monsterId:FF.LANDING_FOES[0], monsterHp:5, tickAccum:0, monsterTickAccum:0, duelStartedAt:1 };
+      FF.landingFightStop();
+      eq(S.activity.type, 'combat', 'a REAL fight (no landingPreview flag) survives landingFightStop untouched');
+    } finally { S.activity = svAct; S.playerHp = svHp; }
   });
 
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
