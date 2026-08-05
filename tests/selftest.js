@@ -1656,7 +1656,7 @@
       var savedBuffs = S.familiarBuffs, savedAct = S.activity;
       try {
         var mon = FF.MONSTERS[0];
-        S.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0 };
+        S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:mon.hp, tickAccum:0 };
         S.familiarBuffs = Object.assign({}, S.familiarBuffs, { hasteUntil: Date.now()+60000, hasteVal: 0.4 }); // 40% haste
         var fc = FF.describeTask(S.activity);
         eq(fc.effTime, FF.playerAttackIntervalMs(), 'the combat task bar denominator IS the firing interval');
@@ -1691,8 +1691,8 @@
       var bc = FF.describeTask({ type:'craft', skill:'butchering', itemId:'rabbit_carcass', progress:0 });
       eq(bc.navCat, 'refining', 'butchering corpse task navigates to the Refining tab (not Crafting)');
       // A dungeon fight's action-bar card jumps to the Dungeons page; a normal fight to the Combat tab.
-      eq(FF.describeTask({ type:'combat', monsterId:FF.DUNGEON_D1_ENEMIES[0].id, dungeon:'d1', tickAccum:0 }).navCat, 'dungeons', 'a dungeon fight navigates to the Dungeons page');
-      eq(FF.describeTask({ type:'combat', monsterId:FF.MONSTERS[0].id, tickAccum:0 }).navCat, 'combat', 'a normal fight navigates to the Combat tab');
+      eq(FF.describeTask({ type:'combat', playerSwungOnce:true, monsterId:FF.DUNGEON_D1_ENEMIES[0].id, dungeon:'d1', tickAccum:0 }).navCat, 'dungeons', 'a dungeon fight navigates to the Dungeons page');
+      eq(FF.describeTask({ type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, tickAccum:0 }).navCat, 'combat', 'a normal fight navigates to the Combat tab');
     } finally {
       S.inventory = savedInv;
     }
@@ -1770,7 +1770,7 @@
     var sv = { act:S.activity, gold:S.gold, inv:S.inventory, stats:S.stats, mk:S.monsterKills, phys:S.physique, xp:S.xp, faith:S.faith };
     S.gold = 0; S.inventory = {}; S.stats = {}; S.monsterKills = {}; S.physique = {}; S.xp = {}; S.faith = 0;
     var mon = FF.MONSTERS[0]; // first wildlife foe (Rabbit)
-    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, fightTarget:2, fightsWon:0, monsterTickAccum:0 };
+    S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, fightTarget:2, fightsWon:0, monsterTickAccum:0 };
     FF.defeatMonster(mon);
     eq(S.activity.type, 'combat', 'after the 1st win the run keeps going');
     eq(S.activity.fightsWon, 1, 'the 1st win is counted');
@@ -1778,7 +1778,7 @@
     FF.defeatMonster(mon);
     eq(S.activity.type, null, 'reaching the fight target stops the run');
     // A blank/absent target fights on indefinitely (no fightTarget -> never auto-stops).
-    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, monsterTickAccum:0 };
+    S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, monsterTickAccum:0 };
     FF.defeatMonster(mon);
     eq(S.activity.type, 'combat', 'with no fight target the run never auto-stops');
     S.activity = sv.act; S.gold = sv.gold; S.inventory = sv.inv; S.stats = sv.stats; S.monsterKills = sv.mk; S.physique = sv.phys; S.xp = sv.xp; S.faith = sv.faith;
@@ -1792,7 +1792,7 @@
     // A gold-bearing foe (its goldMin/goldMax are > 0) killed on the plain solo path.
     var mon = FF.MONSTERS[FF.MONSTERS.length - 1]; // a high-tier foe -> a large would-be gold drop
     ok(mon.goldMax > 0, 'the sampled foe still carries a gold RANGE (used by Treasure Hunter scatter effects)');
-    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, fightTarget:1, fightsWon:0, monsterTickAccum:0 };
+    S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, fightTarget:1, fightsWon:0, monsterTickAccum:0 };
     FF.defeatMonster(mon);
     eq(S.gold, 0, 'a kill pays no flat gold (base enemy gold loot removed)');
     eq(S.goldEarnedTotal, 0, 'and nothing enters the lifetime gold-earned anchor');
@@ -1816,7 +1816,7 @@
     });
 
     var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
-    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', playerSwungOnce:true, monsterId:id, monsterHp:m.hp }; return m; }
     try {
       // Rend -> player Bleed DoT; a second Rend within the window stacks it and hits harder.
       var wolf = fresh('wildlife_wolf');
@@ -1832,7 +1832,7 @@
       s.activity.pBleedUntil = Date.now()+9999; s.activity.pBleedDps = 3;
       eq(Math.round(FF.playerDotDps(s.activity)), Math.round(3 + s.activity.pPoisonDps), 'playerDotDps sums Bleed + Poison');
       // playerDotWord (the floating-text label) names the strongest active DoT.
-      var dw = { type:'combat', pBleedUntil:Date.now()+9999, pBleedDps:5, pPoisonUntil:Date.now()+9999, pPoisonDps:2, pBurnUntil:0, pBurnDps:0 };
+      var dw = { type:'combat', playerSwungOnce:true, pBleedUntil:Date.now()+9999, pBleedDps:5, pPoisonUntil:Date.now()+9999, pPoisonDps:2, pBurnUntil:0, pBurnDps:0 };
       ok(FF.playerDotWord(dw).indexOf('Bleed') !== -1, 'playerDotWord picks Bleed when it is strongest');
       dw.pPoisonDps = 9; ok(FF.playerDotWord(dw).indexOf('Venom') !== -1, 'playerDotWord picks Venom when it is strongest');
       dw.pBurnUntil = Date.now()+9999; dw.pBurnDps = 20; ok(FF.playerDotWord(dw).indexOf('Burn') !== -1, 'playerDotWord picks Burn when it is strongest');
@@ -1889,7 +1889,7 @@
     s.lockedItems = s.lockedItems || {};
     function armBleed(dps){
       var wolf = FF.monsterById('wildlife_wolf');
-      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf.hp };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:wolf.hp };
       FF.clearEnemySpecialState(s.activity);
       s.activity.pBleedDps = dps; s.activity.pBleedDurMs = 6000; s.activity.pBleedUntil = Date.now() + 999999; // 6s window
     }
@@ -1924,7 +1924,7 @@
     try {
       var cap = Math.ceil(FF.maxHp(s) * FF.MONSTER_DOT_MAX_PCT_PER_SEC);
       var demon = { name:'Archdemon', atkMax:1e9, hp:1e9 };
-      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:1000 };
       FF.monsterSpecialFire(demon, { kind:'burn', durMs:6000, pctPerSec:0.20, word:'Hellfire' });
       eq(s.activity.pBurnDps, cap, 'a Chaos Hellfire from an outsized foe is capped at 5% max Health/s');
       ok(cap * 6 < FF.maxHp(s), 'a full 6s Hellfire can no longer kill from full Health');
@@ -1936,7 +1936,7 @@
       FF.monsterSpecialFire(demon, { kind:'bleed', durMs:6000, pctPerSec:0.05, maxStacks:3 });
       eq(s.activity.pBleedDps, cap, 'bleed (stacks included) is capped');
       // A tier-appropriate foe's DoT sits under the cap and keeps its natural rate.
-      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:1000 };
       FF.monsterSpecialFire({ name:'Wolf', atkMax:10, hp:100 }, { kind:'burn', durMs:6000, pctPerSec:0.20, word:'Burning' });
       eq(s.activity.pBurnDps, 2, "a small foe's burn keeps its natural rate (10 x 0.20 = 2)");
     } finally { s.activity = sv.act; }
@@ -1960,7 +1960,7 @@
 
       // B) Logging off IN combat must NOT front-load the lump. With an unresolvable foe the sim can't run,
       //    so the only thing that could still move HP is the (now-gated) front-load -- HP must hold.
-      s.activity = { type:'combat', monsterId:'__no_such_monster__', monsterHp:10 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'__no_such_monster__', monsterHp:10 };
       s.playerHp = 1;
       FF.applyOfflineProgress(30*1000);
       eq(s.playerHp, 1, 'in-combat log-off no longer front-loads a full-window heal lump');
@@ -1971,7 +1971,7 @@
       //    a colossal attackSpeed means the swing timer never elapses inside the away window, and a colossal
       //    HP pool means the player's own attacks never end the fight.)
       rabbit.attackSpeed = 1e9; rabbit.hp = 1e12;
-      s.activity = { type:'combat', monsterId:'wildlife_rabbit', monsterHp:1e12 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_rabbit', monsterHp:1e12 };
       FF.clearEnemySpecialState(s.activity);
       s.playerHp = 1;
       FF.applyOfflineProgress(30*1000);
@@ -2101,7 +2101,7 @@
     var _elem = FF.MONSTERS.filter(function(m){ return m.category==='elemental'; }); ok(_elem.length > 0 && _elem.every(function(m){ return !!m.special; }), 'every elemental now carries a special (gap-fill)');
 
     var s = FF._state, sv = { act:s.activity, hp:s.playerHp, feast:s.activeFeast, tea:s.activeTea };
-    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', playerSwungOnce:true, monsterId:id, monsterHp:m.hp }; return m; }
     try {
       // Immolate -> Burn DoT (armour-ignoring), folded into playerDotDps.
       var fire = fresh('elemental_fire_elemental'); FF.monsterSpecialFire(fire);
@@ -2149,7 +2149,7 @@
     var _demon = FF.MONSTERS.filter(function(m){ return m.category==='demonspawn'; }); ok(_demon.length > 0 && _demon.every(function(m){ return !!m.special; }), 'every demonspawn now carries a special (gap-fill)');
 
     var s = FF._state, sv = { act:s.activity };
-    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', playerSwungOnce:true, monsterId:id, monsterHp:m.hp }; return m; }
     try {
       // Soul Siphon: a timed window during which the foe heals from its hits.
       var reaver = fresh('demonspawn_soul_reaver'); FF.monsterSpecialFire(reaver);
@@ -2194,7 +2194,7 @@
     ok(FF.MONSTERS.every(function(m){ return !!m.special; }), 'every beast in the four families now carries a special');
 
     var s = FF._state, sv = { act:s.activity };
-    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', playerSwungOnce:true, monsterId:id, monsterHp:m.hp }; return m; }
     try {
       // Rally -> a TIMED flat boost to the foe's outgoing damage.
       var champ = fresh('kinsworn_sworn_champion'); FF.monsterSpecialFire(champ);
@@ -3521,7 +3521,7 @@
     FF._clReset(); s.settings.advancedCombatLog = true;
     var svAct2 = s.activity, svHp2 = s.playerHp, svAm = s.familiarBuffs.armorMult, svAu = s.familiarBuffs.armorUntil;
     try {
-      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1e9 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:1e9 };
       FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'blunt', element:null, amount:10 }, 50, 'mining');
       var famEntries = FF._clGet().filter(function(e){ return e.dir==='fam'; });
       eq(famEntries.length, 1, 'a familiar hit pushes one combat-log entry');
@@ -4445,7 +4445,7 @@
     // ---- Functional: build mock states that activate each class, verify gating + perk math ----
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
     function stFor(id, level, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:55 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat', playerSwungOnce:true}, playerHp:55 };
       st.xp[id] = FF.xpFloorForLevel(level);
       if(id==='frostwarden'){ st.equippedMainhand='wandWater'; st.equippedOffhand='shieldMedium'; st.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; }
       if(id==='berserker'){ st.equippedMainhand='warhammer'; st.bodyArmor={chest:armor('leather'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; } // no helmet = bare head
@@ -4473,19 +4473,19 @@
     eq(FF.berserkerPactCost(stFor('berserker',1)), 0, 'no pact cost below Lv20');
     // The Blood Ledger (Lv40): +1% damage per 3% of max HP inked, cap +100%; heals never erase it.
     var bLed = stFor('berserker',40); var bMh = FF.maxHp(bLed);
-    bLed.activity = { type:'combat', monsterHp: 100 };
+    bLed.activity = { type:'combat', playerSwungOnce:true, monsterHp: 100 };
     eq(FF.berserkerLedgerMult(bLed), 1, 'an empty Ledger adds nothing');
     bLed.activity.bloodLedger = Math.round(bMh * 0.30); // 30% of the bar inked -> +10%
     near(FF.berserkerLedgerMult(bLed), 1.10, 'Ledger: 30% of max HP inked = +10% damage', 1e-2);
     bLed.activity.bloodLedger = bMh * 10;               // absurdly full -> capped
     near(FF.berserkerLedgerMult(bLed), 2.0, 'the Ledger caps at +100% damage', 1e-9);
     ok(FF.berserkerLedgerCapped(bLed), 'a capped Ledger reads as capped');
-    var bLow = stFor('berserker',20); bLow.activity = { type:'combat', monsterHp:100, bloodLedger: bMh * 10 };
+    var bLow = stFor('berserker',20); bLow.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, bloodLedger: bMh * 10 };
     eq(FF.berserkerLedgerMult(bLow), 1, 'the Ledger bonus is inactive below Lv40');
     // Ink helper: only accrues for an active Berserker in combat.
-    var bInk = stFor('berserker',40); bInk.activity = { type:'combat', monsterHp:100 };
+    var bInk = stFor('berserker',40); bInk.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     FF.berserkerInkLedger(500, bInk); eq(bInk.activity.bloodLedger, 500, 'inking adds to the Ledger');
-    var bNot = stFor('frostwarden',40); bNot.activity = { type:'combat', monsterHp:100 };
+    var bNot = stFor('frostwarden',40); bNot.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     FF.berserkerInkLedger(500, bNot); ok(!bNot.activity.bloodLedger, 'no ink without the Berserker class active');
     // Transfusion (Lv60): 8% lifesteal.
     near(FF.berserkerTransfusionLifesteal(stFor('berserker',60)), 0.08, 'Transfusion heals 8% of damage dealt', 1e-9);
@@ -4512,7 +4512,7 @@
     // Rime Resonance retired: it was a FAMILIAR perk, and familiar damage follows a raw weapon-tier curve
     // that is ~7 orders of magnitude too small at BiS -- so the capstone did nothing but its "+25% vs Chilled"
     // clause, which is folded into Permafrost's rime brittleness (frostwardenDmgMult -> fwBrittleMult).
-    var fwB = stFor('frostwarden', 85); fwB.activity = { type:'combat', monsterHp:1e9, fwRime: FF.FW_RIME_MAX, dotHitAvg:1000 };
+    var fwB = stFor('frostwarden', 85); fwB.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, fwRime: FF.FW_RIME_MAX, dotHitAvg:1000 };
     near(FF.fwBrittleMult(fwB), 1 + FF.FW_BRITTLE_PER_RIME * FF.FW_RIME_MAX, 'Permafrost: brittleness scales with rime');
     near(FF.frostwardenDmgMult(fwB), FF.fwBrittleMult(fwB), 'and it IS the class damage row now');
     eq(FF.fwBrittleMult(stFor('frostwarden', 85)), 1, 'a foe with no rime is not brittle');
@@ -4528,13 +4528,13 @@
     ok(typeof FF.sentinelArmorMult === 'undefined', 'Bulwark\'s Wrath +40% Armor retired (Armor never a damage input)');
     ok(typeof FF.legReflectCanCrit === 'undefined', 'Reckoning/Spinecrusher reflect-crit retired (flat at ~100% BiS crit)');
     // Thorn Lash (Lv20): scaled by growth off the PLAYER's recent hit; a Block lashes double.
-    var senLash = stFor('sentinel',20,{ snGrowth:50, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} });
+    var senLash = stFor('sentinel',20,{ snGrowth:50, activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000} });
     eq(FF.snLashDamage(false, senLash), Math.round(1000 * FF.SN_LASH_PCT * 0.5), 'Thorn Lash: dotBase x 50% x growth/100');
     eq(FF.snLashDamage(true, senLash), Math.round(1000 * FF.SN_LASH_PCT * 0.5) * 2, 'a Block lashes double');
-    eq(FF.snLashDamage(false, stFor('sentinel',1,{ snGrowth:50, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 0, 'no lash below Lv20');
+    eq(FF.snLashDamage(false, stFor('sentinel',1,{ snGrowth:50, activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000} })), 0, 'no lash below Lv20');
     // Deep Roots (Lv40): the Snare scales with growth; inert without the class or below Lv40.
-    ok(Math.abs(FF.snSnareSlow(stFor('sentinel',40,{ snGrowth:100, activity:{type:'combat',monsterHp:100} })) - FF.SN_SNARE_MAX) < 1e-9, 'a full hedge Snares at the 25% cap');
-    eq(FF.snSnareSlow(stFor('sentinel',20,{ snGrowth:100, activity:{type:'combat',monsterHp:100} })), 0, 'no Snare below Lv40');
+    ok(Math.abs(FF.snSnareSlow(stFor('sentinel',40,{ snGrowth:100, activity:{type:'combat', playerSwungOnce:true,monsterHp:100} })) - FF.SN_SNARE_MAX) < 1e-9, 'a full hedge Snares at the 25% cap');
+    eq(FF.snSnareSlow(stFor('sentinel',20,{ snGrowth:100, activity:{type:'combat', playerSwungOnce:true,monsterHp:100} })), 0, 'no Snare below Lv40');
     // Rending Barbs / Bonecrusher share the Sunder channel; the shred fraction is the legendary's axis.
     eq(FF.snShredFrac(stFor('sentinel',80)), FF.SENTINEL_SHRED_FRAC, 'Rending Barbs: the shared 50% Sunder');
     // Tie the "unlocked" flag to real reflect behaviour: the Block share contributes iff a blocked
@@ -4544,9 +4544,9 @@
     eq(FF.classBlockBonus(stFor('spellblade',80)), 0, 'a non-Sentinel class gets no innate Block bonus');
     eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'the shared Sunder ignores 50% of enemy armour');
     // The tick derives from dotBase x growth; no class or no growth means no tear.
-    eq(FF.snTickDps(stFor('sentinel',80,{ snGrowth:100, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 1000 * FF.SN_TICK_PCT * 100, 'the tear: dotBase x 0.8% x growth per second');
-    eq(FF.snTickDps(stFor('sentinel',80,{ activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 0, 'an unplanted field tears nothing');
-    eq(FF.snTickDps({xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,snGrowth:100,activity:{type:'combat',monsterHp:100,dotHitAvg:1000},playerHp:1}), 0, 'no class -> no tear');
+    eq(FF.snTickDps(stFor('sentinel',80,{ snGrowth:100, activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000} })), 1000 * FF.SN_TICK_PCT * 100, 'the tear: dotBase x 0.8% x growth per second');
+    eq(FF.snTickDps(stFor('sentinel',80,{ activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000} })), 0, 'an unplanted field tears nothing');
+    eq(FF.snTickDps({xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,snGrowth:100,activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000},playerHp:1}), 0, 'no class -> no tear');
     // Spellblade rework v2, "the Afterimage Train": Afterimage (Lv1) / Runeglow (Lv20) / Deep Runes
     // (Lv40) / Runic Tempo (Lv60) / Standing Wave (Lv80). RULE (third never-scale entry): never scale a
     // line by raw ENCHANT COUNT/TOTALS. The deep engine tests live in their own suite below.
@@ -4582,7 +4582,7 @@
     eq(FF.sbEchoDepth(sbQ(40, 5)), 2, 'floor rolls -> the base depth 2');
     eq(FF.sbEchoDepth(sbQ(1, 30)), 1, 'below Deep Runes the train is a single afterimage');
     // No class active -> every perk multiplier is neutral.
-    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
+    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat', playerSwungOnce:true}, playerHp:1 };
     eq(FF.berserkerLedgerMult(none), 1, 'no class -> Blood Ledger neutral');
     // Quick Quill (D3 2pc) rate vs base: +5% per 2% inked vs +1% per 3%.
     ok(Math.abs(FF.BERSERK_LEDGER_RATE - 0.01/0.03) < 1e-9 && Math.abs(FF.BERSERK_LEDGER_RATE_D3 - 0.05/0.02) < 1e-9, 'Ledger rates: base +1%/3%, Quick Quill +5%/2%');
@@ -4614,7 +4614,7 @@
 
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
     function stFor(id, level, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:55 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:55 };
       st.xp[id] = FF.xpFloorForLevel(level);
       if(id==='pyromancer'){ st.equippedMainhand='wandFire'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('tailoring'),chest:armor('tailoring'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; }
       if(id==='sharpshooter'){ st.equippedMainhand='bowLong'; st.equippedOffhand='quiver'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),boots:armor('leather'),gauntlets:armor('tailoring')}; }
@@ -4715,8 +4715,8 @@
     eq(FF.ssArmorStrip(ssL), 1, 'Bare: armour fully ignored');
     var ssLow = ssFor(60); ssLow.activity.ssPeel = 10; ssLow.activity.ssSeeded = true;
     eq(FF.ssBare(ssLow), false, 'no Bare below Lv80');
-    near(FF.ssDodgeStrip(ssFor(20,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,ssPeel:6,ssSeeded:true}})), 0, 'no dodge strip below Lv40');
-    eq(FF.ssPeel(stFor('pyromancer',80,{activity:{type:'combat',monsterHp:100,ssPeel:6}})), 0, 'the ladder reads zero without the class');
+    near(FF.ssDodgeStrip(ssFor(20,{activity:{type:'combat', playerSwungOnce:true,monsterId:ssMon.id,monsterHp:ssMon.hp,ssPeel:6,ssSeeded:true}})), 0, 'no dodge strip below Lv40');
+    eq(FF.ssPeel(stFor('pyromancer',80,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,ssPeel:6}})), 0, 'the ladder reads zero without the class');
     // Juggernaut rework v2, "the Aftershock": Seismic Impact (Lv1) / Resonance (Lv20) / Faultline (Lv40)
     // / Mounting Fury (Lv60) / The Big One (Lv80). The deep engine tests live in their own suite below;
     // this block covers the always-on multiplier ladder and the retirements.
@@ -4742,11 +4742,11 @@
     eq(FF.jgFuryCritDmg(stFor('juggernaut',40,{jgFury:3})), 0, 'Mounting Fury inactive below Lv60');
     ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{jgFury:3})) - 0.24) < 1e-9, 'the session Fury feeds newClassCritDmg');
     // Faultline (Lv40): stacking shred, capped, lasting while the ground rings.
-    var jfSt = stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.30,jgFaultUntil:Date.now()+5000}});
+    var jfSt = stFor('juggernaut',40,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,jgFaultShred:0.30,jgFaultUntil:Date.now()+5000}});
     ok(Math.abs(FF.jgFaultShred(jfSt) - 0.30) < 1e-9, 'Faultline: banked cracks read from the fight');
-    ok(Math.abs(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.9,jgFaultUntil:Date.now()+5000}})) - 0.60) < 1e-9, 'Faultline caps at 60% shred');
-    eq(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()-1}})), 0, 'the cracks re-knit when the ground falls silent');
-    eq(FF.jgFaultShred(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()+5000}})), 0, 'Faultline inactive below Lv40');
+    ok(Math.abs(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,jgFaultShred:0.9,jgFaultUntil:Date.now()+5000}})) - 0.60) < 1e-9, 'Faultline caps at 60% shred');
+    eq(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()-1}})), 0, 'the cracks re-knit when the ground falls silent');
+    eq(FF.jgFaultShred(stFor('juggernaut',20,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()+5000}})), 0, 'Faultline inactive below Lv40');
     // Voidshadow rework v2, "the Doomsayer": Stamp of Doom (Lv1) / Marks of the Void (Lv20) /
     // Litany of Woes (Lv40) / Soul Tax (Lv60) / Doomsday (Lv80). The deep engine tests live in their
     // own suite below; this block covers the always-on multiplier ladder.
@@ -4754,7 +4754,7 @@
     eq(JSON.stringify(nbNames), JSON.stringify(['Stamp of Doom','Marks of the Void','Litany of Woes','Soul Tax','Doomsday']), 'Voidshadow ladder is the Doomsayer five');
     var vFuture = Date.now() + 10000;
     function nbSt(level, vuln, extraDebuffs){
-      var act = { type:'combat', monsterHp:100 };
+      var act = { type:'combat', playerSwungOnce:true, monsterHp:100 };
       if(vuln > 0){ act.voidVulnStacks = vuln; act.voidVulnUntil = vFuture; }
       if(extraDebuffs){ for(var k in extraDebuffs) act[k] = extraDebuffs[k]; }
       return stFor('nightblade', level, { activity:act, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } });
@@ -4767,20 +4767,20 @@
     eq(FF.voidVulnMult(nbSt(1,0)), 1, 'no Vulnerability -> neutral mult');
     ok(Math.abs(FF.voidVulnMult(nbSt(80,10)) - 1.20) < 1e-9, 'Lv80 no longer deepens the marks (the old flat Doom is retired -- Lv80 is Doomsday)');
     // enemyDebuffCount ("woes"): distinct debuffs on the foe -- Curse and Decay joined the count.
-    var nbCount = stFor('nightblade',80,{ activity:{type:'combat',monsterHp:100,voidVulnStacks:5,voidVulnUntil:vFuture,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    var nbCount = stFor('nightblade',80,{ activity:{type:'combat', playerSwungOnce:true,monsterHp:100,voidVulnStacks:5,voidVulnUntil:vFuture,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
     eq(FF.enemyDebuffCount(nbCount), 3, 'enemyDebuffCount tallies Vulnerability + Stun + Enfeeble = 3');
     eq(FF.enemyDebuffCount(nbSt(1,0)), 0, 'a foe with no debuffs -> count 0');
     eq(FF.enemyDebuffCount(nbSt(1,0,{curseUntil:vFuture})), 1, 'Curse counts as a woe now (Cursemark feeds the Litany)');
     eq(FF.enemyDebuffCount(nbSt(1,0,{decayUntil:vFuture,decayStacks:3})), 1, 'Decay counts as a woe now');
     // Litany of Woes, the always-on half (Lv40): +3% own damage per woe.
-    var nbRes = stFor('nightblade',40,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    var nbRes = stFor('nightblade',40,{ activity:{type:'combat', playerSwungOnce:true,monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
     ok(Math.abs(FF.voidDmgMult(nbRes) - 1.06) < 1e-9, 'Litany (own-hit half): +3% x 2 woes = +6% (no Vulnerability)');
-    eq(FF.voidDmgMult(stFor('nightblade',20,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 1, 'the Litany is inactive below Lv40');
+    eq(FF.voidDmgMult(stFor('nightblade',20,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 1, 'the Litany is inactive below Lv40');
     // Soul Tax (Lv60): +2% lifesteal AND +2% dark damage per distinct woe.
-    var nbTax = stFor('nightblade',60,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    var nbTax = stFor('nightblade',60,{ activity:{type:'combat', playerSwungOnce:true,monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
     ok(Math.abs(FF.nightbladeLifestealPct(nbTax) - 0.04) < 1e-9, 'Soul Tax: +2% lifesteal x 2 woes = +4%');
     ok(Math.abs(FF.voidDmgMult(nbTax) - (1.06 * 1.04)) < 1e-9, 'Soul Tax stacks its +2%/woe dark damage atop the Litany');
-    eq(FF.nightbladeLifestealPct(stFor('nightblade',40,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 0, 'Soul Tax lifesteal inactive below Lv60');
+    eq(FF.nightbladeLifestealPct(stFor('nightblade',40,{activity:{type:'combat', playerSwungOnce:true,monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 0, 'Soul Tax lifesteal inactive below Lv60');
     // Removed helpers/perks: the old flat Hex, Shadowstep dodge, and Siphon lifesteal are gone.
     eq(FF.newClassDmgMult(monFull, stFor('nightblade',80)), FF.voidDmgMult(stFor('nightblade',80)), 'Voidshadow damage is driven entirely by voidDmgMult (no flat Hex)');
     ok(typeof FF.nightbladeDodgeBonus === 'undefined', 'Shadowstep dodge helper removed');
@@ -4790,9 +4790,9 @@
     var exNames = FF.CLASS_DEFS_BY_ID.executioner.passives.map(function(p){ return p.name; });
     eq(JSON.stringify(exNames), JSON.stringify(['The Falling Axe','Reap the Weak','Momentum of the Cull','Headsman\'s Tally','The Cull']), 'Executioner ladder is the Falling Axe five');
     // Reap the Weak reads the BLADE: +30% below the live Guillotine threshold on the activity.
-    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:10,exThresh:0.5}})) - 1.30) < 1e-9, 'Reap the Weak +30% vs a foe beneath the blade');
-    eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:60,exThresh:0.5}})), 1, 'Reap is neutral above the blade');
-    var exBlade = stFor('executioner',40,{activity:{type:'combat',monsterHp:60,exThresh:0.70}});
+    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat', playerSwungOnce:true,monsterHp:10,exThresh:0.5}})) - 1.30) < 1e-9, 'Reap the Weak +30% vs a foe beneath the blade');
+    eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat', playerSwungOnce:true,monsterHp:60,exThresh:0.5}})), 1, 'Reap is neutral above the blade');
+    var exBlade = stFor('executioner',40,{activity:{type:'combat', playerSwungOnce:true,monsterHp:60,exThresh:0.70}});
     near(FF.executionerReapThreshold(exBlade), 0.70, 'the Reap threshold IS the climbing blade (act.exThresh)', 1e-9);
     ok(Math.abs(FF.newClassDmgMult(monLow, exBlade) - 1.30) < 1e-9, 'a raised blade widens the Reap window to a 60%-HP foe');
     eq(FF.executionerReapThreshold(stFor('executioner',20)), FF.EX_THRESH_FLOOR, 'no blade hung yet -> the threshold reads the floor');
@@ -4808,7 +4808,7 @@
     eq(FF.newClassCritChance(stFor('executioner',80)), 0, 'the Executioner grants no flat crit chance');
     eq(FF.newClassCritDmg(stFor('executioner',80)), 0, 'the Executioner grants no flat crit damage');
     // No class active -> every new-class multiplier is neutral.
-    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:1 };
+    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:1 };
     eq(FF.newClassDmgMult(monFull, none), 1, 'no class -> new-class dmg neutral');
     eq(FF.newClassCritChance(none), 0, 'no class -> new-class crit chance neutral');
     eq(FF.newClassCritDmg(none), 0, 'no class -> new-class crit dmg neutral');
@@ -4838,7 +4838,7 @@
     // The Beastmaster: Apex Predator's x3-on-four-random-ailments retired. Damage now comes from the Quarry
     // ramp the pack builds itself (x Hunter's Mark on the D2 full set), which is deterministic and bandable.
     var mon = { hp:100 };
-    var rgQ = rgear(); rgQ.activity = { type:'combat', monsterHp:50 };
+    var rgQ = rgear(); rgQ.activity = { type:'combat', playerSwungOnce:true, monsterHp:50 };
     ok(Math.abs(FF.newClassDmgMult(mon, rgQ) - 1) < 1e-9, 'no Quarry -> no Ranger damage row');
     FF.rgQuarryAdd(4, rgQ);
     eq(FF.rgQuarry(rgQ), 4, 'commanded strikes stack Quarry');
@@ -4849,10 +4849,10 @@
     rgQ.activity.rgQuarryUntil = Date.now() - 1;
     eq(FF.rgQuarry(rgQ), 0, 'Quarry decays if the pack stops working');
     // A commanded strike is a share of your landed hit, plus Feral Bond's share of your weapon damage.
-    var rgS = rgear(); rgS.activity = { type:'combat', monsterHp:1e9, dotHitAvg: 1000 };
+    var rgS = rgear(); rgS.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, dotHitAvg: 1000 };
     near(FF.rgStrikeDamage(rgS), FF.RG_STRIKE_PCT * 1000, "Sic 'Em: a strike is 35% of the recent average hit");
     near(FF.rgBondBonus(rgS), FF.RG_BOND_PCT * 1000, 'Feral Bond adds a share of your weapon damage on top');
-    var rgLow = rgear(); rgLow.xp.ranger = FF.xpFloorForLevel(41); rgLow.activity = { type:'combat', monsterHp:1e9, dotHitAvg: 1000 };
+    var rgLow = rgear(); rgLow.xp.ranger = FF.xpFloorForLevel(41); rgLow.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, dotHitAvg: 1000 };
     eq(FF.rgBondBonus(rgLow), 0, 'Feral Bond needs Lv80');
     var cd = FF.CLASS_DEFS_BY_ID.samurai; ok(cd, 'samurai class defined');
     eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passives at 1/20/40/60/80');
@@ -4866,34 +4866,34 @@
     eq(FF.activeClassId(wrongWpn), null, 'the Katana is required (a greatsword does not qualify)');
     var mon = { hp:100 };
     // Crimson Edge (Lv40): +30% damage vs a Bleeding foe (Focus held at 0 so Bushido is neutral).
-    var bleeding = sgear(); bleeding.activity = { type:'combat', monsterHp:60, bleedUntil: Date.now()+4000, bleedStacks:2, bleedDps:5, samuraiFocus:0 };
+    var bleeding = sgear(); bleeding.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, bleedUntil: Date.now()+4000, bleedStacks:2, bleedDps:5, samuraiFocus:0 };
     ok(FF.enemyBleeding(bleeding), 'enemyBleeding true while bleedStacks+bleedUntil are live');
     ok(Math.abs(FF.newClassDmgMult(mon, bleeding) - 1.30) < 1e-9, 'Crimson Edge: x1.30 vs a Bleeding foe');
-    var unbled = sgear(); unbled.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:0 };
+    var unbled = sgear(); unbled.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:0 };
     eq(FF.newClassDmgMult(mon, unbled), 1, 'no Crimson Edge bonus vs an unbled foe (Focus 0)');
     // Bushido (Lv60): +5% damage per Focus stack (no bleed, so Crimson is off).
-    var focus = sgear(); focus.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
+    var focus = sgear(); focus.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
     eq(FF.samuraiFocusStacks(focus), 4, 'samuraiFocusStacks reads the activity');
     ok(Math.abs(FF.newClassDmgMult(mon, focus) - 1.20) < 1e-9, 'Bushido: 4 Focus stacks => x1.20 damage');
     // Bushido also carries the crit (it absorbed the old Lv80 Zanshin line): +1.5% per Focus stack.
     ok(Math.abs(FF.newClassCritChance(focus) - 4*0.015) < 1e-9, 'Bushido: 4 Focus stacks => +6% crit chance');
     // Below Lv60 the Focus perks are inert even with stacks present.
-    var lowLvl = sgear(45); lowLvl.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
+    var lowLvl = sgear(45); lowLvl.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
     eq(FF.newClassDmgMult(mon, lowLvl), 1, 'no Bushido damage below Class Lv60');
     eq(FF.newClassCritChance(lowLvl), 0, 'no Bushido crit below Class Lv60');
 
     // ---- The Draw-Cut cycle (the rework) --------------------------------------------------------
     // The stance is a FIXED ten: capacity is a dead axis on a cycling engine, so nothing raises it.
     eq(FF.samuraiFocusCap(sgear()), FF.SAMURAI_FOCUS_MAX, 'the stance caps at SAMURAI_FOCUS_MAX');
-    var empty = sgear(); empty.activity = { type:'combat', monsterHp:60, samuraiFocus:0, dotHitAvg:1000 };
-    var full  = sgear(); full.activity  = { type:'combat', monsterHp:60, samuraiFocus:FF.SAMURAI_FOCUS_MAX, dotHitAvg:1000 };
+    var empty = sgear(); empty.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, samuraiFocus:0, dotHitAvg:1000 };
+    var full  = sgear(); full.activity  = { type:'combat', playerSwungOnce:true, monsterHp:60, samuraiFocus:FF.SAMURAI_FOCUS_MAX, dotHitAvg:1000 };
     ok(!FF.smSheathed(empty), 'an empty stance is not sheathed');
     ok(FF.smSheathed(full), 'a full stance is sheathed -- the next strike draws');
     // The Cut scales off the recent-hit EMA (dotBase), per stack spent. This is what makes SM_SWING_MULT
     // the single band knob: the swings feed the EMA, and the EMA is the Cut.
     near(FF.smCutDamage(full), FF.SAMURAI_FOCUS_MAX * FF.SM_CUT_PCT * 1000, 'a full-stance Cut = 10 Focus x SM_CUT_PCT x the recent average hit');
     eq(FF.smCutDamage(empty), 0, 'no stance, no Cut');
-    var half = sgear(); half.activity = { type:'combat', monsterHp:60, samuraiFocus:5, dotHitAvg:1000 };
+    var half = sgear(); half.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, samuraiFocus:5, dotHitAvg:1000 };
     near(FF.smCutDamage(half), 5 * FF.SM_CUT_PCT * 1000, 'a half stance cuts for half -- the Cut pays for what it spent');
     // Zanshin (Lv80) is a RATE capstone: it leaves residual stance so the next cycle is shorter.
     eq(FF.smCutRefund(sgear(45)), 0, 'below Lv80 a Cut empties the stance');
@@ -4901,7 +4901,7 @@
     ok(FF.smCutRefund(sgear(85)) < FF.samuraiFocusCap(sgear()), 'the refund can never leave a FULL stance, which would re-fire the Cut forever');
     // The stance clock accrues fractionally so it is tick-rate independent, but samuraiFocus stays an INTEGER
     // (the UI readout and every pre-existing reader expect one).
-    var acc = sgear(); acc.activity = { type:'combat', monsterHp:60, samuraiFocus:0 };
+    var acc = sgear(); acc.activity = { type:'combat', playerSwungOnce:true, monsterHp:60, samuraiFocus:0 };
     eq(FF.smFocusAdd(0.4, acc), 0, 'four tenths of a stack builds nothing yet');
     eq(acc.activity.samuraiFocus, 0, 'and the stack count is still an integer 0');
     eq(FF.smFocusAdd(0.7, acc), 1, 'but the remainder is banked and carries past 1');
@@ -5299,7 +5299,7 @@
       // the panel itself still renders for the Equipment page.
       ok(!/Damage Triangle/.test(combatHtml) && !/>Combat Score</.test(combatHtml),
          'the idle Combat tab no longer carries the Equipment & Stats panel');
-      s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp,
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp,
                      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       var liveHtml = FF.renderCombatTab();
       ok(/class="ar2 ivy"/.test(liveHtml), 'the live Combat tab renders the arena');
@@ -5421,7 +5421,7 @@
       for(var i=0;i<FF.MONSTERS.length;i++){ if(FF.MONSTERS[i].special){ mon = FF.MONSTERS[i]; break; } }
       ok(mon, 'found a foe with a special attack to exercise the extra bar');
       s.playerHp = Math.max(1, Math.round(FF.maxHp(s) * 0.5));
-      s.activity = { type:'combat', monsterId:mon.id, monsterHp:Math.max(1, Math.round(mon.hp*0.5)),
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:Math.max(1, Math.round(mon.hp*0.5)),
                      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       FF._orbsReset();
       var h = FF.renderArena();
@@ -6117,7 +6117,7 @@
   suite('mastercraft: legendary slash effects', function(){
     // A minimal state with a legendary weapon slotted to the main hand (legActive only reads the uid + uniqueItems).
     function legSt(key, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_scimitar_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
         equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6128,35 +6128,35 @@
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'legendaryGear'; }), 'legendaryGear is a named PLAYER_DMG_MODS row');
 
     // Cull (executioner/fullmoonaxe): +2% damage per 1% of the foe's missing Health, capped at +100%.
-    var cullFull = legSt('cull', { activity:{type:'combat', monsterHp:100} });
+    var cullFull = legSt('cull', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100} });
     near(FF.legendaryDmgMult(MON, cullFull), 1, 'Cull adds nothing at full enemy HP');
-    var cullHalf = legSt('cull', { activity:{type:'combat', monsterHp:50} });
+    var cullHalf = legSt('cull', { activity:{type:'combat', playerSwungOnce:true, monsterHp:50} });
     near(FF.legendaryDmgMult(MON, cullHalf), 2.0, 'Cull: 50% missing HP -> +100% (x2.0)');
-    var cullQuarter = legSt('cull', { activity:{type:'combat', monsterHp:75} });
+    var cullQuarter = legSt('cull', { activity:{type:'combat', playerSwungOnce:true, monsterHp:75} });
     near(FF.legendaryDmgMult(MON, cullQuarter), 1.5, 'Cull: 25% missing HP -> +50% (x1.5)');
-    var cullExec = legSt('cull', { activity:{type:'combat', monsterHp:1} });
+    var cullExec = legSt('cull', { activity:{type:'combat', playerSwungOnce:true, monsterHp:1} });
     near(FF.legendaryDmgMult(MON, cullExec), 2.0, 'Cull caps at +100% below 50% HP');
-    near(FF.legendaryDmgMult(MON, legSt('crimsonharvest', { activity:{type:'combat', monsterHp:1} })), 1, 'Cull is inert without the Cull legendary');
+    near(FF.legendaryDmgMult(MON, legSt('crimsonharvest', { activity:{type:'combat', playerSwungOnce:true, monsterHp:1} })), 1, 'Cull is inert without the Cull legendary');
 
     // Gloomstalker (assassin/claw, key phantomassault): Open Wounds never expire — an expired timer still counts.
-    var gsSt = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
+    var gsSt = legSt('phantomassault', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
     eq(FF.assassinWoundStacks(gsSt), 3, 'Gloomstalker: wounds persist past their 6s timer');
-    var gsNo = legSt('cull', { activity:{type:'combat', monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
+    var gsNo = legSt('cull', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
     eq(FF.assassinWoundStacks(gsNo), 0, 'without Gloomstalker, an expired fill reads as 0');
 
     // Crimson Harvest (reaver/halfmoonaxe): +2% lifesteal per Bleed stack on the foe.
-    var chBleed = legSt('crimsonharvest', { activity:{type:'combat', monsterHp:100, bleedStacks:3, bleedUntil: Date.now()+4000} });
+    var chBleed = legSt('crimsonharvest', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, bleedStacks:3, bleedUntil: Date.now()+4000} });
     near(FF.legendaryLifestealPct(chBleed), 0.06, 'Crimson Harvest: 3 Bleed stacks -> +6% lifesteal');
-    var chNoBleed = legSt('crimsonharvest', { activity:{type:'combat', monsterHp:100, bleedStacks:0} });
+    var chNoBleed = legSt('crimsonharvest', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, bleedStacks:0} });
     near(FF.legendaryLifestealPct(chNoBleed), 0, 'Crimson Harvest gives no lifesteal against an unbled foe');
-    near(FF.legendaryLifestealPct(legSt('cull', { activity:{type:'combat', bleedStacks:3, bleedUntil: Date.now()+4000} })), 0, 'Crimson Harvest is inert without its legendary');
+    near(FF.legendaryLifestealPct(legSt('cull', { activity:{type:'combat', playerSwungOnce:true, bleedStacks:3, bleedUntil: Date.now()+4000} })), 0, 'Crimson Harvest is inert without its legendary');
 
     // Wasting Curse (plaguebearer/hatchet): a poisoned foe deals -5% damage per second poisoned (cap -40%).
-    var wcNone = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100} });
+    var wcNone = legSt('wastingcurse', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100} });
     near(FF.legWastingCurseIncomingMult(wcNone), 1, 'Wasting Curse is inert against an unpoisoned foe');
-    var wc3 = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-3000} });
+    var wc3 = legSt('wastingcurse', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-3000} });
     near(FF.legWastingCurseIncomingMult(wc3), 0.85, 'Wasting Curse: 3s poisoned -> incoming x0.85', 1e-3);
-    var wc10 = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-10000} });
+    var wc10 = legSt('wastingcurse', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-10000} });
     near(FF.legWastingCurseIncomingMult(wc10), 0.60, 'Wasting Curse caps at -40% (x0.60)', 1e-3);
     // legNotePoisonStart stamps the start of a fresh poison, but leaves an already-active poison's clock alone.
     var actFresh = { potionPoisonUntil: 0 }; FF.legNotePoisonStart(actFresh); ok(actFresh.poisonSince > 0, 'legNotePoisonStart stamps a fresh poison start');
@@ -6252,7 +6252,7 @@
     function armor(mat){ return { material:mat, tier:5 }; }
     // A minimal state with a legendary main-hand weapon and (optionally) class gear/enchants layered on.
     function legSt(key, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_rapier_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
         equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6278,7 +6278,7 @@
     eq(FF.knightStackCap(legSt('engarde')), 10, 'the base Banner cap is 10 without Highbanner');
     // On a live Knight, the Order of Pace (Banner 6+) quickens the attack timer 12% -- a threshold, not a ramp.
     function kgear(lvl, ex){ var st = { xp:{ knight: FF.xpFloorForLevel(lvl||85) }, physique:{}, equippedMainhand:'claymore', equippedOffhand:null,
-      bodyArmor:{ helmet:armor('chain'), chest:armor('plate'), gauntlets:armor('chain'), boots:armor('plate') }, activity:{type:'combat'}, playerHp:100 };
+      bodyArmor:{ helmet:armor('chain'), chest:armor('plate'), gauntlets:armor('chain'), boots:armor('plate') }, activity:{type:'combat', playerSwungOnce:true}, playerHp:100 };
       if(ex) for(var k in ex) st[k]=ex[k]; return st; }
     eq(FF.activeClassId(kgear()), 'knight', 'claymore + plate/chain set => Knight');
     near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 5 })), 1, 'Banner 5: the Order of Pace has not yet stood', 1e-9);
@@ -6294,7 +6294,7 @@
   // ---- D1 legendary gear COMBAT effects, Batch 5: the four Blunt weapons ------------------------------
   suite('mastercraft: legendary blunt effects', function(){
     function legSt(key, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_mace_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
         equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6333,7 +6333,7 @@
   suite('mastercraft: legendary ranged effects', function(){
     function legSt(key, base, extra){
       var st = { xp:{ bowLong: FF.xpFloorForLevel(50) }, physique:{ perception: FF.xpFloorForLevel(40) }, bodyArmor:{},
-        activity:{type:'combat', monsterHp:100}, playerHp:100, equippedMainhand:'bowLong',
+        activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100, equippedMainhand:'bowLong',
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'bowLong')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
         equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6359,7 +6359,7 @@
   suite('mastercraft: legendary arcane weapon effects', function(){
     function armor(mat){ return { material:mat, tier:5 }; }
     function legSt(key, base, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
         equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6375,7 +6375,7 @@
     function tfSt(inten){
       var st = { xp:{ thunderfury: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'wandEarth', equippedOffhand:'wardEarth',
         bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'tailoring'}, chest:{tier:1,rarity:'normal',material:'tailoring'}, gauntlets:{tier:1,rarity:'normal',material:'tailoring'}, boots:{tier:1,rarity:'normal',material:'tailoring'}, back:{tier:0,rarity:'normal',material:null} },
-        activity:{type:'combat', monsterHp:100}, playerHp:100, tfStorm:inten, uniqueItems:{}, equippedMainhandUid:null };
+        activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100, tfStorm:inten, uniqueItems:{}, equippedMainhandUid:null };
       return st;
     }
     eq(FF.activeClassId(tfSt(0)), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
@@ -6403,7 +6403,7 @@
   suite('mastercraft: legendary shield effects', function(){
     function armor(mat){ return { material:mat, tier:5 }; }
     function legSt(key, base, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
         equippedOffhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6422,11 +6422,11 @@
     near(FF.legRiposteConsume(frpOff), 1, 'Luckshell is inert without its legendary');
 
     // Immunize (plaguebearer/shieldSmall): take 25% less damage from a poisoned foe.
-    var imP = legSt('immunize', 'shieldSmall', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000} });
+    var imP = legSt('immunize', 'shieldSmall', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil: Date.now()+4000} });
     near(FF.legImmunizeIncomingMult(imP), 0.75, 'Immunize: -25% incoming from a poisoned foe');
-    var imU = legSt('immunize', 'shieldSmall', { activity:{type:'combat', monsterHp:100} });
+    var imU = legSt('immunize', 'shieldSmall', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100} });
     near(FF.legImmunizeIncomingMult(imU), 1, 'Immunize is inert against an unpoisoned foe');
-    near(FF.legImmunizeIncomingMult(legSt('frenziedguard', 'shieldSmall', { activity:{type:'combat', potionPoisonUntil: Date.now()+4000} })), 1, 'Immunize is inert without its legendary');
+    near(FF.legImmunizeIncomingMult(legSt('frenziedguard', 'shieldSmall', { activity:{type:'combat', playerSwungOnce:true, potionPoisonUntil: Date.now()+4000} })), 1, 'Immunize is inert without its legendary');
 
     // Frenzied Guard (reaver/shieldSmall): a Block grants +10% attack speed (x0.90 timer) for a few seconds.
     near(FF.legAttackSpeedMult(legSt('frenziedguard', 'shieldSmall', { frenziedGuardUntil: Date.now()+2000 })), 0.90, 'Frenzied Guard: +10% attack speed while the window is live');
@@ -6439,7 +6439,7 @@
     function hgear(stacks, bulwark){
       var st = { xp:{ herald: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'mace', equippedOffhand:'shieldLarge',
         bodyArmor:{ helmet:armor('plate'), chest:armor('plate'), gauntlets:armor('plate'), boots:armor('plate') },
-        activity:{type:'combat'}, playerHp:100, heraldGuardStacks:stacks, uniqueItems:{}, equippedOffhandUid:null };
+        activity:{type:'combat', playerSwungOnce:true}, playerHp:100, heraldGuardStacks:stacks, uniqueItems:{}, equippedOffhandUid:null };
       if(bulwark){ st.uniqueItems.L = { uid:'L', leg:'perfectbulwark', kind:'offhand', base:'stshield_shieldLarge_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 }; st.equippedOffhandUid = 'L'; }
       return st;
     }
@@ -6460,7 +6460,7 @@
   // ---- D1 legendary gear COMBAT effects, Batch 9: the five Wards (all offhand) ------------------------
   suite('mastercraft: legendary ward effects', function(){
     function legSt(key, base, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stward_'+(base||'wardFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
         equippedOffhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6469,11 +6469,11 @@
     var now = Date.now();
 
     // Everburning (pyromancer/wardFire): Burn never expires while stacks remain.
-    var ebLapsed = legSt('everburning', 'wardFire', { activity:{type:'combat', monsterHp:100, burnStacks:3, burnUntil: now-1} });
+    var ebLapsed = legSt('everburning', 'wardFire', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, burnStacks:3, burnUntil: now-1} });
     ok(FF.enemyBurning(ebLapsed), 'Everburning keeps Burn alive after its timer lapses (stacks remain)');
-    var noEbLapsed = legSt('holyward', 'wardLight', { activity:{type:'combat', monsterHp:100, burnStacks:3, burnUntil: now-1} });
+    var noEbLapsed = legSt('holyward', 'wardLight', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, burnStacks:3, burnUntil: now-1} });
     ok(!FF.enemyBurning(noEbLapsed), 'without Everburning, a lapsed Burn is gone');
-    var ebNoStacks = legSt('everburning', 'wardFire', { activity:{type:'combat', monsterHp:100, burnStacks:0, burnUntil: now-1} });
+    var ebNoStacks = legSt('everburning', 'wardFire', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, burnStacks:0, burnUntil: now-1} });
     ok(!FF.enemyBurning(ebNoStacks), 'Everburning does nothing once the last Burn stack is gone');
     eq(FF.legBurnNeverExpires(legSt('everburning', 'wardFire')), true, 'legBurnNeverExpires true with Everburning');
     eq(FF.legBurnNeverExpires(legSt('holyward', 'wardLight')), false, 'legBurnNeverExpires false otherwise');
@@ -6482,14 +6482,14 @@
     eq(FF.legActive('chargedriposte', legSt('chargedriposte', 'wardEarth', 'offhand')), true, 'legActive detects Stormcoil');
 
     // Nightshroud (nightblade/wardDark): a foe that damaged you is Enfeebled -10%, and it counts as a debuff.
-    var nsOn = legSt('nightshroud', 'wardDark', { activity:{type:'combat', monsterHp:100, nightshroudUntil: now+4000} });
+    var nsOn = legSt('nightshroud', 'wardDark', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, nightshroudUntil: now+4000} });
     near(FF.legNightshroudIncomingMult(nsOn), 0.90, 'Nightshroud: the Enfeebled foe deals 10% less');
     ok(FF.legNightshroudActive(nsOn), 'Nightshroud is active while the window is live');
     eq(FF.enemyDebuffCount(nsOn), 1, 'Nightshroud Enfeeble counts as a debuff (feeds Void Resonance / Soul Tax)');
-    var nsOff = legSt('nightshroud', 'wardDark', { activity:{type:'combat', monsterHp:100, nightshroudUntil: now-1} });
+    var nsOff = legSt('nightshroud', 'wardDark', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, nightshroudUntil: now-1} });
     near(FF.legNightshroudIncomingMult(nsOff), 1, 'the Nightshroud window expires');
     eq(FF.enemyDebuffCount(nsOff), 0, 'an expired Nightshroud no longer counts');
-    near(FF.legNightshroudIncomingMult(legSt('everburning', 'wardFire', { activity:{type:'combat', nightshroudUntil: now+4000} })), 1, 'Nightshroud is inert without its legendary');
+    near(FF.legNightshroudIncomingMult(legSt('everburning', 'wardFire', { activity:{type:'combat', playerSwungOnce:true, nightshroudUntil: now+4000} })), 1, 'Nightshroud is inert without its legendary');
 
     // Beacon Ward / Holy Ward (both light wards): detection (heal / Holy-shield-on-reflect is behaviour-driven).
     eq(FF.legActive('beaconward', legSt('beaconward', 'wardLight')), true, 'legActive detects Beacon Ward');
@@ -6534,7 +6534,7 @@
   suite('mastercraft: D2 legendary arcane effects', function(){
     function legSt(key, base, kind, extra){
       var isOff = kind === 'offhand';
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
       st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -6543,17 +6543,17 @@
     var now = Date.now();
     // Cindermaw (fire wand): +3 Burn cap; burning foes take +12%.
     eq(FF.pyroBurnCap(legSt('cindermaw','wandFire')), 8, 'Cindermaw: Burn cap 5 -> 8 (+3)');
-    near(FF.d2LegDmgMult({}, legSt('cindermaw','wandFire','weapon',{ activity:{type:'combat', monsterHp:100, burnUntil: now+4000, burnStacks:1} })), 1.12, 'Cindermaw: +12% vs a burning foe');
+    near(FF.d2LegDmgMult({}, legSt('cindermaw','wandFire','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, burnUntil: now+4000, burnStacks:1} })), 1.12, 'Cindermaw: +12% vs a burning foe');
     near(FF.d2LegDmgMult({}, legSt('cindermaw','wandFire')), 1.0, 'Cindermaw inert on an unburnt foe');
     // Rimefang (water wand): Chilled foes take +15%.
-    near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil: now+4000} })), 1.15, 'Rimefang: +15% vs a Chilled foe');
+    near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, enemyChillUntil: now+4000} })), 1.15, 'Rimefang: +15% vs a Chilled foe');
     near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater')), 1.0, 'Rimefang inert on an un-chilled foe');
     // Stormbrand (earth wand): +8% crit chance per Galvanize stack.
     near(FF.legStormbrandCrit(legSt('stormbrand','wandEarth','weapon',{ tfGalvanize:3 })), 0.09, 'Stormbrand: +3% crit chance per Galvanize stack');
     near(FF.legStormbrandCrit(legSt('cindermaw','wandFire')), 0, 'no Stormbrand crit without the wand');
     // Voidfang (dark wand): each Vulnerability stack shreds 3% armour (cap 60%).
-    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000} })), 0.15, 'Voidfang: 5 Vuln stacks shred 15% armour');
-    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:99, voidVulnUntil: now+4000} })), 0.60, 'Voidfang armour shred caps at 60%');
+    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000} })), 0.15, 'Voidfang: 5 Vuln stacks shred 15% armour');
+    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, voidVulnStacks:99, voidVulnUntil: now+4000} })), 0.60, 'Voidfang armour shred caps at 60%');
     near(FF.legVoidfangShred(legSt('cindermaw','wandFire')), 0, 'no Voidfang shred without the wand');
     // Sunbrand / Packbrand / Dawnbrand (behaviour-driven live): detection only.
     eq(FF.legActive('sunbrand', legSt('sunbrand','scepter')), true, 'legActive detects Sunbrand');
@@ -6584,7 +6584,7 @@
     eq(FF.LEG_GEAR_GROUP_KEYS_D2.defense.length, 6, 'six D2 shield effects in the defense group');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D2[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D2 shield items');
     // Detection: each shield legendary is picked up by legActive when slotted to the off-hand.
-    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
     ['cofferguard','rotshell','goreshell','rimeshell','thornwall','bulwarkbreach'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
     // Cofferguard (D2 small shield): each Grave Strike banks a damage stack that holds for the fight.
@@ -6626,7 +6626,7 @@
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D2[id].group; return g==='slash'||g==='pierce'; }).length, 40, '10 melee effects (6 slash + 4 pierce) x 4 rarities = 40 items');
 
     function legSt(key, base, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -6636,7 +6636,7 @@
     eq(FF.LEG_MARROWSPLITTER_CUTS, 2, 'Marrowsplitter values each Cut at two');
     var msSt = legSt('marrowsplitter','halfmoonaxe',{ xp:{ reaver: FF.xpFloorForLevel(41) }, equippedMainhand:'halfmoonaxe', equippedOffhand:'shieldSmall',
       bodyArmor:{helmet:{material:'chain',tier:5},chest:{material:'chain',tier:5},gauntlets:{material:'leather',tier:5},boots:{material:'leather',tier:5}},
-      activity:{type:'combat', monsterHp:100, rvCuts:100} });
+      activity:{type:'combat', playerSwungOnce:true, monsterHp:100, rvCuts:100} });
     near(FF.rvCountMult(msSt), 1 + 2 * FF.RV_COUNT_PCT * 100, 'Marrowsplitter: 100 Cuts count as 200');
     near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe')), 1.0, 'Marrowsplitter adds no flat damage row');
     // Headtaker (executioner/fullmoonaxe): stacking +10% per kill; d2HeadtakerOnKill builds a stack.
@@ -6659,8 +6659,8 @@
     eq(FF.legActive('blightfang', legSt('blightfang','hatchet')), true, 'legActive detects Blightfang');
     eq(FF.legActive('throatripper', legSt('throatripper','claw')), true, 'legActive detects Throatripper');
     // Throatripper (reworked): +4% damage per Open Wound held on the foe.
-    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', monsterHp:100, woundStacks:5, woundUntil:Date.now()+4000} })), 1.20, 'Throatripper: 5 open wounds = +20% damage');
-    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', monsterHp:100} })), 1.0, 'Throatripper is inert with no wounds open');
+    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, woundStacks:5, woundUntil:Date.now()+4000} })), 1.20, 'Throatripper: 5 open wounds = +20% damage');
+    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100} })), 1.0, 'Throatripper is inert with no wounds open');
     eq(FF.legActive('soulflay', legSt('soulflay','scythe')), true, 'legActive detects Soulflay');
     eq(FF.legActive('ironwind', legSt('ironwind','falchion')), true, 'legActive detects Ironwind');
     eq(FF.legActive('breachblade', legSt('breachblade','claymore')), true, 'legActive detects Breachblade');
@@ -6689,7 +6689,7 @@
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D2[id].group; return g==='blunt'||g==='ranged'; }).length, 28, '7 effects (4 blunt + 3 ranged) x 4 rarities = 28 items');
 
     function legSt(key, base, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -6701,8 +6701,8 @@
     near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace')), 1.0, 'Wallbreaker inert with no Guard stacks');
     // Trapmaster (ranger/bowMedium): +20% vs an ailing foe.
     // Trapmaster's ailment amplifier retired: it doubles the Quarry STACKING RATE now (see rgQuarryAdd).
-    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', monsterHp:100} })), 1, 'Trapmaster adds no flat damage row');
-    var tmSt = legSt('trapmaster','bowMedium',{ xp:{ ranger: FF.xpFloorForLevel(85) }, activity:{type:'combat', monsterHp:100} });
+    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100} })), 1, 'Trapmaster adds no flat damage row');
+    var tmSt = legSt('trapmaster','bowMedium',{ xp:{ ranger: FF.xpFloorForLevel(85) }, activity:{type:'combat', playerSwungOnce:true, monsterHp:100} });
     FF.rgQuarryAdd(1, tmSt); eq(FF.rgQuarry(tmSt), 2, 'Trapmaster: one strike stacks two Quarry');
     near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium')), 1.0, 'Trapmaster inert on a clean foe');
     // Earthrender (juggernaut/sledge): the flat +30% retired with the Aftershock rework -- its power is
@@ -6710,8 +6710,8 @@
     near(FF.d2LegDmgMult({}, legSt('earthrender','sledge')), 1.0, 'Earthrender adds no flat damage row any more');
     near(FF.jgEchoShare(legSt('earthrender','sledge')), FF.JG_ECHO_PCT * FF.LEG_EARTHRENDER_ECHO, 'Earthrender: aftershocks pay +25% more');
     // Spineshatter (sentinel/maul): stacking -4% enemy damage per reflect (cap -40%).
-    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:5, spineshatterUntil:now+4000} })), 0.80, 'Spineshatter: -4% enemy damage per reflect (5 -> -20%)');
-    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:99, spineshatterUntil:now+4000} })), 0.60, 'Spineshatter caps at -40%');
+    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, spineshatterStacks:5, spineshatterUntil:now+4000} })), 0.80, 'Spineshatter: -4% enemy damage per reflect (5 -> -20%)');
+    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, spineshatterStacks:99, spineshatterUntil:now+4000} })), 0.60, 'Spineshatter caps at -40%');
     near(FF.legSpineshatterMult(legSt('wallbreaker','mace')), 1.0, 'no Spineshatter debuff without the maul');
     // Serpentcoil (quickdraw/bowShort): now amplifies the Quiverlord's riders at application, not the shared tick.
     near(FF.legPoisonTickMult(legSt('serpentcoil','bowShort')), 1.0, 'Serpentcoil no longer boosts the shared poison tick (riders amplified at application)');
@@ -6802,20 +6802,20 @@
     function ringDmgSt(key, act){ var js={}; js[R]={leg:key,rarity:'rare'}; return { jewelrySlots:js, bodyArmor:{}, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
     function cloakDmgSt(key, act){ return { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
     // Grave (vs Cursed) / Wight (vs afflicted) / Reap (vs low-HP) — via d3AccessoryDmgMult.
-    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', monsterHp:800, curseUntil:now+4000})), 1.20, 'Signet of the Grave: +20% vs a Cursed foe (rare)');
-    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', monsterHp:800})), 1.0, 'Grave inert on an uncursed foe');
-    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_wight', {type:'combat', monsterHp:800, decayStacks:1, decayUntil:now+4000})), 1.16, 'Signet of the Wight: +16% vs an afflicted (Decaying) foe');
-    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', monsterHp:200})), 1.24, 'Shroud of the Reaper: +24% vs a foe below 30% HP');
-    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', monsterHp:800})), 1.0, 'Reap inert on a healthy foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', playerSwungOnce:true, monsterHp:800, curseUntil:now+4000})), 1.20, 'Signet of the Grave: +20% vs a Cursed foe (rare)');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', playerSwungOnce:true, monsterHp:800})), 1.0, 'Grave inert on an uncursed foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_wight', {type:'combat', playerSwungOnce:true, monsterHp:800, decayStacks:1, decayUntil:now+4000})), 1.16, 'Signet of the Wight: +16% vs an afflicted (Decaying) foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', playerSwungOnce:true, monsterHp:200})), 1.24, 'Shroud of the Reaper: +24% vs a foe below 30% HP');
+    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', playerSwungOnce:true, monsterHp:800})), 1.0, 'Reap inert on a healthy foe');
     // Decay Power (Crypt) via d3DecayTickMult.
     near(FF.d3DecayTickMult(ringSt('d3_crypt')), 1.40, 'Signet of the Crypt: +40% Decay Power (rare)');
     // Deathless (Undeath) via d3SetIncomingMult, only below 50% HP.
-    var lowHp = { bodyArmor:{ back:{leg:'d3_undeath',rarity:'rare'} }, jewelrySlots:{}, physique:{}, xp:{}, activity:{type:'combat',monsterHp:100}, playerHp:1 };
+    var lowHp = { bodyArmor:{ back:{leg:'d3_undeath',rarity:'rare'} }, jewelrySlots:{}, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:1 };
     near(FF.d3SetIncomingMult(lowHp), 0.80, 'Shroud of Undeath: -20% Damage Reduction below 50% HP (rare)');
     lowHp.playerHp = 1e9; near(FF.d3SetIncomingMult(lowHp), 1.0, 'Undeath inert above 50% HP');
     // enemyAfflicted spans DoT / Decay / Curse.
-    ok(FF.enemyAfflicted({ activity:{type:'combat', monsterHp:100, curseUntil:now+4000} }), 'a Cursed foe is afflicted');
-    ok(!FF.enemyAfflicted({ activity:{type:'combat', monsterHp:100} }), 'a clean foe is not afflicted');
+    ok(FF.enemyAfflicted({ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, curseUntil:now+4000} }), 'a Cursed foe is afflicted');
+    ok(!FF.enemyAfflicted({ activity:{type:'combat', playerSwungOnce:true, monsterHp:100} }), 'a clean foe is not afflicted');
     // Full forge (ring).
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
     var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
@@ -6844,9 +6844,9 @@
     eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d4'; }).length, 12, '3 Pendants x 4 = 12 D4 amulet items');
 
     var R = FF.RING_SLOT_IDS[0], now = Date.now();
-    function ringSt(key, extra){ var js={}; js[R]={leg:key,rarity:'rare'}; var st = { jewelrySlots:js, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
-    function cloakSt(key, extra){ var st = { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
-    function amuletSt(key, extra){ var st = { jewelrySlots:{ amulet:{leg:key,rarity:'rare'} }, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    function ringSt(key, extra){ var js={}; js[R]={leg:key,rarity:'rare'}; var st = { jewelrySlots:js, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    function cloakSt(key, extra){ var st = { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    function amuletSt(key, extra){ var st = { jewelrySlots:{ amulet:{leg:key,rarity:'rare'} }, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
 
     // Signet of the Wyrm: +Elemental Damage (rare = 0.15 x2 = +0.30 folded into elementDmgMult).
     near(FF.elementDmgMult(ringSt('d4_wyrm'), 'fire') - FF.elementDmgMult(ringSt('d4_nothere'), 'fire'), 0.30, 'Signet of the Wyrm: +30% Elemental Damage (rare)');
@@ -6868,7 +6868,7 @@
     near(FF.legendaryCloakBonus('d4_cinders', cloakSt('d4_cinders')), 0.30, 'Shroud of Cinders: 30% Fire retort (rare)');
 
     // Pendant of the Elements: +damage vs a Scorched foe (0.15 x2 = +0.30).
-    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Pendant of the Elements: +20% vs a Scorched foe (rare, base trimmed to 0.10, atop the Scorch stack)');
+    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Pendant of the Elements: +20% vs a Scorched foe (rare, base trimmed to 0.10, atop the Scorch stack)');
     near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend')), 1.0, 'Pendant of the Elements inert on an unscorched foe');
     // Pendant of the Everflame: +DoT damage (0.15 x2 = +0.30 into legNecromancyDoTMult).
     near(FF.legNecromancyDoTMult(amuletSt('d4_everflame')), 1.30, 'Pendant of the Everflame: elemental DoTs tick +30% (rare)');
@@ -6913,7 +6913,7 @@
       // C2: Reap (reaper D2 full) is rot-only in the Rotlord rework — the generic D2 damage mult stays flat
       // (its +30% below a third of Health is applied inside reaperRotFireTick, tested in the class suite).
       s.jewelrySlots = {}; s.knightStacks = 0;
-      wearD2('reaper', FF.D2_SET_DEFS.reaper.full); s.activity = { type:'combat', monsterHp:100 };
+      wearD2('reaper', FF.D2_SET_DEFS.reaper.full); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
       near(FF.d2SetDmgMult({ hp:1000 }, s), 1.0, 'Reap (reaper D2 full) no longer boosts direct hits (rot-only)');
       // C2: Soul Glut (reaper D2 2pc) deepens Rot Siphon to 75% (gated on the class; tested in the class suite).
       wearD2('reaper', 2); ok(FF.set2D2('reaper', s), 'the reaper D2 2-piece is detectable (Soul Glut)');
@@ -6925,7 +6925,7 @@
       ok(typeof FF.d2SentinelReflectMult === 'undefined', 'the D2 reflect amplifier is retired');
       var svSn = { mh:s.equippedMainhand, oh:s.equippedOffhand, xp:s.xp.sentinel, sg:s.snGrowth };
       s.xp.sentinel = FF.xpFloorForLevel(85); s.equippedMainhand = 'maul'; s.equippedOffhand = 'shieldMedium';
-      s.snGrowth = 100; s.activity = { type:'combat', monsterHp:100, dotHitAvg:1000 };
+      s.snGrowth = 100; s.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, dotHitAvg:1000 };
       wearD2('sentinel', 2);
       ['helmet','chest','gauntlets','boots'].forEach(function(sl){ if(!s.bodyArmor[sl]) s.bodyArmor[sl] = {}; s.bodyArmor[sl].material = 'chain'; s.bodyArmor[sl].tier = 5; });
       eq(FF.activeClassId(s), 'sentinel', 'the D2 fixture activates the class');
@@ -6941,17 +6941,17 @@
   // ---- Balance pass, Batch II: tier-inversion fixes (D4/D3 now beat earlier tiers) -----------------
   suite('balance II: tier inversions resolved', function(){
     function legSt(key, base, kind){ var isOff = kind === 'offhand';
-      return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+      return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'scepter')+'_t19_rare', tier:19, rarity:'rare' } },
         equippedMainhandUid: isOff?undefined:'L', equippedOffhandUid: isOff?'L':undefined }; }
     var now = Date.now();
     // M1 — Plaguebearer shield: D4 Venomscale (-30% -> x0.70) now beats D3 Immunize (-25% -> x0.75).
     var vs = FF.d4LegIncomingMult(legSt('venomscale','shieldSmall','offhand'), { element:'fire' }); // no poison -> inert here
-    near(FF.d4LegIncomingMult({ uniqueItems:{L:{uid:'L',leg:'venomscale',kind:'offhand'}}, equippedOffhandUid:'L', activity:{type:'combat',monsterHp:100,potionPoisonUntil:now+5000,potionPoisonDps:100} }, { element:'fire' }), 0.70, 'M1: Venomscale x0.70 < D3 Immunize x0.75 (D4 now wins)');
+    near(FF.d4LegIncomingMult({ uniqueItems:{L:{uid:'L',leg:'venomscale',kind:'offhand'}}, equippedOffhandUid:'L', activity:{type:'combat', playerSwungOnce:true,monsterHp:100,potionPoisonUntil:now+5000,potionPoisonDps:100} }, { element:'fire' }), 0.70, 'M1: Venomscale x0.70 < D3 Immunize x0.75 (D4 now wins)');
     // M3 — Ranger bow: D4 Wyrmstalker now carries a damage bonus (+25% vs Scorched), beating D2 Trapmaster x1.20.
     near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium')), 1.0, 'Wyrmstalker inert on an unscorched foe');
     near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium', undefined) ), 1.0, 'Wyrmstalker baseline');
-    var wsScorch = legSt('wyrmstalker','bowMedium'); wsScorch.activity = { type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000 };
+    var wsScorch = legSt('wyrmstalker','bowMedium'); wsScorch.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000 };
     near(FF.d4LegDmgMult({}, wsScorch), (1+0.02) * 1.25, 'M3: Wyrmstalker +25% vs a Scorched foe (progresses past D2 Trapmaster x1.20)');
     // M4 — Magmacore base value is now x1.35 (> D2 Earthrender x1.30); gated on the juggernaut Wind-Up so inert here.
     near(FF.d4LegDmgMult({}, legSt('magmacore','sledge')), 1.0, 'M4: Magmacore inert without the juggernaut Wind-Up (value x1.35 when active)');
@@ -6975,7 +6975,7 @@
       s.bodyArmor = {}; s.uniqueItems = {}; s.jewelrySlots = {};
       s.playerHp = FF.maxHp(s);
       // A dungeon foe with a fixed swing (atkMin===atkMax) removes roll RNG; dodge/block are ~0 with no gear.
-      s.activity = { type:'combat', monsterId:'dungeon_d4_1', monsterHp: 1e9, tickAccum:0, monsterTickAccum:0 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'dungeon_d4_1', monsterHp: 1e9, tickAccum:0, monsterTickAccum:0 };
       var before = s.playerHp;
       // fire the monster's attack directly; a landed hit must reduce HP (never mitigated to 0)
       var landed = false; for(var i=0;i<12 && !landed;i++){ s.playerHp = FF.maxHp(s); FF.monsterAttackTick(); if(s.playerHp < FF.maxHp(s)) landed = true; }
@@ -6996,7 +6996,7 @@
 
     function legSt(key, base, kind, extra){
       var isOff = kind === 'offhand';
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
       st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -7004,16 +7004,16 @@
     }
     var now = Date.now();
     // Pyresoul: +15% vs a Decayed foe.
-    near(FF.d3LegDmgMult({}, legSt('pyresoul','wandFire','weapon',{ activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Pyresoul: +15% vs a Decayed foe');
+    near(FF.d3LegDmgMult({}, legSt('pyresoul','wandFire','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Pyresoul: +15% vs a Decayed foe');
     near(FF.d3LegDmgMult({}, legSt('pyresoul','wandFire')), 1.0, 'Pyresoul inert on a clean foe');
     // Soulrend: +25% vs a Cursed + Vulnerable foe (both required).
-    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000, voidVulnStacks:3, voidVulnUntil:now+4000} })), 1.25, 'Soulrend: +25% vs a Cursed + Vulnerable foe');
-    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000} })), 1.0, 'Soulrend needs Vulnerability too');
+    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, curseUntil:now+4000, voidVulnStacks:3, voidVulnUntil:now+4000} })), 1.25, 'Soulrend: +25% vs a Cursed + Vulnerable foe');
+    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, curseUntil:now+4000} })), 1.0, 'Soulrend needs Vulnerability too');
     // Lichbane: +30% while a Holy shield holds (the 75%-Health camp retired with the Warpriest).
     near(FF.d3LegDmgMult({}, legSt('lichbane','scepter','weapon',{ templarShield:50 })), 1.30, 'Lichbane: +30% while a Holy shield holds');
     near(FF.d3LegDmgMult({}, legSt('lichbane','scepter')), 1.0, 'Lichbane inert with no shield banked');
     // Gravefrost: Chilled foes take +20% Decay (via the Decay tick multiplier).
-    near(FF.d3DecayTickMult(legSt('gravefrost','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil:now+4000} })), 1.20, 'Gravefrost: Chilled foes take +20% Decay');
+    near(FF.d3DecayTickMult(legSt('gravefrost','wandWater','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, enemyChillUntil:now+4000} })), 1.20, 'Gravefrost: Chilled foes take +20% Decay');
     // Detection for the behaviour-driven arcane weapons + all 5 wards.
     ['stormtomb','gravelight','necrocaller'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
     ['ashveil','voltveil','shadeveil','gleamveil','sanctveil'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b, 'offhand')), true, 'legActive detects '+k); });
@@ -7050,7 +7050,7 @@
 
     function legSt(key, base, kind, extra){
       var isOff = kind === 'offhand';
-      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9,
         uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
       st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
       if(extra) for(var k in extra) st[k]=extra[k];
@@ -7059,7 +7059,7 @@
     var now = Date.now();
 
     // --- Scorch mechanic ---
-    var sc = { type:'combat', monsterHp:1000 };
+    var sc = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
     FF.scorchApply(sc, 3); eq(sc.scorchStacks, 3, 'scorchApply stacks Scorch');
     ok(sc.scorchUntil > now, 'Scorch opens a window');
     FF.scorchApply(sc, 99); eq(sc.scorchStacks, FF.SCORCH_MAX_STACKS, 'Scorch caps at 15 stacks');
@@ -7067,12 +7067,12 @@
     ok(FF.enemyScorched(scst), 'a Scorched foe reads as Scorched');
     sc.scorchUntil = now - 1; ok(!FF.enemyScorched(scst), 'Scorch lapses after its window'); near(FF.scorchDmgMult(scst), 1.0, 'a non-Scorched foe has no Scorch bonus');
     // Scorch's amplifier rides d4LegDmgMult for anyone.
-    near(FF.d4LegDmgMult({}, { activity:{type:'combat', monsterHp:100, scorchStacks:5, scorchUntil:now+4000} }), 1 + 0.02*5, 'd4LegDmgMult folds in Scorch (+10% at 5 stacks)');
+    near(FF.d4LegDmgMult({}, { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:5, scorchUntil:now+4000} }), 1 + 0.02*5, 'd4LegDmgMult folds in Scorch (+10% at 5 stacks)');
 
     // --- Read-only weapon amplifiers ---
     // Rimewyrm's Fang dropped its Scorch theme with the Frostwarden's D4 rework: it ramps the foe's rime
     // brittleness with every Shatter instead, so it no longer reads the Scorch stack at all.
-    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), 1.02, 'Rimewyrm no longer amplifies vs Scorched (only the shared +2%/stack Scorch amp remains)');
+    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), 1.02, 'Rimewyrm no longer amplifies vs Scorched (only the shared +2%/stack Scorch amp remains)');
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater')), 1.0, 'Rimewyrm inert on an unscorched foe');
     // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30).
     near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.15, "Sunwyrm's Verdict: +15% vs a Dark foe");
@@ -7084,8 +7084,8 @@
 
     // Duskwyrm's Whisper: each Vulnerability stack strips 1.5% of a dragon's resistance to your wand.
     var waterDragon = { dungeon:'d4', element:'water' };
-    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:4, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1 - (0.15 - 0.06), 'Duskwyrm: 4 Vulnerability -> resistance 15% -> 9%');
-    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:10, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1.0, 'Duskwyrm: 10 Vulnerability fully strips the resistance');
+    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, voidVulnStacks:4, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1 - (0.15 - 0.06), 'Duskwyrm: 4 Vulnerability -> resistance 15% -> 9%');
+    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, voidVulnStacks:10, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1.0, 'Duskwyrm: 10 Vulnerability fully strips the resistance');
 
     // Broodwyrm's Chorus: doubles the base effect of Earth ("nature") damage enchants on the staff.
     var bwSt = legSt('broodwyrm');
@@ -7129,7 +7129,7 @@
     eq(rec.outcomes.length, 6, 'the D4 defense pool forges one of 6 shields');
     eq(FF.LEG_GEAR_GROUP_KEYS_D4.defense.length, 6, 'six D4 shield effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D4 shield items');
-    function legSt(key, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+    function legSt(key, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
     ['hoardwall','venomscale','bloodscale','rimescale','wyrmthornwall','dragonbulwark'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
@@ -7150,8 +7150,8 @@
     near(FF.d4SetElementResist(legSt('dragonbulwark'), 'dark'), 0.12, 'Dragonscale Bulwark covers every element');
     near(FF.d4SetElementResist(legSt('bloodscale'), 'fire'), 0, 'a non-resist shield adds no elemental resist');
     // Venomscale Shield: -20% from a Poisoned, elemental foe.
-    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.70, 'Venomscale: -30% from a Poisoned elemental foe (beats D1 Immunize -25%)');
-    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:null }), 1.0, 'Venomscale needs the foe to carry an element');
+    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.70, 'Venomscale: -30% from a Poisoned elemental foe (beats D1 Immunize -25%)');
+    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:null }), 1.0, 'Venomscale needs the foe to carry an element');
     near(FF.d4LegIncomingMult(legSt('venomscale'), { element:'fire' }), 1.0, 'Venomscale inert vs an unpoisoned foe');
     // Wyrmthorn Wall (Bramble rework): the element carry retired -- volleys +50% and a deeper Snare
     // while blooming (both exercised in the engine suite; never routed through elementDmgMult).
@@ -7185,15 +7185,15 @@
     eq(FF.LEG_GEAR_GROUP_KEYS_D4.pierce.length, 4, 'four D4 pierce effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='slash'; }).length, 24, '6 slash effects x 4 rarities');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='pierce'; }).length, 16, '4 pierce effects x 4 rarities');
-    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
     var now = Date.now();
 
     // --- Read-only amplifiers ---
     // Greedwyrm's Claw: +2% per 1k gold this fight (cap +50%).
-    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:3000} })), 1.06, 'Greedwyrm: +2% per 1k gold (3k -> +6%)');
-    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:99000} })), 1.50, 'Greedwyrm caps at +50%');
+    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, goldEarned:3000} })), 1.06, 'Greedwyrm: +2% per 1k gold (3k -> +6%)');
+    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, goldEarned:99000} })), 1.50, 'Greedwyrm caps at +50%');
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar')), 1.0, 'Greedwyrm inert with no gold this fight');
     // Greedwyrm also pays for the hoard you are NOT spending: +1% per Broken Relic held (cap +60%).
     var gwInv = {}; gwInv[FF.BROKEN_RELIC_ITEMS[0].id] = 20;
@@ -7242,11 +7242,11 @@
     var mhp = FF.maxHp(s);
     try {
       s.bodyArmor = {}; s.uniqueItems = { G:{ uid:'G', leg:'gorewyrm', kind:'weapon', base:'stweapon_halfmoonaxe_t19_rare', tier:19, rarity:'rare' } }; s.equippedMainhandUid = 'G';
-      s.activity = { type:'combat', monsterHp:1000000, bleedDps:1000, bleedUntil:now+9999 }; s.playerHp = Math.round(mhp*0.5); var hp0 = s.playerHp;
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, bleedDps:1000, bleedUntil:now+9999 }; s.playerHp = Math.round(mhp*0.5); var hp0 = s.playerHp;
       var before = s.activity.monsterHp; FF.applyReaverBleedTick(1000); var drop = before - s.activity.monsterHp;
       ok(drop > 1000, 'Gorewyrm adds a Fire component to Bleed ticks'); ok(s.playerHp > hp0, 'Gorewyrm lifesteals from the Bleed Fire');
       s.uniqueItems = { B:{ uid:'B', leg:'blightwyrm', kind:'weapon', base:'stweapon_hatchet_t19_rare', tier:19, rarity:'rare' } }; s.equippedMainhandUid = 'B';
-      s.activity = { type:'combat', monsterHp:1000000, potionPoisonUntil:now+9999, potionPoisonDps:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, potionPoisonUntil:now+9999, potionPoisonDps:1000 };
       FF.applyPotionPoisonTick(1000); ok(FF.enemyScorched(s), "Blightwyrm's poison applies Scorch");
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.playerHp=sv.hp; s.equippedMainhandUid=sv.mh; }
 
@@ -7279,7 +7279,7 @@
     eq(FF.LEG_GEAR_GROUP_KEYS_D4.ranged.length, 3, 'three D4 ranged effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='blunt'; }).length, 16, '4 blunt effects x 4 rarities');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='ranged'; }).length, 12, '3 ranged effects x 4 rarities');
-    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
 
@@ -7296,7 +7296,7 @@
     // Breathfang Bow: left the Breath pillar with the Quiverlord — it doubles the Blasthead as Fire now.
     var bf = legSt('breathfang','bowShort');
     eq(FF.d4BreathFullSet(bf), null, 'Breathfang Bow no longer fires the Dragon\'s Breath');
-    bf.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+    bf.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
     eq(FF.d4BreathChargeOnHit(bf, false), 0, 'Breathfang no longer charges the Breath meter');
 
     // Detection for all 7 (block/on-hit/Magmacore effects are behavioural).
@@ -7329,13 +7329,13 @@
     eq(rec.outcomes.length, 6, 'the D3 defense pool forges one of 6 shields');
     eq(FF.LEG_GEAR_GROUP_KEYS_D3.defense.length, 6, 'six D3 shield effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D3[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D3 shield items');
-    function legSt(key){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+    function legSt(key){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
     ['cryptguard','blightshell','boneshell','rimecrypt','tombwall','mausoleumwall'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
     ok(/Mausoleum Wall/.test(FF.LEGENDARY_GEAR_ITEMS_D3[FF.legGearItemIdD3('mausoleumwall','normal')].name), 'the herald D3 shield is Mausoleum Wall');
     // Tombwall (Bramble rework, de-Decayed): -15% incoming from a foe tangled in a half-grown Bramble.
     var now = Date.now();
-    var tw = { snGrowth:60, activity:{type:'combat', monsterHp:100}, uniqueItems:{ L:{ uid:'L', leg:'tombwall', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare' } }, equippedOffhandUid:'L' };
+    var tw = { snGrowth:60, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, uniqueItems:{ L:{ uid:'L', leg:'tombwall', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare' } }, equippedOffhandUid:'L' };
     near(FF.legTombwallIncomingMult(tw), FF.LEG_TOMBWALL_INCOMING, 'Tombwall: a tangled foe deals 15% less');
     tw.snGrowth = 10; near(FF.legTombwallIncomingMult(tw), 1.0, 'Tombwall inert below a half-grown hedge');
     near(FF.d3SetIncomingMult(tw), 1.0, 'the old Decay-keyed reduction is out of d3SetIncomingMult');
@@ -7366,7 +7366,7 @@
     eq(FF.LEG_GEAR_GROUP_KEYS_D3.pierce.length, 4, 'four D3 pierce effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D3[id].group; return g==='slash'||g==='pierce'; }).length, 40, '10 melee effects x 4 rarities = 40 items');
 
-    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' }; }
     // Deathshepherd (D3 scythe): the Rot stack cap rises to 15 (the shield cap is Wraithguard's business now).
     eq(FF.reaperRotCap(legSt('deathshepherd','scythe')), 15, 'Deathshepherd: Rot stacks to 15');
@@ -7398,21 +7398,21 @@
     eq(FF.LEG_GEAR_GROUP_KEYS_D3.ranged.length, 3, 'three D3 ranged effects');
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D3[id].group; return g==='blunt'||g==='ranged'; }).length, 28, '7 effects (4 blunt + 3 ranged) x 4 rarities = 28 items');
 
-    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
     var now = Date.now();
     // Bonecrusher de-Decayed (Bramble rework): it deepens Rending Barbs' Sunder to 70% now.
-    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.0, 'Bonecrusher no longer keys off Decay');
+    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.0, 'Bonecrusher no longer keys off Decay');
     eq(FF.snShredFrac(legSt('bonecrusher','maul')), FF.SN_SHRED_FRAC_BONECRUSHER, 'Bonecrusher: the Sunder deepens to 70%');
     eq(FF.snShredFrac(legSt('bonevolley','bowMedium')), FF.SENTINEL_SHRED_FRAC, 'without the maul the shared Sunder stays 50%');
-    near(FF.d3LegDmgMult({}, legSt('bonevolley','bowMedium', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Bonevolley: +15% vs a Decayed foe');
+    near(FF.d3LegDmgMult({}, legSt('bonevolley','bowMedium', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Bonevolley: +15% vs a Decayed foe');
     // Cryptvenom: +25% from everything while the foe bears ALL THREE Quiverlord marks (Bleed + Venom + Shred).
     var cvAll = legSt('cryptvenom','bowShort', { classDebuffs:{ enemyArmorUntil: now+4000 },
-      activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, bleedUntil:now+4000, bleedDps:5, bleedStacks:1} });
+      activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, bleedUntil:now+4000, bleedDps:5, bleedStacks:1} });
     near(FF.d3LegDmgMult({}, cvAll), 1.25, 'Cryptvenom: +25% while the foe bears Bleed + Venom + Shred');
     var cvTwo = legSt('cryptvenom','bowShort', { classDebuffs:{ enemyArmorUntil: now+4000 },
-      activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5} });
+      activity:{type:'combat', playerSwungOnce:true, monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5} });
     near(FF.d3LegDmgMult({}, cvTwo), 1.0, 'Cryptvenom needs all three marks (two is not enough)');
     // Detection.
     ['tombshatter','bonecrusher','gravewrath','monolith','cryptvenom','bonevolley','gravesight'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
@@ -7552,18 +7552,18 @@
       s.d3Souls = 0; FF.d3SoulsAdd(3); eq(FF.d3SoulCount(s), 3, 'd3SoulsAdd banks Soul Charges');
       FF.d3SoulsAdd(20); eq(FF.d3SoulCount(s), FF.D3_SOUL_CAP, 'Soul Charges cap at 10');
       // Decay: apply builds stacks + a live window; the tick chips HP (armour-ignoring).
-      s.activity = { type:'combat', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       FF.decayApply(s.activity, 3); eq(s.activity.decayStacks, 3, 'decayApply stacks Decay');
       ok(FF.enemyDecaying(s), 'a decaying foe reads as Decaying'); ok(s.activity.decayUntil > Date.now(), 'Decay opens a window');
-      s.activity = { type:'combat', monsterHp:1000, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
       FF.applyDecayTick(1000); near(s.activity.monsterHp, 900, 'a 1s Decay tick chips ~decayDps HP', 2);
       // The 1 HP floor is gone: every DoT can finish a foe. This fixture has no monsterId, so
       // defeatMonster cannot fire and HP simply falls past 0 -- which is exactly what proves no floor.
-      s.activity = { type:'combat', monsterHp:1, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
       FF.applyDecayTick(1000); ok(s.activity.monsterHp <= 0, 'Decay CAN land the killing blow (no 1 HP floor)');
       near(FF.d3DecayTickMult(s), 1, 'Decay tick multiplier is 1 with no D3 Decay full set');
       // Curse: apply sets the window; enemyCursed reads it.
-      s.activity = { type:'combat', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       ok(!FF.enemyCursed(s), 'a clean foe is not Cursed');
       FF.curseApply(s.activity); ok(FF.enemyCursed(s), 'curseApply marks the foe Cursed');
       s.activity.curseUntil = Date.now()-1; ok(!FF.enemyCursed(s), 'Curse lapses after its window');
@@ -7579,7 +7579,7 @@
       for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d3' }; s.bodyArmor[order[i]] = { uid:uid }; }
     }
     try {
-      s.activity = { type:'combat', monsterHp:500 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       // The Reaper left the Souls pillar in the Rotlord rework — Souls no longer move his damage.
       wearD3('reaper', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Reaper full D3 no longer spends Souls (Lich\'s Vestments is the offensive-shield set now)');
       // Executioner D3 de-themed (v0.0.84.0): Death Toll's souls retired -- the layer is Heavier Blade /
@@ -7593,9 +7593,9 @@
       eq(FF.D3_SET_DEFS.spellblade.b2.name, 'Leading Edge', 'Spellblade D3 2pc is Leading Edge now');
       eq(FF.D3_SET_DEFS.spellblade.bf.name, 'The Caboose', 'Spellblade D3 full is The Caboose now');
       // Reaver Exsanguinate (full): +5% per Soul, but only vs a bleeding foe.
-      wearD3('reaver', 4); s.d3Souls = 4; s.activity = { type:'combat', monsterHp:500, bleedStacks:3, bleedUntil:Date.now()+4000 };
+      wearD3('reaver', 4); s.d3Souls = 4; s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, bleedStacks:3, bleedUntil:Date.now()+4000 };
       near(FF.d3SetDmgMult({}, s), 1.20, 'Reaver Exsanguinate: +5% per Soul vs a bleeding foe (4 -> +20%)');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Exsanguinate inert on an unbled foe');
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Exsanguinate inert on an unbled foe');
       // A class with no D3 set gets none of it.
       s.bodyArmor = {}; s.uniqueItems = {}; s.d3Souls = 8; near(FF.d3SetDmgMult({}, s), 1.0, 'no D3 set -> no Souls damage');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.d3Souls=sv.souls; }
@@ -7613,19 +7613,19 @@
     var now = Date.now();
     try {
       // Decay-tick multipliers (fulls).
-      wearFull('ranger'); s.activity = { type:'combat', monsterHp:500 };
+      wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       near(FF.d3DecayTickMult(s), 1.40, 'Ranger Plague Hunter: Decay ticks +40%');
-      wearFull('pyromancer'); s.activity = { type:'combat', monsterHp:500, burnUntil:now+4000, burnStacks:1 };
+      wearFull('pyromancer'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, burnUntil:now+4000, burnStacks:1 };
       near(FF.d3DecayTickMult(s), 1.50, 'Pyromancer Cremation: +50% Decay on a burning foe');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3DecayTickMult(s), 1.0, 'Cremation inert on an unburnt foe');
-      wearFull('frostwarden'); s.activity = { type:'combat', monsterHp:500, enemyChillUntil:now+4000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d3DecayTickMult(s), 1.0, 'Cremation inert on an unburnt foe');
+      wearFull('frostwarden'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, enemyChillUntil:now+4000 };
       near(FF.d3DecayTickMult(s), 1.20, 'Frostwarden Deathfrost: +20% Decay on a Chilled foe');
       // Opened Veins (Quickdraw D3 full): +15% while the foe bears any Quiverlord rider.
-      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:500, bleedUntil:now+4000, bleedDps:5, bleedStacks:1 };
+      wearFull('quickdraw'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, bleedUntil:now+4000, bleedDps:5, bleedStacks:1 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Opened Veins: +15% while the foe bears a rider');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Opened Veins inert on a clean foe');
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Opened Veins inert on a clean foe');
       // Assassin's D3 set is now Quickfang Raiment (Twin Fangs tempo): Twin Razors (2 wounds/hit) + Bloodrush.
-      wearD3('assassin', 2); s.activity = { type:'combat', monsterHp:500 };
+      wearD3('assassin', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       eq(FF.assassinWoundsPerHit(s), 2, 'Twin Razors (Assassin D3 2pc): main-hand hits open 2 wounds');
       wearFull('assassin');
       s.assassinBloodrushUntil = now + 4000;
@@ -7635,13 +7635,13 @@
       ok(!FF.assassinBloodrushActive(s), 'Bloodrush lapses with its timer');
       // Crypt Wall retired (Bramble rework): the Sentinel D3 is Thickened Canes / Twin Growth now, and
       // the class left the Decay pillar entirely.
-      wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
+      wearFull('sentinel'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, decayStacks:3, decayUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall retired: no Decay-keyed reduction');
       eq(FF.D3_SET_DEFS.sentinel.b2.name, 'Thickened Canes', 'Sentinel D3 2pc is Thickened Canes now');
       eq(FF.D3_SET_DEFS.sentinel.bf.name, 'Twin Growth', 'Sentinel D3 full is Twin Growth now');
       // Grave Chill retired: the Frostwarden's D3 dropped the Decay theme (it is the Shatter layer now), so
       // this class is no longer a Decay source at all.
-      wearD3('frostwarden', 2); s.activity = { type:'combat', monsterHp:500 };
+      wearD3('frostwarden', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       FF.frostwardenApplyChill(s.activity);
       eq((s.activity.decayStacks||0), 0, 'the Frostwarden no longer applies Decay');
       eq(FF.D3_SET_DEFS.frostwarden.b2.name, 'Fracture', 'its D3 2pc is Fracture, the Shatter layer');
@@ -7665,19 +7665,19 @@
     try {
       // Full-set amplifiers vs a Cursed foe (outgoing). Doomcurse (Nightblade D3 full) left this table
       // with the Doomsayer rework -- it re-arms the Doom inside nbDoomStrike (tested in the Doomsayer suite).
-      wearFull('nightblade'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      wearFull('nightblade'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse no longer adds a flat +25% vs Cursed (it pre-seals the next Doom instead)');
-      wearFull('duelist'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      wearFull('duelist'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Duelist Spectral Grace: +15% vs a Cursed foe');
-      wearFull('thunderfury'); s.activity = { type:'combat', monsterHp:500, enemyStunUntil:now+4000 };
+      wearFull('thunderfury'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, enemyStunUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.20, 'Thunderfury Broken Sky: +20% vs a stunned foe');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Broken Sky needs the stun');
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Broken Sky needs the stun');
       // Herald Mausoleum (incoming): Cursed foes deal 15% less.
-      wearFull('herald'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      wearFull('herald'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 0.85, 'Herald Mausoleum: Cursed foes deal 15% less');
       s.activity.curseUntil = now-1; near(FF.d3SetIncomingMult(s), 1.0, 'Mausoleum inert once the Curse lapses');
       // Curse appliers (2pc) reach curseApply through their hooks; verify curse tracking + one applier (Ghost Step via a Dodge).
-      wearD3('duelist', 2); s.activity = { type:'combat', monsterHp:500 };
+      wearD3('duelist', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       ok(!FF.enemyCursed(s), 'no Curse before a Dodge');
       FF.onPlayerDodged(); ok(FF.enemyCursed(s), 'Ghost Step (Duelist D3 2pc): a Dodge Curses the foe');
       // The other appliers (Cursemark / Gravestone / Grave Guard) fire at their combat hooks — set is defined.
@@ -7695,7 +7695,7 @@
     }
     function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
     try {
-      s.activity = { type:'combat', monsterHp:500 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       // Knight Heavy Standard (2pc) stuns at the Decree hook; the incoming table carries no knight row now.
       wearD3('knight', 2); s.knightStacks = FF.knightStackCap(s);
       near(FF.d3SetIncomingMult(s), 1.0, 'no D3 incoming reduction for the Warlord (Grave Momentum retired)');
@@ -7786,7 +7786,7 @@
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4SetElementResist(s, 'fire'), 0, 'no Dragonscale set -> no D4 resist');
 
       // --- Dragon's Breath charge meter ---
-      s.activity = { type:'combat', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       eq(FF.d4BreathCharge(s), 0, 'a fresh fight starts with no Breath charge');
       FF.d4BreathAdd(s.activity, 40); eq(FF.d4BreathCharge(s), 40, 'd4BreathAdd banks charge');
       ok(!FF.d4BreathReady(s), '40/100 is not a ready Breath');
@@ -7813,11 +7813,11 @@
     function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
     try {
       // Frostwarden Absolute Zero (full): Chilled foes take +25% Water damage.
-      s.activity = { type:'combat', monsterHp:1000, chillStacks:3, enemyChillUntil:Date.now()+5000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, chillStacks:3, enemyChillUntil:Date.now()+5000 };
       wearFull('frostwarden'); near(FF.d4SetElementDmg(s, 'water'), 0.55, 'Absolute Zero: +25% Water on a Chilled foe (on top of +30% Frostheart)');
-      s.activity = { type:'combat', monsterHp:1000 }; near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Absolute Zero inert on a non-Chilled foe');
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 }; near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Absolute Zero inert on a non-Chilled foe');
       // Thunderfury Stormwyrm's Eye (full): Bolts strike as Earth (applied in tfBoltFire; detection below).
-      s.activity = { type:'combat', monsterHp:1000, staticCharge:4 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, staticCharge:4 };
       wearFull('thunderfury'); near(FF.d4SetElementDmg(s, 'earth'), 0.30, "Stormwyrm's Eye: the flat +30% Earth stays (2pc term)");
       ok(FF.setFullD4('thunderfury', s), "the full Stormwyrm set (Stormwyrm's Eye) is detectable");
 
@@ -7878,11 +7878,11 @@
       function wearNightbladeLeather(){ s.bodyArmor = {}; s.uniqueItems = {};
         var order = ['helmet','chest','gauntlets','boots'];
         for(var i=0;i<FF.D4_SET_DEFS.nightblade.full;i++){ s.uniqueItems['n'+i] = { set:'nightblade', setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:'n'+i, material:'leather', tier:5 }; } }
-      wearNightbladeLeather(); s.activity = { type:'combat', monsterHp:1000 };
+      wearNightbladeLeather(); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       var weakBase = FF.incomingElementMult(s, fireMon); ok(weakBase > 1, 'leather armour is weak to a Fire foe (incoming > 1)');
       // The old D4-full elemental-advantage strip retired with the Doomsayer rework (Duskwyrm's Maw
       // doubles the Litany instead) -- a Vulnerable foe keeps its elemental advantage now.
-      s.activity = { type:'combat', monsterHp:1000, voidVulnStacks:3, voidVulnUntil:Date.now()+5000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, voidVulnStacks:3, voidVulnUntil:Date.now()+5000 };
       near(FF.incomingElementMult(s, fireMon), weakBase, "Duskwyrm full set no longer strips a foe's elemental advantage (that line is Duskwyrm's Maw now)");
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; }
   });
@@ -7946,7 +7946,7 @@
       wearD4('herald', 2); eq(FF.d4HeraldBastionReflect(1000, { element:'fire' }, s), 0, 'no Bastion reflect without the full Bulwark of Scales');
 
       // Reaver Searing Wounds (2pc) / Cauterize (full): Bleeds gain a Fire component; the full heals from it.
-      function bleedDrop(){ s.activity = { type:'combat', monsterHp:1000000, bleedDps:1000, bleedUntil:Date.now()+9999 };
+      function bleedDrop(){ s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, bleedDps:1000, bleedUntil:Date.now()+9999 };
         var before = s.activity.monsterHp; FF.applyReaverBleedTick(1000); return before - s.activity.monsterHp; }
       s.bodyArmor = {}; s.uniqueItems = {}; s.playerHp = mhp;
       var plain = bleedDrop();
@@ -7967,7 +7967,7 @@
     var mhp = FF.maxHp(s);
     try {
       // --- Charging (2pc) ---
-      s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
       wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Quickdraw left the Breath pillar (Heavy Heads instead)');
       wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
       eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Sharpshooter left the Breath pillar (Old Prey instead -- D4 de-themed, v0.0.82.0)');
@@ -7976,7 +7976,7 @@
       wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (the Festerweave Shroud crits Rot instead)');
       // Elemental Traps retired: the Ranger's D4 2pc is Alpha now -- it raises Quarry's cap and no longer
       // charges Dragon's Breath at all.
-      wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+      wearD4('ranger', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
       eq(FF.d4BreathChargeOnHit(s, false), 0, 'Alpha does not charge the Breath');
       s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 0, 'not even against an ailing foe');
       eq(FF.rgQuarryCap(s), FF.RG_QUARRY_MAX_D4, 'Alpha (D4 2pc): Quarry caps 50% higher');
@@ -7988,26 +7988,26 @@
 
       // --- Firing (full) ---
       // Not ready -> no fire. (The Ranger carries the pillar's generic burst test now.)
-      wearFull('ranger'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:50 };
+      wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:50 };
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the breath does not fire below full charge');
-      s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
       var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), expBurst, 'Dragon\'s Breath bursts for 5x the strike (x Fire Attunement)');
       eq(FF.d4BreathCharge(s), 0, 'firing resets the Breath meter');
       // Piercing Breath retired (D4 de-themed, v0.0.82.0): a full Sharpshooter D4 set no longer owns a
       // Breath variant at all -- Nothing Left doubles tears against a Bare foe instead.
-      wearFull('sharpshooter'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      wearFull('sharpshooter'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
       var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the Sharpshooter left the Breath pillar entirely (no variant, no fire)');
       // (Spirit Breath retired: the Reaper's D4 is the Festerweave Shroud rot-crit set now.)
       // Immolation Breath retired (D4 de-themed, v0.0.84.0): a full Executioner D4 no longer owns a
       // Breath variant at all -- The Long Drop starts the blade at 40% instead.
-      wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 };
+      wearFull('executioner'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:200, breathCharge:100 };
       eq(FF.d4BreathFire(s, { isBoss:false, hp:1000 }, 10), 0, 'the Executioner left the Breath pillar entirely (no variant, no execute)');
       eq(FF.D4_SET_DEFS.executioner.b2.name, 'Scent of Ruin', 'Executioner D4 2pc is Scent of Ruin now');
       eq(FF.D4_SET_DEFS.executioner.bf.name, 'The Long Drop', 'Executioner D4 full is The Long Drop now');
       // Ranger Venombreath: burst + apply your ailments (Chill / Decay / Curse).
-      wearFull('ranger'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
       FF.d4BreathFire(s, { element:'water' }, 1000);
       ok(FF.enemyChilled(s) && FF.enemyDecaying(s) && FF.enemyCursed(s), 'Venombreath applies Chill, Decay and a Curse');
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; }
@@ -8023,7 +8023,7 @@
     function setWrath(n){ s.d4Wrath = n; s.d4WrathUntil = Date.now() + 9999; }
     try {
       // --- Wrath generation: any Wrath set builds a stack per hit; no set builds nothing ---
-      s.activity = { type:'combat', monsterHp:1000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       s.bodyArmor = {}; s.uniqueItems = {}; FF.d4WrathReset(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 0, 'no Wrath set -> no Wrath builds');
       wearD4('duelist', 2); FF.d4WrathReset(s); FF.d4WrathOnHit(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 2, 'a Wrath set banks a stack per hit');
 
@@ -8032,15 +8032,15 @@
       setWrath(0); near(FF.d4SetDmgMult({}, s), 1.0, 'Flame Waltz is flat with no Wrath');
 
       // --- Kindled Focus (Samurai 2pc): +2% damage per Focus stack ---
-      wearD4('samurai', 2); FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:10 };
+      wearD4('samurai', 2); FF.d4WrathReset(s); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, samuraiFocus:10 };
       near(FF.d4SetDmgMult({}, s), 1.20, 'Kindled Focus: +2% per Focus (10 -> +20%)');
       // --- Blazing Iaijutsu (Samurai full) rides the Draw-Cut now, not the once-per-foe opener ---
-      wearFull('samurai'); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:0 };
+      wearFull('samurai'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, samuraiFocus:0 };
       near(FF.d4SetDmgMult({}, s), 1.0, 'Blazing Iaijutsu is no longer a flat swing multiplier');
       ok(/Draw-Cut/.test(FF.D4_SET_DEFS.samurai.bf.desc), 'and its text says so -- it hits the weakness on the Draw-Cut'); 
 
       // --- Dragon Hoard (Treasure Hunter 2pc): +8% per Supreme item, cap +40% ---
-      FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000 };
+      FF.d4WrathReset(s); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
       s.bodyArmor = {}; var base = FF.d4SupremeItemCount(s);
       s.bodyArmor = { chest:{ rarity:'supreme' }, boots:{ rarity:'fantastic' }, helmet:{ rarity:'rare' } };
       eq(FF.d4SupremeItemCount(s) - base, 2, 'd4SupremeItemCount counts Supreme + Fantastic gear (not Rare)');
@@ -8050,10 +8050,10 @@
 
       // --- Plaguebreath (Plaguebearer full): +20% vs a Poisoned foe ---
       wearFull('plaguebearer'); FF.d4WrathReset(s);
-      s.activity = { type:'combat', monsterHp:1000, potionPoisonUntil:Date.now()+5000, potionPoisonDps:100 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000, potionPoisonUntil:Date.now()+5000, potionPoisonDps:100 };
       ok(FF.enemyPoisonedFoe(s), 'a foe on the poison channel reads as Poisoned');
       near(FF.d4SetDmgMult({}, s), 1.20, 'Plaguebreath: +20% vs a Poisoned foe');
-      s.activity = { type:'combat', monsterHp:1000 }; near(FF.d4SetDmgMult({}, s), 1.0, 'Plaguebreath inert on a clean foe');
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 }; near(FF.d4SetDmgMult({}, s), 1.0, 'Plaguebreath inert on a clean foe');
 
       // --- Firestorm (Duelist full): +12% Dodge AND never-resisted at max Wrath ---
       wearFull('duelist'); setWrath(FF.D4_WRATH_CAP);
@@ -8078,7 +8078,7 @@
     var foe = { hp:1000 };
     try {
       var mh = FF.maxHp(s);
-      s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
+      s.playerHp = mh; s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800 };
       // Berserker Steep Price (2pc): Blood Pact costs 10% and grants +100% (needs the class active for cost/mult).
       wearD2('berserker', 2);
       var svBerXp = s.xp.berserker, svMain = s.equippedMainhand, svMainT = s.equippedMainhandTier, svHelm = s.bodyArmor.helmet;
@@ -8095,10 +8095,10 @@
         s.bodyArmor.gauntlets.material='tailoring'; s.bodyArmor.gauntlets.tier=5;
         s.bodyArmor.boots.material='tailoring'; s.bodyArmor.boots.tier=5;
         s.xp.berserker = FF.xpFloorForLevel(41);
-        s.activity = { type:'combat', monsterHp:800, bloodLedger: FF.maxHp(s) * 10 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800, bloodLedger: FF.maxHp(s) * 10 };
         ok(FF.berserkerLedgerCapped(s), 'the test Ledger is capped');
         eq(FF.berserkerPactCost(s), 0, 'Debt Paid (full): Blood Pact costs nothing at a capped Ledger');
-        s.activity = { type:'combat', monsterHp:800 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800 };
       }
       s.xp.berserker = svBerXp; s.equippedMainhand = svMain; s.equippedMainhandTier = svMainT; if(svHelm !== undefined) s.bodyArmor.helmet = svHelm;
       s.playerHp = mh;
@@ -8118,7 +8118,7 @@
       // nbDoomStrike (both tested in the Doomsayer suite). The Vulnerability cap is flat 10 again.
       wearD2('nightblade', 2); eq(FF.voidVulnCap(s), 10, 'Creeping Doom no longer raises the Vulnerability cap (it feeds the bank now)');
       near(FF.nbDoomBankShare(s), FF.NB_DOOM_BANK_PCT * 1.5, 'Creeping Doom (2pc): the Doom seals a half-again larger share');
-      wearD2('nightblade', 4); s.activity = { type:'combat', monsterHp:800, voidVulnStacks:FF.voidVulnCap(s), voidVulnUntil:Date.now()+9999 };
+      wearD2('nightblade', 4); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800, voidVulnStacks:FF.voidVulnCap(s), voidVulnUntil:Date.now()+9999 };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Eclipse no longer adds a flat +25% at max Vulnerability (it consumes the marks at strike time)');
       // Reaver Savage Wounds (2pc): Bleed cap +3; Bloodfrenzy (full): faster as HP falls.
       wearD2('reaver', 2); eq(FF.reaverBleedCap(s), 5+3, 'Reaver Savage Wounds: Bleed cap 5 -> 8');
@@ -8143,7 +8143,7 @@
     }
     var foe = { hp:1000 };
     try {
-      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:800 };
+      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800 };
       // Herald Momentum Guard (2pc): +4% damage per 10% Barrier banked -- it rides heraldBarrierDmgMult now,
       // so the generic D2 damage row stays flat; Siegework (full) shortens the Brace cadence.
       wearD2('herald', 2); near(FF.d2SetDmgMult(foe, s), 1.0, 'Momentum Guard rides the Barrier row, not the D2 set row');
@@ -8156,7 +8156,7 @@
       wearD2('duelist', 2); s.d2CounterstanceUntil = Date.now()+2000; near(FF.d2IncomingDmgMult(s), 0.65, 'Duelist Counterstance: -35% just after a Dodge');
       s.d2CounterstanceUntil = Date.now()-1; near(FF.d2IncomingDmgMult(s), 1.0, 'Counterstance lapses after its window');
       // Frostwarden Brittle (2pc): Chilled foes take +12%.
-      wearD2('frostwarden', 2); s.activity = { type:'combat', monsterHp:800, enemyChillUntil:Date.now()+9999 };
+      wearD2('frostwarden', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800, enemyChillUntil:Date.now()+9999 };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.12, 'Frostwarden Brittle: +12% vs a Chilled foe');
       s.activity.enemyChillUntil = Date.now()-1; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Brittle inert on an un-chilled foe');
       // Treasure Hunter Sharp Eye (2pc): +8% crit chance -- which is also a charge-rate bonus, since a crit
@@ -8173,7 +8173,7 @@
       ok(typeof FF.lumenReflectD2Mult === 'undefined', 'the reflect-heal D2 amplifier is retired');
       wearD2('lumen', 2);
       var lmSp = { xp:{ lumen: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'wandLight', equippedOffhand:'wardLight',
-        bodyArmor:s.bodyArmor, uniqueItems:s.uniqueItems, lmRadiance:80, lmSpillFrac:1, activity:{type:'combat',monsterHp:100,dotHitAvg:1000}, playerHp:55 }; // radiance 80: below the cap so the Second Sun stays out of the reading
+        bodyArmor:s.bodyArmor, uniqueItems:s.uniqueItems, lmRadiance:80, lmSpillFrac:1, activity:{type:'combat', playerSwungOnce:true,monsterHp:100,dotHitAvg:1000}, playerHp:55 }; // radiance 80: below the cap so the Second Sun stays out of the reading
       ['helmet','chest','gauntlets','boots'].forEach(function(sl){ if(!lmSp.bodyArmor[sl]) lmSp.bodyArmor[sl] = {}; lmSp.bodyArmor[sl].material = 'leather'; lmSp.bodyArmor[sl].tier = 5; });
       near(FF.lmSpillDps(lmSp), 1000 * FF.LM_SPILL_PCT * 80 * FF.LM_D2_SPILL_MULT, 'Lumen Radiance: the spill sears +25%');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldBarrier=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
@@ -8190,7 +8190,7 @@
     }
     var foe = { hp:1000 };
     try {
-      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:500 };
+      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
       // DoT-tick multipliers.
       wearD2('plaguebearer', 2); near(FF.d2PoisonTickMult(s), 1.40, 'Plaguebearer Virulence: +40% poison ticks');
       // Rite of Blood (Assassin D2 2pc): wounds consumed grant Vigor (+3% dmg each, cap 10).
@@ -8210,15 +8210,15 @@
       // so a bare state gives 1x.
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2PoisonTickMult(s), 1.0, 'no set -> poison ticks unchanged');
       // Miasma (Plaguebearer full): poisoned foes take +15%.
-      wearD2('plaguebearer', 4); s.activity = { type:'combat', monsterHp:500, potionPoisonUntil:Date.now()+9999, potionPoisonDps:10 };
+      wearD2('plaguebearer', 4); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, potionPoisonUntil:Date.now()+9999, potionPoisonDps:10 };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Plaguebearer Miasma: +15% vs a poisoned foe');
       // Hunter's Mark (Ranger full): ailing foes take +15% (uses enemyHasAilment).
       wearD2('ranger', 4); ok(FF.enemyHasAilment(s), 'a poisoned foe counts as ailing');
       // Hunter's Mark is keyed on QUARRY now, not on ailments, and lives in newClassDmgMult.
       near(FF.rgHuntersMarkMult(s), 1, 'no Quarry -> no Hunter\'s Mark');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
       // Crimson Communion (Assassin D2 full): at max Vigor, hits heal 8% of damage dealt.
-      wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 }; s.assassinVigor = null;
+      wearD2('assassin', 4); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 }; s.assassinVigor = null;
       FF.assassinVigorAdd(FF.ASSASSIN_VIGOR_MAX, s);
       near(FF.assassinCommunionLifesteal(s), 0.08, 'Crimson Communion: 8% lifesteal at max Vigor', 1e-9);
       FF.assassinVigorAdd(0, s); s.assassinVigor.stacks = 4;
@@ -8226,13 +8226,13 @@
       s.assassinVigor = null;
       // Iaijutsu Mastery (Samurai 2pc) no longer scales the once-per-foe opener (which made it inert for the
       // whole rest of a fight) -- it scales every Draw-Cut, inside smCutDamage.
-      wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFocus:10, dotHitAvg:1000 };
+      wearD2('samurai', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, samuraiFocus:10, dotHitAvg:1000 };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Iaijutsu Mastery is no longer a flat swing multiplier');
       s.xp = s.xp || {}; s.xp.samurai = FF.xpFloorForLevel(85);
       near(FF.smCutDamage(s), 10 * FF.SM_CUT_PCT * 1000 * FF.SM_CUT_MULT_D2, 'Iaijutsu Mastery: Draw-Cuts land +50%');
       // Zanshin (Samurai full) no longer grants "crit at max Focus": a cycling stance is never AT max for more
       // than one strike, and that strike is a guaranteed crit anyway. It is the Bleed/Crimson layer now.
-      wearD2('samurai', 4); s.activity = { type:'combat', monsterHp:500, samuraiFocus:FF.samuraiFocusCap(s) };
+      wearD2('samurai', 4); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, samuraiFocus:FF.samuraiFocusCap(s) };
       near(FF.d2SetCritChance(s), 0.0, 'the dead "crit at max Focus" line is gone');
       // Crimson Edge is a Lv40 CLASS passive, so this half needs the Samurai actually live -- the bare D2
       // fixture seats uid-only pieces with no material, which does not confer the class. Give the pieces both.
@@ -8243,7 +8243,7 @@
         _zs.uniqueItems[uid] = { set:'samurai', setLayer:'d2' };
         _zs.bodyArmor[sl] = { material:'leather', tier:5, uid:uid }; });
       eq(FF.activeClassId(_zs), 'samurai', 'the Zanshin fixture carries a live Samurai');
-      _zs.activity = { type:'combat', monsterHp:500, samuraiFocus:0, bleedStacks:2, bleedDps:5, bleedUntil:Date.now()+4000 };
+      _zs.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, samuraiFocus:0, bleedStacks:2, bleedDps:5, bleedUntil:Date.now()+4000 };
       near(FF.newClassDmgMult({hp:1000}, _zs), FF.SM_CRIMSON_MULT_D2, 'Zanshin (full): Crimson Edge rises to +60%');
       _zs.uniqueItems.z0.setLayer = 'd1';   // break the full set: back to the base Crimson Edge
       near(FF.newClassDmgMult({hp:1000}, _zs), FF.SAMURAI_CRIMSON_MULT, 'and without the full set it is the base +30%');
@@ -8267,7 +8267,7 @@
     try {
       // Isolate the enchant counter: null every other equipped slot so equippedEnchantCount only sees worn D2 pieces.
       s.equippedMainhandUid = s.equippedOffhandUid = s.equippedBeltUid = s.equippedRelicUid = null; s.jewelrySlots = {};
-      var mh = FF.maxHp(s); s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
+      var mh = FF.maxHp(s); s.playerHp = mh; s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800 };
       // Chorus of Fangs (Summoner D2 2pc): Pack Tactics moved here -- +8% familiar damage per active familiar.
       wearD2('summoner', 2); s.activeCompanions = ['forestry']; s.familiars = s.familiars || {}; s.familiars.forestry = { owned:true };
       near(FF.summonerPackTacticsMult(s), 1.08, 'Chorus of Fangs (2pc): +8% familiar damage per active familiar');
@@ -8280,7 +8280,7 @@
       wearD2('spellblade', 2); s.uniqueItems.w0.enchants = [{},{},{}];
       near(FF.d2SetDmgMult(foe, s), 1.0, 'Arcane Overflow no longer adds a per-enchant damage row');
       // Spellblade Runic Detonation (full): +2% per Resonance stamp the train has driven in.
-      wearD2('spellblade', 4); s.activity = { type:'combat', monsterHp:800, sbResonStacks:4, sbResonUntil:Date.now()+9999 };
+      wearD2('spellblade', 4); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800, sbResonStacks:4, sbResonUntil:Date.now()+9999 };
       near(FF.d2SetDmgMult(foe, s), 1 + FF.SB_RESON_PER*4, 'Runic Detonation: +2% per Resonance stamp');
       s.activity.sbResonUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Runic Detonation lapses after its window');
       // Executioner Cleave (2pc): +20% vs non-boss; inert vs a boss.
@@ -8296,7 +8296,7 @@
       // Quickdraw Dead Aim (D2 full): detectable; the guaranteed-crit Trick Arrows are exercised in the class suite.
       wearD2('quickdraw', 4); ok(FF.setFullD2('quickdraw', s), 'the Quickdraw D2 full set (Dead Aim) is detectable');
       // Websnare's Snare (the Fusillade's fifth head) folds into the enemy slow total.
-      s.activity = { type:'combat', monsterHp:800, qdSnareUntil:Date.now()+4000 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:800, qdSnareUntil:Date.now()+4000 };
       near(FF.quickdrawSnareSlow(s), 0.30, 'a Snared foe attacks 30% slower');
       ok(FF.enemyExtraSlowPct(s) >= 0.30 - 1e-9, 'the Snare folds into the enemy slow total');
       s.activity.qdSnareUntil = Date.now()-1; near(FF.quickdrawSnareSlow(s), 0.0, 'the Snare lapses');
@@ -8500,7 +8500,7 @@
   suite('D1 set bonuses: DoT caps & procs', function(){
     // Build a state wearing `count` of a class's set pieces (unique.set on body-armor slots).
     function setSt(cls, count, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100 };
       var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
       for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
         st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
@@ -8523,7 +8523,7 @@
     near(FF.plagueBloomMult(setSt('plaguebearer',2)), 1.5, 'Plague Bloom (2pc): poison ticks x1.5');
     near(FF.plagueBloomMult(setSt('plaguebearer',1)), 1, '1 piece -> poison unmodified');
     // Kennelborn (2pc) / Pack Leader (full): the D1 layer is the pack's RATE layer now.
-    var rgD1 = setSt('ranger',2); rgD1.activity = { type:'combat', monsterHp:1e9, dotHitAvg:1000 };
+    var rgD1 = setSt('ranger',2); rgD1.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, dotHitAvg:1000 };
     near(FF.rgStrikePct(rgD1), FF.RG_STRIKE_PCT * FF.RG_STRIKE_D1_MULT, 'Kennelborn (2pc): strikes hit 25% harder');
     near(FF.rgStrikePct(setSt('ranger',1)), FF.RG_STRIKE_PCT, '1 piece -> base strike');
     eq(FF.RG_STRIKES_D1_FULL, 2, 'Pack Leader (full): every command sends the beast in twice');
@@ -8534,17 +8534,17 @@
     eq(FF.rangerAilmentDurMult(setSt('ranger',2)), 1, 'and so did their duration bonus');
 
     // Full-set capstones.
-    var frFull = setSt('frostwarden',4, { activity:{type:'combat', chillStacks:5, enemyChillUntil: now+4000} });
+    var frFull = setSt('frostwarden',4, { activity:{type:'combat', playerSwungOnce:true, chillStacks:5, enemyChillUntil: now+4000} });
     near(FF.hoarfrostIncomingMult(frFull), 1 - 0.20, 'Hoarfrost (full): a 5-Chill foe deals -20%', 1e-9);
-    near(FF.hoarfrostIncomingMult(setSt('frostwarden',2, { activity:{type:'combat', chillStacks:5, enemyChillUntil: now+4000} })), 1, 'no Hoarfrost below the full set');
-    var rvFull = setSt('reaver',4, { activity:{type:'combat', bleedStacks:5, bleedUntil: now+4000} });
+    near(FF.hoarfrostIncomingMult(setSt('frostwarden',2, { activity:{type:'combat', playerSwungOnce:true, chillStacks:5, enemyChillUntil: now+4000} })), 1, 'no Hoarfrost below the full set');
+    var rvFull = setSt('reaver',4, { activity:{type:'combat', playerSwungOnce:true, bleedStacks:5, bleedUntil: now+4000} });
     near(FF.reaverFeedingFrenzyMult(rvFull), 1 - 0.20, 'Feeding Frenzy (full): 5 Bleed stacks -> -20% attack timer', 1e-9);
-    near(FF.reaverFeedingFrenzyMult(setSt('reaver',1, { activity:{type:'combat', bleedStacks:5, bleedUntil: now+4000} })), 1, 'no Feeding Frenzy below the full set');
+    near(FF.reaverFeedingFrenzyMult(setSt('reaver',1, { activity:{type:'combat', playerSwungOnce:true, bleedStacks:5, bleedUntil: now+4000} })), 1, 'no Feeding Frenzy below the full set');
 
     // Flowing Strikes integrates through classAttackSpeedMult on a live Samurai (leather set = the class armor).
     function armor(mat){ return { material:mat, tier:5 }; }
     var samu = setSt('samurai',4, { equippedMainhand:'falchion', xp:{ samurai: FF.xpFloorForLevel(85) } });
-    samu.activity = { type:'combat', samuraiFocus:10 };
+    samu.activity = { type:'combat', playerSwungOnce:true, samuraiFocus:10 };
     eq(FF.activeClassId(samu), 'samurai', 'a full leather set + katana activates Samurai');
     // The window is post-Draw-Cut now. "At max Focus" was unreachable in practice once the stance started
     // cycling -- it is spent by the very strike that fills it.
@@ -8557,7 +8557,7 @@
   // ---- D1 set bonuses, Batch 2: crit / tempo / momentum ----------------------------------------------
   suite('D1 set bonuses: crit, tempo & momentum', function(){
     function setSt(cls, count, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100 };
       var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
       for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
         st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
@@ -8594,9 +8594,9 @@
     near(FF.assassinFangPerWound(setSt('assassin',2)), FF.ASSASSIN_FANG_PCT, '2 of 4 -> base +40% per wound', 1e-9);
     eq(FF.assassinVanishMs(setSt('assassin',4)), FF.ASSASSIN_VANISH_MS, 'the D1 set leaves the 7s Vanish window alone');
     // Time-ramp capstones: Momentum Swing (Juggernaut) + Long Shot (Sharpshooter).
-    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-3000} })), 1.30, 'Momentum Swing: +30% after a 3s gap', 1e-2);
-    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-20000} })), 1.50, 'Momentum Swing caps at +50%', 1e-2);
-    near(FF.jugMomentumSwingMult(setSt('juggernaut',2, { activity:{type:'combat', lastSwingAt: now-3000} })), 1, 'no Momentum Swing below the full set');
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', playerSwungOnce:true, lastSwingAt: now-3000} })), 1.30, 'Momentum Swing: +30% after a 3s gap', 1e-2);
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', playerSwungOnce:true, lastSwingAt: now-20000} })), 1.50, 'Momentum Swing caps at +50%', 1e-2);
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',2, { activity:{type:'combat', playerSwungOnce:true, lastSwingAt: now-3000} })), 1, 'no Momentum Swing below the full set');
     // Long Shot re-axed (the Exposure Ladder): the untouched-time ramp is gone -- the full set raises
     // the Exposure CAP to 13 instead (the cap axis, strong on a sustained engine per the law).
     ok(typeof FF.longShotMult === 'undefined', 'the Long Shot time-ramp helper is gone');
@@ -8607,7 +8607,7 @@
   // ---- D1 set bonuses, Batch 3: tank / block / shield / heal -----------------------------------------
   suite('D1 set bonuses: tank / block / shield / heal', function(){
     function setSt(cls, count, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100 };
       var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
       for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
         st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
@@ -8630,7 +8630,7 @@
     // Sentinel Barbed Plating (2pc, Bramble rework): the Armor-return retired (never a damage input) --
     // the Bramble grows 50% faster instead, the deliberate leveling/rate layer.
     function sentSt(asSet){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium', activity:{type:'combat', monsterHp:100}, playerHp:55 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium', activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:55 };
       st.xp.sentinel = FF.xpFloorForLevel(80);
       ['helmet','chest','gauntlets','boots'].forEach(function(slot,i){
         if(asSet){ var uid='ss'+i; st.uniqueItems[uid] = { uid:uid, set:'sentinel' }; st.bodyArmor[slot] = { uid:uid, material:'chain', tier:22, rarity:'rare' }; }
@@ -8669,7 +8669,7 @@
   // ---- D1 set bonuses, Batch 4: casters / familiars / echoes / void / misc --------------------------
   suite('D1 set bonuses: casters / familiars / echoes / void', function(){
     function setSt(cls, count, extra){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100 };
       var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
       for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
         st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
@@ -8688,7 +8688,7 @@
     // Spellblade D1 re-axed (the Afterimage Train): Echo Chamber raises the RATIO; Resonant Depths
     // (the old Resonant Crit) deepens the train -- afterimages never re-roll a crit.
     function sbSt(asSet, level){
-      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'greatsword', activity:{type:'combat', monsterHp:100}, playerHp:55 };
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'greatsword', activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:55 };
       st.xp.spellblade = FF.xpFloorForLevel(level);
       var mats = { helmet:'chain', chest:'chain', gauntlets:'leather', boots:'leather' };
       Object.keys(mats).forEach(function(slot,i){
@@ -8706,7 +8706,7 @@
     // Voidshadow Resistance Rot (2pc): Vulnerability bites +3%/stack.
     near(FF.voidVulnPerStack(setSt('nightblade', 2)), 0.03, 'Resistance Rot (2pc): +3%/Vulnerability stack');
     near(FF.voidVulnPerStack(setSt('nightblade', 1)), FF.VOID_VULN_PER_STACK, '1 piece -> base +2%/stack');
-    var vulnSt = setSt('nightblade', 2, { activity:{ type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000 } });
+    var vulnSt = setSt('nightblade', 2, { activity:{ type:'combat', playerSwungOnce:true, monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000 } });
     near(FF.voidVulnMult(vulnSt), 1.15, 'Resistance Rot: 5 stacks -> +15% damage taken (up from +10%)');
     // Malediction (full): every hit winds the Doom twice (the old 2-stacks-per-hit is retired).
     eq(FF.nbDoomWindPerHit(setSt('nightblade', 4), false), FF.NB_DOOM_WIND_MS * 2, 'Malediction (full): every hit winds the Doom twice');
@@ -8735,7 +8735,7 @@
     var S = FF._state, now = Date.now();
     var savedAct = S.activity;
     try {
-      S.activity = { type:'combat', monsterHp:100,
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:100,
         enemyChillUntil: now+5000, chillStacks: 6,
         bleedUntil: now+4000, bleedStacks: 4,
         frostbiteUntil: now+3000, frostbiteStacks: 3,
@@ -8780,7 +8780,7 @@
       eq(FF.LOADOUT_SLOT_COUNT, 25, '25 potential loadout slots');
       // Gear/familiar changes are locked mid-fight.
       var _sa = S.activity; S.activity = { type:null }; ok(!FF.combatLocksGear(), 'no gear lock outside combat');
-      S.activity = { type:'combat', monsterHp:100 }; ok(FF.combatLocksGear(), 'gear is locked during combat'); S.activity = _sa;
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 }; ok(FF.combatLocksGear(), 'gear is locked during combat'); S.activity = _sa;
       // Activating/deactivating a companion is locked mid-fight, but examining a familiar card
       // (toggleFamiliar just expands/collapses it) must stay allowed so players can inspect spells.
       ok(FF.COMBAT_LOCKED_ACTIONS.activateCompanion, 'activate/deactivate companion is combat-locked');
@@ -8883,7 +8883,7 @@
     try {
       S.inventory = {}; S.itemEarnedTotal = {};
       var mon = FF.monsterById('wildlife_rabbit');
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, tickAccum:777, offhandTickAccum:555, monsterTickAccum:333 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, tickAccum:777, offhandTickAccum:555, monsterTickAccum:333 };
       Math.random = function(){ return 1; };   // no drop/proc rolls
       FF.defeatMonster(mon);
       Math.random = savedRand;
@@ -8900,7 +8900,7 @@
     try {
       S.mortal = false; S.deathReport = null;
       var mon = FF.monsterById('wildlife_rabbit');
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:50 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:50 };
       S.playerHp = 0;
       FF.playerCombatDeath(mon, 'test death', { kind:'attack', dmg:120, raw:200, mitigated:80, blocked:true, preHitHp:90 });
       var r = S.deathReport;
@@ -8921,7 +8921,7 @@
       FF.renderDeathReportModal();
       ok(ovEl.style.display === 'none', 'dismissing hides the modal');
       // A DoT death reports which status finished you.
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:50 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:50 };
       FF.playerCombatDeath(mon, 'test dot death', { kind:'dot', word:'Bleeding' });
       ok(S.deathReport && S.deathReport.blow.kind === 'dot' && S.deathReport.blow.word === 'Bleeding', 'a DoT death names the status that killed you');
       FF.renderDeathReportModal();
@@ -9001,7 +9001,7 @@
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
       var st = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:key, rarity:rarity||'normal' } },
-        activity:{type:'combat', monsterHp:100}, playerHp:100 };
+        activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:100 };
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
     }
@@ -9319,7 +9319,7 @@
     // Progress defaults + advance/reward on kill (a clear now grants Barrier Shards, not familiars).
     eq(FF.towerEntry('all').floor, 1, 'a fresh entrance starts on floor 1');
     eq(FF.towerEntry('all').best, 0, '...with no best yet');
-    s.activity = { type:'combat', tower:{ entrance:'all', floor:3 }, monsterId:'tower_all_f3' };
+    s.activity = { type:'combat', playerSwungOnce:true, tower:{ entrance:'all', floor:3 }, monsterId:'tower_all_f3' };
     s.tower.all = { floor:3, best:2 };
     var shardsBefore = s.inventory.barrier_shard||0, ownedFamsBefore = Object.keys(s.familiars).length;
     FF.navPickCat('combat'); // watching the arena live, as after towerEnter
@@ -9332,7 +9332,7 @@
     eq(Object.keys(s.familiars).length, ownedFamsBefore, 'a Tower clear no longer grants a familiar');
     // If the player wandered off the arena during the fight, a clear does NOT yank the view back.
     FF.navPickCat('inventory');
-    s.activity = { type:'combat', tower:{ entrance:'all', floor:4 }, monsterId:'tower_all_f4' };
+    s.activity = { type:'combat', playerSwungOnce:true, tower:{ entrance:'all', floor:4 }, monsterId:'tower_all_f4' };
     FF.towerOnKill(FF.buildTowerMonster('all', 4));
     eq(FF.currentCategoryId(), 'inventory', 'a clear while viewing another tab leaves that view alone');
     // A class entrance summons THAT class familiar; the guaranteed grant path owns it.
@@ -9374,7 +9374,7 @@
     ok(/data-action="towerPreviewClose"/.test(card), 'the preview has a Cancel button');
     // Class-entrance lock: only the entrance matching your EQUIPPED class (+ All Classes) is enterable.
     function _armor(mat){ return { material:mat, tier:5 }; }
-    var fwState = { xp:{}, physique:{}, bodyArmor:{ helmet:_armor('chain'), chest:_armor('chain'), gauntlets:_armor('tailoring'), boots:_armor('tailoring') }, equippedMainhand:'wandWater', equippedOffhand:'shieldMedium', activity:{type:'combat'}, playerHp:55 };
+    var fwState = { xp:{}, physique:{}, bodyArmor:{ helmet:_armor('chain'), chest:_armor('chain'), gauntlets:_armor('tailoring'), boots:_armor('tailoring') }, equippedMainhand:'wandWater', equippedOffhand:'shieldMedium', activity:{type:'combat', playerSwungOnce:true}, playerHp:55 };
     fwState.xp.frostwarden = FF.xpFloorForLevel(80);
     eq(FF.activeClassId(fwState), 'frostwarden', 'the mock state activates Frostwarden');
     eq(FF.towerEntranceClassLocked('all', fwState), false, 'All Classes is never class-locked');
@@ -10665,7 +10665,7 @@
     function stFor(level, extra){
       var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:'wandLight', equippedOffhand:'wardLight',
                  bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')},
-                 classDebuffs:{enemyDmgUntil:0,enemyArmorUntil:0}, activity:{type:'combat',monsterHp:100}, playerHp:55 };
+                 classDebuffs:{enemyDmgUntil:0,enemyArmorUntil:0}, activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:55 };
       st.xp['lumen'] = FF.xpFloorForLevel(level);
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -10696,7 +10696,7 @@
     try {
       S.equippedMainhand='wandLight'; S.equippedOffhand='wardLight';
       S.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')};
-      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, dotHitAvg:1000 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, dotHitAvg:1000 };
       S.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
       // Everfull (Lv20 now): healing a full-HP target banks the overheal as a Barrier.
       S.xp.lumen = FF.xpFloorForLevel(20); S.lumenShield = 0; S.playerHp = FF.maxHp(S);
@@ -10764,7 +10764,7 @@
     function stFor(level, extra){
       var st = { xp:{}, physique:{}, equippedMainhand:'halfmoonaxe', equippedOffhand:'shieldSmall',
                  bodyArmor:{helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather')},
-                 activity:{type:'combat',monsterHp:100}, playerHp:55 };
+                 activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:55 };
       st.xp['reaver'] = FF.xpFloorForLevel(level);
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -10797,10 +10797,10 @@
     // Lv 20 The Count: +0.4% damage per Cut, capped, and it reads the FIGHT's tally off the activity.
     near(FF.RV_COUNT_PCT, 0.004, 'The Count pays +0.4% per Cut');
     near(FF.RV_COUNT_CAP, 1.20, '... capped at +120%');
-    var ct = stFor(80); ct.activity = { type:'combat', monsterHp:100, rvCuts:100 };
+    var ct = stFor(80); ct.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, rvCuts:100 };
     near(FF.rvCountMult(ct), 1.40, '100 Cuts -> +40% damage');
     ct.activity.rvCuts = 9999; near(FF.rvCountMult(ct), 1 + FF.RV_COUNT_CAP, 'the Count respects its cap');
-    var ct1 = stFor(1); ct1.activity = { type:'combat', monsterHp:100, rvCuts:100 };
+    var ct1 = stFor(1); ct1.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, rvCuts:100 };
     near(FF.rvCountMult(ct1), 1, 'the Count needs Lv20');
 
     // Lv 40 Deep Cuts: the cap rises to 8, and because every STACK-second carves a Cut, the cap is ramp SPEED.
@@ -10808,14 +10808,14 @@
     eq(FF.reaverBleedCap(stFor(40)), 8, 'Deep Cuts (Lv40): the cap rises to 8');
 
     // Flensing's max-stack haste now lands at Lv1 (it moved down with the Bleed).
-    var frMax = stFor(1); frMax.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
+    var frMax = stFor(1); frMax.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
     near(FF.classAttackSpeedMult(frMax), 0.85, 'Flensing: +15% attack speed at max Bleed stacks', 1e-9);
-    var frLow = stFor(40); frLow.activity = { type:'combat', monsterHp:100, bleedStacks:2, bleedUntil:Date.now()+5000 };
+    var frLow = stFor(40); frLow.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, bleedStacks:2, bleedUntil:Date.now()+5000 };
     eq(FF.classAttackSpeedMult(frLow), 1, 'no frenzy haste below max stacks');
 
     // Carving Cuts: fractional stack-seconds accumulate, so the tally is tick-rate independent -- a per-tick
     // count would pay out differently at different frame rates.
-    var cv = stFor(80); cv.activity = { type:'combat', monsterHp:100 };
+    var cv = stFor(80); cv.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     eq(FF.rvCarveCuts(0.4, cv), 0, 'a fraction of a stack-second carves nothing yet');
     eq(FF.rvCarveCuts(0.7, cv), 1, 'but it accumulates and carves on the way past 1');
     eq(cv.activity.rvCuts, 1, 'the tally took the Cut');
@@ -10826,11 +10826,11 @@
     // Lv 60 Harvest: it cashes the BANK. Two numbers on purpose -- with one, a capstone tally that never
     // drops would sit permanently above the threshold and Harvest on every crit.
     eq(FF.RV_HARVEST_AT, 60, 'a Harvest arms at 60 banked Cuts');
-    var hv = stFor(60); hv.activity = { type:'combat', monsterHp:1e9, rvCuts:100, rvBank:100, rvBleedHitAvg:1000 };
+    var hv = stFor(60); hv.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, rvCuts:100, rvBank:100, rvBleedHitAvg:1000 };
     eq(FF.rvHarvestArmed(hv), true, '100 banked Cuts arms the Harvest');
     near(FF.rvHarvestDamage(hv), 100 * FF.RV_HARVEST_PCT * 1000, 'Harvest = banked Cuts x 5% x the recent average hit');
     hv.activity.rvBank = 10; eq(FF.rvHarvestArmed(hv), false, 'and disarms below the threshold');
-    var hv20 = stFor(20); hv20.activity = { type:'combat', monsterHp:1e9, rvBank:100, rvBleedHitAvg:1000 };
+    var hv20 = stFor(20); hv20.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e9, rvBank:100, rvBleedHitAvg:1000 };
     eq(FF.rvHarvestArmed(hv20), false, 'Harvest needs Lv60');
     // Bleed tick: it reads the global _state.activity. Snapshot the fields we touch, then restore.
     // With no Reaver kit equipped on _state, reaverBonus(60/80) are off, so we exercise the base tick:
@@ -10839,7 +10839,7 @@
     var save = { act:S.activity, hp:S.playerHp, mh:S.equippedMainhand, oh:S.equippedOffhand };
     try {
       S.equippedMainhand=null; S.equippedOffhand=null;
-      S.activity = { type:'combat', monsterId:null, monsterHp:100, bleedDps:20, bleedUntil:Date.now()+5000 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:null, monsterHp:100, bleedDps:20, bleedUntil:Date.now()+5000 };
       FF.applyReaverBleedTick(1000);
       ok(Math.abs(S.activity.monsterHp - 80) < 1e-6, 'Bleed chips 20 damage over 1s (20 dps)');
       S.activity.monsterHp = 5; S.activity.bleedDps = 999;
@@ -10864,7 +10864,7 @@
       S.uniqueItems={}; S.xp.reaver = FF.xpFloorForLevel(85);
       eq(FF.activeClassId(S), 'reaver', 'behavioral setup activates the Reaver');
       // A landed swing banks the hit and opens the wound off it -- not off a level-scaled trickle.
-      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       S.playerHp = FF.maxHp(S);
       Math.random = function(){ return 0; };
       FF.playerAttackTick(false, 1, false);
@@ -10919,7 +10919,7 @@
       S.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather'),back:{tier:0,rarity:'normal',material:null}};
       S.uniqueItems={}; S.xp.samurai = FF.xpFloorForLevel(85);
       eq(FF.activeClassId(S), 'samurai', 'behavioral setup activates the Samurai');
-      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0,
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0,
                      duelStartedAt:Date.now(), samuraiFocus:0, smFocusAccum:0 };
       S.playerHp = FF.maxHp(S);
       Math.random = function(){ return 0; };   // land every swing, crit every swing
@@ -11157,7 +11157,7 @@
     function pbSt(level, extra){
       var st = { xp:{}, physique:{}, equippedMainhand:'hatchet', equippedOffhand:'shieldSmall',
                  bodyArmor:{helmet:arm('leather'),chest:arm('leather'),gauntlets:arm('tailoring'),boots:arm('leather')},
-                 activity:{type:'combat',monsterHp:1e9,dotHitAvg:1000}, playerHp:100, uniqueItems:{} };
+                 activity:{type:'combat', playerSwungOnce:true,monsterHp:1e9,dotHitAvg:1000}, playerHp:100, uniqueItems:{} };
       st.xp.plaguebearer = FF.xpFloorForLevel(level);
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -11229,11 +11229,11 @@
     var sv = { act:S.activity, mh:S.equippedMainhand, oh:S.equippedOffhand };
     try {
       // With a banked hit average, dotBase reads it -- and it is enormous next to a level sum.
-      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e9 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e12, dotHitAvg: 1e9 };
       eq(FF.dotBase(S), 1e9, 'dotBase reads the fight\'s banked hit average');
       // Fallback: a DoT applied before your first landed hit (a reflect, a Block, an opening ailment) still
       // does something rather than nothing.
-      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 0 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e12, dotHitAvg: 0 };
       ok(FF.dotBase(S) >= 1, 'with no hit banked yet it falls back to the old level-based figure');
       ok(FF.dotBase(S) < 1e6, 'and that fallback is the small, level-scaled number');
 
@@ -11248,10 +11248,10 @@
       // Behavioral: a real Decay application now scales with the banked hit, and a bigger hit means a bigger
       // Decay -- the property that was completely absent before.
       S.equippedMainhand = null; S.equippedOffhand = null;
-      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e6 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e12, dotHitAvg: 1e6 };
       FF.decayApply(S.activity, FF.DECAY_MAX_STACKS);
       var small = S.activity.decayDps;
-      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e9 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e12, dotHitAvg: 1e9 };
       FF.decayApply(S.activity, FF.DECAY_MAX_STACKS);
       ok(S.activity.decayDps > small * 900, 'a thousand-fold bigger hit means a ~thousand-fold bigger Decay');
       near(S.activity.decayDps, FF.DECAY_MAX_STACKS * 1e9 * FF.DECAY_PCT, 'Decay = stacks x hit average x 0.6%');
@@ -12066,7 +12066,7 @@
     try {
       var EN = 'all'; // the All-Classes Tower entrance (no class requirement to trip first)
       // --- Tower: entering while in an ordinary fight ---
-      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       FF._setTowerPreview(EN);
       eq(FF._towerEntryError(), '', 'the preview opens with no error');
       FF.towerEnter(EN);
@@ -12077,7 +12077,7 @@
       ok(card.indexOf(FF._towerEntryError()) !== -1, 'the notice renders inside the Tower preview card');
       ok(/border-color:var\(--hp-bad\)/.test(card), '...styled as an error');
       // --- Tower: already climbing gets its own wording ---
-      S.activity = { type:'combat', tower:{ entrance:EN, floor:3 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
+      S.activity = { type:'combat', playerSwungOnce:true, tower:{ entrance:EN, floor:3 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
       FF._setTowerPreview(EN); FF.towerEnter(EN);
       ok(/already climbing/.test(FF._towerEntryError()), 'already climbing reports a distinct message');
       // Reopening the preview starts clean again.
@@ -12086,13 +12086,13 @@
       // --- Guild Boss: the reported case ---
       gst.guild = { id:'g1', name:'Test Guild' };
       gs.error = '';
-      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       FF.guildBossEnter(0);
       ok(/Finish your current fight/.test(gs.error), 'a blocked Guild Boss entry sets the panel error (ticket-0109)');
       ok(!(S.activity && S.activity.guildBoss), '...and does NOT pull the boss');
       // Already on a boss reads differently.
       gs.error = '';
-      S.activity = { type:'combat', guildBoss:{ idx:1 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
+      S.activity = { type:'combat', playerSwungOnce:true, guildBoss:{ idx:1 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
       FF.guildBossEnter(0);
       ok(/already fighting a Guild Boss/.test(gs.error), 'already on a boss reports a distinct message');
     } finally {
@@ -12147,7 +12147,7 @@
       var mon = FF.MONSTERS[0];
       S.inventory = {};
       S._enemySwapAt = 0;
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       FF.defeatMonster(mon);
       ok(S._enemySwapAt > 0, 'defeatMonster stamps the swap so the arena can play the fade');
       eq(S.activity.monsterHp, mon.hp, '...and the next foe of the same type arrives at full HP');
@@ -12450,7 +12450,7 @@
     // Staves proficiency trains on familiar damage ONLY while a Staff is equipped.
     var S2 = FF._state, svX = { act:S2.activity, mh:S2.equippedMainhand, mhT:S2.equippedMainhandTier, xp:S2.xp.staves };
     try {
-      S2.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp: 1e9 };
+      S2.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp: 1e9 };
       S2.xp.staves = 0;
       S2.equippedMainhand = 'claymore'; S2.equippedMainhandTier = 5;
       FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'blunt', element:null, amount:10 }, 50, 'mining');
@@ -12563,7 +12563,7 @@
         s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.summonerWraiths = [];
         s.activeCompanions = ['forestry']; s.familiars.forestry = { owned:true };
         s.companionCast = { forestry: { accum: 0, index: 0 } };
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9 };
 
         // THE REAL SWING PATH: a landed staff swing from playerAttackTick itself must beat the Downbeat.
         // (Regression: the hook originally sat inside playerAttackTick's assassin-only block, so the whole
@@ -12694,7 +12694,7 @@
         s.uniqueItems = {};
         s.xp.duelist = FF.xpFloorForLevel(80);
         eq(FF.activeClassId(s), 'duelist', 'behavioral setup activates the Duelist');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.duelistRiposte = false; s.duelistDanseCount = 0; s.duelistUntouch = 0; FF.d4WrathReset(s);
         Math.random = function(){ return 0; }; // every swing lands (and crits) deterministically
@@ -12744,7 +12744,7 @@
       eq(FF.activeClassId(s), 'duelist', 'smoke setup activates the Duelist');
       var mon = FF.MONSTERS[0];
       for(var round=0; round<3 && !threw; round++){
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
         s.duelistRiposte = false; s.duelistDanseCount = 0; s.duelistUntouch = round * 10;
         s.playerHp = 12; // low, so real deaths get exercised too
         for(var i=0; i<200 && !threw; i++){
@@ -12759,7 +12759,7 @@
             if(!isFinite(s.playerHp)) invariantsOk = false;
             if(s.playerHp <= 0 || !s.activity || s.activity.type!=='combat'){
               s.playerHp = 12;
-              s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
+              s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
             }
           } catch(e){ threw = (e && e.message) || String(e); }
         }
@@ -12828,7 +12828,7 @@
         var mh = FF.maxHp(s);
         eq(FF.reaperShieldCap(s), Math.round(mh*0.20), 'Siphon Shield cap is 20% of max Health');
         var mon = FF.MONSTERS[0];
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = mh;
         // Blight: stacks build per hit, refresh, and cap; the tick base is a smoothed average of the hits.
         FF.reaperRotAdd(1, 1000);
@@ -12966,7 +12966,7 @@
     eq(FF.heraldBlockMult(full), 0.5, 'below Lv60: standard 50% block');
 
     // Lv 40 Fortress: Armor ramps +4%/s held in a fight (cap +40%), reset per foe -- and Ironclad reads it.
-    var ft = leveled(); ft.activity = { type:'combat', duelStartedAt: Date.now() - 5000 };
+    var ft = leveled(); ft.activity = { type:'combat', playerSwungOnce:true, duelStartedAt: Date.now() - 5000 };
     ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.20) < 0.02, 'Fortress: +4%/s -> ~+20% at 5s');
     ft.activity.duelStartedAt = Date.now() - 60000;
     ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.40) < 1e-9, 'Fortress caps at +40%');
@@ -12991,7 +12991,7 @@
         s.uniqueItems = {};
         s.xp.herald = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'herald', 'behavioral setup activates the Herald');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.heraldBarrier = 0; s.heraldHitAvg = 0; s.heraldBraceAccum = 0;
         // A landed swing banks into the Breach base.
@@ -13112,7 +13112,7 @@
         s.inventory = Object.assign({}, s.inventory); // private copy: the bow spends arrows
         s.inventory.fletching_arrow_t0 = 500; // a stack of low-tier arrows for the bow to nock (always usable)
         eq(FF.activeClassId(s), 'quickdraw', 'behavioral setup activates the Quickdraw');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.qdCycleCount = 0; s.qdCycleIndex = 0; s.qdFusillade = false; s.qdRunaway = 0;
         Math.random = function(){ return 0; }; // every shot lands and crits
@@ -13198,7 +13198,7 @@
     eq(FF.TPL_ZEAL_CRITDMG, 0.12, 'Zeal grants +12% Critical DAMAGE');
 
     // Verse reads are pure-state: null out of combat / class off; power scales with the D2 set + Empowered.
-    var vq = leveled(); vq.activity = { type:'combat', monsterHp:100 };
+    var vq = leveled(); vq.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     eq(FF.templarVerse(base()), null, 'the Litany is silent at Lv 0 (class fixture reads null)');
     eq(FF.templarVerse(leveled()), null, 'the Litany is silent out of combat');
     vq.tplVerseIdx = 0; eq(FF.templarVerse(vq), 'might', 'the service opens on Might');
@@ -13230,7 +13230,7 @@
         s.uniqueItems = {};
         s.xp.templar = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'templar', 'behavioral setup activates the Templar');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s); s.templarShield = 0;
         s.tplVerseIdx = 0; s.tplVerseAccum = 0; s.tplVerseExt = 0; s.tplDoxology = 0; s.tplEmpowered = false; s.tplHitAvg = 0;
         eq(FF.templarVerse(s), 'might', 'the service opens on the Might verse');
@@ -13478,7 +13478,7 @@
         s.uniqueItems = {};
         s.xp.knight = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'knight', 'behavioral setup activates the Knight');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.knightStacks = 0; s.knSwing = 0; s.knHitAvg = 0; s.knTrample = 0; s.knWarbringerCrit = false;
         // A landed crit raises the Banner +2 and banks the hit average.
@@ -13988,7 +13988,7 @@
         s.uniqueItems = {};
         s.xp.treasureHunter = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'treasureHunter', 'behavioral setup activates the Treasure Hunter');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.inventory = {}; s.lockedItems = {};
         s.thCharge = 0; s.thHitAvg = 0; s.thMarks = 0; s.thMarksUntil = 0;
@@ -14075,11 +14075,11 @@
     eq(FF.TF_CLAP_EVERY, 6, 'every 6th Bolt is a Thunderclap');
 
     // Storm reads are pure-state; seeding gates on the class.
-    var sv = base(); sv.xp.thunderfury = FF.xpFloorForLevel(85); sv.activity = { type:'combat', monsterHp:100 };
+    var sv = base(); sv.xp.thunderfury = FF.xpFloorForLevel(85); sv.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     eq(FF.tfStormIntensity(sv), 0, 'a fresh sky is calm');
     FF.tfStormSeed(3, sv); eq(FF.tfStormIntensity(sv), 3, 'seeding raises the intensity');
     FF.tfStormSeed(99, sv); eq(FF.tfStormIntensity(sv), 10, 'intensity clamps at the cap');
-    var svOff = base(); svOff.equippedOffhand = null; svOff.activity = { type:'combat', monsterHp:100 };
+    var svOff = base(); svOff.equippedOffhand = null; svOff.activity = { type:'combat', playerSwungOnce:true, monsterHp:100 };
     eq(FF.tfStormSeed(3, svOff), 0, 'no class, no weather');
 
     // Lv 60 Concussive Bolt: stun window helper.
@@ -14109,7 +14109,7 @@
         s.uniqueItems = {};
         s.xp.thunderfury = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'thunderfury', 'behavioral setup activates the Thunderfury');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.tfStorm = 0; s.tfStormAccum = 0; s.tfStormFade = 0; s.tfStormHitAvg = 0; s.tfBoltCount = 0; s.tfGalvanize = 0;
         // A landed crit seeds +2 and banks the hit average.
@@ -14167,7 +14167,7 @@
       var st = { xp:{nightblade: FF.xpFloorForLevel(level)}, physique:{},
         equippedMainhand:'wandDark', equippedMainhandRarity:'normal', equippedOffhand:'wardDark',
         bodyArmor:{ helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() }, uniqueItems:{},
-        activity:{ type:'combat', monsterHp:1e6 }, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } };
+        activity:{ type:'combat', playerSwungOnce:true, monsterHp:1e6 }, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } };
       if(extra){ for(var k in extra) st[k] = extra[k]; }
       return st;
     }
@@ -14184,7 +14184,7 @@
     // Soulrend (D3 dark wand): 4+ woes -> the bank share rises half again.
     var vf = Date.now() + 9999;
     var sr = nb(85, { equippedMainhandUid:'u1', uniqueItems:{ u1:{ uid:'u1', leg:'soulrend' } } });
-    sr.activity = { type:'combat', monsterHp:1e6, voidVulnStacks:3, voidVulnUntil:vf, enemyStunUntil:vf, curseUntil:vf, decayUntil:vf, decayStacks:2 };
+    sr.activity = { type:'combat', playerSwungOnce:true, monsterHp:1e6, voidVulnStacks:3, voidVulnUntil:vf, enemyStunUntil:vf, curseUntil:vf, decayUntil:vf, decayStacks:2 };
     eq(FF.enemyDebuffCount(sr), 4, 'four woes stand (Vulnerability + Stun + Curse + Decay)');
     near(FF.nbDoomBankShare(sr), FF.NB_DOOM_BANK_PCT * FF.NB_SOULREND_BANK_MULT, 'Soulrend: 4+ woes -> hits seal half again more');
     sr.activity.curseUntil = 0; sr.activity.decayUntil = 0;
@@ -14209,7 +14209,7 @@
         s.uniqueItems = {}; s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
         s.xp.nightblade = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'nightblade', 'behavioral setup activates the Voidshadow');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.nbDoomLeftMs = 0; s.nbDoomBank = 0; s.nbDoomStrikes = 0;
         // A landed crit stamps the Doom, seals 35% of itself, and winds the fresh clock 0.6s.
@@ -14263,6 +14263,7 @@
           s.bodyArmor[slot] = { uid:uid, material:'leather', tier:5, rarity:'normal' };
         });
         s.activity.voidVulnStacks = 10; s.activity.voidVulnUntil = Date.now() + 9999;
+        s.activity.playerSwungOnce = true; // an earlier strike killed a fixture foe, and the per-foe reset disarmed the first-swing gate
         s.nbDoomLeftMs = 1; s.nbDoomBank = 1000; s.nbDoomStrikes = 0;
         var hp2 = s.activity.monsterHp, woes2 = FF.enemyDebuffCount(s);
         FF.applyNbDoomTick(50);
@@ -14310,7 +14311,7 @@
         s.uniqueItems = {};
         s.xp.spellblade = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'spellblade', 'greatsword + empty offhand + chain/leather => Spellblade');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.sbEchoes = []; s.sbTempo = 0; s.sbTrainSeq = 0;
         // A landed swing spawns a train: one pending echo at the ratio.
@@ -14398,7 +14399,7 @@
         s.xp.sharpshooter = FF.xpFloorForLevel(85);
         s.inventory = Object.assign({}, s.inventory); s.inventory.fletching_arrow_t3 = 100000; s.equippedArrow = 'fletching_arrow_t3';
         eq(FF.activeClassId(s), 'sharpshooter', 'long bow + quiver + leathers + cloth gloves => Sharpshooter');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         // A landed crit peels a layer and TEARS.
         Math.random = function(){ return 0; }; // lands + crits
@@ -14473,7 +14474,7 @@
         s.uniqueItems = {};
         s.xp.juggernaut = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'juggernaut', 'sledge + full plate => Juggernaut');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:4000, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:4000, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.jgEchoes = []; s.jgResonance = 0; s.jgFury = 0;
         // The first impact: rings an echo, no Resonance (the ground was silent), cracks + stokes.
@@ -14530,7 +14531,7 @@
         eq(s.jgResonance, 0, 'the ground fell silent -> Resonance lapsed');
         // A fresh duel for the set blocks: the kill above left the activity in the enemy-swap fade,
         // where chip damage is suppressed -- a Big One there measures zero and proves nothing.
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         // D3 full (Sustained Note): one Resonance stack survives the Big One; D4: Epicenter + World Splits.
         s.uniqueItems = {}; s.bodyArmor = { helmet:P(), chest:P(), gauntlets:P(), boots:P(), back:bare() };
         ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
@@ -14595,7 +14596,7 @@
       eq(FF.classLevel(s, 'executioner'), 100, 'the mechanical class level stays capped at 100');
       eq(FF.classDisplayLevel(s, 'executioner'), 110, 'the display level adds mastery: Lv 110');
       // And the stage plate carries it.
-      s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       s.playerHp = FF.maxHp(s);
       FF._orbsReset();
       ok(/&middot; Lv 110</.test(FF.renderArena()), 'the combat plate shows the mastery-inclusive level');
@@ -14624,7 +14625,7 @@
         eq(FF.activeClassId(s), 'executioner', 'full-moon axe + bare head + chain => Executioner');
         // A big foe so the hpFrac arithmetic is real (MONSTERS[0] is ~20 hp and a Fall would zero it).
         var mon = FF.MONSTERS.reduce(function(a,b){ return b.hp > a.hp ? b : a; });
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
         s.playerHp = FF.maxHp(s);
         s.exTally = 0; s.exHone = 0; s.exCarry = 0;
         // Seeding: the blade hangs at the floor, armed.
@@ -14699,7 +14700,7 @@
         near(s.exCarry, (0.75 - FF.EX_THRESH_FLOOR) * FF.EX_CULL_CARRY, 'Momentum of the Cull: a kill carries half the climb', 1e-9);
         s.exCarry = 0;
         // Fresh duel for the gear probes (the kill above left the enemy-swap fade).
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
         // D3 -- Heavier Blade (2pc): Falls +25%; Double Bit (full): the blade keeps a third of its climb.
         s.uniqueItems = {}; s.bodyArmor = { chest:C('chain'), gauntlets:C('chain'), boots:C('leather') };
         ['chest','gauntlets','boots'].forEach(function(slot, i){
@@ -14782,7 +14783,7 @@
         s.uniqueItems = {};
         s.xp.sentinel = FF.xpFloorForLevel(85);
         eq(FF.activeClassId(s), 'sentinel', 'maul + medium shield + full chain => Sentinel');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
         s.playerHp = FF.maxHp(s);
         s.snGrowth = 0; s.snBloomAccum = 0; s.snShatterAccum = 0; s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
         // Growth: +2/s from the roots, +4 per landed swing.
@@ -14827,7 +14828,7 @@
         s.activity.monsterHp = 0; FF.defeatMonster(_mon);
         near(s.snGrowth, carryGrowth, 'the Bramble carries foe to foe', 1e-9);
         // Fresh duel for the gear probes (the kill left the enemy-swap fade).
-        s.activity = { type:'combat', monsterId:_mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:_mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
         // D3 -- Thickened Canes (2pc): tick +25%; Twin Growth (full): the tear strikes twice at full growth.
         s.uniqueItems = {}; s.bodyArmor = { helmet:C(), chest:C(), gauntlets:C(), boots:C() };
         ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
@@ -14933,7 +14934,7 @@
     var S = FF._state, svAct = S.activity, svXp = S.xp.assassin, svVig = S.assassinVigor;
     try {
       S.xp.assassin = lvHi;
-      S.activity = { type:'combat', monsterHp:500, woundUntil:0 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, woundUntil:0 };
       eq(FF.assassinWoundCap(S), FF.ASSASSIN_WOUND_MAX, 'base wound cap is 5 (no set)');
       eq(FF.assassinWoundsPerHit(S), 1, 'one wound per main-hand hit (no set/legendary)');
       FF.assassinOpenWounds(S.activity, 1); FF.assassinOpenWounds(S.activity, 1);
@@ -14960,11 +14961,11 @@
 
     // Lv 80 Vanish: 7s untouched empowers the next strike (+100%); 5s is no longer enough.
     eq(FF.ASSASSIN_VANISH_MULT, 2, 'Vanish empowers the next strike x2');
-    var vReady = leveled(); vReady.activity = { type:'combat', lastDamagedAt:Date.now()-8000 };
+    var vReady = leveled(); vReady.activity = { type:'combat', playerSwungOnce:true, lastDamagedAt:Date.now()-8000 };
     ok(FF.assassinVanishReady(vReady), 'Vanish ready after 7s untouched (Lv80)');
-    var vFive = leveled(); vFive.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
+    var vFive = leveled(); vFive.activity = { type:'combat', playerSwungOnce:true, lastDamagedAt:Date.now()-5000 };
     ok(!FF.assassinVanishReady(vFive), '5s untouched is not enough (base window is now 7s)');
-    var v60 = base(); v60.xp.assassin = FF.xpFloorForLevel(61); v60.activity = { type:'combat', lastDamagedAt:Date.now()-8000 };
+    var v60 = base(); v60.xp.assassin = FF.xpFloorForLevel(61); v60.activity = { type:'combat', playerSwungOnce:true, lastDamagedAt:Date.now()-8000 };
     ok(!FF.assassinVanishReady(v60), 'Vanish inactive below Lv80');
 
     // Class familiar (dark dual-claw killer with lifesteal).
@@ -16217,7 +16218,7 @@
       eq(S.activity.type, null, 'stop() restores the idle activity');
       ok(!FF.landingFightActive(), 'no preview fight remains');
       // stop() only tears down ITS OWN flagged fight -- a real one is never touched.
-      S.activity = { type:'combat', monsterId:FF.LANDING_FOES[0], monsterHp:5, tickAccum:0, monsterTickAccum:0, duelStartedAt:1 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.LANDING_FOES[0], monsterHp:5, tickAccum:0, monsterTickAccum:0, duelStartedAt:1 };
       FF.landingFightStop();
       eq(S.activity.type, 'combat', 'a REAL fight (no landingPreview flag) survives landingFightStop untouched');
     } finally { S.activity = svAct; S.playerHp = svHp; }
@@ -16429,7 +16430,7 @@
     try {
       // A discrete effect hit logs one row naming the effect.
       FF.combatLogDotReset();
-      S.activity = { type:'combat', monsterId:null, monsterHp: 1e12 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:null, monsterHp: 1e12 };
       // Assert on the TAIL, never on length: the log is a 200-row ring buffer and is already full by the
       // time this suite runs, so a row can be added without the length changing at all.
       var tail = function(){ var L = FF._combatLog(); return L[L.length - 1]; };
@@ -16937,7 +16938,7 @@
       var bare = { helmet:{tier:0}, chest:{tier:0}, gauntlets:{tier:0}, boots:{tier:0}, back:{tier:0} };
       // Control: with no thorns/ward/sentinel source, a monster's attack never touches its own HP.
       S.uniqueItems = {}; S.bodyArmor = bare; S.equippedOffhand = null; S.playerHp = 1e9;
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
       for(var i=0;i<40;i++){ FF.monsterAttackTick(); if(S.activity.monsterHp<50000) S.activity.monsterHp=100000; }
       eq(100000 - S.activity.monsterHp, 0, 'no reflect fires without a thorns source');
       // +18 Thorns on the chest: the aggregate reads 18, and every landed hit reflects exactly 18.
@@ -16945,7 +16946,7 @@
       S.bodyArmor = { helmet:{tier:0}, chest:{material:'chain',tier:5,rarity:'rare',uid:'TH'}, gauntlets:{tier:0}, boots:{tier:0}, back:{tier:0} };
       eq(FF.equippedEnchantTotals(S).thorns, 18, 'thorns enchant feeds the aggregate (+18)');
       S.playerHp = 1e9;
-      S.activity = { type:'combat', monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
       var drops = {};
       for(var j=0;j<120;j++){ var b=S.activity.monsterHp; FF.monsterAttackTick(); var d=b-S.activity.monsterHp; if(d>0) drops[d]=(drops[d]||0)+1; }
       var sizes = Object.keys(drops).map(Number);
@@ -17914,7 +17915,7 @@
       // lifesteal WOULD have room to land. If a future edit adds a heal hook inside applyChipDamage --
       // the natural place someone would wire "heal on reflect" -- this fails.
       var mon = FF.MONSTERS[0];
-      s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp, tickAccum:0, monsterTickAccum:0 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp: mon.hp, tickAccum:0, monsterTickAccum:0 };
       s.playerHp = Math.max(1, Math.round(FF.maxHp(s) * 0.5));   // well below max: any lifesteal has room
       var hpBefore = s.playerHp;
       var killed = FF.applyChipDamage(5);                        // a reflect tick against a healthy foe
@@ -17938,7 +17939,7 @@
       // server syncs -> defeatMonster is called. It must pin the mirror, reward nothing, and -- crucially
       // -- NOT reset monsterHp to full (that reset is what made the reported damage vanish and the real
       // counter crawl while the chronicle filled with phantom kills).
-      s.activity = { type:'combat', monsterId:mon.id, monsterHp:0, netDungeon:'sess-test', netIndex:0, tickAccum:0, monsterTickAccum:0 };
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, netDungeon:'sess-test', netIndex:0, tickAccum:0, monsterTickAccum:0 };
       FF.defeatMonster(mon);
       eq(s.activity.monsterHp, 1, 'the party mirror is pinned at 1 after a would-be kill');
       ok(s.activity.monsterHp !== mon.hp, 'the mirror is NOT reset to full HP (full reset lost the reported damage)');
@@ -18172,7 +18173,7 @@
       // The combat feed fold, exercised through the real arena render.
       var svAct3 = S.activity, svHp3 = S.playerHp;
       var wolf2 = FF.monsterById('wildlife_wolf');
-      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf2.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt: 5 };
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:wolf2.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt: 5 };
       S.playerHp = FF.maxHp(S);
       try {
         S.collapsedCards = {};
@@ -18193,7 +18194,7 @@
     // And the arena itself seeds telegraph + stats + pct when rendered mid-charge.
     var svAct2 = S.activity, svHp2 = S.playerHp;
     try {
-      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf.hp, tickAccum:0, monsterTickAccum:0,
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:'wildlife_wolf', monsterHp:wolf.hp, tickAccum:0, monsterTickAccum:0,
                      specialAccum: wolf.special.chargeMs * 0.9, duelStartedAt: 12345 };
       S.playerHp = FF.maxHp(S);
       var arena = FF.renderArena();
@@ -18202,6 +18203,44 @@
       ok(/spec-soon/.test(arena), 'and the foe ring flashes');
       ok(/ar2Pct-foe/.test(arena), 'the foe orb carries its percentage');
     } finally { S.activity = svAct2; S.playerHp = svHp2; }
+  });
+
+  // ---- The first-swing gate (owner order, v0.0.86.28) ----------------------------------------------
+  // Carried tick engines (Bramble growth, the Storm, Ember Burst, the ringing ground...) were killing
+  // fresh farm mobs before the player's first swing. The gate lives at the applyEffectDamage /
+  // applyEffectDot chokepoints every effect is required to route through, armed per foe by
+  // playerAttackTick's swing-attempt stamp and disarmed by defeatMonster's per-foe reset.
+  suite('first-swing gate: effect engines wait for each encounter’s opening swing', function(){
+    var S = FF._state;
+    var svAct = S.activity, svHp = S.playerHp, svGold = S.gold, svInv = S.inventory, svLog = S.log;
+    var wolf = FF.monsterById('wildlife_wolf');
+    try {
+      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf.hp, tickAccum:0,
+                     monsterTickAccum:0, duelStartedAt: 77 };
+      S.playerHp = FF.maxHp(S);
+      // Before any swing: the gate is CLOSED and effect damage does nothing.
+      ok(!FF.combatEffectsArmed(), 'a fresh encounter starts with the engines disarmed');
+      FF.applyEffectDamage(5, 'Test Strike');
+      FF.applyEffectDot(5, 'Test Tick');
+      eq(S.activity.monsterHp, wolf.hp, 'no effect damage lands before the first swing');
+      // The first swing (even one that misses) arms the engines.
+      S.activity.playerSwungOnce = true;
+      ok(FF.combatEffectsArmed(), 'the first swing arms the engines');
+      FF.applyEffectDamage(5, 'Test Strike');
+      eq(S.activity.monsterHp, wolf.hp - 5, 'effect damage flows once armed');
+      FF.applyEffectDot(3, 'Test Tick');
+      eq(S.activity.monsterHp, wolf.hp - 8, 'DoT slices flow once armed');
+      // A kill re-disarms for the NEXT foe: the per-foe reset clears the stamp.
+      S.inventory = {}; S.gold = 0; S.log = [];
+      S.activity.monsterHp = 1;
+      FF.applyEffectDamage(10, 'Test Strike'); // kills -> defeatMonster seeds the next foe
+      eq(S.activity.type, 'combat', 'the chain continues onto the next foe');
+      ok(S.activity.playerSwungOnce === false, 'the fresh foe starts with the engines disarmed again');
+      ok(!FF.combatEffectsArmed(), 'and the gate reads closed for it');
+      // Out of combat the gate never blocks (nothing to protect).
+      S.activity = { type:null };
+      ok(FF.combatEffectsArmed(), 'no combat means no gate');
+    } finally { S.activity = svAct; S.playerHp = svHp; S.gold = svGold; S.inventory = svInv; S.log = svLog; }
   });
 
   // ---- No em dashes in player-facing copy (owner order, v0.0.86.20) --------------------------------

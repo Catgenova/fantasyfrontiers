@@ -18215,6 +18215,10 @@
     // The off-hand Claw swings the off-hand weapon for 30% less damage; everything else mirrors a hit.
     var weapon = isOffhand ? getEquippedOffhandClawItem(state) : getEquippedWeaponItem(state);
     if(isOffhand && !weapon) return;
+    // The encounter's first swing ARMS the effect engines (see combatEffectsArmed). Stamped on the
+    // ATTEMPT, before the dodge/miss rolls: the swing happened whether or not it landed, and the
+    // effects this very swing triggers must not be gated by their own trigger.
+    act.playerSwungOnce = true;
     var mainhandTypeId = isOffhand ? 'claw' : state.equippedMainhand;
     var relicBonus = getEquippedRelicBonus(state);
     var offhandItem = getEquippedOffhandItem(state);
@@ -18717,6 +18721,7 @@
     act.sbResonStacks = 0; act.sbResonUntil = 0; // Runic Detonation's stamps die with the foe -- the TRAINS (state.sbEchoes) carry, as echoes of your own swings should
     act.woundStacks = 0; act.woundUntil = 0; act.vanishLoadedDet = false; // Assassin Open Wounds die with the foe they were carved into
     act.tickAccum = 0; act.offhandTickAccum = 0; act.monsterTickAccum = 0; act._swingIvMs = 0; act._swingOffIvMs = 0; // every swing (yours, off-hand, the foe's) winds up fresh against a new enemy -- no carried mid-swing progress (interval memos too)
+    act.playerSwungOnce = false; // the effect engines disarm until this foe sees your first swing (combatEffectsArmed)
     act.bloodLedger = setFullD3('berserker') ? Math.round((act.bloodLedger||0)/2) : 0; // Carried Debt (Berserker D3 full): the Ledger carries to the next foe at half value
     act.spineshatterStacks = 0; act.spineshatterUntil = 0; // Spineshatter (D2 maul): the enemy-damage debuff doesn't carry between foes
     act.qdSnareUntil = 0; // Websnare's Snare dies with its foe (the Quiver Cycle itself is state-scoped and keeps rolling)
@@ -18794,8 +18799,24 @@
     var m = monsterById(a.monsterId);
     return (m && m.name) || 'the foe';
   }
+  // ---- THE FIRST-SWING GATE (owner order, v0.0.86.28) ----------------------------------------------
+  // The tick engines deliberately carry between foes (Bramble growth, the Storm, Ember Burst's Blaze,
+  // the ringing ground, Contagion's Rot, Pestilence...), so their per-second damage was killing fresh
+  // farm mobs BEFORE the player's first swing -- encounters with zero swings. Every class/effect damage
+  // source is REQUIRED to route through applyEffectDamage/applyEffectDot (the combat-log rule), so this
+  // one gate holds them all until the first swing of each encounter: playerAttackTick stamps
+  // act.playerSwungOnce on the swing ATTEMPT (a miss still counts -- the swing happened; effects the
+  // swing itself triggers fire normally, the stamp lands first), and the per-foe reset in defeatMonster
+  // clears it, so every foe in a chain waits for its own first swing. Direct familiar spell HITS are
+  // outside the gate (their own damage path -- commanded creatures, not carried engines); the familiar
+  // POISON DoT rides applyEffectDot and waits like everything else.
+  function combatEffectsArmed(){
+    var a = state.activity;
+    return !(a && a.type === 'combat' && !a.playerSwungOnce);
+  }
   function applyEffectDamage(dmg, name, opts){
     opts = opts || {};
+    if(!combatEffectsArmed()) return false; // no effect damage before the encounter's first swing
     // Pass the RAW value through: DoT slices are fractional and rounding here would change the damage.
     var killed = applyChipDamage(dmg);
     var shown = Math.round(dmg);
@@ -18810,6 +18831,7 @@
   // "Frostbite ticks the foe for 4.1B over 1s", which is also the number a player actually wants.
   var _clDotAccum = {}, CL_DOT_WINDOW_MS = 1000;
   function applyEffectDot(dmg, name){
+    if(!combatEffectsArmed()) return false; // DoT slices wait for the encounter's first swing too
     var killed = applyChipDamage(dmg);
     if(offlineCapture || !name || !(dmg > 0)) return killed;
     var e = _clDotAccum[name];
@@ -40486,7 +40508,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.27';
+  var GAME_VERSION = '0.0.86.28';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40661,7 +40683,7 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk, estateJobFieldsFrom:estateJobFieldsFrom, estateQueueClaimOutcome:estateQueueClaimOutcome,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
-      applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
+      applyEffectDamage:applyEffectDamage, combatEffectsArmed:combatEffectsArmed, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
       estateEnqueueOrStart:estateEnqueueOrStart, estateBuildTierLevelOk:estateBuildTierLevelOk, estatePaveTierLevelOk:estatePaveTierLevelOk, SKILL_XP_FLOOR:SKILL_XP_FLOOR, estateArchitectureTierCap:estateArchitectureTierCap, estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
       improveTierLabel:improveTierLabel, popupEnqueue:popupEnqueue, POPUP_QUEUE_MAX:POPUP_QUEUE_MAX,
