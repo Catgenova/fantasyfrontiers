@@ -16264,6 +16264,20 @@
     ok(plan && plan.plan.enchant_t5===3 && plan.maxTier===5, 'plans 3 tier-5 crystals');
     var plan2 = FF.planEnchantCrystals(3, 4);
     ok(plan2 && plan2.plan.enchant_t3===1 && plan2.plan.enchant_t5===3 && plan2.maxTier===5, 'fills tier3 first, spills to higher tier, flags it');
+    // Masterwork clamp (owner order 2026-08-04): materials end at t20, so a t21-t24 item requires t20
+    // materials. Unclamped, the planner loop never ran and masterworks could not be improved AT ALL.
+    eq(FF.improveMatTier(23), 20, 'a t23 masterwork requires t20 materials');
+    eq(FF.improveMatTier(20), 20, 't20 is unchanged');
+    eq(FF.improveMatTier(5), 5, 'ordinary tiers are unchanged');
+    s.inventory = { enchant_t20: 4 };
+    var mw = FF.planEnchantCrystals(23, 3);
+    ok(mw && mw.plan.enchant_t20===3 && mw.maxTier===20, 'a t23 masterwork enchants with t20 crystals');
+    ok(FF.planEnchantCrystals(24, 5) === null, 'a t24 masterwork still needs ENOUGH t20 crystals');
+    s.inventory = { enchant_t19: 9 };
+    ok(FF.planEnchantCrystals(23, 1) === null, 'the clamp is to t20, not lower — t19 crystals do not qualify');
+    s.inventory = { scroll_t20: 2 };
+    var mwScroll = FF.planInscriptions(24, 2);
+    ok(mwScroll && mwScroll.plan.scroll_t20===2 && mwScroll.maxTier===20, 'a t24 masterwork enhances with t20 Scrolls');
     s.inventory = savedInv;
   });
 

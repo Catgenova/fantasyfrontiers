@@ -15757,9 +15757,16 @@
     clearUniqueSlots(uid);   // silent: callers do their own logging + render
     if(state.uniqueItems) delete state.uniqueItems[uid];
   }
-  // Plan `count` Enchant Crystals of tier >= itemTier, cheapest (lowest) tiers first.
+  // Masterwork gear (t21-t24) spends the TOP material tier: Enchant Crystals and Inscription Scrolls
+  // end at t20 (TIER_COUNT-1), so an unclamped tier >= requirement made masterworks impossible to
+  // improve AT ALL -- the planners' `for(t=itemTier; t<TIER_COUNT)` loop never ran and every readout
+  // demanded materials that do not exist ("1 Enchant Crystal (t23+) · you have 0"). Owner order
+  // 2026-08-04: t21+ items require t20 materials. Every requirement/label/plan routes through this.
+  function improveMatTier(itemTier){ return Math.min(itemTier, TIER_COUNT - 1); }
+  // Plan `count` Enchant Crystals of tier >= the item's MATERIAL tier, cheapest (lowest) tiers first.
   // Returns { plan:{enchant_t<n>:qty}, maxTier } or null if the player can't cover it.
   function planEnchantCrystals(itemTier, count){
+    itemTier = improveMatTier(itemTier);
     var plan = {}, need = count, maxTier = itemTier;
     for(var t=itemTier; t<TIER_COUNT && need>0; t++){
       var id = 'enchant_t'+t, have = state.inventory[id]||0; if(have<=0) continue;
@@ -16112,6 +16119,7 @@
   // Total materials of `prefix`+tier owned across tiers >= fromTier (for the "you have N" readouts).
   function countTierMaterials(prefix, fromTier){ var n=0; for(var t=Math.max(0,fromTier); t<TIER_COUNT; t++){ n += state.inventory[prefix+t]||0; } return n; }
   function planInscriptions(itemTier, count){
+    itemTier = improveMatTier(itemTier);   // masterwork t21-t24 spends t20 Scrolls (see improveMatTier)
     var plan = {}, need = count, maxTier = itemTier;
     for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='scroll_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
     return need>0 ? null : { plan:plan, maxTier:maxTier };
@@ -16143,8 +16151,8 @@
     }
     var cost = u.enhance + 1;
     var planned = planInscriptions(u.tier, cost);
-    if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of '+improveTierLabel(u.tier)+' or higher.','danger'); return; }
-    if(planned.maxTier>u.tier && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
+    if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of '+improveTierLabel(improveMatTier(u.tier))+' or higher.','danger'); return; }
+    if(planned.maxTier>improveMatTier(u.tier) && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
     enhanceWarnArmed = false;
     consumeInputs(planned.plan);
     if(Math.random() < enhanceSuccessChance(u.enhance)){
@@ -16340,8 +16348,8 @@
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return; }
     var cost = count + 1;
     var planned = planEnchantCrystals(tier, cost);
-    if(!planned){ addLog('You need '+cost+' Enchant Crystal'+(cost===1?'':'s')+' of '+improveTierLabel(tier)+' or higher.','danger'); return; }
-    if(planned.maxTier>tier && state.enchantWarnHiTier && !improveWarnArmed){ improveWarnArmed = true; render(); return; }
+    if(!planned){ addLog('You need '+cost+' Enchant Crystal'+(cost===1?'':'s')+' of '+improveTierLabel(improveMatTier(tier))+' or higher.','danger'); return; }
+    if(planned.maxTier>improveMatTier(tier) && state.enchantWarnHiTier && !improveWarnArmed){ improveWarnArmed = true; render(); return; }
     improveWarnArmed = false;
     // Convert the source into a unique only now, as the enchant actually lands.
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
@@ -16895,8 +16903,8 @@
       html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+enchantLabel(u.kind,improvePending.roll)+'</div>';
       html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
     } else {
-      html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' ('+improveTierLabel(tier)+'+) · <b>you have '+improveMaterialSpan('enchant_t', tier, cost)+'</b>.</div>';
-      if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No '+improveTierLabel(tier)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
+      html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' ('+improveTierLabel(improveMatTier(tier))+'+) · <b>you have '+improveMaterialSpan('enchant_t', improveMatTier(tier), cost)+'</b>.</div>';
+      if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No '+improveTierLabel(improveMatTier(tier))+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
       html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind), isU2 ? u.enchants : [], slots, enchCtx);
@@ -16916,7 +16924,7 @@
           : '<b style="color:var(--danger);">a failure destroys the item.</b>';
         html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' ('+improveTierLabel(tier)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · '+_riskHtml+'</div>';
         if(enhanceLockArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ Enhancing <b>permanently</b> locks this item out of enchanting — you\'ll no longer be able to add or change enchants. Click Enhance again to confirm.</div>';
-        if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No '+improveTierLabel(tier)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
+        if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No '+improveTierLabel(improveMatTier(tier))+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
         // Barrier Shard toggle: on a failed Enhance, shatter a Barrier Shard instead of the item.
@@ -39460,7 +39468,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.3';
+  var GAME_VERSION = '0.0.86.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -39602,7 +39610,7 @@
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
-      parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
+      parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, equipCandidateRowHtml:equipCandidateRowHtml, bankUniqueBlob:bankUniqueBlob, bankUniqueRevive:bankUniqueRevive, uniqueBaseName:uniqueBaseName, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
