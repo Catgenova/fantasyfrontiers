@@ -15940,6 +15940,46 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Sub-nav furniture (owner picks 1/2/3/5 of the nav proposals, v0.0.86.14) --------------------
+  // Level badges (overlevel-aware, gold at the cap) + running-task pulse dots on the skill chips, and
+  // the last-visited skill remembered per category (the most repeated tap in the game removed).
+  suite('sub-nav: level badges, task dots, last-visited memory', function(){
+    var S = FF._state;
+    var sv = { cat: FF.currentCategoryId(), mx: S.xp.mining, act: S.activity, extra: S.extraCraftSlots };
+    try {
+      // The chip builder: badge value, the gold cap class, and the pulse dot.
+      S.xp.mining = FF.xpFloorForLevel(82);
+      var h = FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false);
+      ok(h.indexOf('sub-lvl">82<') !== -1, 'the badge reads the skill level (82)');
+      ok(h.indexOf('sub-live') === -1, 'no dot when the skill is idle');
+      S.xp.mining = FF.xpFloorForLevel(100);
+      ok(/sub-lvl max"/.test(FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false)), 'the badge goes gold at the cap');
+      ok(FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', true).indexOf('sub-live') !== -1, 'a running task paints the pulse dot');
+      // Busy detection: gathers by skill, special crafts by their owning skill, across every slot.
+      S.activity = { type:'gather', skill:'mining', itemId:'stone', progress:0 };
+      S.extraCraftSlots = [ { type:null }, { type:'craft', craftKind:'workshop', skillId:'mining', tierIndex:0, progress:0 } ];
+      var busy = FF.navBusySkills();
+      ok(busy.mining === 1 && busy.architecture === 1, 'gather (mining) and special craft (architecture) both mark busy');
+      eq(Object.keys(busy).length, 2, 'idle slots and other skills mark nothing');
+      // Last-visited memory: pick a skill, leave, come back -- it must NOT reset to the default.
+      FF.navPickCat('gathering');
+      eq(FF.currentSubId(), 'digging', 'first visit lands on the category default');
+      var el = document.getElementById('subTabs');
+      ok(el && el.querySelector('[data-sub="mycology"]'), 'the skill row rendered real chips');
+      ok(el.innerHTML.indexOf('sub-lvl') !== -1, 'the rendered row carries level badges');
+      ok(el.querySelector('[data-sub="mining"] .sub-live'), 'the rendered row marks the busy skill');
+      el.querySelector('[data-sub="mycology"]').click();
+      eq(FF.currentSubId(), 'mycology', 'clicking a chip selects it');
+      FF.navPickCat('cooking');
+      FF.navPickCat('gathering');
+      eq(FF.currentSubId(), 'mycology', 'returning to the category reopens the LAST skill, not the default');
+    } finally {
+      S.xp.mining = sv.mx; S.activity = sv.act; S.extraCraftSlots = sv.extra;
+      delete FF._navLastSub().gathering;
+      FF.navPickCat(sv.cat);
+    }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');
