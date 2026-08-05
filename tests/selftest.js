@@ -16065,6 +16065,43 @@
     }
   });
 
+  // ---- Card collapse (owner request, v0.0.86.17) ---------------------------------------------------
+  // A fold toggle on every craft/gather/forge card, PERSISTED in state (it rides the save, so it
+  // survives refresh) until retoggled. Keys are tier-stripped so the tier stepper never unfolds a
+  // card; fight cards are excluded; active cards (no queue box) always render expanded.
+  suite('crafting cards: the fold toggle persists in state', function(){
+    var S = FF._state;
+    eq(FF.cardCollapseKey('forgeBodyArmor:leather:chest:t5'), 'forgeBodyArmor:leather:chest', 'tiered keys fold per CARD, not per tier');
+    eq(FF.cardCollapseKey('craft:cooking_t3'), 'craft:cooking_t3', 'an _tN item id is not a tier suffix and stays intact');
+    var sv = S.collapsedCards;
+    try {
+      S.collapsedCards = {};
+      FF.cardCollapseToggle('forgeTool:blacksmithing');
+      eq(S.collapsedCards['forgeTool:blacksmithing'], 1, 'folding stores the key IN STATE (rides the save across refresh)');
+      FF.cardCollapseToggle('forgeTool:blacksmithing');
+      ok(!('forgeTool:blacksmithing' in S.collapsedCards), 'retoggling deletes the key (the map stays small)');
+      // The decorator: buttons on queue-keyed cards, folded class from state, fight cards excluded.
+      S.collapsedCards = { 'forgeTool:blacksmithing': 1 };
+      var probe = document.createElement('div');
+      probe.innerHTML = '<div class="item-card" id="pcA"><div class="item-top">A</div><div class="item-stats">s</div><input class="card-queue" data-qkey="forgeTool:blacksmithing:t14"><button class="action-btn">Forge</button></div>'
+        + '<div class="item-card" id="pcB"><div class="item-top">B</div><input class="card-queue" data-qkey="craft:cooking_t3"></div>'
+        + '<div class="item-card" id="pcC"><div class="item-top">C</div><input class="card-queue" data-qkey="fight:rabbit"></div>';
+      document.body.appendChild(probe);
+      try {
+        FF.decorateCollapsibleCards(probe);
+        var a = probe.querySelector('#pcA'), b = probe.querySelector('#pcB'), c = probe.querySelector('#pcC');
+        ok(a.classList.contains('card-min'), 'a folded key folds its card (tier-stripped match)');
+        ok(a.querySelector('.card-collapse') && a.querySelector('.card-collapse').getAttribute('data-key') === 'forgeTool:blacksmithing', 'the button carries the tier-stripped key');
+        ok(getComputedStyle(a.querySelector('.item-stats')).display === 'none', 'a folded card hides everything but its header');
+        ok(getComputedStyle(a.querySelector('.item-top')).display !== 'none', 'the header row stays visible');
+        ok(b.querySelector('.card-collapse') && !b.classList.contains('card-min'), 'an unfolded card gets the button and stays open');
+        ok(!c.querySelector('.card-collapse'), 'fight cards are not a crafting surface -> no toggle');
+        FF.decorateCollapsibleCards(probe);
+        eq(a.querySelectorAll('.card-collapse').length, 1, 'decorating twice never doubles the button');
+      } finally { probe.remove(); }
+    } finally { S.collapsedCards = sv || {}; }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

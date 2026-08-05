@@ -1940,6 +1940,14 @@
     padding:5px 6px;border-radius:6px;border:1px solid var(--border-light);background:var(--input-fill);color:var(--text);}
   .card-queue::placeholder{color:var(--text-faint);}
   .card-queue:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
+  /* Card collapse (owner request, v0.0.86.17): the fold button sits in the card's top-right corner;
+     a folded card keeps only its header row (and the button). Hiding is display-only -- the queue
+     input and its persisted value are still in the DOM, so nothing is lost by folding. */
+  .item-card{position:relative;}
+  .card-collapse{position:absolute;top:5px;right:5px;width:20px;height:20px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:#2a2418;border:1px solid #6b5a38;border-radius:5px;color:#9a8f78;font-size:11px;line-height:1;cursor:pointer;z-index:2;}
+  .card-collapse:hover{color:#e8dcc0;border-color:#ddbb66;}
+  .item-card.card-min > *:not(.item-top):not(.card-collapse){display:none;}
+  .item-card.card-min .item-top{margin-bottom:0;}
   .gab-task-count{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:#c8791f;font-variant-numeric:tabular-nums;}
   .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:#c0b394;}
   /* v0.0.86.16 (owner picks 1/2/3/6/7/9/10): HUD chips, per-skill swatches, the next-to-finish accent,
@@ -14160,6 +14168,45 @@
   // credits queueCreditOutput, but the click handler never picked the box up, so Architecture had
   // no quantity setter (ticket, v0.0.86.5).
   function queueEligibleAction(action){ return /^(gather|craft|forge|fight|build)/.test(action); }
+  // ---- Card collapse (owner request, v0.0.86.17) ---------------------------------------------------
+  // Every craft/gather/forge card gets a fold toggle that shrinks it to its header row. PERSISTED in
+  // state (saved with the game, like queueTargets), so it survives a refresh until retoggled. The key
+  // is the card's queue key with any :tN tier suffix stripped -- a tier-stepper move must never
+  // un-collapse a tiered forge card. Only collapsed keys are stored, so the map stays small.
+  function cardCollapseKey(qkey){ return String(qkey || '').replace(/:t\d+$/, ''); }
+  function cardCollapsed(key){ return !!(state.collapsedCards && state.collapsedCards[key]); }
+  function cardCollapseToggle(key){
+    if(!key) return;
+    if(!state.collapsedCards || typeof state.collapsedCards !== 'object') state.collapsedCards = {};
+    if(state.collapsedCards[key]) delete state.collapsedCards[key]; else state.collapsedCards[key] = 1;
+    saveGame();
+  }
+  // Decorate the freshly-rendered content: every idle card carrying a queue key gains the fold button
+  // and, when its key is collapsed, the folded class. Done as a DOM pass rather than in each of the
+  // ~20 card-building sites; an ACTIVE card renders no queue box, so it always shows expanded (you
+  // want to see its progress) and folds again when it goes idle. Fight cards are excluded -- the
+  // enemies grid is not a crafting surface.
+  function decorateCollapsibleCards(root){
+    var qs = (root || document).querySelectorAll('.item-card .card-queue[data-qkey]');
+    for(var i = 0; i < qs.length; i++){
+      var qkey = qs[i].getAttribute('data-qkey') || '';
+      if(qkey.indexOf('fight:') === 0) continue;
+
+      var card = qs[i].closest ? qs[i].closest('.item-card') : null;
+      if(!card || card.querySelector('.card-collapse')) continue;
+      var key = cardCollapseKey(qkey);
+      var on = cardCollapsed(key);
+      if(on) card.classList.add('card-min');
+      var btn = document.createElement('button');
+      btn.className = 'card-collapse';
+      btn.setAttribute('data-action', 'cardCollapse');
+      btn.setAttribute('data-key', key);
+      btn.setAttribute('aria-label', on ? 'Expand this card' : 'Collapse this card');
+      btn.setAttribute('data-tip', on ? 'Expand this card' : 'Collapse this card');
+      btn.innerHTML = on ? '&#9662;' : '&#9652;';
+      card.appendChild(btn);
+    }
+  }
   // Set by the click handler from the card that was actually clicked, consumed by placeNewActivity. Keeps
   // the target out of all 18 individual start handlers.
   var pendingQueueTarget = 0;
@@ -15143,6 +15190,7 @@
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
       activeBrew: { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 },
       queueTargets: {},  // per-card run lengths keyed by card; absent = run until materials run out
+      collapsedCards: {}, // folded craft/gather/forge cards keyed by card (tier-stripped); absent = expanded
       autoTea: false,
       autoTome: false,   // auto-study the best owned Tome when none is active
       autoBrew: false,   // auto-drink the best owned Brew when none is active
@@ -36420,6 +36468,7 @@
       detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
       inputRestore(_inpSnap);     // restore a typed-but-uncommitted field the rebuild would otherwise wipe
       scrollRestore(_scrSnap);    // put every scrolled panel back where the player was
+      decorateCollapsibleCards(_contentEl); // fold buttons + folded state on the craft/gather/forge cards
       if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); chatChanPipsUpdate(); }
     }
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
@@ -38704,6 +38753,8 @@
     // Fold/unfold the task card (owner pick 9). The flag is in the structural signature, so the next
     // live pass rebuilds the card in its new shape; every task and auto-drink keeps running underneath.
     gabToggleCollapse: function(btn, e){ gabCollapsed = !gabCollapsed; updateGlobalActionBarLive(); },
+    // Fold/unfold a crafting card (v0.0.86.17); persisted in state, so it survives refresh.
+    cardCollapse: function(btn, e){ cardCollapseToggle(btn.getAttribute('data-key')); },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -39959,7 +40010,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.16';
+  var GAME_VERSION = '0.0.86.17';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40092,6 +40143,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, renderWorkshopForge:renderWorkshopForge, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot, placeNewActivity:placeNewActivity, queueEligibleAction:queueEligibleAction,
+      cardCollapseKey:cardCollapseKey, cardCollapsed:cardCollapsed, cardCollapseToggle:cardCollapseToggle, decorateCollapsibleCards:decorateCollapsibleCards,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
