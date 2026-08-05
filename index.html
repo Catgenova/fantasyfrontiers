@@ -1705,13 +1705,15 @@
     background:#2a2418; border:1px solid #6b5a38; border-radius:4px; padding:0 4px; font-size:9px; }
   .ar2.ivy .ar2-tray .arena-item-chip.on{ border-color:#ddbb66; box-shadow:inset 0 0 0 1px #ddbb66; }
   .ar2.ivy .ar2-tray .arena-item-chip.on > span:first-child{ color:#ddbb66; }
-  /* 9: the Auto-Eat header row -- title, live status, and the fold chevron (which is normally an
-     absolutely-positioned card corner button; here it sits in the flex row). */
-  .autoeat-hd{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 4px; }
-  .autoeat-hd .autoeat-status{ font-family:var(--font-mono); font-size:11px; color:#c0b394;
-                               min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; }
-  .autoeat-hd .card-collapse.autoeat-fold{ position:static; flex:0 0 auto; margin-left:auto; }
-  .ar2.ivy .ar2-tray .autoeat-status b{ color:#e8dcc0; }
+  /* 9 (+ v0.0.86.25): the shared PANEL fold header -- title, live status, and the fold chevron
+     (which is normally an absolutely-positioned card corner button; here it sits in the flex row).
+     Worn by Auto-Eat, the consumables strip, and the combat feed. */
+  .fold-hd{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 4px; }
+  .fold-hd .fold-status{ font-family:var(--font-mono); font-size:11px; color:#c0b394;
+                         min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; }
+  .fold-hd .card-collapse.fold-btn{ position:static; flex:0 0 auto; margin-left:auto; }
+  .ar2-head.fold-hd{ margin:0 0 4px; } /* the feed header keeps its own tighter spacing */
+  .ar2.ivy .ar2-tray .fold-status b{ color:#e8dcc0; }
   /* 10: the special-attack telegraph -- past 80% charge the fill burns hot and the foe's stone ring
      flashes, so the special reads as incoming rather than decorative. */
   .ar2-bar.spec.charged .fil{ animation:ar2SpecHot .8s ease-in-out infinite alternate; }
@@ -23187,15 +23189,38 @@
       + ' &middot; Next: ' + autoEatNextFoodLabel()
       + ' &middot; ' + fmt(getTotalAutoEatFoodQty()) + ' food';
   }
+  // Shared fold chevron for the stage's PANELS (Auto-Eat, the consumables strip, the combat feed --
+  // v0.0.86.24 pick 9, extended by owner order in v0.0.86.25). Same persisted store as the crafting
+  // cards (state.collapsedCards via the cardCollapse action, survives refresh until retoggled); the
+  // 'panel:' key prefix keeps them clear of the card keys.
+  function trayFoldBtn(key, min, what){
+    var lbl = (min ? 'Expand ' : 'Collapse ') + what;
+    return '<button class="card-collapse fold-btn" data-action="cardCollapse" data-key="'+key+'"'
+      + ' data-tip="'+lbl+'" aria-label="'+lbl+'">'+(min ? '&#9662;' : '&#9652;')+'</button>';
+  }
+  // One-line live state for the collapsed consumables strip: the readied potion and its charges,
+  // plus how many stacks the strip is hiding.
+  function trayConsumStatusText(){
+    var n = 0;
+    POTION_TYPE_IDS.forEach(function(type){
+      for(var i = 0; i < TIER_COUNT; i++){ if((state.inventory[type+'_t'+i]||0) > 0) n++; }
+    });
+    n += foodConsumableList().length;
+    var head = state.activePotion
+      ? (((ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion) + ' &middot; '
+         + (state.potionCharges||0) + '/' + (POTION_MAX_CHARGES + apothecaryExtraCharges()) + ' charges')
+      : 'None active';
+    return head + ' &middot; ' + n + ' stack' + (n === 1 ? '' : 's');
+  }
   // The panel COLLAPSES like a crafting card (v0.0.86.24, owner pick 9): the explanation paragraph and
   // threshold buttons fold behind the same persisted chevron (state.collapsedCards, key 'panel:autoeat',
   // survives refresh until retoggled) while the header keeps the live status, so the always-expanded
   // paragraph stops costing a phone screen ~150px per fight.
   function renderAutoEatPanel(){
     var min = cardCollapsed('panel:autoeat');
-    var html = '<div class="autoeat-hd"><h3 style="margin:0">Auto-Eat</h3>'
-      + '<span class="autoeat-status" id="autoEatHdStatus">'+autoEatStatusText()+'</span>'
-      + '<button class="card-collapse autoeat-fold" data-action="autoEatToggle" data-tip="'+(min?'Expand Auto-Eat':'Collapse Auto-Eat')+'" aria-label="'+(min?'Expand Auto-Eat':'Collapse Auto-Eat')+'">'+(min?'&#9662;':'&#9652;')+'</button></div>';
+    var html = '<div class="fold-hd"><h3 style="margin:0">Auto-Eat</h3>'
+      + '<span class="fold-status" id="autoEatHdStatus">'+autoEatStatusText()+'</span>'
+      + trayFoldBtn('panel:autoeat', min, 'Auto-Eat') + '</div>';
     if(min) return html;
     html += '<div class="section-intro">During combat only, automatically eats your best available Roasted Food or Cooked Meal (highest heal first) once your HP drops to or below the chosen threshold. Off by default. <b>Locked</b> food is skipped. Unlock it in your Inventory to let Auto-Eat use it.</div>';
     html += '<div class="style-row">';
@@ -24692,7 +24717,14 @@
   }
   // Compact in-card combat consumables: the active potion (with charges) + owned consumable chips.
   function renderCombatConsumables(){
+    // The whole utility strip folds (owner order, v0.0.86.25): header + live status stay, the active-
+    // potion row and both chip grids go. Same persisted key store as every other fold.
+    var _min = cardCollapsed('panel:consumables');
     var h = '<div class="arena-items">';
+    h += '<div class="fold-hd"><h3 style="margin:0">Consumables</h3>'
+      + '<span class="fold-status" id="trayConsumStatus">'+trayConsumStatusText()+'</span>'
+      + trayFoldBtn('panel:consumables', _min, 'the consumables strip') + '</div>';
+    if(_min) return h + '</div>';
     if(state.activePotion){
       var an=(ALL_SELLABLE[state.activePotion]||{}).name||state.activePotion;
       h += '<div class="arena-items-active">'+svgIcon('potion','#8a5aaa')+' <b>'+escapeHtml(an)+'</b> &bull; '+escapeHtml(potionEffectDesc(state.activePotion))
@@ -25977,8 +26009,12 @@
     html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
     html += '</div>'; // companions column
     html += '<div>';
-    html += '<div class="ar2-head">Combat feed</div>';
-    html += '<div class="ar2-logframe"><div class="ar2-log" id="arenaMiniLog">'+arenaMiniLogHtml()+'</div></div>';
+    // The feed folds too (owner order, v0.0.86.25). Only the FRAME goes: the ring buffer keeps
+    // accruing (it is the same log the Chat tab's Combat channel reads) and arenaMiniLogRenderOnly
+    // null-checks its target, so nothing writes into the void while collapsed.
+    var _logMin = cardCollapsed('panel:combatlog');
+    html += '<div class="ar2-head fold-hd"><span>Combat feed</span>' + trayFoldBtn('panel:combatlog', _logMin, 'the combat feed') + '</div>';
+    if(!_logMin) html += '<div class="ar2-logframe"><div class="ar2-log" id="arenaMiniLog">'+arenaMiniLogHtml()+'</div></div>';
     html += '</div>'; // log column
     html += '</div>'; // ar2-low
     // The consumables strip and the Auto-Eat panel are shared with the tan chrome and carry dozens of tan
@@ -38561,6 +38597,11 @@
       var autoEatHdHtml = autoEatStatusText();
       if(autoEatHdEl._html !== autoEatHdHtml){ autoEatHdEl._html = autoEatHdHtml; autoEatHdEl.innerHTML = autoEatHdHtml; }
     }
+    var consumHdEl = document.getElementById('trayConsumStatus');
+    if(consumHdEl){ // same treatment for the consumables strip's header
+      var consumHdHtml = trayConsumStatusText();
+      if(consumHdEl._html !== consumHdHtml){ consumHdEl._html = consumHdHtml; consumHdEl.innerHTML = consumHdHtml; }
+    }
 
     var charHpFill = document.getElementById('charHpFill');
     var charHpLabel = document.getElementById('charHpLabel');
@@ -39041,8 +39082,7 @@
     // live pass rebuilds the card in its new shape; every task and auto-drink keeps running underneath.
     gabToggleCollapse: function(btn, e){ gabCollapsed = !gabCollapsed; updateGlobalActionBarLive(); },
     // Fold/unfold a crafting card (v0.0.86.17); persisted in state, so it survives refresh.
-    cardCollapse: function(btn, e){ cardCollapseToggle(btn.getAttribute('data-key')); },
-    autoEatToggle: function(){ cardCollapseToggle('panel:autoeat'); },
+    cardCollapse: function(btn, e){ cardCollapseToggle(btn.getAttribute('data-key')); }, // crafting cards AND the stage panels (their trayFoldBtn passes a 'panel:' key)
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -40429,7 +40469,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.24';
+  var GAME_VERSION = '0.0.86.25';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40565,7 +40605,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot, placeNewActivity:placeNewActivity, queueEligibleAction:queueEligibleAction,
       cardCollapseKey:cardCollapseKey, cardCollapsed:cardCollapsed, cardCollapseToggle:cardCollapseToggle, decorateCollapsibleCards:decorateCollapsibleCards, ensureLandingStyle:ensureLandingStyle,
       landingFightActive:landingFightActive, landingFightSeed:landingFightSeed, landingFightMount:landingFightMount, landingFightScale:landingFightScale, landingFightStop:landingFightStop, LANDING_FOES:LANDING_FOES,
-      fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables,
+      fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables, trayConsumStatusText:trayConsumStatusText, trayFoldBtn:trayFoldBtn,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,

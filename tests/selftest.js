@@ -18117,11 +18117,12 @@
     } finally { S.inventory = svInv; S.activePotion = svPot; }
 
     // 9: the Auto-Eat panel folds behind the persisted chevron; the header carries live state.
+    // (v0.0.86.25: the chevron rides the shared cardCollapse action with a panel: key.)
     var svCards = S.collapsedCards;
     try {
       S.collapsedCards = {};
       var open = FF.renderAutoEatPanel();
-      ok(/autoEatHdStatus/.test(open) && /data-action="autoEatToggle"/.test(open), 'the header carries the live status and the fold control');
+      ok(/autoEatHdStatus/.test(open) && /data-key="panel:autoeat"/.test(open), 'the header carries the live status and the fold control');
       ok(/setAutoEatThreshold/.test(open), 'expanded, the threshold buttons are present');
       S.collapsedCards = { 'panel:autoeat': 1 };
       var folded = FF.renderAutoEatPanel();
@@ -18129,6 +18130,34 @@
       ok(/autoEatHdStatus/.test(folded), 'collapsed, the live status still reads in the header');
       ok(/Off|%/.test(FF.autoEatStatusText()) && /food/.test(FF.autoEatStatusText()), 'the status line carries threshold and food count');
     } finally { S.collapsedCards = svCards; }
+
+    // v0.0.86.25 (owner order): the consumables strip and the combat feed fold the same way.
+    var svCards2 = S.collapsedCards, svInv2 = S.inventory, svPot2 = S.activePotion;
+    try {
+      S.collapsedCards = {};
+      S.inventory = { toxin_t0: 145, bomb_t3: 80 }; S.activePotion = null;
+      var stripOpen = FF.renderCombatConsumables();
+      ok(/data-key="panel:consumables"/.test(stripOpen) && /trayConsumStatus/.test(stripOpen), 'the consumables strip carries its fold control and live status');
+      ok(/arena-chip-grid/.test(stripOpen), 'expanded, the chip grid is present');
+      ok(/None active/.test(FF.trayConsumStatusText()) && /2 stacks/.test(FF.trayConsumStatusText()), 'the status line counts the hidden stacks');
+      S.collapsedCards = { 'panel:consumables': 1 };
+      var stripFolded = FF.renderCombatConsumables();
+      ok(!/arena-chip-grid/.test(stripFolded), 'collapsed, the chips are gone');
+      ok(/trayConsumStatus/.test(stripFolded), 'collapsed, the live status still reads in the header');
+      // The combat feed fold, exercised through the real arena render.
+      var svAct3 = S.activity, svHp3 = S.playerHp;
+      var wolf2 = FF.monsterById('wildlife_wolf');
+      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf2.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt: 5 };
+      S.playerHp = FF.maxHp(S);
+      try {
+        S.collapsedCards = {};
+        ok(/arenaMiniLog/.test(FF.renderArena()), 'expanded, the feed frame renders');
+        S.collapsedCards = { 'panel:combatlog': 1 };
+        var arenaFolded = FF.renderArena();
+        ok(!/arenaMiniLog/.test(arenaFolded), 'collapsed, the feed frame is gone (the ring buffer itself keeps accruing)');
+        ok(/data-key="panel:combatlog"/.test(arenaFolded), 'and the header keeps the fold control to bring it back');
+      } finally { S.activity = svAct3; S.playerHp = svHp3; }
+    } finally { S.collapsedCards = svCards2; S.inventory = svInv2; S.activePotion = svPot2; }
 
     // 10: the special bar telegraphs and carries its real description.
     var bar = FF.ar2Bar('ar2AtkSpec', 'spec charged', 'Chaos Bolt', 85, 'special', 'Chaos Bolt: a random curse');
