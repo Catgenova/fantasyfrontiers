@@ -107,6 +107,16 @@ flag would change Summoner damage, so it needs the owner's call.
 
 ## Conventions
 
+- **NO EM DASHES, EVER (owner rule, 2026-08-05).** Not in game copy, not in patch notes or
+  Discord drafts, not in commit messages, PR text, code comments, proposals, or chat replies.
+  Write short sentences instead; where a dash would have joined a label to a value use a colon,
+  and for parentheticals use parentheses or commas. The v0.0.86.20 sweep removed all ~700 from
+  player-facing strings and a selftest guard deep-scans every exported def table, so a new one
+  in game copy FAILS THE SUITE. En dashes for numeric ranges (1&ndash;4) are fine.
+- **No emojis in player-facing text either (owner rule, same day, v0.0.86.22):** use the
+  `#iconSprite` shapes (warning/bulb/bomb/snowflake/mute/link/scroll joined the set) or plain
+  words; a guard scans the def tables for pictographs too. Monochrome TEXT glyphs the game
+  keeps on purpose: star, flag, four-pointed stars, arrows, checks.
 - The whole game is one file: `index.html` (~28k-line inline script, ES5-style `var` +
   `function`, no build-time modules). Match that style.
 - **The tan chrome is RETIRED (v0.0.86.6–.8, owner sweep): dark marble in stone frames is the default.**
