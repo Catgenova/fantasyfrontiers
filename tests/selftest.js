@@ -14522,6 +14522,40 @@
     })();
   });
 
+  // ---- Combat plate: the player's level includes MASTERY levels (ticket, v0.0.86.12) --------------
+  // The stage plate read classLevel, which caps at 100, so a player 10 mastery levels deep still saw
+  // "Lv 100". classDisplayLevel adds the over-100 levels for DISPLAY ONLY -- mechanics keep the capped
+  // classLevel, so perk gates never move with mastery.
+  suite('combat plate: mastery levels show past 100', function(){
+    function C(m){ return {material:m, tier:5, rarity:'normal'}; }
+    var s = FF._state;
+    var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                 oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.executioner,
+                 act:s.activity, hp:s.playerHp };
+    try {
+      s.equippedMainhand='fullmoonaxe'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+      s.equippedOffhand=null; s.equippedOffhandTier=0;
+      s.bodyArmor={ chest:C('chain'), gauntlets:C('chain'), boots:C('leather') };
+      s.uniqueItems = {};
+      s.xp.executioner = FF.xpFloorForLevel(85);
+      eq(FF.activeClassId(s), 'executioner', 'the fixture activates the Executioner');
+      eq(FF.classDisplayLevel(s, 'executioner'), 85, 'below the cap the display level IS the class level');
+      s.xp.executioner = FF.SKILL_XP_FLOOR_EXT[110];
+      eq(FF.masteryLevel(s.xp.executioner), 10, 'the seeded xp is exactly 10 mastery levels');
+      eq(FF.classLevel(s, 'executioner'), 100, 'the mechanical class level stays capped at 100');
+      eq(FF.classDisplayLevel(s, 'executioner'), 110, 'the display level adds mastery: Lv 110');
+      // And the stage plate carries it.
+      s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      s.playerHp = FF.maxHp(s);
+      FF._orbsReset();
+      ok(/&middot; Lv 110</.test(FF.renderArena()), 'the combat plate shows the mastery-inclusive level');
+    } finally {
+      s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+      s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.executioner=snap.xp;
+      s.activity=snap.act; s.playerHp=snap.hp;
+    }
+  });
+
   suite('classes: Executioner Falling Axe engine', function(){
     function C(m){ return {material:m, tier:5, rarity:'normal'}; }
     (function(){
