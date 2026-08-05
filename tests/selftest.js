@@ -16102,6 +16102,39 @@
     } finally { S.collapsedCards = sv || {}; }
   });
 
+  // ---- The landing page joins the marble-and-stone layout (owner approval, v0.0.86.18) ------------
+  // The gate was the LAST surface on the tan page + old ivy-vine SVG frame era. Pinned via the injected
+  // landing stylesheet and computed styles on its classes: white marble ground and gate plaque, dark
+  // marble stat chips / feature cards / combat demo in the arena stone, and the ivy-SVG frame retired
+  // file-wide (its data-URI is gone, so a straggler would render NO frame and fail the border checks).
+  suite('landing page: marble ground, stone frames, the ivy-vine frame retired', function(){
+    FF.ensureLandingStyle();
+    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+    ok(css.indexOf('ivy_field.png') !== -1, 'the page ground and gate plaque tile the white marble');
+    ok(css.indexOf('marble_dark.png') !== -1, 'chips/cards/demo sit on the black marble');
+    ok(css.indexOf('ivy_stretch.png') !== -1, 'framed in the arena stone');
+    ok(css.indexOf('ivy-frame') === -1, 'the landing no longer references the old ivy-vine frame');
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="ff-land-chip"><b>170+</b><span>Skills</span></div>'
+      + '<div class="ff-land-card"><div class="ff-land-card-t">t</div><div class="ff-land-card-b">b</div></div>'
+      + '<div class="ff-prev"><span class="ff-prev-name">You</span><span class="ff-prev-dmg crit">-197</span></div>'
+      + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div></div>';
+    document.body.appendChild(probe);
+    try {
+      var chip = getComputedStyle(probe.querySelector('.ff-land-chip'));
+      ok(chip.backgroundImage.indexOf('marble_dark') !== -1 && chip.borderImageSource.indexOf('ivy_stretch') !== -1, 'stat chips are black marble in the stone cut');
+      eq(getComputedStyle(probe.querySelector('.ff-land-chip b')).color, 'rgb(221, 187, 102)', 'chip numbers read in the stage gold');
+      var card = getComputedStyle(probe.querySelector('.ff-land-card'));
+      ok(card.backgroundImage.indexOf('marble_dark') !== -1 && card.borderImageSource.indexOf('ivy_stretch') !== -1, 'feature cards take the item-card treatment');
+      eq(getComputedStyle(probe.querySelector('.ff-land-card-b')).color, 'rgb(192, 179, 148)', 'card bodies read in parchment on the dark ground');
+      var prev = getComputedStyle(probe.querySelector('.ff-prev'));
+      ok(prev.backgroundImage.indexOf('marble_dark') !== -1 && prev.borderImageSource.indexOf('ivy_stretch') !== -1, 'the combat demo is the arena in miniature');
+      eq(getComputedStyle(probe.querySelector('.ff-prev-dmg.crit')).color, 'rgb(221, 187, 102)', 'crit floats went stage gold (the page green vanished on dark)');
+      var auth = getComputedStyle(probe.querySelector('.ff-land-auth'));
+      ok(auth.backgroundImage.indexOf('ivy_field') !== -1 && auth.borderImageSource.indexOf('ivy_stretch') !== -1, 'the gate is ONE white-marble plaque in stone (the double frame is gone)');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');
