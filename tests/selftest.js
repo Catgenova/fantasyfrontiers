@@ -15980,6 +15980,47 @@
     }
   });
 
+  // ---- Sub-nav round two (owner picks 2/4/5/8/9 of the ten, v0.0.86.15) ----------------------------
+  // Category-tier rollups (task dot + at-cap count), the new-tier flash that retires on visit, the
+  // hover tip's three data sources, the category total plinth, and the workshop glyph.
+  suite('sub-nav: category rollups, new-tier flash, tips, totals, workshop glyphs', function(){
+    var S = FF._state;
+    var sv = { mx: S.xp.mining, dg: S.xp.digging, act: S.activity, extra: S.extraCraftSlots };
+    try {
+      S.activity = { type:null }; S.extraCraftSlots = [];
+      // Category rollup: at-cap count and the task dot, from the category's own skill list.
+      S.xp.digging = FF.xpFloorForLevel(100);
+      S.xp.mining = FF.xpFloorForLevel(82);
+      var roll = FF.navCatRollupHtml('gathering', {});
+      ok(/cat-caps[^>]*>\d+★</.test(roll), 'the category chip counts skills at the cap');
+      ok(roll.indexOf('sub-live') === -1, 'no dot while nothing runs there');
+      ok(FF.navCatRollupHtml('gathering', { mining:1 }).indexOf('sub-live') !== -1, 'a busy skill lights the category dot');
+      eq(FF.navCatRollupHtml('estate', {}), '', 'categories without a skill row roll up nothing');
+      ok(FF.navCatSkillIds('refining').indexOf('butchering') !== -1, 'the category map carries the Refining special case');
+      // New-tier flash: first sight seeds silently; a crossing flashes; visiting retires it.
+      delete FF._navSeenTiers().mining;
+      FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false);            // first sight -> seeded, no flash
+      var before = FF._navSeenTiers().mining;
+      ok(before > 0, 'first render seeds the seen-tier map');
+      S.xp.mining = FF.xpFloorForLevel(90);                               // crosses at least one tier from 82
+      ok(FF.navUnlockedTiers(90) > before, 'the fixture really crosses a tier threshold');
+      var h = FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false);
+      ok(/sub-btn flash/.test(h) && h.indexOf('NEW tier unlocked') !== -1, 'a crossed threshold flashes the chip');
+      FF._navSeenTiers().mining = FF.navUnlockedTiers(90);                // what the click handler records
+      ok(!/sub-btn flash/.test(FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false)), 'visiting retires the flash');
+      // The hover tip: level, % to next, and it lives on the chip as data-tip.
+      var tip = FF.subTipText('mining');
+      ok(/^Lv 90/.test(tip) && /% to 91/.test(tip), 'the tip reads level and progress to next: ' + JSON.stringify(tip));
+      ok(FF.subBtnHtml('mining', '', 'Mining', '#6f6a5c', false).indexOf('data-tip="Lv 90') !== -1, 'the chip carries the tip');
+      // The category total plinth sums the row against the all-100 ceiling.
+      var pl = FF.navTotalPlinth(['mining','digging']);
+      ok(pl.indexOf('Σ 190 / 200') !== -1, 'the plinth sums levels against the ceiling (90 + 100 / 200)');
+    } finally {
+      S.xp.mining = sv.mx; S.xp.digging = sv.dg; S.activity = sv.act; S.extraCraftSlots = sv.extra;
+      delete FF._navSeenTiers().mining;
+    }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

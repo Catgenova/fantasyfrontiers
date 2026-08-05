@@ -2304,7 +2304,13 @@
   .sub-btn .sub-lvl{font-family:var(--font-mono);font-size:9px;font-weight:700;line-height:1;color:#8f836b;background:rgba(0,0,0,.35);border:1px solid #48432f;border-radius:7px;padding:2px 4px;}
   .sub-btn .sub-lvl.max{color:#ddbb66;border-color:#6b5a38;}
   .sub-btn.active .sub-lvl{color:#fbf6ea;background:rgba(0,0,0,.28);border-color:rgba(0,0,0,.35);}
-  .sub-btn .sub-live{width:7px;height:7px;border-radius:50%;background:#7cb350;box-shadow:0 0 5px rgba(124,179,80,.85);animation:ffFabPulse 1.4s ease-in-out infinite;flex:0 0 auto;}
+  .sub-live{display:inline-block;vertical-align:middle;width:7px;height:7px;border-radius:50%;background:#7cb350;box-shadow:0 0 5px rgba(124,179,80,.85);animation:ffFabPulse 1.4s ease-in-out infinite;flex:0 0 auto;}
+  .ff-sub-btn .sub-live,.ff-subchips .chip .sub-live{margin-left:5px;}
+  /* v0.0.86.15 additions: category rollups, workshop glyphs, the category total plinth. */
+  .cat-caps{font-family:var(--font-mono);font-size:9px;font-weight:700;color:#ddbb66;margin-left:5px;}
+  .sub-ws{display:inline-flex;align-items:center;}
+  .sub-ws svg{width:10px;height:10px;}
+  .sub-total{font-family:var(--font-mono);font-size:10px;color:#9a8f78;background:#2a2418;border:1px solid #6b5a38;border-radius:7px;padding:3px 7px;align-self:center;margin-left:auto;}
 </style>
 </head>
 <body>
@@ -20405,12 +20411,13 @@
   // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
   function renderCatTabs(){
     var railHtml = '', dockHtml = '', chipHtml = '';
+    var _busy = navBusySkills();   // category-tier rollups (owner pick 2): task dot + at-cap count
     AREAS.forEach(function(a){
       var aon = a.id===currentArea;
       railHtml += '<button class="ff-area-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span>'+a.label+'</button>';
       if(aon){
         railHtml += '<div class="ff-subnest">';
-        a.subs.forEach(function(s){ railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
+        a.subs.forEach(function(s){ railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
         railHtml += '</div>';
       }
       dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span><span class="lbl">'+a.label+'</span></button>';
@@ -20418,7 +20425,7 @@
     // Chat no longer lives in the rail on ANY viewport -- it's behind the bottom-left chat bubble (the
     // drawer), same as mobile. (renderChatDock() becomes a no-op with no #chatDockPanel to fill.)
     var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
-    if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
+    if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
     // Rebuilding the rail HTML recreates an EMPTY #chatDockPanel node; invalidate the dock signature
     // so renderChatDock() (called right after this in render()) refills it. Without this reset the
     // sig-gate sees "no structural change" and skips the refill, leaving chat permanently blank.
@@ -20886,13 +20893,72 @@
     }
     return out;
   }
+  // Category -> its skill-row ids (null when the category has no skill row). One source for the
+  // category-tier rollups AND the skill row itself.
+  function navCatSkillIds(cat){
+    return cat==='gathering' ? GATHERING_TAB_SKILL_IDS
+         : cat==='crafting' ? CRAFTING_TAB_SKILL_IDS
+         : cat==='refining' ? REFINING_TAB_SKILL_IDS
+         : cat==='cooking' ? COOKING_SKILL_IDS
+         : cat==='building' ? BUILDING_SKILL_IDS
+         : cat==='outfitting' ? OUTFITTING_SKILL_IDS
+         : cat==='faith' ? FAITH_SKILL_IDS
+         : null;
+  }
+  // Rollup for a CATEGORY chip (owner pick 2, v0.0.86.15): a task dot when any of its skills is busy,
+  // and how many sit at Lv 100+. Cheap: ~7 categories x ~12 skills per render.
+  function navCatRollupHtml(cat, busy){
+    var ids = navCatSkillIds(cat); if(!ids) return '';
+    var caps = 0, live = false;
+    for(var i = 0; i < ids.length; i++){
+      if(busy[ids[i]]) live = true;
+      if(skillLevel(ids[i], (state.xp && state.xp[ids[i]]) || 0) >= MAX_SKILL_LEVEL) caps++;
+
+    }
+    return (caps > 0 ? '<span class="cat-caps" title="Skills at Lv 100+">'+caps+'★</span>' : '')
+         + (live ? '<span class="sub-live" title="A task is running here"></span>' : '');
+  }
+  // Just-unlocked pip (owner pick 4): a skill that crossed a TIER threshold since you last looked at it
+  // flashes until visited. Session map, seeded on first sight so nothing flashes at boot; the active
+  // chip always counts as seen (you're looking at it).
+  var navSeenTiers = {};
+  function navUnlockedTiers(lvl){ var n = 0; for(var i = 0; i < TIER_LEVELS.length; i++){ if(TIER_LEVELS[i] <= lvl) n++; } return n; }
+  // Hover card (owner pick 5): level + % to next, the tool's speed cut, and the placed workshop's
+  // bonus -- the three things that otherwise live on two other pages. Plain text for data-tip.
+  function subTipText(sk){
+    var xp = (state.xp && state.xp[sk]) || 0, lvl = skillLevel(sk, xp);
+    var t = 'Lv ' + lvl;
+    var pct = Math.round(skillLevelProgress(sk, xp));
+    if(pct < 100) t += ' — ' + pct + '% to ' + (lvl + 1);
+    var tsPct = Math.round((1 - toolSpeedMultiplier(state, sk)) * 100);
+    if(tsPct > 0) t += ' · Tool −' + tsPct + '% time';   // >0 after rounding, or a 0.998 mult reads "−0%"
+    var wsS = workshopSpeedBonus(state, sk), wsD = workshopDoubleChance(state, sk);
+    if(wsS > 0 || wsD > 0) t += ' · Workshop +' + Math.round(wsS * 100) + '% speed / +' + Math.round(wsD * 100) + '% double';
+    return t;
+  }
+  // Category total-level plinth (owner pick 8): the sum of the row's levels against the all-100 ceiling.
+  function navTotalPlinth(ids){
+    var sum = 0; for(var i = 0; i < ids.length; i++) sum += skillLevel(ids[i], (state.xp && state.xp[ids[i]]) || 0);
+    return '<span class="sub-total" title="Total levels in this category">Σ '+fmt(sum)+' / '+fmt(ids.length * MAX_SKILL_LEVEL)+'</span>';
+  }
   // One skill chip: icon + label + a LEVEL badge (overlevel-aware, so mastery reads 100+; gold at the
-  // cap) + the pulse dot when a task runs there. The row doubles as a progression dashboard.
+  // cap), a castle glyph when a workshop is placed for the skill (owner pick 9), the pulse dot when a
+  // task runs there, and the new-tier flash. The row doubles as a progression dashboard.
   function subBtnHtml(sk, icon, label, color, busy){
     var lvl = skillLevel(sk, (state.xp && state.xp[sk]) || 0);
-    return '<button class="sub-btn'+(sk===currentSub?' active':'')+'" data-sub="'+sk+'" style="--sub-color:'+color+'">'
+    var freshTier = false;
+    if(GATHERING_SKILLS[sk] || CRAFTING_SKILLS[sk]){   // tiered skills only (TIER_LEVELS is their table)
+      var cur = navUnlockedTiers(lvl);
+      if(!(sk in navSeenTiers) || sk === currentSub) navSeenTiers[sk] = cur;
+      else if(cur > navSeenTiers[sk]) freshTier = true;
+
+    }
+    var ws = workshopSpeedBonus(state, sk) > 0 || workshopDoubleChance(state, sk) > 0;
+    var tip = subTipText(sk) + (freshTier ? ' · NEW tier unlocked!' : '');
+    return '<button class="sub-btn'+(sk===currentSub?' active':'')+(freshTier?' flash':'')+'" data-sub="'+sk+'" style="--sub-color:'+color+'" data-tip="'+escapeHtml(tip)+'">'
       + icon+' '+label
       + '<span class="sub-lvl'+(lvl>=MAX_SKILL_LEVEL?' max':'')+'">'+lvl+'</span>'
+      + (ws ? '<span class="sub-ws">'+svgIcon('castle','#9dbb66')+'</span>' : '')
       + (busy ? '<span class="sub-live" title="A task is running here"></span>' : '')
       + '</button>';
   }
@@ -20904,24 +20970,20 @@
       el.innerHTML = skillTabsByLabel(GATHERING_TAB_SKILL_IDS).map(function(sk){
         var s = GATHERING_SKILLS[sk];
         return subBtnHtml(sk, s.icon, s.label, s.color, busy[sk]);
-      }).join('');
+      }).join('') + navTotalPlinth(GATHERING_TAB_SKILL_IDS);
     } else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking'){
       el.style.display = 'flex';
-      var craftIds = currentCategory==='building' ? BUILDING_SKILL_IDS
-                   : currentCategory==='outfitting' ? OUTFITTING_SKILL_IDS
-                   : currentCategory==='refining' ? REFINING_TAB_SKILL_IDS
-                   : currentCategory==='cooking' ? COOKING_SKILL_IDS
-                   : CRAFTING_TAB_SKILL_IDS;
+      var craftIds = navCatSkillIds(currentCategory);
       el.innerHTML = skillTabsByLabel(craftIds).map(function(sk){
         var s = CRAFTING_SKILLS[sk] || GATHERING_SKILLS[sk]; // Butchering (in Refining) lives in GATHERING_SKILLS
         return subBtnHtml(sk, s.icon, s.label, s.color, busy[sk]);
-      }).join('');
+      }).join('') + navTotalPlinth(craftIds);
     } else if(currentCategory==='faith'){
       el.style.display = 'flex';
       el.innerHTML = FAITH_SKILL_IDS.map(function(sk){
         var s = FAITH_SKILLS[sk];
         return subBtnHtml(sk, s.icon, s.label, s.color, busy[sk]);
-      }).join('');
+      }).join('') + navTotalPlinth(FAITH_SKILL_IDS);
     } else if(currentCategory==='enemies'){
       el.style.display = 'flex';
       el.innerHTML = MONSTER_CATEGORIES.map(function(c){
@@ -38398,6 +38460,7 @@
     if(!btn) return;
     currentSub = btn.getAttribute('data-sub');
     if(DEFAULT_SUB[currentCategory]) navLastSub[currentCategory] = currentSub; // remember for the next visit
+    navSeenTiers[currentSub] = navUnlockedTiers(skillLevel(currentSub, (state.xp && state.xp[currentSub]) || 0)); // visiting retires the new-tier flash
     render();
   });
 
@@ -39803,7 +39866,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.14';
+  var GAME_VERSION = '0.0.86.15';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -39967,6 +40030,7 @@
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
+      navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
