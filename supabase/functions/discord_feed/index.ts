@@ -29,7 +29,7 @@ const RL_PER_HOUR = 30;
 const RL_PER_DAY = 120;
 
 const KEY_RE = /^[A-Za-z0-9_]{1,64}$/;
-const ENHANCE_MIN = 12;   // mirrors index.html DISCORD_ENHANCE_MIN
+const ENHANCE_MIN = 15;   // mirrors index.html DISCORD_ENHANCE_MIN (owner order 2026-08-05: only a maxed +15 is blast-worthy; +11 to +14 no longer trigger)
 const ENHANCE_MAX = 15;   // the enhance ceiling; above this is impossible, so refuse it
 const MAX_NAME = 80;      // an item display name
 const MAX_STATS = 320;    // the " (stat · stat · ...)" tail

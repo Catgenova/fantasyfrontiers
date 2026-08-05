@@ -16414,10 +16414,12 @@
     for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='scroll_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
     return need>0 ? null : { plan:plan, maxTier:maxTier };
   }
-  // +10-or-higher enhances are a big deal: announce them in global chat (own client shows it locally;
-  // chronicleBroadcast relays to everyone else, who synthesize the same system message).
-  var ENHANCE_ANNOUNCE_MIN = 10;
-  var DISCORD_ENHANCE_MIN = 12;   // +12 and above also reach the community Discord feed
+  // Only a MAXED (+15) enhance is blast-worthy (owner order, 2026-08-05: +11 to +14 no longer
+  // trigger). Both the in-game chat/Chronicle announcement and the community Discord feed share the
+  // +15-only bar; the discord_feed edge function mirrors it server-side (ENHANCE_MIN there), so a
+  // stale client cannot post below it. ENHANCE_MAX is 15, so these fire exactly once per item.
+  var ENHANCE_ANNOUNCE_MIN = 15;  // in-game blast: global chat system message + Chronicle relay
+  var DISCORD_ENHANCE_MIN = 15;   // community Discord feed (mirrored in discord_feed/index.ts)
   function announceEnhance(u){
     // Enhancing is click-only (never runs in offline catch-up), so no offline tag needed here.
     if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost({ kind:'enhance', name:uniqueBaseName(u), item_key:u.base || '', enhance:u.enhance, stats:discordItemStatsText(null, u) });
@@ -40230,7 +40232,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.22';
+  var GAME_VERSION = '0.0.86.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40421,7 +40423,7 @@
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
       captchaAwaitToken:captchaAwaitToken, _turnstileWaiterCount:function(){ return turnstileWaiters.length; }, _turnstileFlushWaiters:turnstileFlushWaiters,
-      discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; },
+      discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; }, ENHANCE_ANNOUNCE_MIN:ENHANCE_ANNOUNCE_MIN, DISCORD_ENHANCE_MIN:DISCORD_ENHANCE_MIN,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS, estateBuildingList:estateBuildingList, estateAdjacentWorkshop:estateAdjacentWorkshop, workshopBonusPct:workshopBonusPct, renderEstateBuildingsPanel:renderEstateBuildingsPanel,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,

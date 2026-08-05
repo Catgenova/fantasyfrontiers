@@ -2938,6 +2938,12 @@
     ok(/enhanced their/.test(FF.chronicleRowToSystemMsg({ kind:'enhance', id:1, username:'A', body:'X to +11', created_at:'x' }).body), 'row dispatcher handles enhance rows');
     ok(/forged a/.test(FF.chronicleRowToSystemMsg({ kind:'craft', id:2, username:'A', body:'Supreme Y', created_at:'x' }).body), 'row dispatcher handles craft rows');
     ok(FF.chronicleRowToSystemMsg({ kind:'level', id:3, username:'A', body:'Mining 50', created_at:'x' }) === null, 'non-blast chronicle kinds (level) produce no chat message');
+    // Owner order (2026-08-05): only a MAXED (+15) enhance blasts. +11 to +14 trigger neither the
+    // in-game announcement nor the Discord feed post; the +12 fixtures above stay because HISTORICAL
+    // pre-rule rows still live in the chronicle and must keep rendering. The discord_feed edge
+    // function mirrors the bar server-side (ENHANCE_MIN = 15), so a stale client cannot post below it.
+    eq(FF.ENHANCE_ANNOUNCE_MIN, 15, 'the in-game enhance blast fires only at +15');
+    eq(FF.DISCORD_ENHANCE_MIN, 15, 'the Discord enhance blast fires only at +15');
   });
 
   // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
