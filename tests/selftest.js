@@ -3474,7 +3474,7 @@
     FF._clReset(); s.settings.advancedCombatLog = false;
     FF.combatLogPush({ dir:'in', dmg:9, target:'Wolf' });
     FF.combatLogPush({ dir:'special', target:'Wolf', spName:'Rend' });
-    FF.combatLogPush({ dir:'dot', dmg:4, word:'🩸 Bleed', target:'Wolf' });
+    FF.combatLogPush({ dir:'dot', dmg:4, word:'Bleed', target:'Wolf' }); // plain word: playerDotWord dropped its emoji in the v0.0.86.22 sweep (the word flows through escapeHtml)
     var kinds = FF.combatLogHtml();
     ok(/Wolf hit you for <b>9<\/b>/.test(kinds), 'a raw swing reads as a plain hit');
     ok(/cl-special/.test(kinds) && /Wolf uses <b>Rend<\/b>/.test(kinds), 'a special attack names the skill in its own style, distinct from a raw hit');
@@ -18080,6 +18080,53 @@
     FF.ensureLandingStyle();
     var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
     ok(css.indexOf('—') === -1, 'the landing stylesheet content carries no em dash');
+  });
+
+  // ---- No emojis in player-facing copy (owner order, v0.0.86.22) -----------------------------------
+  // Every colored-emoji character (pictographs plus the default-emoji Misc Symbols) was replaced with
+  // sprite icons or plain words -- emojis render as colorful platform art on phones and clashed with
+  // the painted UI. Same deep-scan shape as the em-dash guard above; monochrome TEXT glyphs the game
+  // deliberately keeps (★ ⚑ ✦ ✶ → ✓ ☐) are NOT emojis and are not banned here.
+  suite('copy: no emojis in player-facing strings', function(){
+    function hasEmoji(str){
+      for(var i = 0; i < str.length; i++){
+        var c = str.codePointAt(i);
+        if(c > 0xFFFF) i++; // surrogate pair consumed
+        if((c >= 0x1F000 && c <= 0x1FAFF) || c === 0xFE0F || c === 0x2B50 ||
+           c === 0x2615 || c === 0x2620 || c === 0x2694 || c === 0x26A0 || c === 0x26A1 ||
+           c === 0x26D4 || c === 0x2744) return true;
+      }
+      return false;
+    }
+    var offenders = [], seen = (typeof WeakSet !== 'undefined') ? new WeakSet() : null;
+    function scan(v, path, depth){
+      if(depth > 8 || offenders.length >= 5) return;
+      if(typeof v === 'string'){ if(hasEmoji(v)) offenders.push(path); return; }
+      if(!v || typeof v !== 'object') return;
+      if(seen){ if(seen.has(v)) return; seen.add(v); }
+      if(typeof Node !== 'undefined' && v instanceof Node) return;
+      var keys = Object.keys(v);
+      for(var i = 0; i < keys.length && offenders.length < 5; i++){
+        scan(v[keys[i]], path + '.' + keys[i], depth + 1);
+      }
+    }
+    Object.keys(FF).forEach(function(k){
+      if(k === 'PATCH_NOTES' || k === '_state') return;
+      if(typeof FF[k] === 'function') return;
+      scan(FF[k], k, 0);
+    });
+    eq(offenders.join(' | '), '', 'no exported def table carries an emoji (first offenders shown)');
+    // The former emoji sites now use sprite icons: the combat log's special line and the DoT word.
+    FF._clReset();
+    FF.combatLogPush({ dir:'special', target:'Wolf', spName:'Rend' });
+    var sp = FF.combatLogHtml();
+    ok(/shape-lightning/.test(sp), "the special-attack line leads with the lightning SPRITE, not '\\u26A1'");
+    ok(!hasEmoji(sp), 'the rendered special line is emoji-free');
+    ok(!hasEmoji(FF.playerDotWord({ pBleedStacks:1, pBleedDps:4, pBleedUntil:Date.now()+9e9 }) || ''), 'the DoT word is a plain word');
+    // And the new sprite shapes exist in the document for every replacement family.
+    ['warning','bulb','bomb','snowflake','mute','link','scroll'].forEach(function(id){
+      ok(!!document.getElementById('shape-'+id), 'sprite shape-'+id+' exists for the emoji replacements');
+    });
   });
 
   // ---- Report ---------------------------------------------------------------------------
