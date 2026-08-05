@@ -15691,6 +15691,50 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Chat surfaces on marble (owner request, v0.0.86.6) ------------------------------------------
+  // The drawer and the full-screen panel are the arena stage in miniature -- the WHITE marble field in
+  // the ivy_stretch stone frame (the v0.0.79.15 modal treatment) -- and every chat button is a black
+  // slate chip in the same stone. Pinned by computed style: a lost background-clip bleeds the marble
+  // through the frame's open stonework, and a surviving border-radius means the old tan sheet came back.
+  suite('chat: marble panels, stone-framed black buttons', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="ff-chat-expand"><div class="chat-channel-bar">'
+      + '<button class="chat-channel-btn active">Global</button><button class="chat-channel-btn">Combat</button></div>'
+      + '<div class="chat-messages"></div>'
+      + '<div class="chat-send-row"><button class="action-btn">Send</button></div>'
+      + '<button class="ff-chat-expand-btn">x</button></div>'
+      + '<div class="ff-drawer"></div>';
+    document.body.appendChild(probe);
+    try {
+      ['ff-chat-expand','ff-drawer'].forEach(function(cls){
+        var cs = getComputedStyle(probe.querySelector('.'+cls));
+        eq(cs.backgroundColor, 'rgb(239, 236, 230)', cls+' sits on the white marble base (#efece6)');
+        ok(cs.backgroundImage.indexOf('ivy_field') !== -1, cls+' is tiled with the marble field');
+        ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+          cls+' clips the marble to the padding box (unclipped it bleeds through the stonework)');
+        ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, cls+' is framed by the arena stone');
+        eq(cs.borderRadius, '0px', cls+' drops the old sheet radius (border-image ignores it)');
+      });
+      var idle = getComputedStyle(probe.querySelector('.chat-channel-btn:not(.active)'));
+      ok(idle.backgroundImage.indexOf('linear-gradient') !== -1 && idle.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1,
+        'channel chips fill with the black slate gradient (#242a30)');
+      ok(idle.borderImageSource.indexOf('ivy_stretch') !== -1, 'channel chips wear the stone frame');
+      eq(idle.color, 'rgb(205, 191, 152)', 'idle channels ink in the rail parchment (#cdbf98)');
+      var act = getComputedStyle(probe.querySelector('.chat-channel-btn.active'));
+      ok(act.backgroundImage.indexOf('rgb(92, 127, 52)') !== -1 && act.color === 'rgb(255, 255, 255)',
+        'the active channel keeps accent-as-fill (chat green in the same stone)');
+      var send = getComputedStyle(probe.querySelector('.chat-send-row .action-btn'));
+      ok(send.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1 && send.borderImageSource.indexOf('ivy_stretch') !== -1,
+        'the Send button is a black stone chip');
+      var xb = getComputedStyle(probe.querySelector('.ff-chat-expand-btn'));
+      ok(xb.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1 && xb.borderImageSource.indexOf('ivy_stretch') !== -1,
+        'the expand/collapse button is a black stone chip');
+      var well = getComputedStyle(probe.querySelector('.ff-chat-expand .chat-messages'));
+      ok(well.borderImageSource.indexOf('ivy_stretch') !== -1 && well.borderRadius === '0px',
+        'the message well trades its hairline for the stone frame on marble surfaces');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

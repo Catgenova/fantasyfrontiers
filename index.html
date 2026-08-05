@@ -247,8 +247,11 @@
   .ff-chatpanel{display:flex;flex-direction:column;}
   .ff-dock-title{font-family:var(--font-display);font-size:11px;letter-spacing:1px;color:var(--green-deep);margin-bottom:8px;text-transform:uppercase;border-bottom:1px solid #c3ab77;padding-bottom:5px;}
   .ff-dock-title.ff-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-  .ff-chat-expand-btn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border-radius:5px;cursor:pointer;background:var(--bg-panel-raised);border:1px solid var(--border-light);color:var(--green-deep);}
-  .ff-chat-expand-btn:hover{border-color:var(--gold);color:var(--gold);}
+  /* Chat controls in stone (owner request, v0.0.86.6): the rail's 6px ivy_stretch cut over slate --
+     the same black-background chip every secondary control moved to in the v0.0.79.14 sweep. Hover can
+     only re-ink the glyph (border-image can't recolor), matching the nav chips. */
+  .ff-chat-expand-btn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:27px;height:27px;padding:0;border-radius:0;cursor:pointer;background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;color:#cdbf98;}
+  .ff-chat-expand-btn:hover{color:#e6c24a;}
   .ff-chat-expand-btn svg{width:13px;height:13px;}
   .ff-bottomdock{display:none;}
   /* Desktop: chat lives behind a bottom-left bubble (opens the drawer), same as mobile -- no rail dock. */
@@ -320,7 +323,16 @@
   /* Full-screen chat (optional): the rail/drawer chat's expand button drops this centered panel over
      the whole app. Reuses the same .chat-* markup; the message list flexes so the input stays pinned. */
   .ff-chat-expand-overlay{position:absolute;inset:0;z-index:46;background:rgba(20,18,12,.55);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;}
-  .ff-chat-expand{width:100%;max-width:900px;height:100%;max-height:88%;display:flex;flex-direction:column;background:var(--bg-panel);border:2px solid var(--ink);border-radius:14px;padding:16px 18px;box-shadow:0 18px 42px rgba(0,0,0,.5), inset 0 0 0 2px rgba(143,133,122,.4);}
+  /* Full-screen chat on marble (owner request, v0.0.86.6): the arena stage in miniature, exactly the
+     modal treatment (v0.0.79.15) -- the WHITE marble field (ivy_field) inside the 12px ivy_stretch stone
+     frame. background-clip is mandatory (the frame art is transparent outside its rails); border-radius
+     must go (border-image ignores it). Message ink only gains contrast: the marble base #efece6 is
+     LIGHTER than the old tan panel. */
+  .ff-chat-expand{width:100%;max-width:900px;height:100%;max-height:88%;display:flex;flex-direction:column;
+    background-color:#efece6;background-image:url('art/ivy_field.png');background-repeat:repeat;
+    background-size:700px 249px;background-clip:padding-box;
+    border:12px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    padding:14px 16px;box-shadow:0 18px 42px rgba(0,0,0,.5);}
   .ff-chat-expand-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #c3ab77;padding-bottom:10px;margin-bottom:12px;}
   .ff-chat-expand-hd .t{font-family:var(--font-display);font-size:15px;letter-spacing:1px;text-transform:uppercase;color:var(--green-deep);}
   .ff-chat-expand .chat-wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;}
@@ -332,7 +344,14 @@
   /* Above the FABs (z 40): an open chat must overlay the medallion buttons, not sit under them --
      the estate stack used to paint over the drawer's input row (owner order, v0.0.77.37). */
   .ff-drawer-overlay{position:absolute;inset:0;z-index:45;background:rgba(20,18,12,.5);display:flex;align-items:flex-end;}
-  .ff-drawer{width:100%;max-height:72%;display:flex;flex-direction:column;background:var(--bg-panel);border-top:2px solid var(--ink);border-radius:16px 16px 0 0;padding:14px;box-shadow:0 -10px 28px rgba(0,0,0,.45), inset 0 0 0 2px rgba(143,133,122,.4);}
+  /* The chat drawer gets the same marble-in-stone skin as the full-screen panel (owner request,
+     v0.0.86.6) -- geometry (bottom sheet, 72% cap, flex column) unchanged; the sheet radius goes
+     because border-image ignores it. */
+  .ff-drawer{width:100%;max-height:72%;display:flex;flex-direction:column;
+    background-color:#efece6;background-image:url('art/ivy_field.png');background-repeat:repeat;
+    background-size:700px 249px;background-clip:padding-box;
+    border:12px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    padding:12px 14px;box-shadow:0 -10px 28px rgba(0,0,0,.45);}
   /* Desktop: the chat drawer is full-width, so its right edge runs under the fixed right-rail FABs.
      Inset the content so the channel bar, messages and SEND button clear them. Mobile keeps the 14px. */
   @media (min-width:861px){ .ff-drawer{padding-right:70px;} }
@@ -461,8 +480,12 @@
   .gest-bar{height:8px;border-radius:5px;background:rgba(0,0,0,0.10);overflow:hidden;margin:6px 0 2px;}
   .gest-fill{height:100%;background:linear-gradient(90deg,var(--cat-estate),var(--cat-guild));border-radius:5px;transition:none;}
   .chat-channel-bar{display:flex;gap:4px;margin-bottom:8px;}
-  .chat-channel-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:rgba(255,255,255,0.35);border:1px solid var(--border);color:var(--text-faint);border-radius:6px;padding:5px 12px;cursor:pointer;}
-  .chat-channel-btn.active{background:var(--cat-chat);border-color:var(--cat-chat);color:#fff;}
+  /* Channel tabs in stone (owner request, v0.0.86.6): black slate chips in the 6px ivy_stretch frame on
+     every chat surface (dock, drawer, full-screen). The active channel keeps accent-as-fill -- the chat
+     green as the fill inside the same stone, the rule every .on chip follows (v0.0.79.14 sweep). */
+  .chat-channel-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;color:#cdbf98;border-radius:0;padding:3px 9px;cursor:pointer;}
+  .chat-channel-btn:hover{color:#e8dcc0;}
+  .chat-channel-btn.active{background:linear-gradient(180deg,#5c7f34,#3c5a24);background-clip:padding-box;color:#fff;}
   .chat-channel-btn:disabled{opacity:0.45;cursor:not-allowed;}
 
   /* Sub tabs (level 2) */
@@ -837,6 +860,14 @@
   .chat-input{flex:1;min-width:0;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-panel-raised);color:var(--text);}
   .chat-input:disabled{opacity:0.5;}
   .chat-messages{height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel);}
+  /* On the marble surfaces the message well trades its 1px hairline for the stone frame; the tan fill
+     STAYS -- every message tint (system rows, name colors) was inked against it. The rail dock keeps the
+     hairline (it sits on the dark rail, where a stone-on-stone frame reads as one more box). */
+  .ff-drawer .chat-messages,.ff-chat-expand .chat-messages{border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;}
+  /* The Send button joins the black stone chips (owner request, v0.0.86.6) on every chat surface. */
+  .chat-send-row .action-btn{background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;color:#cdbf98;box-shadow:0 1px 2px rgba(0,0,0,.35);}
+  .chat-send-row .action-btn:hover{background:linear-gradient(180deg,#2f363e,#232930);background-clip:padding-box;color:#e8dcc0;}
+  .chat-send-row .action-btn:disabled{color:#9a8f78;cursor:not-allowed;}
   .chat-msg{font-family:var(--font-body);font-size:13px;line-height:1.45;}
   .chat-user{font-weight:700;color:var(--cat-chat);margin-right:5px;}
   .chat-user::after{content:':';color:var(--text-faint);}
@@ -39473,7 +39504,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.5';
+  var GAME_VERSION = '0.0.86.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
