@@ -15821,6 +15821,66 @@
     }
   });
 
+  // ---- Chat presentation pass (owner picks 1/2/4/5 of round two, v0.0.86.11) -----------------------
+  // Per-channel tab accents + unread pips (filled IN PLACE -- a sig-driven rebuild per message would
+  // wipe live typing), the status dot + online count folded into the panel headers, system blasts as
+  // centered rarity banners, item chips inked by rarity, and stable per-guild tag colours.
+  suite('chat presentation: channel accents/pips, header status, banners, tag colours', function(){
+    // Tag colours: stable, palette-bound, and distinct enough across real tags.
+    eq(FF.chatTagColor('NITE'), FF.chatTagColor('NITE'), 'a tag always hashes to the same colour');
+    ok(FF.CHAT_TAG_PALETTE.indexOf(FF.chatTagColor('Cae')) !== -1, 'colours come from the curated palette');
+    var distinct = {}; ['Cae','NITE','PEEPO','NFA'].forEach(function(t){ distinct[FF.chatTagColor(t)] = 1; });
+    ok(Object.keys(distinct).length >= 2, 'real-world tags spread across the palette');
+    // Header status: carries the connection dot, and when online the SAME .chat-online-count class the
+    // in-place presence updater refreshes.
+    var hs = FF.chatHeadStatusHtml();
+    ok(/chat-head-status/.test(hs) && /class="dot"/.test(hs), 'the header status carries the connection dot');
+    // The old status row is gone from the global tab; the bar carries per-channel classes and pips.
+    var savedMarker2 = FF._chatFirstUnread(); FF._setChatFirstUnread(null);
+    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{'u9':'NITE'}, messages:[
+      { id:'s1', system:true, rarity:'fantastic', body:'Valuren forged a Fantastic Tungsten Sword!', created_at:new Date().toISOString() },
+      { id:'p1', user_id:'u9', username:'Val', body:'hello', created_at:new Date().toISOString() }
+    ]});
+    try {
+      var tab = FF.renderChatTab();
+      ok(tab.indexOf('chat-status') === -1, 'the status row above the well is retired (it lives in the headers now)');
+      ok(/chan-global/.test(tab) && /chan-guild/.test(tab) && /chan-chronicle/.test(tab) && /chan-combat/.test(tab),
+        'every channel tab carries its accent class');
+      eq((tab.match(/chat-tab-pip/g) || []).length, 2, 'Global and Guild carry pip spans (always rendered, filled in place)');
+      // System blasts: a starburst on EACH side of the body now.
+      var sys = tab.slice(tab.indexOf('chat-system'), tab.indexOf('chat-time', tab.indexOf('chat-system')));
+      eq((sys.match(/chat-sys-ico/g) || []).length, 2, 'a system blast wears a starburst on each side');
+      ok(/chat-guild-tag" title="Guild" style="color:#/.test(tab), 'guild tags ink with their hashed colour');
+      // Pip mechanics: note off-channel -> counts; clear -> zero. (Harness chat is off-screen, so both count.)
+      FF.chatChanClear('global'); FF.chatChanClear('guild');
+      FF.chatChanNote('guild'); FF.chatChanNote('guild'); FF.chatChanNote('global');
+      eq(FF._chatChanUnread().guild, 2, 'guild arrivals count while the channel is not watched');
+      eq(FF._chatChanUnread().global, 1, 'global arrivals count independently');
+      FF.chatChanClear('guild');
+      eq(FF._chatChanUnread().guild, 0, 'opening a channel retires its pip count');
+      // In-place fill: empty spans show nothing; a count paints; clearing empties them again.
+      var probe = document.createElement('div');
+      probe.innerHTML = '<button class="chat-channel-btn chan-global">Global<span class="chat-tab-pip" data-ch="global"></span></button>'
+        + '<button class="chat-channel-btn chan-combat active">Combat</button>'
+        + '<span class="chat-item-link rar-rare">x</span>';
+      document.body.appendChild(probe);
+      try {
+        FF.chatChanPipsUpdate();
+        eq(probe.querySelector('.chat-tab-pip').textContent, '1', 'the pip fills in place from the counter');
+        ok(getComputedStyle(probe.querySelector('.chat-tab-pip')).display !== 'none', 'a filled pip shows (absolute positioning computes it to block)');
+        FF.chatChanClear('global');
+        eq(getComputedStyle(probe.querySelector('.chat-tab-pip')).display, 'none', 'an emptied pip hides (the :not(:empty) trick)');
+        var cbt = getComputedStyle(probe.querySelector('.chan-combat.active'));
+        ok(cbt.backgroundImage.indexOf('rgb(176, 80, 63)') !== -1, 'the Combat tab fills with the combat red when active');
+        eq(getComputedStyle(probe.querySelector('.chat-item-link.rar-rare')).color, 'rgb(90, 167, 214)', 'a Rare item chip inks in the rare blue');
+      } finally { probe.remove(); }
+    } finally {
+      FF.chatChanClear('global'); FF.chatChanClear('guild');
+      FF._setChatFirstUnread(savedMarker2 == null ? null : savedMarker2);
+      FF._setChatMod({ messages: [], authUser: null });
+    }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

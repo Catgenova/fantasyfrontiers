@@ -247,6 +247,15 @@
   .ff-chatpanel{display:flex;flex-direction:column;}
   .ff-dock-title{font-family:var(--font-display);font-size:11px;letter-spacing:1px;color:var(--green-deep);margin-bottom:8px;text-transform:uppercase;border-bottom:1px solid #c3ab77;padding-bottom:5px;}
   .ff-dock-title.ff-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  /* The connection dot + online count live in the chat HEADERS now (owner pick 2, v0.0.86.11) --
+     the old status row above the well spent a full line on them. margin/flex pushes keep the title
+     left and the status snug against the header buttons. */
+  .chat-head-status{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:10.5px;font-weight:400;color:#9a8f78;letter-spacing:0;text-transform:none;}
+  .chat-head-status .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:#9a8f78;}
+  .chat-head-status.online .dot{background:#7cb350;}
+  .chat-head-status.error .dot,.chat-head-status.unconfigured .dot{background:#d4574a;}
+  .ff-chat-head #chatDockTitle{margin-right:auto;}
+  .ff-chat-expand-hd .t{flex:1 1 auto;}
   /* Chat controls in stone (owner request, v0.0.86.6): the rail's 6px ivy_stretch cut over slate --
      the same black-background chip every secondary control moved to in the v0.0.79.14 sweep. Hover can
      only re-ink the glyph (border-image can't recolor), matching the nav chips. */
@@ -487,6 +496,18 @@
   .chat-channel-btn:hover{color:#e8dcc0;}
   .chat-channel-btn.active{background:linear-gradient(180deg,#5c7f34,#3c5a24);background-clip:padding-box;color:#fff;}
   .chat-channel-btn:disabled{opacity:0.45;cursor:not-allowed;}
+  /* Per-channel accent-as-fill (owner pick 1, v0.0.86.11): you know where you are by colour alone.
+     Global keeps the chat green above; Guild fills the guild brown, Chronicle the gold (dark ink --
+     white lettering washes out on gold), Combat the combat red. */
+  .chat-channel-btn.chan-guild.active{background:linear-gradient(180deg,#a8763f,#6e4a26);background-clip:padding-box;color:#fff;}
+  .chat-channel-btn.chan-chronicle.active{background:linear-gradient(180deg,#c9a227,#8f6f14);background-clip:padding-box;color:#1a1508;}
+  .chat-channel-btn.chan-combat.active{background:linear-gradient(180deg,#b0503f,#7f2f24);background-clip:padding-box;color:#fff;}
+  /* Unread pips: a count bubble on a channel tab you are NOT viewing. Rendered as an EMPTY span and
+     filled IN PLACE (the :not(:empty) trick the FAB badge uses) -- driving it through the panel
+     signature would rebuild the panel per incoming message and wipe live typing. */
+  .chat-channel-btn{position:relative;}
+  .chat-tab-pip{position:absolute;top:-8px;right:-7px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:linear-gradient(180deg,#e6c24a,#c9a227);border:1px solid #6b5a38;color:#0f0d08;font-family:var(--font-mono);font-size:9.5px;font-weight:800;line-height:14px;text-align:center;display:none;pointer-events:none;}
+  .chat-tab-pip:not(:empty){display:inline-block;}
 
   /* Sub tabs (level 2) */
   .sub-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;}
@@ -635,6 +656,12 @@
   .chat-item-link{display:inline-flex; align-items:center; gap:3px; cursor:pointer; padding:0 5px; margin:0 1px; border-radius:5px; background:rgba(201,162,39,0.14); border:1px solid rgba(201,162,39,0.5); color:var(--gold); font-weight:600; vertical-align:baseline; line-height:1.5;}
   .chat-item-link:hover{background:rgba(201,162,39,0.26);}
   .chat-item-link .chat-item-ico, .chat-item-link .chat-item-ico svg{width:12px; height:12px; display:inline-block; flex:0 0 auto;}
+  /* Item-link chips ink by RARITY (owner pick 4, v0.0.86.11): scannable before reading. Bright
+     variants of the rarity hues -- the chips only ever sit on the dark message well. Normal keeps
+     the gold default above. */
+  .chat-item-link.rar-rare{border-color:#5aa7d6;color:#5aa7d6;background:rgba(90,167,214,.12);}
+  .chat-item-link.rar-supreme{border-color:#b07fd6;color:#b07fd6;background:rgba(176,127,214,.12);}
+  .chat-item-link.rar-fantastic{border-color:#dd9a3a;color:#dd9a3a;background:rgba(221,154,58,.14);}
   .unique-ench-chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;}
   /* Enchant chips, option B (owner pick): parchment ink on a faint parchment tint -- the old
      color:var(--gold) was the tan-page green, lost on the marble and worst for colorblind players. */
@@ -927,12 +954,14 @@
   .chat-mod-btn:hover{color:var(--gold);}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
   /* Server-wide system announcements (e.g. supreme/fantastic crafts) shown inline in global chat. */
-  .chat-msg.chat-system{display:flex;align-items:center;gap:6px;margin:3px 0;padding:5px 8px;border-radius:6px;background:rgba(138,79,176,.09);border-left:3px solid var(--rarity-superior);}
-  .chat-msg.chat-system.rar-fantastic{background:rgba(192,125,30,.11);border-left-color:var(--rarity-fantastic);}
+  /* System blasts read as centered BANNERS (owner pick 4, v0.0.86.11): a starburst on each side and
+     the rarity carried by a full surround rule instead of a left bar -- ceremonies, not conversation. */
+  .chat-msg.chat-system{display:flex;align-items:center;justify-content:center;text-align:center;gap:6px;margin:5px 12px;padding:4px 10px;border-radius:6px;background:rgba(138,79,176,.10);border:1px solid rgba(176,127,214,.5);}
+  .chat-msg.chat-system.rar-fantastic{background:rgba(192,125,30,.12);border-color:rgba(221,154,58,.55);}
   .chat-msg.chat-system .chat-sys-ico{flex:0 0 auto;display:inline-flex;}
   .chat-msg.chat-system .chat-sys-ico svg{width:14px;height:14px;}
-  .chat-msg.chat-system .chat-body{color:var(--text-dim);font-style:italic;font-size:12px;}
-  .chat-msg.chat-system .chat-time{margin-left:auto;margin-right:0;}
+  .chat-msg.chat-system .chat-body{flex:0 1 auto;color:var(--text-dim);font-style:italic;font-size:12px;}
+  .chat-msg.chat-system .chat-time{margin-left:4px;margin-right:0;}
   .chat-account{display:flex;align-items:center;gap:8px;font-family:var(--font-body);font-size:12px;color:var(--text-dim);}
   .auth-card{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-raised);}
   .auth-tabs{display:flex;gap:6px;margin-bottom:2px;}
@@ -20683,6 +20712,7 @@
       html = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>';
     } else {
       var head = '<div class="ff-dock-title ff-chat-head"><span id="chatDockTitle">Chat'+chatUnreadSuffix()+'</span>'
+        + chatHeadStatusHtml()
         + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button></div>';
       // While full-screen chat is open, the overlay owns the live #chatInput/#chatMessages; keep this
       // rail copy inert (no duplicate ids) and just point back to the expanded view.
@@ -20690,6 +20720,7 @@
     }
     el.innerHTML = html;
     _chatDockSig = sig;   // only record the sig once the panel is successfully built
+    chatChanPipsUpdate();
     var sc = el.querySelector('#chatMessages, #chronicleFeed'); if(sc) sc.scrollTop = sc.scrollHeight; // start at newest
   }
   // Optional full-screen chat: a centered panel over the whole app. Reuses renderChatTab(), so it is
@@ -20704,11 +20735,13 @@
     // one-off throw leaves the sig stale and the next render retries instead of sticking blank.
     var inner = '<div class="ff-chat-expand" data-action="noop">'
       + '<div class="ff-chat-expand-hd"><span class="t">Chat</span>'
+      + chatHeadStatusHtml()
       + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Exit full screen" aria-label="Exit full screen">'+CHAT_COLLAPSE_ICON+'</button></div>'
       + renderChatTab() + '</div>';
     ov.className = 'ff-chat-expand-overlay'; ov.setAttribute('data-action','toggleChatExpand'); // click backdrop to close
     ov.innerHTML = inner;
     _chatExpandSig = sig;
+    chatChanPipsUpdate();
     var sc = ov.querySelector('#chatMessages, #chronicleFeed'); if(sc) sc.scrollTop = sc.scrollHeight;
   }
   // Inventory as its own content view (Resources > Inventory); #inventoryPanel is filled by
@@ -20796,10 +20829,11 @@
     // where the drawer is the ONLY chat surface).
     var chatInner = authUser ? renderChatTab() : '<div class="empty-note">Sign in to chat with the realm.</div>';
     var expandBtn = authUser ? '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button>' : '';
-    var html = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><div style="display:flex;align-items:center;gap:8px;">' + expandBtn + '<button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div></div>' + chatInner + '</div>';
+    var html = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><div style="display:flex;align-items:center;gap:8px;">' + chatHeadStatusHtml() + expandBtn + '<button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div></div>' + chatInner + '</div>';
     ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
     ov.innerHTML = html;
     _chatDrawerSig = sig;
+    chatChanPipsUpdate();
     var sc2 = ov.querySelector('#chatMessages, #chronicleFeed'); if(sc2) sc2.scrollTop = sc2.scrollHeight; // start at newest
   }
 
@@ -32187,6 +32221,45 @@
   function chatUnreadLabel(){ return chatUnreadCount > 99 ? '99+' : String(chatUnreadCount); }
   // Suffix appended to the "Chat" title, e.g. "Chat (4)", so unread count is visible on the chat card/dock.
   function chatUnreadSuffix(){ return chatUnreadCount > 0 ? ' (' + chatUnreadLabel() + ')' : ''; }
+  // ---- Per-channel unread pips (owner pick 1, v0.0.86.11) ------------------------------------------
+  // Messages that arrive in a channel you are NOT viewing light a count bubble on that channel's tab --
+  // even while the chat panel is open on another channel. Separate from chatUnreadCount, whose job is
+  // the FAB badge for chat being off-screen entirely. The pips are filled IN PLACE (empty spans in the
+  // bar, textContent set here): driving them through the panel signature would rebuild the panel per
+  // incoming message and wipe live typing.
+  var chatChanUnread = { global:0, guild:0 };
+  function chatChanNote(ch){
+    if(!(ch in chatChanUnread)) return;
+    if(chatIsOnScreen() && chatChannel === ch) return;   // you're watching that channel -> no pip
+    chatChanUnread[ch]++;
+    chatChanPipsUpdate();
+  }
+  function chatChanClear(ch){ if(ch in chatChanUnread){ chatChanUnread[ch] = 0; chatChanPipsUpdate(); } }
+  function chatChanPipsUpdate(){
+    var pips = document.querySelectorAll('.chat-tab-pip[data-ch]');
+    for(var i = 0; i < pips.length; i++){
+      var n = chatChanUnread[pips[i].getAttribute('data-ch')] || 0;
+      pips[i].textContent = n > 0 ? (n > 99 ? '99+' : String(n)) : '';
+    }
+  }
+  // The connection dot + online count for the chat HEADERS (owner pick 2): the count element keeps the
+  // .chat-online-count class, so updateOnlineCount() refreshes it in place like the old status row.
+  function chatHeadStatusHtml(){
+    if(chatStatus === 'online'){
+      return '<span class="chat-head-status online" title="Connected — players in global chat"><span class="dot"></span><b class="chat-online-count">'+onlineCountText()+'</b>&nbsp;online</span>';
+    }
+    var lbl = { connecting:'Connecting…', error:'Offline', unconfigured:'Local preview' }[chatStatus] || '';
+    return '<span class="chat-head-status '+chatStatus+'"><span class="dot"></span>'+lbl+'</span>';
+  }
+  // ---- Stable per-guild tag colours (owner pick 5, v0.0.86.11) -------------------------------------
+  // Hash the tag into a small palette curated for the dark well: similar lightness, hue-separated, so
+  // any two guilds in one conversation almost always read as different colours.
+  var CHAT_TAG_PALETTE = ['#ddbb66','#7cb350','#6aa9dd','#b98add','#dd9a5a','#66c6b3','#dd7a8a','#c9c96a'];
+  function chatTagColor(tag){
+    tag = String(tag || ''); var h = 0;
+    for(var i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+    return CHAT_TAG_PALETTE[h % CHAT_TAG_PALETTE.length];
+  }
   // ======== Themed hover tooltips ========
   // Any element carrying data-tip gets an instant, styled tooltip. Replaces native title= on the
   // icon-only controls (FABs, estate camera buttons), which otherwise waited ~1s and rendered as an
@@ -33580,6 +33653,7 @@
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(msg.user_id && !(msg.user_id in chatTitles)) chatFetchTitles([msg.user_id]); // pull this poster's title tag
     chatNoteUnreadMarker(); // BEFORE the re-render, so feedAtBottom still reads the pre-append position
+    chatChanNote('global');
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
     noteChatActivity();
   }
@@ -33728,7 +33802,8 @@
       }
       if(m.system){
         var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
-        return lead+'<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
+        var star = '<span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span>';
+        return lead+'<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'">'+star+'<span class="chat-body">'+escapeHtml(m.body||'')+'</span>'+star+'<span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
       }
       var uid = m.user_id, role = chatRoleOf(uid);
       var badge = role ? '<span class="chat-mod-badge chat-mod-'+role+'" title="'+(role==='owner'?'Owner':'Moderator')+'">'+(role==='owner'?'★':'⚑')+'</span>' : '';
@@ -33742,7 +33817,7 @@
         : '';
       // Guild tag before the name, and Mortal-path posters wear the leaderboard's red name.
       var _gtag = uid ? chatGuildTags[uid] : '';
-      var guildTag = _gtag ? '<span class="chat-guild-tag" title="Guild">['+escapeHtml(_gtag)+']</span>' : '';
+      var guildTag = _gtag ? '<span class="chat-guild-tag" title="Guild" style="color:'+chatTagColor(_gtag)+'">['+escapeHtml(_gtag)+']</span>' : '';
       var _mortal = uid ? chatMortals[uid] === true : false;
       // Your own lines wear the gold wash; a word-bounded name match wears the mention accent.
       var _own = !!(_myUid && uid === _myUid);
@@ -33792,6 +33867,7 @@
     chatMessages.push(m);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     chatNoteUnreadMarker(); // BEFORE the re-render, so feedAtBottom still reads the pre-append position
+    chatChanNote('global');
     if(chatChannel==='global') chatRenderMessagesOnly(); // refresh in place if the global feed is showing
     noteChatActivity();
   }
@@ -33979,14 +34055,13 @@
   function renderChatTab(){
     guildEnsureLoaded();
     var name = chatName();
-    var statusMap = { online:'Connected', connecting:'Connecting\u2026', error:'Offline (check backend setup)', unconfigured:'Local preview (no backend configured)' };
     var inGuild = !!(guildState.guild);
     // Channel toggle: Global (everyone) vs Guild (members only). Guild is disabled until you join one.
     var bar = '<div class="chat-channel-bar">';
-    bar += '<button class="chat-channel-btn'+(chatChannel==='global'?' active':'')+'" data-action="guildChannel" data-channel="global">Global</button>';
-    bar += '<button class="chat-channel-btn'+(chatChannel==='guild'?' active':'')+'" data-action="guildChannel" data-channel="guild" '+(inGuild?'':'disabled')+'>'+(inGuild?'['+escapeHtml(guildState.guild.tag)+'] Guild':'Guild')+'</button>';
-    bar += '<button class="chat-channel-btn'+(chatChannel==='chronicle'?' active':'')+'" data-action="guildChannel" data-channel="chronicle">Chronicle</button>';
-    bar += '<button class="chat-channel-btn'+(chatChannel==='combat'?' active':'')+'" data-action="guildChannel" data-channel="combat">Combat</button>';
+    bar += '<button class="chat-channel-btn chan-global'+(chatChannel==='global'?' active':'')+'" data-action="guildChannel" data-channel="global">Global<span class="chat-tab-pip" data-ch="global"></span></button>';
+    bar += '<button class="chat-channel-btn chan-guild'+(chatChannel==='guild'?' active':'')+'" data-action="guildChannel" data-channel="guild" '+(inGuild?'':'disabled')+'>'+(inGuild?'['+escapeHtml(guildState.guild.tag)+'] Guild':'Guild')+'<span class="chat-tab-pip" data-ch="guild"></span></button>';
+    bar += '<button class="chat-channel-btn chan-chronicle'+(chatChannel==='chronicle'?' active':'')+'" data-action="guildChannel" data-channel="chronicle">Chronicle</button>';
+    bar += '<button class="chat-channel-btn chan-combat'+(chatChannel==='combat'?' active':'')+'" data-action="guildChannel" data-channel="combat">Combat</button>';
     bar += '</div>';
     if(chatChannel==='chronicle'){
       return bar + '<div class="chat-wrap"><div id="chronicleFeed" class="chat-messages log-list">'+chronicleFeedHtml()+'</div></div>';
@@ -34007,11 +34082,10 @@
       ghtml += '</div>';
       return ghtml;
     }
+    // (v0.0.86.11, owner pick 2: the status row that lived here moved into the panel HEADERS via
+    // chatHeadStatusHtml -- it spent a full line on a dot and a count.)
     var html = bar;
     html += '<div class="chat-wrap">';
-    html += '<div class="chat-status '+chatStatus+'"><span class="dot"></span>'+statusMap[chatStatus]
-      + (chatStatus==='online' ? '<span class="chat-online" title="Players connected to global chat">'+shellIcon('person')+'<b class="chat-online-count">'+onlineCountText()+'</b> online</span>' : '')
-      + '</div>';
     html += '<div id="chatMessages" class="chat-messages">'+chatMessagesHtml()+'</div>';
     if(name){
       var _myMute = chatAmIMuted();
@@ -35766,6 +35840,7 @@
     guildChatMessages.push(m);
     if(guildChatMessages.length>120) guildChatMessages=guildChatMessages.slice(-120);
     if(m.user_id && !(m.user_id in chatTitles)) chatFetchTitles([m.user_id]); // mortal red for a first-seen poster
+    chatChanNote('guild');
     if(chatChannel==='guild') guildChatRenderOnly();
     noteChatActivity();
   }
@@ -36229,7 +36304,7 @@
       detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
       inputRestore(_inpSnap);     // restore a typed-but-uncommitted field the rebuild would otherwise wipe
       scrollRestore(_scrSnap);    // put every scrolled panel back where the player was
-      if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); }
+      if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); chatChanPipsUpdate(); }
     }
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
     // markup does not mean an unchanged estate.
@@ -38742,14 +38817,14 @@
       serverBuffFetch(); // refresh the buff status when the menu opens
     },
     buyExpBuff: function(btn, e){ buyServerExpBuff(); },
-    toggleChatDrawer: function(btn, e){ chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen) clearChatUnread(); renderChatDrawer(); },
+    toggleChatDrawer: function(btn, e){ chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen){ clearChatUnread(); chatChanClear(chatChannel); } renderChatDrawer(); },
     // Jump-to-latest pill: snap the feed to the newest line. Deliberately does NOT retire the "new"
     // rule -- the reader may still want to see where the unseen run began; the rule retires on the
     // next message that lands while they're caught up, or on their own send.
     chatJumpLatest: function(btn, e){ var el = document.getElementById('chatMessages'); if(el) el.scrollTop = el.scrollHeight; clearChatUnread(); },
     toggleChatExpand: function(btn, e){
       chatExpanded = !chatExpanded;
-      if(chatExpanded){ chatDrawerOpen = false; clearChatUnread(); } // full screen supersedes the mobile drawer
+      if(chatExpanded){ chatDrawerOpen = false; clearChatUnread(); chatChanClear(chatChannel); } // full screen supersedes the mobile drawer
     },
     noop: function(btn, e){
       /* swallow clicks inside the chat drawer so the backdrop tap doesn't close it */
@@ -38831,6 +38906,7 @@
       var _ch = btn.getAttribute('data-channel');
       chatChannel = (_ch==='guild' || _ch==='chronicle' || _ch==='combat') ? _ch : 'global';
       if(chatChannel==='guild') guildChatMaybeSubscribe();
+      chatChanClear(chatChannel);   // opening a channel reads it -> its tab pip retires
     },
     guildChatSend: function(btn, e){ guildChatSend(); },
     guildBankBuySlot: function(btn, e){ guildBankBuySlot(); },
@@ -39682,7 +39758,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.10';
+  var GAME_VERSION = '0.0.86.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -39842,6 +39918,7 @@
       guildChatMessagesHtml:guildChatMessagesHtml,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
+      chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
