@@ -15795,6 +15795,55 @@
     ok(R(2900, 3000, 1500) < 1500, 'progress just shy of firing stays just shy after the change');
   });
 
+  // ---- The dark-marble sweep (owner request, v0.0.86.8) --------------------------------------------
+  // Every remaining tan surface went black marble in the arena stone, via custom-property RE-SCOPING:
+  // each converted container locally redefines the tan palette vars, so descendant fills and inks
+  // re-derive the dark table without restating any child rule. Pinned by computed style on one
+  // representative of each conversion group -- a lost var re-scope leaves dark-on-dark ink, a lost
+  // background-clip bleeds the marble through the stonework.
+  suite('dark-marble sweep: tan surfaces retired', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML =
+      '<div class="market-book"><input class="market-search-input"><span class="market-item-tier">t7</span></div>'
+      + '<div class="chat-messages"><div class="chat-msg"><span class="chat-user mortal">V</span><span class="chat-body">hi</span></div></div>'
+      + '<div class="stats-group">s</div><div class="lb-row">r</div><div class="physique-bonus">p</div>'
+      + '<button class="style-btn">Melee</button><button class="tier-step-btn">-</button>'
+      + '<span class="tier-chip">t7</span>'
+      + '<input class="chat-input" placeholder="Say something">';
+    document.body.appendChild(probe);
+    try {
+      ['market-book','chat-messages','stats-group','lb-row','physique-bonus'].forEach(function(cls){
+        var cs = getComputedStyle(probe.querySelector('.'+cls));
+        ok(cs.backgroundImage.indexOf('marble_dark') !== -1 && cs.backgroundColor === 'rgb(20, 17, 9)',
+          '.'+cls+' sits on the black marble');
+        ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1 && cs.borderTopLeftRadius === '0px',
+          '.'+cls+' is framed in the arena stone, radius dropped');
+        ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+          '.'+cls+' clips the marble to the padding box');
+      });
+      // The var re-scope is what flips the ink -- children never restate colours.
+      eq(getComputedStyle(probe.querySelector('.chat-body')).color, 'rgb(232, 220, 192)',
+        'chat body ink derives the dark table through the scoped vars');
+      eq(getComputedStyle(probe.querySelector('.chat-user.mortal')).color, 'rgb(224, 101, 118)',
+        'the mortal red flips to its dark-theme variant on the dark well');
+      // Inputs are dark game-wide (the owner flagged the tan drawer input specifically).
+      var inp = getComputedStyle(probe.querySelector('.chat-input'));
+      ok(inp.backgroundColor === 'rgb(24, 20, 9)' && inp.color === 'rgb(232, 220, 192)',
+        'a bare input outside any container is dark with light ink');
+      eq(getComputedStyle(probe.querySelector('.market-search-input')).backgroundColor, 'rgb(24, 20, 9)',
+        'inputs inside converted containers are dark too');
+      // Tiny chips take the item-card dark plinth; button-scale controls take the slate stone chip.
+      eq(getComputedStyle(probe.querySelector('.tier-chip')).backgroundColor, 'rgb(42, 36, 24)',
+        'tier chips sit on the dark plinth OUTSIDE cards too');
+      var sb = getComputedStyle(probe.querySelector('.style-btn'));
+      ok(sb.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1 && sb.borderImageSource.indexOf('ivy_stretch') !== -1,
+        'style buttons are slate chips in the stone cut');
+      var ts = getComputedStyle(probe.querySelector('.tier-step-btn'));
+      ok(ts.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1 && ts.borderImageSource.indexOf('ivy_stretch') !== -1,
+        'tier steppers are slate chips in the stone cut');
+    } finally { probe.remove(); }
+  });
+
   // ---- Popup queue is hard-capped (v0.0.77.40: "save too large") -----------------------------------
   // The queue is SAVED STATE, drains one click at a time, and each item entry stores an inline SVG
   // icon -- an offline mass-craft batch with rarity popups on queued thousands of entries and pushed

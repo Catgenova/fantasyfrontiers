@@ -84,8 +84,9 @@ furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`
   companion, so a shared counter lights the same pip in all six and fails.
 - **The mini feed is a TAIL of the one `combatLog` ring buffer**, never a second log — one source of truth
   means a line cannot appear in the Chat tab's Combat channel and not here.
-- **Tan-chrome panels go on a TRAY (`.ar2-tray`), not a re-skin.** The consumables strip and Auto-Eat panel
-  carry dozens of tan classes; restating each colour for the dark stage rots the next time either gains a row.
+- **Shared-chrome panels go on a TRAY (`.ar2-tray`), never a re-skin.** The consumables strip and Auto-Eat panel
+  carry dozens of palette classes; restating each colour for the dark stage rots the next time either gains a row.
+  Since the v0.0.86.8 dark-marble sweep the tray derives the dark table via the var re-scope (see Conventions).
 - **`artcheck` covers the stage frames**, derived by scanning `index.html` for `art/` literals and fetched
   over the dist server. It must read the **SOURCE**: scanning `dist/` finds only ONE, because the obfuscator
   rewrites JS string literals and only the stylesheet's `url()` survives. **Consequence: keep every art path
@@ -105,6 +106,17 @@ flag would change Summoner damage, so it needs the owner's call.
 
 - The whole game is one file: `index.html` (~28k-line inline script, ES5-style `var` +
   `function`, no build-time modules). Match that style.
+- **The tan chrome is RETIRED (v0.0.86.6–.8, owner sweep): dark marble in stone frames is the default.**
+  The dark-marble sweep at the END of the stylesheet converts every remaining tan surface by CSS
+  custom-property RE-SCOPING — each converted container locally redefines the palette vars (fills AND
+  inks), so descendants derive the dark table with no child rule restated. When a surface still reads
+  tan, add its class to the sweep's selector lists rather than hand-restyling it; when building a NEW
+  boxed surface, use the sweep's tables (containers: `#141109` marble + `ivy_stretch` 12px/6px stone;
+  chips: `#2a2418` plinth; buttons: base `.action-btn`; inputs: `#181409`). The WHITE-marble islands
+  (modals `.skill-info-card`/`.familiar-popup-card`, drawer/expand shells, the page base) keep the
+  tan-ink defaults on purpose — dark boxes on white marble is the design. Inline colours inside a
+  converted container must come from the palette VARS (they re-scope), never a hardcoded tan-page hex —
+  a literal `#2a2114` is invisible ink on the dark ground (the menagerie popup's kind label hit this).
 - Unit tests live in `tests/selftest.js`, run in-browser via `index.html?selftest` against
   the `window.__FF` test seam (exports at the bottom of index.html). Add regression tests
   with new fixes; the seam sets `DISCORD_FEED_ENABLED = false` so tests never post to Discord.

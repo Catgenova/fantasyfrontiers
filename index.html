@@ -863,10 +863,9 @@
   .chat-input{flex:1;min-width:0;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-panel-raised);color:var(--text);}
   .chat-input:disabled{opacity:0.5;}
   .chat-messages{height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel);}
-  /* On the marble surfaces the message well trades its 1px hairline for the stone frame; the tan fill
-     STAYS -- every message tint (system rows, name colors) was inked against it. The rail dock keeps the
-     hairline (it sits on the dark rail, where a stone-on-stone frame reads as one more box). */
-  .ff-drawer .chat-messages,.ff-chat-expand .chat-messages{border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;}
+  /* (v0.0.86.6 gave the message well a stone frame only inside the drawer/expand; the v0.0.86.8
+     dark-marble sweep at the end of this sheet now skins .chat-messages everywhere, so no scoped
+     rule is needed here.) */
   /* The Send button joins the black stone chips (owner request, v0.0.86.6) on every chat surface. */
   .chat-send-row .action-btn{background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;color:#cdbf98;box-shadow:0 1px 2px rgba(0,0,0,.35);}
   .chat-send-row .action-btn:hover{background:linear-gradient(180deg,#2f363e,#232930);background-clip:padding-box;color:#e8dcc0;}
@@ -1245,10 +1244,11 @@
   .ar2 .arena-fx-title,.ar2 .arena-fx-name{color:#9a8f78;}
   .ar2 .arena-fx-t,.ar2 .arena-fx-n{color:#c0b394;}
   .ar2 .arena-fx-bar{background:#0c0a08;border-color:#3a2f20;}
-  /* THE TRAY. The consumables strip and the Auto-Eat panel are shared with the tan chrome and carry dozens
-     of tan classes between them; restating each colour for the dark stage would rot the next time either
-     panel gains a row. So the tray restores the tan surface and lets them render exactly as they do
-     everywhere else in the game -- an inset panel on the stage rather than a re-skin. */
+  /* THE TRAY. The consumables strip and the Auto-Eat panel are shared with the page chrome and carry dozens
+     of palette-var classes between them; restating each colour for the dark stage would rot the next time
+     either panel gains a row. Since v0.0.86.8 the shared palette itself went dark game-wide via the
+     var re-scope in the dark-marble sweep (end of this sheet, .ar2-tray is in its list), so the tray's
+     children derive the dark table with no colour restated here -- the same no-re-skin principle, dark. */
   .ar2-tray{margin-top:12px;background:var(--bg-card);color:var(--text);border:1px solid #4a3a22;
             border-radius:6px;padding:2px 10px 10px;}
   .ar2-tray .arena-items{border-top:0;}
@@ -2177,6 +2177,76 @@
   .estate-rotate-left{left:16px;}
   .estate-rotate-right{right:16px;}
 
+  /* ============== THE DARK-MARBLE SWEEP (owner request, v0.0.86.8) ==============================
+     "Anywhere a tan background remains in the game, replace with black marble in a stone frame."
+     Mechanism: CSS custom-property RE-SCOPING, not per-rule restating. Every converted surface locally
+     redefines the tan palette vars (fills AND inks), so its descendants -- chips, tracks, inputs, text,
+     .active color-mixes -- re-derive the dark table automatically and existing child rules keep working
+     untouched. This is what makes the conversion rot-safe: a child gaining a new var-based colour later
+     inherits the right table for whichever ground it sits on. The values are the item-card dark table
+     (v0.0.79.5). These rules sit at the END of the sheet so they win equal-specificity ties.
+     The WHITE-marble islands (modals, drawer/expand shells, the page base) are NOT in the list and keep
+     the tan-ink defaults -- that contrast is the design. */
+  .chat-messages,.arena,.market-book,.market-form,.market-collect,.stats-group,.physique-card,
+  .physique-bonus,.loadouts-panel,.quest-acc,.inv-acc,.title-row,.sac-filter-bar,.auth-card,.path-card,
+  .profile-head,.lb-row,.market-item-row,.forge-group-head,.estate-canvas-wrap,.estate-hover-info,
+  .estate-options-panel,.estate-building-row,.ff-fenced-card,
+  .style-btn,.dungeon-tab,.market-cat,.auth-tab,.tier-step-btn,.loadout-nest-toggle,
+  .tier-chip,.market-item-tier,.profile-skill,.skill-info-chip,.qtrack,.settings-toggle,.ar2-tray{
+    --text:#e8dcc0; --text-dim:#c0b394; --text-faint:#9a8f78;
+    --border:#48432f; --border-light:#6b5a38; --ink:#0c0a08;
+    --gold:#ddbb66; --gold-bright:#e6c24a; --green-deep:#9dbb66;
+    --cat-chat:#7cb350; --hp-good:#7cb350; --hp-bad:#d4574a;
+    --bg-panel:#241f15; --bg-panel-raised:#2a2418; --bg-card:#241f15; --bg-deep:#0c0a08;
+    --input-fill:#181409; --paper:#241f15;
+  }
+  /* Containers: the black marble under a wash in the arena stone. */
+  .chat-messages,.arena,.market-book,.market-form,.market-collect,.stats-group,.physique-card,
+  .physique-bonus,.loadouts-panel,.quest-acc,.inv-acc,.title-row,.sac-filter-bar,.auth-card,.path-card,
+  .profile-head,.lb-row,.market-item-row,.forge-group-head,.estate-canvas-wrap,.estate-hover-info,
+  .estate-options-panel,.estate-building-row,.ff-fenced-card{
+    background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-clip:padding-box;
+    border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;
+    color:var(--text);
+  }
+  /* Button-scale controls: the rail's slate chip in the 6px stone cut (v0.0.79.14 sweep style).
+     Their .active/.on rules color-mix over the re-scoped vars above, so they derive dark on their own. */
+  .style-btn,.dungeon-tab,.market-cat,.auth-tab,.tier-step-btn,.loadout-nest-toggle{
+    background:linear-gradient(180deg,#242a30,#191e23);background-clip:padding-box;
+    border:6px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    border-radius:0;color:#cdbf98;
+  }
+  .style-btn:hover,.dungeon-tab:hover,.market-cat:hover,.auth-tab:hover,.tier-step-btn:hover,.loadout-nest-toggle:hover{color:#e8dcc0;}
+  .style-btn.active{background:linear-gradient(180deg,#b0503f,#7f2f24);background-clip:padding-box;color:#fff;}
+  /* Tiny chips: the item-card dark plinth (too small for the stone cut). */
+  .tier-chip,.market-item-tier,.profile-skill,.skill-info-chip{background:#2a2418;border-color:#6b5a38;color:#cdbf98;}
+  /* The quest tracker chip keeps its accent LEFT BAR (a border-image would eat it), so it takes the
+     marble fill with a plain stone-toned border instead of the frame. */
+  .qtrack{background-color:#141109;background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url('art/marble_dark.png');background-size:cover;background-position:center;border-color:#48432f;border-left:3px solid var(--gold);color:var(--text);}
+  .qtrack.claimable{background:linear-gradient(90deg,rgba(202,162,58,.20),#141109 60%);}
+  /* Inputs go dark game-wide -- including inside the white-marble modals (the owner flagged the tan
+     drawer input specifically). Mirrors the .item-card .card-queue table. */
+  .chat-input,.ff-chat-inputrow input,.market-search-input,.market-num,.inv-search,.loadout-name,
+  .card-queue,.inv-sort select,.lb-metric select{background:#181409;border-color:#6b5a38;color:#e8dcc0;}
+  .chat-input::placeholder,.ff-chat-inputrow input::placeholder,.market-search-input::placeholder,
+  .market-num::placeholder,.inv-search::placeholder,.loadout-name::placeholder{color:#9a8f78;}
+  .chat-input:focus,.market-search-input:focus,.market-num:focus,.inv-search:focus,.loadout-name:focus{outline:2px solid #ddbb66;outline-offset:1px;border-color:#ddbb66;}
+  /* The mortal-path red is the page's darkest name ink; on the dark well it flips to the dark-theme
+     variant the theme toggle already uses. The :root[data-theme] forms are needed to OUTRANK the
+     theme-stamped rules above (they carry higher specificity than a bare descendant selector). */
+  .chat-messages .chat-user.mortal,
+  :root[data-theme="light"] .chat-messages .chat-user.mortal,
+  :root[data-theme="dark"] .chat-messages .chat-user.mortal{color:#e06576;}
+  /* The estate canvas buttons hardcoded WHITE hover gradients (invisible flash on the dark wrap now). */
+  .estate-zoom-btn:hover,.estate-view-btn:hover,.estate-rotate-btn:hover{background:linear-gradient(180deg,#2a2418,#181409);border-color:#ddbb66;}
+  /* The equipment paperdoll wore the LAST remaining old ivy-SVG frame; it joins the arena stone, its
+     silhouette vignette kept as a radial over the marble. */
+  .equip-doll{border-image:url('art/ivy_stretch.png') 37 32 39 32 round;border-radius:0;
+    background-color:#141109;
+    background-image:radial-gradient(ellipse at 50% 38%, rgba(70,60,44,.5), rgba(26,22,16,.78)),url('art/marble_dark.png');
+    background-size:auto,cover;background-position:center;background-clip:padding-box;}
 </style>
 </head>
 <body>
@@ -39518,7 +39588,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.7';
+  var GAME_VERSION = '0.0.86.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
