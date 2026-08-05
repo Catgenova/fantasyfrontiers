@@ -85,8 +85,11 @@ furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`
 - **The mini feed is a TAIL of the one `combatLog` ring buffer**, never a second log — one source of truth
   means a line cannot appear in the Chat tab's Combat channel and not here.
 - **Shared-chrome panels go on a TRAY (`.ar2-tray`), never a re-skin.** The consumables strip and Auto-Eat panel
-  carry dozens of palette classes; restating each colour for the dark stage rots the next time either gains a row.
-  Since the v0.0.86.8 dark-marble sweep the tray derives the dark table via the var re-scope (see Conventions).
+  carry dozens of palette classes; the ivy-stage block restates their colours with LITERAL stage inks.
+  **The tray must never join the dark-marble sweep's var re-scope list (v0.0.86.13 regression):** the sweep's
+  `--ink` is the page's near-black LINE tone while the stage's `--ink` (`.ar2.ivy`) is its light LETTERING —
+  same var name, opposite meanings — and re-scoping the tray (or matching its children via a swept class like
+  `.style-btn`) turned every chip name and Auto-Eat label dark-on-dark. Literal inks are immune to both.
 - **`artcheck` covers the stage frames**, derived by scanning `index.html` for `art/` literals and fetched
   over the dist server. It must read the **SOURCE**: scanning `dist/` finds only ONE, because the obfuscator
   rewrites JS string literals and only the stylesheet's `url()` survives. **Consequence: keep every art path

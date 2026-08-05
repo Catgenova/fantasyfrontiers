@@ -15915,6 +15915,31 @@
     }
   });
 
+  // ---- The combat tray keeps its light lettering (v0.0.86.13 regression) ---------------------------
+  // The dark-marble sweep's --ink is the page's near-black LINE tone; the stage's --ink (.ar2.ivy) is
+  // its light LETTERING. Re-scoping the tray (v0.0.86.8) -- and matching its threshold buttons via the
+  // swept .style-btn class -- turned every consumable name, Auto-Eat label and Next/Total food value
+  // dark-on-dark. The tray rules now use LITERAL stage inks, immune to any outer var re-scope.
+  suite('combat tray: consumables and Auto-Eat stay legible on the stage', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="ar2 ivy"><div class="ar2-tray">'
+      + '<button class="arena-item-chip"><span>Weak Venom</span><span class="qty">x145</span></button>'
+      + '<button class="style-btn">Off</button><button class="style-btn active">60%</button>'
+      + '<div class="physique-bonus">Next food: <b>Rat Meal (x22)</b></div>'
+      + '<div class="arena-items-active">active line</div>'
+      + '</div></div>';
+    document.body.appendChild(probe);
+    try {
+      var LIGHT = 'rgb(232, 220, 192)';   // #e8dcc0, the stage lettering
+      eq(getComputedStyle(probe.querySelector('.arena-item-chip')).color, LIGHT, 'consumable names read in the stage ink');
+      eq(getComputedStyle(probe.querySelector('.arena-item-chip .qty')).color, 'rgb(154, 143, 120)', 'the qty line keeps its dim ink');
+      eq(getComputedStyle(probe.querySelector('.ar2-tray .style-btn')).color, LIGHT, 'Auto-Eat threshold labels read in the stage ink');
+      eq(getComputedStyle(probe.querySelector('.ar2-tray .style-btn.active')).color, 'rgb(234, 245, 220)', 'the chosen threshold keeps its lit-well ink');
+      eq(getComputedStyle(probe.querySelector('.physique-bonus b')).color, LIGHT, 'Next/Total food values read in the stage ink');
+      eq(getComputedStyle(probe.querySelector('.arena-items-active')).color, LIGHT, 'the active-buff line reads in the stage ink');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

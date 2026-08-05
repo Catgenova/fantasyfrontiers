@@ -1288,11 +1288,12 @@
   .ar2 .arena-fx-title,.ar2 .arena-fx-name{color:#9a8f78;}
   .ar2 .arena-fx-t,.ar2 .arena-fx-n{color:#c0b394;}
   .ar2 .arena-fx-bar{background:#0c0a08;border-color:#3a2f20;}
-  /* THE TRAY. The consumables strip and the Auto-Eat panel are shared with the page chrome and carry dozens
-     of palette-var classes between them; restating each colour for the dark stage would rot the next time
-     either panel gains a row. Since v0.0.86.8 the shared palette itself went dark game-wide via the
-     var re-scope in the dark-marble sweep (end of this sheet, .ar2-tray is in its list), so the tray's
-     children derive the dark table with no colour restated here -- the same no-re-skin principle, dark. */
+  /* THE TRAY. The consumables strip and the Auto-Eat panel are shared with the page chrome; the ivy-stage
+     block below restates their colours for the stage. The tray must NOT be in the dark-marble sweep's var
+     re-scope list (v0.0.86.13): the sweep's --ink is the page's near-black LINE tone, while the stage's
+     --ink (.ar2.ivy) is its light LETTERING -- same var name, opposite meanings -- and re-scoping the tray
+     turned every chip name and threshold label dark-on-dark. The stage rules below therefore use LITERAL
+     stage-table inks, so no outer re-scope (including the sweep's .style-btn entry) can reach them. */
   .ar2-tray{margin-top:12px;background:var(--bg-card);color:var(--text);border:1px solid #4a3a22;
             border-radius:6px;padding:2px 10px 10px;}
   .ar2-tray .arena-items{border-top:0;}
@@ -1646,15 +1647,15 @@
      next time it gains a row. The owner wants it matching the feed instead, so the colours ARE restated --
      and that cost is real: renderCombatConsumables() and renderAutoEatPanel() are shared with the tan
      chrome, so any NEW row in either arrives unstyled here and has to be added below. */
-  .ar2.ivy .ar2-tray{ background-color:var(--ivy-well); background-clip:padding-box; color:var(--ink);
+  .ar2.ivy .ar2-tray{ background-color:var(--ivy-well); background-clip:padding-box; color:#e8dcc0;
                       border:14px solid transparent;
                       border-image:url('art/ivy_stretch.png') 37 32 39 32 round; }
   .ar2.ivy .ar2-tray h3{ color:var(--gold); font-family:var(--font-display); }
   .ar2.ivy .ar2-tray .section-intro,
   .ar2.ivy .ar2-tray .physique-bonus{ color:#c0b394; background:none; border:0; }
-  .ar2.ivy .ar2-tray .physique-bonus b{ color:var(--ink); }
+  .ar2.ivy .ar2-tray .physique-bonus b{ color:#e8dcc0; }
   .ar2.ivy .ar2-tray .arena-items{ border-top-color:#6b5a38; }
-  .ar2.ivy .ar2-tray .arena-items-active{ color:var(--ink); }
+  .ar2.ivy .ar2-tray .arena-items-active{ color:#e8dcc0; }
   /* PLINTHS FOR BUTTONS. The consumable chips and the Auto-Eat thresholds sit on the delivered bar frame --
      the same treatment Retreat has -- so every pressable thing on the stage is mounted stonework.
      background-clip:padding-box on each, or the well paints under the border area and shows through the
@@ -1662,7 +1663,7 @@
   .ar2.ivy .ar2-tray .arena-item-chip,
   .ar2.ivy .ar2-tray .style-btn{
     background-color:var(--ivy-well); background-image:none; background-clip:padding-box;
-    border-radius:0; box-shadow:none; color:var(--ink);
+    border-radius:0; box-shadow:none; color:#e8dcc0;
     border-style:solid; border-color:transparent; border-width:10px 24px 13px 24px;
     border-image:url('art/ivy_bar.png') 33 115 52 112 fill stretch; }
   .ar2.ivy .ar2-tray .arena-item-chip .qty{ color:#9a8f78; }
@@ -1675,7 +1676,7 @@
   .ar2.ivy .ar2-tray .style-btn .style-type{ color:#9a8f78; }
   /* Stow sits inside the strip; same black well, no red. */
   .ar2.ivy .ar2-tray button[data-action="deactivatePotion"]{
-    background:var(--ivy-well); background-clip:padding-box; color:var(--ink);
+    background:var(--ivy-well); background-clip:padding-box; color:#e8dcc0;
     border:1px solid #6b5a38; border-radius:3px; box-shadow:none; }
 
   /* ---- the feed spans the whole arena; the companions move up under Retreat ----
@@ -2236,7 +2237,7 @@
   .profile-head,.lb-row,.market-item-row,.forge-group-head,.estate-canvas-wrap,.estate-hover-info,
   .estate-options-panel,.estate-building-row,.ff-fenced-card,
   .style-btn,.dungeon-tab,.market-cat,.auth-tab,.tier-step-btn,.loadout-nest-toggle,
-  .tier-chip,.market-item-tier,.profile-skill,.skill-info-chip,.qtrack,.settings-toggle,.ar2-tray{
+  .tier-chip,.market-item-tier,.profile-skill,.skill-info-chip,.qtrack,.settings-toggle{
     --text:#e8dcc0; --text-dim:#c0b394; --text-faint:#9a8f78;
     --border:#48432f; --border-light:#6b5a38; --ink:#0c0a08;
     --gold:#ddbb66; --gold-bright:#e6c24a; --green-deep:#9dbb66;
@@ -39762,7 +39763,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.12';
+  var GAME_VERSION = '0.0.86.13';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
