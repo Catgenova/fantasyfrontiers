@@ -3841,8 +3841,52 @@
     ok(Math.abs(FF.buffTotalRunwayMs(t, 0) - 60000) < 1500, 'no stock -> just the remaining time');
     eq(FF.buffTotalRunwayMs(null, 5), 0, 'no active buff, no runway');
     eq(FF.buffTotalRunwayMs({ itemId:'x', durationMs:600000, expiresAt: now - 5 }, 9), 0, 'an expired buff contributes nothing');
-    ok(/ left • .+ total \(x3 stocked\)$/.test(FF.gabBuffTimeText(t, 3)), 'the line reads "<rem> left • <total> total (x3 stocked)"');
-    ok(!/stocked/.test(FF.gabBuffTimeText(t, 0)), 'with nothing stocked the line stays a plain "<rem> left"');
+    // v0.0.86.16 (owner pick 10): the runway compacts to a short human unit -- "≈31m runway (×3)".
+    ok(/ left • ≈.+ runway \(×3\)$/.test(FF.gabBuffTimeText(t, 3)), 'the line reads "<rem> left • ≈<short> runway (×3)"');
+    ok(!/runway/.test(FF.gabBuffTimeText(t, 0)), 'with nothing stocked the line stays a plain "<rem> left"');
+  });
+
+  // ---- Action bar round (owner picks 1/2/3/6/7/9/10, v0.0.86.16) -----------------------------------
+  // ETA/rate in the remain column, the next-to-finish gold accent, the capacity chip, per-skill
+  // swatches, the nav chevron, and the collapsed one-line summary.
+  suite('action bar: ETA/rate, next-to-finish, capacity chip, swatches, collapse', function(){
+    eq(FF.gabShortEta(30 * 1000), '<1m', 'sub-minute reads <1m');
+    eq(FF.gabShortEta(9 * 60000), '9m', 'minutes read Nm');
+    eq(FF.gabShortEta(3.24 * 3600000), '3.2h', 'small hours keep one decimal');
+    eq(FF.gabShortEta(19 * 86400000), '19d', 'days read Nd');
+    ok(/^137 left · ≈9m$/.test(FF.gabTaskRemainText(137, 4000, 87)), 'finite runs append the finish ETA');
+    eq(FF.gabTaskRemainText(0, 4000, 87), '0 left', 'a drained run shows no ETA');
+    ok(FF.gabTaskRemainText(Infinity, 5000, 70).indexOf('504/h') !== -1, 'endless runs read the success-weighted rate (3600s/5s x 70%)');
+    eq(FF.gabTaskRemainText(Infinity, 0, 70), '∞', 'no cycle time -> the plain infinity');
+    eq(FF.gabTaskRemainText(null, 1000, 70), '', 'combat has no remain column');
+    var S = FF._state;
+    var sv = { act: S.activity, extra: S.extraCraftSlots, inv: S.inventory };
+    try {
+      // Two identical relic digs; the extra slot is mid-cycle, so it finishes first.
+      S.inventory = { muddyartifact_t0: 3 };
+      S.activity = { type:'craft', skill:'archaeology', itemId:'archaeology_dig_t0', progress:0 };
+      S.extraCraftSlots = [ { type:'craft', skill:'archaeology', itemId:'archaeology_dig_t0', progress:1000 } ];
+      eq(FF.gabNextFinishKey(FF.collectTasks()), 'e0', 'the mid-cycle twin frees a slot soonest');
+      var html = FF.renderGlobalActionBar();
+      var cap = FF.getMaxCraftSlots(S);
+      ok(html.indexOf('gab-cap') !== -1 && html.indexOf('>2/' + cap + '<') !== -1, 'the capacity chip reads used/total');
+      ok(/gabRow-e0"[^>]*gab-next|gab-next[^>]*id="gabRow-e0"|gab-task gab-clickable gab-next" id="gabRow-e0"/.test(html) || /id="gabRow-e0"/.test(html.split('gab-next')[1] || ''), 'the gold accent sits on the soonest row');
+      ok(html.indexOf('gab-task-skill') !== -1, 'rows carry their skill swatch');
+      ok(html.indexOf('gab-task-go') !== -1 && html.indexOf('›') !== -1, 'navigable rows show the chevron');
+      ok(html.indexOf('≈') !== -1, 'finite runs read an ETA on the card');
+      ok(FF.describeTask(S.activity).accent, 'tasks resolve a per-skill accent colour');
+      // Collapse: one line, no rows, the toggle flips to +; the summary text is the live-updated line.
+      FF._setGabCollapsed(true);
+      var ch = FF.renderGlobalActionBar();
+      ok(ch.indexOf('gab-summary') !== -1 && ch.indexOf('gab-tasks') === -1, 'collapsed renders the summary and no rows');
+      ok(/2 tasks running/.test(ch) && /next free slot ≈/.test(ch), 'the summary counts tasks and names the next free slot');
+      ok(ch.indexOf('gab-min') !== -1 && ch.indexOf('>+<') !== -1, 'the fold toggle reads + while collapsed');
+      FF._setGabCollapsed(false);
+      ok(FF.renderGlobalActionBar().indexOf('gab-tasks') !== -1, 'expanding restores the rows');
+    } finally {
+      FF._setGabCollapsed(false);
+      S.activity = sv.act; S.extraCraftSlots = sv.extra; S.inventory = sv.inv;
+    }
   });
 
   // ---- Unique cards name their class (ticket: "Rare Dragonscale Bulwark" never said Herald) --------

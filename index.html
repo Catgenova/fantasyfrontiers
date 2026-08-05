@@ -1942,6 +1942,20 @@
   .card-queue:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
   .gab-task-count{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:#c8791f;font-variant-numeric:tabular-nums;}
   .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:#c0b394;}
+  /* v0.0.86.16 (owner picks 1/2/3/6/7/9/10): HUD chips, per-skill swatches, the next-to-finish accent,
+     the nav chevron, the collapsed summary, and the Auto-drink chips. */
+  .global-action-bar{position:relative;}
+  .gab-hud{position:absolute;top:-7px;right:-3px;display:flex;gap:5px;z-index:2;}
+  .gab-cap{font-family:var(--font-mono);font-size:10px;color:#9a8f78;background:#2a2418;border:1px solid #6b5a38;border-radius:7px;padding:2px 6px;}
+  .gab-cap.full{color:#0f0d08;background:linear-gradient(180deg,#e6c24a,#c9a227);border-color:#6b5a38;font-weight:700;}
+  .gab-min{font-family:var(--font-mono);font-size:11px;line-height:1.3;color:#9a8f78;background:#2a2418;border:1px solid #6b5a38;border-radius:7px;padding:2px 8px;cursor:pointer;}
+  .gab-min:hover{color:#e8dcc0;border-color:#ddbb66;}
+  .gab-task-skill{flex:0 0 auto;width:3px;align-self:stretch;border-radius:2px;margin:6px 0;}
+  .gab-task.gab-next{box-shadow:-7px 0 0 -4px #ddbb66;}
+  .gab-task-go{flex:0 0 auto;width:10px;color:#6b5a38;font-size:15px;line-height:1;text-align:center;}
+  .gab-task.gab-clickable:hover .gab-task-go{color:#ddbb66;}
+  .gab-summary{font-family:var(--font-mono);font-size:12px;color:#c0b394;padding:5px 0;}
+  .global-action-bar .gab-tea-auto{background:#2a2418;border:1px solid #6b5a38;border-radius:6px;padding:2px 7px;}
   /* Tea buff widget in the global action header */
   .gab-tea{margin-top:10px;padding-top:8px;border-top:1px dashed #6b5a38;}
   .gab-tea-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
@@ -37422,12 +37436,13 @@
       var gi = ALL_GATHER_ITEMS[act.itemId];
       return { name:'Gathering: '+(gi?gi.name:act.itemId), icon: gi?gi.icon:svgIcon('chest','var(--cat-gathering)'),
         effTime: gi ? gi.time*1000*memoSpeedMult()*memoGatherToolSpeed(act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000,
-        progress: act.progress||0, remaining: Infinity, successPct: gatherSuccessPct(act.skill), navCat:'gathering', navSub:act.skill };
+        progress: act.progress||0, remaining: Infinity, successPct: gatherSuccessPct(act.skill), navCat:'gathering', navSub:act.skill,
+        accent: (GATHERING_SKILLS[act.skill]||{}).color || 'var(--cat-gathering)' };
     }
     if(act.type==='pray'){
       var pt = PRAYER_TIERS.filter(function(t){ return t.id===act.itemId; })[0];
       return { name:'Praying: '+(pt?pt.name:act.itemId), icon: svgIcon('prayinghands','var(--cat-faith)'),
-        effTime: pt ? pt.time*1000*memoSpeedMult() : 1000, progress: act.progress||0, remaining: Infinity, successPct: 100, navCat:'faith', navSub:'prayer' };
+        effTime: pt ? pt.time*1000*memoSpeedMult() : 1000, progress: act.progress||0, remaining: Infinity, successPct: 100, navCat:'faith', navSub:'prayer', accent:'var(--cat-faith)' };
     }
     if(act.type==='combat'){
       var m = monsterById(act.monsterId);
@@ -37436,14 +37451,15 @@
         // playerAttackIntervalMs() (haste, class and ring speed, Chill), so a raw denominator made the
         // task bar reset mid-track -- at 2x attack speed it "stopped at 50%" (owner report, v0.0.77.39).
         effTime: playerAttackIntervalMs(), progress: act.tickAccum||0, remaining: null, successPct: null,
-        navCat: act.dungeon ? 'dungeons' : 'combat', navSub: act.dungeon ? null : (m?m.category:null) }; // a dungeon fight's card jumps back to the Dungeons run
+        navCat: act.dungeon ? 'dungeons' : 'combat', navSub: act.dungeon ? null : (m?m.category:null), accent:'var(--cat-combat)' }; // a dungeon fight's card jumps back to the Dungeons run
     }
     if(act.craftKind){
       var d = getSpecialTierData(act), sk = getSpecialSkillId(act);
       var sChance = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, sk);
       return { name:'Crafting: '+(d?d.name:act.craftKind), icon: svgIcon('hammer','var(--cat-crafting)'),
         effTime: d ? d.time*1000*memoSpeedMult()*memoToolSpeed(sk) : 1000, progress: act.progress||0,
-        remaining: d ? taskRunsRemaining(d.inputs) : null, successPct: Math.round(sChance*100), navCat: craftCatForSkill(sk), navSub: sk };
+        remaining: d ? taskRunsRemaining(d.inputs) : null, successPct: Math.round(sChance*100), navCat: craftCatForSkill(sk), navSub: sk,
+        accent: ((CRAFTING_SKILLS[sk]||GATHERING_SKILLS[sk])||{}).color || 'var(--cat-crafting)' };
     }
     var r = ALL_CRAFT_RECIPES[act.itemId];
     var inputs = (r && r.shaftCraft) ? makeShaftInputs(act.logTierIndex) : (r ? r.inputs : null);
@@ -37454,10 +37470,61 @@
     else cpct = Math.round(craftSuccessRate(state, act.skill)*100);
     return { name:'Crafting: '+(r?r.name:act.itemId), icon: r?r.icon:svgIcon('hammer','var(--cat-crafting)'),
       effTime: r ? r.time*1000*memoSpeedMult()*memoToolSpeed(act.skill) : 1000, progress: act.progress||0,
-      remaining: taskRunsRemaining(inputs), successPct: cpct, navCat: craftCatForSkill(act.skill), navSub: act.skill };
+      remaining: taskRunsRemaining(inputs), successPct: cpct, navCat: craftCatForSkill(act.skill), navSub: act.skill,
+      accent: ((CRAFTING_SKILLS[act.skill]||GATHERING_SKILLS[act.skill])||{}).color || 'var(--cat-crafting)' };
   }
-  function gabTaskRemainText(rem){ return rem===Infinity ? '∞' : (rem!=null ? rem+' left' : ''); }
+  // Short human duration for ETAs/runways: "9m", "3.2h", "19d". Never seconds -- these annotate
+  // long-running work, and a seconds figure would tick distractingly in place.
+  function gabShortEta(ms){
+    if(!(ms > 0)) return '';
+    var m = ms / 60000;
+    if(m < 1) return '<1m';
+    if(m < 60) return Math.round(m) + 'm';
+    var h = m / 60;
+    if(h < 48) return (h < 10 ? (Math.round(h * 10) / 10) : Math.round(h)) + 'h';
+    return Math.round(h / 24) + 'd';
+  }
+  // The remain column (owner pick 2, v0.0.86.16): finite runs append the finish ETA ("137 left · ≈9m"),
+  // endless ones show the production RATE instead of a bare infinity ("∞ · ~412/h", success-weighted).
+  function gabTaskRemainText(rem, effTimeMs, successPct){
+    if(rem === Infinity){
+      if(!(effTimeMs > 0)) return '∞';
+      var perHour = 3600000 / effTimeMs * ((successPct == null ? 100 : successPct) / 100);
+      return '∞ · ~' + fmt(Math.round(perHour)) + '/h';
+    }
+    if(rem == null) return '';
+    var eta = (effTimeMs > 0 && rem > 0) ? gabShortEta(rem * effTimeMs) : '';
+    return fmt(rem) + ' left' + (eta ? ' · ≈' + eta : '');
+  }
   function gabTaskChanceText(pct){ return pct!=null ? pct+'%' : ''; }
+  // Which running task frees a slot SOONEST (owner pick 3): the smallest finite remaining x cycle time.
+  // Returns its key, or null when nothing has a finite horizon (all-∞ boards have no "next").
+  function gabNextFinishKey(tasks){
+    var bestKey = null, bestMs = Infinity;
+    for(var i = 0; i < tasks.length; i++){
+      var d = describeTask(tasks[i].act);
+      if(d.remaining != null && d.remaining !== Infinity && d.effTime > 0){
+        var ms = d.remaining * d.effTime - (d.progress || 0);
+        if(ms < bestMs){ bestMs = ms; bestKey = tasks[i].key; }
+      }
+    }
+    return bestKey;
+  }
+  // Collapsed card (owner pick 9): the whole board folds to a one-line summary. Session flag; it joins
+  // the structural signature so toggling rebuilds once, and the live updater refreshes the summary text.
+  var gabCollapsed = false;
+  function gabSummaryText(tasks){
+    var fights = 0, nextMs = Infinity;
+    for(var i = 0; i < tasks.length; i++){
+      var d = describeTask(tasks[i].act);
+      if(tasks[i].act.type === 'combat') fights++;
+      if(d.remaining != null && d.remaining !== Infinity && d.effTime > 0) nextMs = Math.min(nextMs, d.remaining * d.effTime - (d.progress || 0));
+    }
+    var t = tasks.length + ' task' + (tasks.length === 1 ? '' : 's') + ' running';
+    if(nextMs !== Infinity) t += ' · next free slot ≈' + gabShortEta(Math.max(1, nextMs));
+    if(fights > 0) t += ' · in combat';
+    return t;
+  }
   // Total buff runway: the active buff's remaining time plus every copy of the SAME item still in the
   // pack (SteakHouse suggestion). With Auto-drink/study on, the stock chains seamlessly, so this is the
   // buff's real horizon; without it, it's what the player could keep running by hand.
@@ -37465,10 +37532,11 @@
     if(!active || !(active.expiresAt > Date.now())) return 0;
     return Math.max(0, active.expiresAt - Date.now()) + Math.max(0, invCount|0) * (active.durationMs||0);
   }
-  // The widget's time line: "12:34 left", plus " • 1:52:34 total (x9 stocked)" while copies remain.
+  // The widget's time line: "12:34 left", plus " • ≈19d runway (×9)" while copies remain -- the short
+  // human unit replaced the raw "453:23:52 total (x1700 stocked)" wall (owner pick 10, v0.0.86.16).
   function gabBuffTimeText(active, invCount){
     var txt = formatDuration(Math.max(0, active.expiresAt - Date.now())) + ' left';
-    if((invCount|0) > 0) txt += ' • ' + formatDuration(buffTotalRunwayMs(active, invCount)) + ' total (x' + (invCount|0) + ' stocked)';
+    if((invCount|0) > 0) txt += ' • ≈' + gabShortEta(buffTotalRunwayMs(active, invCount)) + ' runway (×' + (invCount|0) + ')';
     return txt;
   }
   // Tome buff widget: study an available Tome (or the active one's countdown) for a work-speed buff,
@@ -37577,19 +37645,29 @@
       var idleMsg = slotCap > 1 ? ('Idle — all ' + slotCap + ' action slots free') : 'Idle';
       return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabBuffsHtml()+'</div>';
     }
+    // The HUD chips (owner picks 6+9): the slot-capacity readout (gold when full) and the fold toggle.
+    var hud = '<div class="gab-hud"><span class="gab-cap'+(idleSlots===0?' full':'')+'" title="Action slots in use">'+tasks.length+'/'+slotCap+'</span>'
+      + '<button class="gab-min" data-action="gabToggleCollapse" title="'+(gabCollapsed?'Expand':'Collapse')+' the task card">'+(gabCollapsed?'+':'–')+'</button></div>';
+    // Collapsed: the whole board folds to one line (kept live by the in-place updater). Auto-drink and
+    // every task keep RUNNING -- only the display folds.
+    if(gabCollapsed){
+      return '<div class="global-action-bar">'+hud+'<div class="gab-summary" id="gabSummary">'+escapeHtml(gabSummaryText(tasks))+'</div></div>';
+    }
     // One row per running task at a comfortable fixed height; the card simply grows taller as
     // more tasks run (no inner scrollbar), so every active task stays readable regardless of count.
     var rowH = 44;
-    var html = '<div class="global-action-bar"><div class="gab-tasks">';
+    var nextKey = gabNextFinishKey(tasks);   // the gold accent: which task frees a slot soonest
+    var html = '<div class="global-action-bar">'+hud+'<div class="gab-tasks">';
     tasks.forEach(function(t){
       var d = describeTask(t.act);
       var pct = clamp((d.progress||0)/d.effTime*100, 0, 100);
       var stop = t.primary ? 'data-action="stop"' : 'data-action="stopExtraSlot" data-slot="'+t.index+'"';
       var navAttr = d.navCat ? ' data-action="navToActivity" data-nav-cat="'+d.navCat+'" data-nav-sub="'+(d.navSub||'')+'"' : '';
-      html += '<div class="gab-task'+(d.navCat?' gab-clickable':'')+'" style="height:'+rowH+'px"'+navAttr+'>';
+      html += '<div class="gab-task'+(d.navCat?' gab-clickable':'')+(t.key===nextKey?' gab-next':'')+'" id="gabRow-'+t.key+'" style="height:'+rowH+'px"'+navAttr+'>';
       html += '<button class="gab-task-x" '+stop+' title="Cancel this task">✕</button>';
+      html += '<span class="gab-task-skill" style="background:'+(d.accent||'transparent')+'"></span>';
       html += '<div class="gab-task-body">';
-      html += '<div class="gab-task-top"><span class="gab-task-name">'+d.icon+' '+escapeHtml(d.name)+'</span><span class="gab-task-remain" id="gabRem-'+t.key+'">'+gabTaskRemainText(d.remaining)+'</span></div>';
+      html += '<div class="gab-task-top"><span class="gab-task-name">'+d.icon+' '+escapeHtml(d.name)+'</span><span class="gab-task-remain" id="gabRem-'+t.key+'">'+gabTaskRemainText(d.remaining, d.effTime, d.successPct)+'</span></div>';
       html += '<div class="gab-task-track"><div class="gab-task-fill'+gabFillClass(t.act)+'" id="gabFill-'+t.key+'" style="width:'+pct+'%"></div></div>';
       html += '</div>';
       // A queued run shows how far through its TARGET it is, which the time-remaining figure can't convey
@@ -37597,6 +37675,8 @@
       if(t.act && t.act.targetQty) html += '<span class="gab-task-count" id="gabCount-'+t.key+'">'+fmt(t.act.producedQty||0)+'/'+fmt(t.act.targetQty)+'</span>';
       else if(t.act && t.act.fightTarget) html += '<span class="gab-task-count" id="gabCount-'+t.key+'">'+fmt(t.act.fightsWon||0)+'/'+fmt(t.act.fightTarget)+'</span>'; // limited combat run
       html += '<span class="gab-task-chance" id="gabChance-'+t.key+'">'+gabTaskChanceText(d.successPct)+'</span>';
+      // Rows navigate (they always did); the chevron finally SAYS so.
+      html += d.navCat ? '<span class="gab-task-go" aria-hidden="true">›</span>' : '<span class="gab-task-go" aria-hidden="true"></span>';
       html += '</div>';
     });
     html += '</div>';
@@ -37628,7 +37708,8 @@
       + '|tea:' + (isTeaActive() ? 'a' : (bt ? 'b'+bt.id : '0'))
       + '|tome:' + (isTomeActive() ? 'a' : (bm ? 'b'+bm.id : '0'))
       + '|brew:' + (isBrewActive() ? 'a' : (bb ? 'b'+bb.id : '0'))
-      + '|auto:' + (state.autoTea?1:0) + (state.autoTome?1:0) + (state.autoBrew?1:0);
+      + '|auto:' + (state.autoTea?1:0) + (state.autoTome?1:0) + (state.autoBrew?1:0)
+      + '|min:' + (gabCollapsed?1:0);
   }
   function updateGlobalActionBarLive(){
     flushGabRewardQueue(); // anchor any pending reward floats to the current task rows
@@ -37647,12 +37728,21 @@
       gabEl.innerHTML = renderGlobalActionBar();
       return; // freshly rendered -- widths/text already current
     }
+    // Collapsed: only the one-line summary needs refreshing (the rows don't exist).
+    if(gabCollapsed){
+      var _sum = document.getElementById('gabSummary');
+      if(_sum){ var _st = gabSummaryText(tasks); if(_sum.textContent !== _st) _sum.textContent = _st; }
+      return;
+    }
+    var _nextKey = gabNextFinishKey(tasks);   // the gold accent follows the live counts between rebuilds
     tasks.forEach(function(t){
       var d = describeTask(t.act);
+      var row = document.getElementById('gabRow-'+t.key);
+      if(row) row.classList.toggle('gab-next', t.key === _nextKey);
       var fill = document.getElementById('gabFill-'+t.key);
       if(fill && d.effTime) fill.style.width = clamp((d.progress||0)/d.effTime*100, 0, 100) + '%';
       var rem = document.getElementById('gabRem-'+t.key);
-      if(rem){ var rt = gabTaskRemainText(d.remaining); if(rem.textContent !== rt) rem.textContent = rt; }
+      if(rem){ var rt = gabTaskRemainText(d.remaining, d.effTime, d.successPct); if(rem.textContent !== rt) rem.textContent = rt; }
       var ch = document.getElementById('gabChance-'+t.key);
       if(ch){ var ct = gabTaskChanceText(d.successPct); if(ch.textContent !== ct) ch.textContent = ct; }
       // Queued run: tick the n/N counter in place rather than rebuilding the card each time an item lands.
@@ -38611,6 +38701,9 @@
       var extraIdx = parseInt(btn.getAttribute('data-slot'),10);
       state.extraCraftSlots[extraIdx] = {type:null};
     },
+    // Fold/unfold the task card (owner pick 9). The flag is in the structural signature, so the next
+    // live pass rebuilds the card in its new shape; every task and auto-drink keeps running underneath.
+    gabToggleCollapse: function(btn, e){ gabCollapsed = !gabCollapsed; updateGlobalActionBarLive(); },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -39866,7 +39959,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.15';
+  var GAME_VERSION = '0.0.86.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -39995,7 +40088,7 @@
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
-      buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText,
+      buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, renderWorkshopForge:renderWorkshopForge, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot, placeNewActivity:placeNewActivity, queueEligibleAction:queueEligibleAction,
