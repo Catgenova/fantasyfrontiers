@@ -16966,11 +16966,50 @@
     ok(mw && mw.plan.enchant_t20===3 && mw.maxTier===20, 'a t23 masterwork enchants with t20 crystals');
     ok(FF.planEnchantCrystals(24, 5) === null, 'a t24 masterwork still needs ENOUGH t20 crystals');
     s.inventory = { enchant_t19: 9 };
-    ok(FF.planEnchantCrystals(23, 1) === null, 'the clamp is to t20, not lower — t19 crystals do not qualify');
+    ok(FF.planEnchantCrystals(23, 1) === null, 'the clamp is to t20, not lower: t19 crystals do not qualify');
     s.inventory = { scroll_t20: 2 };
     var mwScroll = FF.planInscriptions(24, 2);
     ok(mwScroll && mwScroll.plan.scroll_t20===2 && mwScroll.maxTier===20, 'a t24 masterwork enhances with t20 Scrolls');
+    // EVERY masterwork tier, both material lines (ticket-0142). The first fix was verified on a t21
+    // (D1) piece only, and the owner reported D2/D3/D4 gear still reading as unimprovable, so the
+    // sweep pins all four tiers on both planners rather than a representative one.
+    s.inventory = { enchant_t20: 9, scroll_t20: 9 };
+    [21, 22, 23, 24].forEach(function(t){
+      eq(FF.improveMatTier(t), 20, 't'+t+' masterwork gear draws on t20 materials');
+      var pe = FF.planEnchantCrystals(t, 2), pi = FF.planInscriptions(t, 2);
+      ok(pe && pe.plan.enchant_t20===2 && pe.maxTier===20, 't'+t+' enchants with t20 crystals');
+      ok(pi && pi.plan.scroll_t20===2 && pi.maxTier===20, 't'+t+' enhances with t20 Scrolls');
+    });
     s.inventory = savedInv;
+  });
+
+  // ---- ticket-0142: the improvement card's Enhance row must read the CLAMPED tier ----------------
+  // The engine was right at every masterwork tier all along (the sweep above); what the owner saw was
+  // a readout lying. This row built its label and its owned-count from the RAW tier, and
+  // improveMaterialSpan sums ids from that tier up to TIER_COUNT-1, so at t21+ the id list is EMPTY:
+  // a masterwork always read "Inscription Scroll (t23+) you have 0" in danger red no matter how many
+  // t20 Scrolls were in the bag, while the Enhance button itself would have spent them happily. The
+  // Enchant row was clamped in the first pass; this one was missed, which is exactly the retest's
+  // "enchanting fine until t21, higher tier missing inscription".
+  suite('ticket-0142: masterwork improvement readout quotes t20 materials', function(){
+    var S = FF._state, savedU = S.uniqueItems, savedInv = S.inventory, savedSel = null;
+    try {
+      S.inventory = { scroll_t20: 7, enchant_t20: 7 };
+      S.uniqueItems = { u_mw:{ uid:'u_mw', kind:'weapon', base:'stweapon_rapier_t5_fantastic',
+                               rarity:'fantastic', tier:23, enhance:0, enchants:[] } };
+      FF.improveSelect('u_mw');
+      var card = FF.renderImproveDetail();
+      var row = (card.match(/Inscription Scroll[\s\S]*?<\/div>/) || [''])[0];
+      ok(row, 'the card renders an Inscription Scroll row for a masterwork item');
+      ok(/\(t20\+\)/.test(row), 'the Enhance row quotes t20 Scrolls for a t23 item');
+      ok(!/\(t23\+\)/.test(row), 'the Enhance row does not quote the raw masterwork tier');
+      ok(/data-owned-ids="[^"]*scroll_t20/.test(row), 'the owned-count live span watches scroll_t20');
+      ok(/>7</.test(row), 'the owned count reports the 7 t20 Scrolls actually held');
+      // Same clamp on the Enchant row, so the two readouts can never disagree again.
+      var erow = (card.match(/Next enchant:[\s\S]*?<\/div>/) || [''])[0];
+      ok(/\(t20\+\)/.test(erow) && !/\(t23\+\)/.test(erow), 'the Enchant row quotes t20 crystals too');
+      ok(/>7</.test(erow), 'the Enchant row reports the 7 t20 crystals actually held');
+    } finally { S.uniqueItems = savedU; S.inventory = savedInv; FF.improveSelect(savedSel); }
   });
 
   // ---- Improvement system: modify EQUIPPED gear (deferred conversion, keeps it equipped) --------

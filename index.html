@@ -17309,7 +17309,13 @@
         var _riskHtml = _barrierActive
           ? '<b style="color:var(--gold);">a failure shatters a Barrier Shard, not the item.</b>'
           : '<b style="color:var(--danger);">a failure destroys the item.</b>';
-        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' ('+improveTierLabel(tier)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · '+_riskHtml+'</div>';
+        // MASTERWORK CLAMP ON THE READOUT TOO (ticket-0142, second report). planInscriptions has always
+        // clamped a t21-t24 item to t20 Scrolls, so Enhance WORKED -- but this row passed the raw tier to
+        // both the label and the count, so a t23 piece read "1 Inscription Scroll (t23+) - you have 0"
+        // while the click would have spent t20 Scrolls happily. The Enchant row above was clamped in the
+        // first pass and this one was missed, which is exactly why the retest said enchanting was fine and
+        // "higher tier missing inscription". Same helper both rows, so they cannot drift again.
+        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' ('+improveTierLabel(improveMatTier(tier))+'+) · <b>you have '+improveMaterialSpan('scroll_t', improveMatTier(tier), ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · '+_riskHtml+'</div>';
         if(enhanceLockArmed) html += '<div class="empty-note" style="color:var(--danger);">'+svgIcon('warning','var(--danger)')+' Enhancing <b>permanently</b> locks this item out of enchanting. You\'ll no longer be able to add or change enchants. Click Enhance again to confirm.</div>';
         if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">'+svgIcon('warning','var(--danger)')+' No '+improveTierLabel(improveMatTier(tier))+' Scrolls. This spends higher-tier ones. Click Enhance again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
@@ -40723,7 +40729,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.37';
+  var GAME_VERSION = '0.0.86.38';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
