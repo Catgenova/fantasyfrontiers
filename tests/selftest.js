@@ -18587,6 +18587,68 @@
     }
   });
 
+  // ---- ticket-0156: a stat row's label and value never touch (Thausale) ---------------------------
+  // The report: "the defence value is too close to the name", with a screenshot showing "Blunt Def69%"
+  // reading as one word. Cause: .stat-row is space-between with no gap, which pushes the pair to the
+  // edges but guarantees NO minimum separation, so once label + value fill the row the space between
+  // them is exactly zero. This suite MEASURES real layout (the suite runs in a real browser against the
+  // real stylesheet), so it catches the geometry rather than trusting the declaration.
+  suite('ticket-0156: stat rows keep a gap between label and value', function(){
+    var S = FF._state;
+    var sv = { xp:S.xp, phys:S.physique, armor:S.bodyArmor,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity };
+    var host = null;
+    try {
+      // Endgame kit for the same reason ticket-0152 needed it: the collision only happens once the rows
+      // carry their real long values (three-part type mixes, two armour proficiencies, five attunements).
+      S.xp = Object.assign({}, S.xp);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique);
+      Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.equippedMainhand = 'claymore'; S.equippedMainhandTier = FF.TIER_COUNT - 1;
+      S.equippedMainhandRarity = 'fantastic';
+      // A MIXED armour set on purpose: two materials give the Armor Proficiency row two segments, which
+      // is the longest value in the group and one of the five that measured 0px.
+      S.bodyArmor = { helmet:{material:'chain', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      chest:{material:'chain', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      gauntlets:{material:'chain', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      boots:{material:'chain', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      back:{material:'tailoring', tier:FF.TIER_COUNT-1, rarity:'fantastic'} };
+      // Offscreen but LAID OUT (display:none would report every rect as zero and pass vacuously). The
+      // width is pinned so the result cannot drift with the test runner's viewport.
+      host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0;width:300px;';
+      host.innerHTML = FF.renderCombatStatsPanel();
+      document.body.appendChild(host);
+      var rows = [].slice.call(host.querySelectorAll('.stat-row'));
+      ok(rows.length > 8, 'the panel rendered its stat rows (got ' + rows.length + ')');
+      var worst = null, wrapped = 0;
+      rows.forEach(function(r){
+        var l = r.querySelector('.stat-label'), v = r.querySelector('.stat-value');
+        if(!l || !v) return;
+        var lb = l.getBoundingClientRect(), vb = v.getBoundingClientRect();
+        if(vb.height > lb.height * 1.4 || lb.height > 24) wrapped++;
+        var gap = vb.left - lb.right;
+        if(worst === null || gap < worst.gap) worst = { gap:gap, label:(l.textContent||'').trim().slice(0,30) };
+      });
+      ok(worst, 'at least one row exposed a label/value pair to measure');
+      ok(worst.gap >= 6, 'the tightest row keeps a gap: ' + (worst.label||'?') + ' at ' +
+                         Math.round(worst.gap*10)/10 + 'px');
+      // Vacuity check on the FIXTURE: if nothing is long enough to wrap, no row was ever near colliding
+      // and the measurement above proves nothing about the reported shape.
+      ok(wrapped > 0, 'the seeded kit really produces an over-long row (the collision case)');
+      // The gap makes long values WRAP, so their segments must not break mid-phrase ("15%" / "Blunt").
+      var mix = FF.formatTypeMix({ slashing:0.15, piercing:0.7, blunt:0.15 });
+      eq((mix.match(/class="stat-seg"/g)||[]).length, 3, 'each type-mix segment is its own nowrap span');
+      var segStyle = window.getComputedStyle(host.querySelector('.stat-seg'));
+      eq(segStyle.whiteSpace, 'nowrap', 'a rendered segment really resolves to nowrap');
+    } finally {
+      if(host && host.parentNode) host.parentNode.removeChild(host);
+      S.xp = sv.xp; S.physique = sv.phys; S.bodyArmor = sv.armor;
+      S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT; S.equippedMainhandRarity = sv.mhR;
+    }
+  });
+
   // ---- Placement level gates (owner order, v0.0.86.33) ---------------------------------------------
   // Fresh workshop/cottage PLACEMENT now checks Architecture like the upgrades do: the built items are
   // tradeable, so owning one no longer implies the level that crafts it (the fields/totems reasoning).

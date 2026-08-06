@@ -627,7 +627,7 @@
   .market-book-col{flex:1; min-width:0;}
   .market-book-h{font-size:11px; font-weight:600; margin-bottom:4px;}
   .market-book-h.ask{color:var(--cat-combat);} .market-book-h.bid{color:var(--cat-market);}
-  .market-book-row{display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:12px; padding:1px 0;}
+  .market-book-row{display:flex; justify-content:space-between; column-gap:10px; font-family:var(--font-mono); font-size:12px; padding:1px 0;}
   .market-book-empty{color:var(--text-faint); font-size:11px;}
   .market-forms{display:flex; gap:12px; flex-wrap:wrap;}
   .market-form{flex:1 1 220px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px;}
@@ -1835,6 +1835,11 @@
   .elem-badge.elem-dark{color:#7148a0;border-color:rgba(138,95,176,0.45);}
   .elem-weak{display:inline-flex;align-items:center;gap:3px;color:var(--text-faint);}
   .elem-weak .game-icon{width:12px;height:12px;}
+  /* One segment of a multi-part stat value ("70% > Piercing", "Chainmail Armor +3%"). The nowrap is the
+     point: these lists are joined with " / " and now that .stat-row keeps a gap the long ones WRAP, so
+     without this a line can break between a number and the word it measures. .elem-weak-stat below has
+     carried nowrap for the same reason since the elemental rows shipped; this is that rule generalised. */
+  .stat-seg{white-space:nowrap;}
   .elem-weak-stat{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:600;white-space:nowrap;}
   .elem-weak-stat:first-child{margin-left:0;}
   .elem-weak-stat .game-icon{width:12px;height:12px;}
@@ -1878,16 +1883,23 @@
     border:10px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;}
   .top-skill-track{height:16px;border-radius:3px;background:#0c0a08;border:1px solid #3a2f20;overflow:hidden;}
   .top-skill-fill{height:100%;transition:width .25s;}
-  .top-skill-label{font-family:var(--font-mono);font-size:11px;color:#c0b394;margin-top:4px;display:flex;justify-content:space-between;}
+  .top-skill-label{font-family:var(--font-mono);font-size:11px;color:#c0b394;margin-top:4px;display:flex;justify-content:space-between;column-gap:10px;}
   .top-skill-label b{color:#e8dcc0;}
   .top-skill-label .tsb-gold{color:#ddbb66;}
   .stats-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:14px;}
   .stats-group{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;}
   .stats-group h4{margin:0 0 8px;font-family:var(--font-display);font-size:13px;letter-spacing:0.5px;color:var(--gold);}
-  .stat-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
+  /* COLUMN-GAP IS LOAD-BEARING, not cosmetic (ticket-0156). space-between spreads the label and the
+     value to the edges, but it guarantees NO minimum separation: once the two together fill the row the
+     gap collapses to zero and they butt against each other, which read as one word ("Blunt Def69%").
+     Five rows measured at exactly 0px on a maxed character (both type-mix rows, Armor Proficiency,
+     Elemental Attunement, Sources). The gap forces the longer value to wrap instead, and text-align
+     keeps the wrapped lines flush right rather than stranding them mid-row. Every space-between row
+     pair in the sheet needs this, so .market-book-row and .top-skill-label carry it too. */
+  .stat-row{display:flex;justify-content:space-between;align-items:center;column-gap:10px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
   .stat-row:last-child{border-bottom:none;}
   .stat-label{color:var(--text-dim);}
-  .stat-value{font-family:var(--font-mono);color:var(--text);font-weight:600;}
+  .stat-value{font-family:var(--font-mono);color:var(--text);font-weight:600;text-align:right;}
   .stat-row.soon .stat-label,.stat-row.soon .stat-value{color:var(--text-faint);font-style:italic;font-weight:400;}
   /* ===== Paper-doll equipment screen ===== */
   .equip-layout{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px;}
@@ -23156,7 +23168,7 @@
   function formatTypeMix(mix){
     var entries = DAMAGE_TYPES.map(function(t){ return {t:t, w:mix[t]||0}; }).filter(function(e){ return e.w > 0.005; });
     entries.sort(function(a,b){ return b.w-a.w; });
-    return entries.map(function(e){ return Math.round(e.w*100)+'% '+TYPE_ICON[e.t]+' '+e.t.charAt(0).toUpperCase()+e.t.slice(1); }).join(' / ');
+    return entries.map(function(e){ return '<span class="stat-seg">'+Math.round(e.w*100)+'% '+TYPE_ICON[e.t]+' '+e.t.charAt(0).toUpperCase()+e.t.slice(1)+'</span>'; }).join(' / ');
   }
   function renderCombatStatsPanel(){
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
@@ -23261,7 +23273,7 @@
     var profParts = Object.keys(wornArmorMaterials(state)).map(function(material){
       var profId = MATERIAL_TO_PROFICIENCY[material];
       var pct = Math.round(armorProficiencyBonus(state, profId)*100);
-      return ARMOR_PROFICIENCY_ICONS[profId]+' '+ARMOR_PROFICIENCY_LABELS[profId]+' +'+pct+'%';
+      return '<span class="stat-seg">'+ARMOR_PROFICIENCY_ICONS[profId]+' '+ARMOR_PROFICIENCY_LABELS[profId]+' +'+pct+'%</span>';
     });
     html += '<div class="stat-row"><span class="stat-label">Armor Proficiency</span><span class="stat-value" style="font-size:11px">'+(profParts.length ? profParts.join(' / ') : 'No armor equipped')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Slash / Pierce / Blunt Def</span><span class="stat-value" style="font-size:11px">'+(armor>0?formatTypeMix(armorMix):'No armor equipped')+'</span></div>';
@@ -40729,7 +40741,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.38';
+  var GAME_VERSION = '0.0.86.39';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41049,7 +41061,7 @@
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
       LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
