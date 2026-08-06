@@ -11855,6 +11855,19 @@
   // ("311 / 295, takes no damage"). Called every frame to snap it back. Returns the clamped value.
   function clampPlayerHpToMax(st){ st = st || state; var mh = maxHp(st); if(st.playerHp > mh) st.playerHp = mh; return st.playerHp; }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
+  // Ticket-0152 (Mr Cookie): "Can we have large numbers comma separated?" -- endgame weapon rolls reach
+  // ten figures (1357837857-3393582841 in the report) and BiS Armor is ~42 MILLION, so any readout that
+  // prints a raw number is unreadable. fmt() is the house integer formatter; these two cover the shapes
+  // that were bypassing it. NEVER interpolate a stat straight into player-facing HTML again -- a selftest
+  // guard scans the stat panels for bare digit runs.
+  function fmtRange(a, b, sep){ return fmt(a) + (sep || '-') + fmt(b); }
+  // Comma-separates while KEEPING up to `places` decimals (default 2), for stats carried as fractions:
+  // Armor (x.xx), crit multipliers, attack times. Math.floor in fmt() would silently drop them.
+  function fmtDec(n, places){
+    n = Number(n) || 0;
+    var p = (places == null) ? 2 : places;
+    return n.toLocaleString(undefined, { maximumFractionDigits: p });
+  }
   // Compact big-number readout (82.4B) for the stage's stats strip, where an endgame DPS in full
   // comma notation (82,400,000,000) would not fit its plinth. Two significant styles: one decimal
   // below 100 of a unit, whole numbers above. Sub-1000 values print as-is.
@@ -21419,7 +21432,7 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: <span id="craftOwned-'+recipe.id+'">'+fmt(state.inventory[recipe.id]||0)+'</span></div></div></div>';
       // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
       var _arrowDmg = arrowBaseDamage(recipe.id);
-      html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+_arrowDmg.dmgMin+'-'+_arrowDmg.dmgMax+' dmg</span>' : '')+'</div>';
+      html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+fmtRange(_arrowDmg.dmgMin, _arrowDmg.dmgMax, '-')+' dmg</span>' : '')+'</div>';
       // Combat consumables (Apothecary coatings, Pyrotechnics flash bombs, Alchemy toxins/bombs...)
       // stated what they COST but never what they DO, unlike a weapon card. potionEffectDesc already
       // produces the exact per-tier numbers used in combat, so surface them on the card too.
@@ -21965,7 +21978,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Tier: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare'+(mat.rarityIds.length>2?'/supreme/fantastic':'')+' odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22024,7 +22037,7 @@
       var curMat = current ? armorMaterialBonusLines(current.material, current.slot, current.rarity) : [];
       var curName = equippedUnique ? uniqueDisplayName(equippedUnique) : (current ? current.name : '');
       var curMeta = legCloak ? (escapeHtml(legCloak.name)+' &bull; +'+Math.round(legCloak.value*100)+'% '+escapeHtml(legCloak.statLabel))
-        : current ? (escapeHtml(curName)+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
+        : current ? (escapeHtml(curName)+' &bull; defense '+fmt(current.defense)+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
       html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+curMeta+'</div></div></div>';
       // Group the owned plain pieces by material, then order the groups plate>chain>leather>cloth (any
       // stray materials appended after). The equipped material's group opens by default.
@@ -22107,7 +22120,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Wildlife: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22140,7 +22153,7 @@
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
-    html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+beltData.defense+'</span></div>';
+    html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+fmt(beltData.defense)+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(beltData.inputs, 'inp-belt')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(beltIsActive?' id="'+beltFillId+'"':'')+' style="width:'+beltPct+'%"></div></div>';
@@ -22223,7 +22236,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Fiber: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22310,7 +22323,7 @@
       var amOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
       html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+amOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
-      html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+amData.defense+'</span>')+'</div>';
+      html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+fmt(amData.defense)+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet-'+at.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(amIsActive?' id="'+amFillId+'"':'')+' style="width:'+amPct+'%"></div></div>';
@@ -22351,7 +22364,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+      html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stw-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22601,7 +22614,7 @@
     }
     html += '<div class="section-intro">Pick which owned Shield is your Offhand. Forged shields sit in inventory, stacked by type, tier, and rarity, until equipped here.</div>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('shield','#8a97a6')+'</div><div><div class="item-name">Offhand</div><div class="item-meta">'+(current ? current.name+' &bull; defense '+current.defense+' &bull; counters '+STACKABLE_SHIELD_TYPE_MAP[current.typeId].countersType : 'No shield equipped')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('shield','#8a97a6')+'</div><div><div class="item-name">Offhand</div><div class="item-meta">'+(current ? current.name+' &bull; defense '+fmt(current.defense)+' &bull; counters '+STACKABLE_SHIELD_TYPE_MAP[current.typeId].countersType : 'No shield equipped')+'</div></div></div>';
     if(owned.length===0){
       html += '<div class="empty-note">No shields in inventory. Forge one above.</div>';
     } else {
@@ -22679,7 +22692,7 @@
     var curDmg = activeId ? arrowBaseDamage(activeId) : null;
     html += '<div class="section-intro">Choose which arrow your bow fires. That arrow is spent first; when you run out it falls back to the next usable arrow you own, and once <b>every</b> arrow is gone you retreat from the fight. Arrows fancier than your bow can\'t be nocked. <b>Locked</b> arrows are never fired. Unlock them in your Inventory to use them.</div>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+curDmg.dmgMin+'-'+curDmg.dmgMax+' dmg' + ((sel && activeId && activeId!==sel) ? ' &bull; <span style="color:var(--gold)">out &middot; firing '+escapeHtml((ALL_SELLABLE[activeId]||{}).name||activeId)+'</span>' : '') : ' &bull; <span style="color:var(--hp-bad)">no arrows. You retreat from the fight</span>')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+fmtRange(curDmg.dmgMin, curDmg.dmgMax, '-')+' dmg' + ((sel && activeId && activeId!==sel) ? ' &bull; <span style="color:var(--gold)">out &middot; firing '+escapeHtml((ALL_SELLABLE[activeId]||{}).name||activeId)+'</span>' : '') : ' &bull; <span style="color:var(--hp-bad)">no arrows. You retreat from the fight</span>')+'</div></div></div>';
     html += '<div class="style-row">';
     // Auto option.
     html += '<button class="style-btn'+(sel===null?' active':'')+'" data-action="equipArrow" data-item="">'+svgIcon('arrow','currentColor')+' Auto <span class="style-type">highest usable arrow</span></button>';
@@ -22695,7 +22708,7 @@
         // A locked arrow can be SELECTED but is never fired (bowArrowToConsume skips it), so the row says so
         // -- otherwise picking it looks accepted and then silently does nothing.
         var lockNote = _locked[id] ? ' <span class="style-type" style="color:var(--hp-bad)">locked, never fired</span>' : '';
-        html += '<button class="style-btn'+(active?' active':'')+'" data-action="equipArrow" data-item="'+id+'">'+(item.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(item.name||id)+' <span class="style-lvl">x'+fmt(qty)+'</span><span class="style-type">+'+d.dmgMin+'-'+d.dmgMax+' dmg</span>'+lockNote+'</button>';
+        html += '<button class="style-btn'+(active?' active':'')+'" data-action="equipArrow" data-item="'+id+'">'+(item.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(item.name||id)+' <span class="style-lvl">x'+fmt(qty)+'</span><span class="style-type">+'+fmtRange(d.dmgMin, d.dmgMax, '-')+' dmg</span>'+lockNote+'</button>';
       });
       html += '</div>';
     }
@@ -22747,7 +22760,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+      html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-sts-'+s.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22871,7 +22884,7 @@
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+    html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-scepter-'+w.id)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22908,7 +22921,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+      html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -22973,7 +22986,7 @@
       if(currentId && isStackableWeapon(currentId)){
         var eq = getEquippedWeaponItem(state);
         var w = STACKABLE_WEAPON_TYPE_MAP[currentId];
-        html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+eq.name+'</b> ('+eq.dmgMin+'-'+eq.dmgMax+' dmg, '+w.attackSpeed+'s attack)</div>';
+        html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+eq.name+'</b> ('+fmtRange(eq.dmgMin, eq.dmgMax, '-')+' dmg, '+w.attackSpeed+'s attack)</div>';
       } else {
         html += '<div class="shop-current">Equipped: <b style="color:var(--text)">Fists</b> (1-3 dmg, '+UNARMED_STYLE.attackSpeed+'s attack)</div>';
       }
@@ -22996,7 +23009,7 @@
           ? ('reflects '+Math.round((ohEq.reflect||0)*100)+'% '+elementLabel(ohEq.element))
           : state.equippedOffhand==='quiver'
           ? ('+'+Math.round((ohEq.dmgBonus||0)*100)+'% arrow dmg'+(ohEq.ammoPreserve ? ', '+Math.round(ohEq.ammoPreserve*100)+'% keep ammo' : ''))
-          : ('defense '+ohEq.defense+', counters '+((STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand]||{}).countersType||'. '));
+          : ('defense '+fmt(ohEq.defense)+', counters '+((STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand]||{}).countersType||'. '));
         html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+escapeHtml(ohEq.name)+'</b> ('+_ohDesc+')</div>';
       } else {
         html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">No offhand</b></div>';
@@ -23059,8 +23072,8 @@
     // the enchant's share. _enchRow is a standalone gold row for enchant-only effects with no base stat
     // (Lifesteal, Armour Pierce, Damage Reduction, Resistance, Thorns, HP Regen). enchTot is already
     // Spellblade-amplified, so both match what combat uses.
-    var _et = function(stat, pct){ var v = enchTot[stat]||0; if(!v) return ''; return ' <span style="color:var(--gold);font-size:11px">(+'+(pct ? (Math.round(v*10)/10)+'%' : Math.round(v))+' ench)</span>'; };
-    var _enchRow = function(label, stat, pct, suffix){ var v = enchTot[stat]||0; if(!v) return ''; var disp = pct ? ('+'+(Math.round(v*10)/10)+'%') : ('+'+Math.round(v)); return '<div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> '+label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+(suffix||'')+'</span></div>'; };
+    var _et = function(stat, pct){ var v = enchTot[stat]||0; if(!v) return ''; return ' <span style="color:var(--gold);font-size:11px">(+'+(pct ? fmtDec(v, 1)+'%' : fmt(v))+' ench)</span>'; };
+    var _enchRow = function(label, stat, pct, suffix){ var v = enchTot[stat]||0; if(!v) return ''; var disp = pct ? ('+'+fmtDec(v, 1)+'%') : ('+'+fmt(v)); return '<div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> '+label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+(suffix||'')+'</span></div>'; };
     // Inline "(+X% relic)" tag, appended to the Attack Damage and Armor rows whose numbers already fold the
     // relic bonus in (mirrors the enchant "(+X ench)" tag convention above).
     var _relicTag = _relicBonusStat > 0 ? ' <span style="color:var(--gold);font-size:11px">(+'+Math.round(_relicBonusStat*100)+'% relic)</span>' : '';
@@ -23075,11 +23088,11 @@
     effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat) * _ringDmgMult)) + _flatEnch;
     effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat) * _ringDmgMult)) + _flatEnch;
     var html = '<div class="stats-panel">';
-    html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
+    html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+fmt(combatLevelEquivalent(state))+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
-    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+_et('pctDamage',true)+_et('flatDamage',false)+_relicTag+_ringTag+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+fmtRange(effMin, effMax)+_et('pctDamage',true)+_et('flatDamage',false)+_relicTag+_ringTag+'</span></div>';
     // Elemental raw-damage enchants: one gold row per element carried (added flat per hit, element-advantage scaled).
-    for(var _erEl in ELEM_RAW_STATS){ if(enchTot[ELEM_RAW_STATS[_erEl]]){ html += '<div class="stat-row"><span class="stat-label">'+elementIcon(_erEl)+' '+elementLabel(_erEl)+' Damage</span><span class="stat-value" style="color:var(--gold)">+'+Math.round(enchTot[ELEM_RAW_STATS[_erEl]])+'</span></div>'; } }
+    for(var _erEl in ELEM_RAW_STATS){ if(enchTot[ELEM_RAW_STATS[_erEl]]){ html += '<div class="stat-row"><span class="stat-label">'+elementIcon(_erEl)+' '+elementLabel(_erEl)+' Damage</span><span class="stat-value" style="color:var(--gold)">+'+fmt(enchTot[ELEM_RAW_STATS[_erEl]])+'</span></div>'; } }
     if(weaponStyle.hand==='bow'){
       var _arrows = bowArrowsAvailable(state);
       var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
@@ -23104,7 +23117,7 @@
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
     var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + d3SetCritDmgBonus(state) + enchCritDmg)*100)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+_et('accuracy',true)+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+fmt(playerAccuracy(state))+_et('accuracy',true)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
     } else {
@@ -23117,7 +23130,7 @@
     html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('shield','currentColor')+' Defense</h4>';
     html += '<div class="stat-row"><span class="stat-label">'+svgIcon('heart','var(--hp-bad)')+' Health</span><span class="stat-value" id="statPlayerHpVal">'+fmt(state.playerHp)+' / '+fmt(maxHp(state))+_et('maxHp',false)+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+_et('defense',true)+_relicTag+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+fmtDec(armor)+_et('defense',true)+_relicTag+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(playerDodgeChance(state)*1000)/10)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(playerBlockChance(state)*1000)/10)+'% (halves dmg)'+_et('blockChance',true)+'</span></div>';
     // Enchant-only defensive effects (no base stat of their own): shown as gold ✦ rows only when worn.
@@ -23196,11 +23209,11 @@
     DAMAGE_TYPES.forEach(function(t){
       var tMin = Math.round(effMin * (weaponMix[t]||0));
       var tMax = Math.round(effMax * (weaponMix[t]||0));
-      html += '<div class="stat-row"><span class="stat-label">'+TYPE_ICON[t]+' '+SHORT_TYPE_LABEL[t]+' Damage</span><span class="stat-value">'+tMin+'-'+tMax+'</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">'+TYPE_ICON[t]+' '+SHORT_TYPE_LABEL[t]+' Damage</span><span class="stat-value">'+fmtRange(tMin, tMax)+'</span></div>';
     });
     DAMAGE_TYPES.forEach(function(t){
       var tArmor = armor>0 ? Math.round(armor * (armorMix[t]||0)) : 0;
-      html += '<div class="stat-row"><span class="stat-label">'+TYPE_ICON[t]+' '+SHORT_TYPE_LABEL[t]+' Armor</span><span class="stat-value">'+tArmor+'</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">'+TYPE_ICON[t]+' '+SHORT_TYPE_LABEL[t]+' Armor</span><span class="stat-value">'+fmt(tArmor)+'</span></div>';
     });
     html += '</div>';
     html += '</div>';
@@ -23267,7 +23280,7 @@
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var mhItem = getEquippedWeaponItem(state);
     var html = '<h3 style="margin-top:0">Mainhand</h3>';
-    html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+weaponStyle.name+'</b>. '+mhItem.name+' ('+mhItem.dmgMin+'-'+mhItem.dmgMax+' dmg)</div>';
+    html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+weaponStyle.name+'</b>. '+mhItem.name+' ('+fmtRange(mhItem.dmgMin, mhItem.dmgMax, '-')+' dmg)</div>';
     html += renderGearSelector('mainhand');
     if(state.equippedMainhand) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
     html += renderUniqueEquipOptions('weapon', null, 'Weapons');
@@ -23320,7 +23333,7 @@
       .sort(function(a,b){ return BELT_ITEMS[a].tierIndex - BELT_ITEMS[b].tierIndex; });
     var html = '<h3>Belt</h3>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">'+(currentBelt ? currentBelt.name+' &bull; defense '+currentBelt.defense+' &bull; '+BELT_RARITY_SLOTS[currentBelt.rarity]+' craft slots' : 'Not equipped &bull; 1 craft slot')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">'+(currentBelt ? currentBelt.name+' &bull; defense '+fmt(currentBelt.defense)+' &bull; '+BELT_RARITY_SLOTS[currentBelt.rarity]+' craft slots' : 'Not equipped &bull; 1 craft slot')+'</div></div></div>';
     if(ownedBelts.length===0){
       html += '<div class="empty-note">No Belts in inventory. Forge one in Outfitting &rarr; Leatherworking.</div>';
     } else {
@@ -23791,7 +23804,7 @@
     var html = '<div class="card">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">';
     html += '<h3 style="margin:0;">'+svgIcon('target','currentColor')+' Accuracy Training</h3>';
-    html += '<span class="stat-value" style="font-family:var(--font-mono);color:var(--gold);font-weight:700;">Accuracy '+playerAccuracy(state)+'</span></div>';
+    html += '<span class="stat-value" style="font-family:var(--font-mono);color:var(--gold);font-weight:700;">Accuracy '+fmt(playerAccuracy(state))+'</span></div>';
     html += '<div class="section-intro" style="margin:6px 0 8px;">Accuracy is subtracted from an enemy\'s Dodge before every hit is rolled. Raise it to stop missing tougher foes. It is driven by these combat-reflex physiques (trained by fighting) plus your equipped weapon\'s proficiency (Lv '+prof+').</div>';
     html += '<div class="tracker-picker-grid">';
     chosen.forEach(function(id){
@@ -27086,21 +27099,21 @@
       var isActive = act.type==='combat' && act.monsterId===m.id;
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+monsterPortrait(m)+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. CS '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+monsterPortrait(m)+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. CS '+fmt(m.levelReq)+' &bull; '+fmt(m.hp)+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
       // Show BOTH the foe's raw swing and what it actually lands on YOU after your gear, so the mitigation
       // you're getting is visible at a glance rather than buried in a tooltip.
       var _dvy = enemyDamageRangeVsPlayer(m, state, _defProf);
       var _rawTip = 'This foe\'s raw hit before any of your mitigation.';
       var _dvyTip = 'Damage this foe actually lands on YOU per hit, after your armour, shield, resistances, class mods and enchants. '
-        + 'Unblocked, at full Health. Its raw damage is ' + m.atkMin + '–' + m.atkMax + '.';
-      html += '<div class="item-stats"><span data-tip="'+escapeHtml(_rawTip)+'">'+m.atkMin+'–'+m.atkMax+' raw</span>'
+        + 'Unblocked, at full Health. Its raw damage is ' +fmtRange(m.atkMin, m.atkMax, '–')+ '.';
+      html += '<div class="item-stats"><span data-tip="'+escapeHtml(_rawTip)+'">'+fmtRange(m.atkMin, m.atkMax, '–')+' raw</span>'
         + '<span class="dmg-vs-you" data-tip="'+escapeHtml(_dvyTip)+'">'+fmt(_dvy.min)+'–'+fmt(_dvy.max)+' to you</span>'
         + '<span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
-      html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
+      html += '<div class="chance-line" style="font-size:11px">Dodge '+fmt(monsterDodge(m))+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
       if(m.special) html += '<div class="chance-line" style="font-size:11px;color:#c8302a">'+svgIcon('claw','#c8302a')+' <b>'+escapeHtml(m.special.name)+'</b>. '+monsterSpecialDesc(m.special)+'</div>';
       html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
       if(locked){
-        html += '<div class="lock-note">Locked until Combat Score '+m.levelReq+'</div>';
+        html += '<div class="lock-note">Locked until Combat Score '+fmt(m.levelReq)+'</div>';
       } else if(isActive){
         html += '<button class="action-btn stop" data-action="stop">Stop</button>';
       } else {
@@ -37318,7 +37331,7 @@
     var hpPct = clamp(state.playerHp/maxHp(state)*100,0,100);
     var html = '<h3>Character</h3>';
     html += '<div class="hp-track"><div class="hp-fill" id="charHpFill" style="width:'+hpPct+'%;background:'+(hpPct>50?'var(--hp-good)':hpPct>20?'var(--hp-mid)':'var(--hp-bad)')+'"></div></div>';
-    html += '<div class="hp-label"><span>HP</span><span id="charHpLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
+    html += '<div class="hp-label"><span>HP</span><span id="charHpLabel">'+fmt(state.playerHp)+' / '+fmt(maxHp(state))+'</span></div>';
     html += '<button class="action-btn eat-btn" data-action="eat">Eat Food</button>';
     html += '<div style="height:8px"></div>';
     var faithMaxVal0 = faithMax(state);
@@ -37337,7 +37350,7 @@
     html += '<div class="hp-track" id="charBuffTrack" style="display:'+(buffOn?'block':'none')+'"><div class="hp-fill" id="charBuffFill" style="width:'+buffPct0+'%;background:var(--gold)"></div></div>';
     html += '<div class="hp-label" id="charBuffLabelRow" style="display:'+(buffOn?'flex':'none')+'"><span id="charBuffName">'+svgIcon('lightning','var(--gold)')+' Server EXP +50%</span><span id="charBuffLabel">'+(buffOn?formatDuration(buffRemain0):'')+'</span></div>';
     html += '<div style="height:10px"></div>';
-    html += '<div class="char-row"><span>Combat Score</span><b id="charCombatScore">'+combatLevelEquivalent(state)+'</b></div>';
+    html += '<div class="char-row"><span>Combat Score</span><b id="charCombatScore">'+fmt(combatLevelEquivalent(state))+'</b></div>';
     html += '<div class="empty-note" style="font-size:10px;margin-top:-2px;padding-bottom:4px;overflow-wrap:anywhere;">Sum of proficiency levels across everything equipped. Determines which foes you can fight</div>';
     html += '<div style="height:10px"></div>';
 
@@ -40613,7 +40626,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.33';
+  var GAME_VERSION = '0.0.86.34';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40739,7 +40752,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
+      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,

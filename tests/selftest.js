@@ -18323,6 +18323,76 @@
     }
   });
 
+  // ---- ticket-0152: large numbers are comma separated (Mr Cookie) ----------------------------------
+  // The report: "Attack Damage 1357837857-3393582841" -- ten-figure rolls printed as raw digit runs.
+  // fmt() was the house formatter all along; the stat panels and item cards were interpolating numbers
+  // straight into HTML. This guard RENDERS the real panels at endgame scale and fails on any bare run
+  // of 5+ digits, so a new readout cannot reintroduce the shape. (4-digit runs stay legal: version
+  // strings, years, and ids are not player-facing quantities.)
+  suite('ticket-0152: no unformatted large numbers in the stat panels', function(){
+    var S = FF._state;
+    eq(FF.fmtRange(1357837857, 3393582841), '1,357,837,857-3,393,582,841', 'the reported range now reads with commas');
+    eq(FF.fmtRange(12, 40, '–'), '12–40', 'a custom separator survives');
+    eq(FF.fmtDec(42391847.5), '42,391,847.5', 'Armor keeps its decimal AND gains commas');
+    eq(FF.fmtDec(0.3, 1), '0.3', 'small fractions are untouched');
+    eq(FF.fmt(1357837857), '1,357,837,857', 'the house integer formatter is the baseline');
+    // Render the real panels with a maxed fixture and scan for bare digit runs. Digits inside HTML
+    // attributes (ids, data-*, styles, colours) are stripped first -- only VISIBLE text is judged.
+    function visibleText(html){
+      return String(html).replace(/<[^>]*>/g, '');   // tags out, marker in
+    }
+    function bareBigRuns(html){
+      var txt = visibleText(html);
+      var out = [], m, re = /(^|[^\d,.])(\d{5,})/g;
+      while((m = re.exec(txt))){ out.push(m[2]); if(out.length > 6) break; }
+      return out;
+    }
+    var sv = { xp:S.xp, phys:S.physique, hp:S.playerHp, armor:S.bodyArmor,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity, mhU:S.equippedMainhandUid };
+    try {
+      // ENDGAME SCALE IS MANDATORY HERE, not decoration: at the default fixture's tier every stat is
+      // 3 digits, so the scan passes even with the bug present (proven: reverting the Attack Damage fix
+      // failed nothing until this seeding was added). Maxed proficiency + a top-tier fantastic weapon is
+      // what pushes the derived rows into the 5+ digit range the ticket is about.
+      S.xp = Object.assign({}, S.xp);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique);
+      Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.equippedMainhand = 'greatsword';
+      S.equippedMainhandTier = FF.TIER_COUNT - 1;
+      S.equippedMainhandRarity = 'fantastic';
+      S.equippedMainhandUid = null;
+      // Armour too, or the whole Defense group and the Damage-Triangle armour rows render zeroes and
+      // their formatting is never exercised (proven the same way: reverting the per-type Armor fix
+      // failed nothing until this was seeded).
+      S.bodyArmor = { helmet:{material:'plate', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      chest:{material:'plate', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      gauntlets:{material:'plate', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      boots:{material:'plate', tier:FF.TIER_COUNT-1, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      // The scanner is proven against the ticket's own text first, so a passing panel below can never
+      // be a vacuous pass (a fixture without endgame gear may legitimately carry no 5-digit stat).
+      eq(bareBigRuns('<span>Attack Damage</span><span>1357837857-3393582841</span>').join(','),
+         '1357837857,3393582841', 'the scanner flags the exact shape from the ticket');
+      eq(bareBigRuns('<span>1,357,837,857-3,393,582,841</span>').join(','), '',
+         '...and passes the same figures once comma separated');
+      var stats = FF.renderCombatStatsPanel();
+      var offenders = bareBigRuns(stats);
+      eq(offenders.join(','), '', 'the combat stats panel prints no bare 5+ digit run (first offenders shown)');
+      ok(/Attack Damage/.test(stats), 'the panel really rendered its Attack Damage row');
+      // Vacuity check on the FIXTURE (not just the scanner): the seeded kit must actually produce a
+      // 5+ digit Attack Damage, or the assertion above proves nothing about the reported row.
+      ok(/\d,\d{3}/.test(stats), 'the seeded endgame kit really renders comma-grouped figures');
+      // The enemies list carries foe HP, raw swing ranges and dodge ratings.
+      var foes = FF.renderEnemiesTab();
+      eq(bareBigRuns(foes).join(','), '', 'the enemies list prints no bare 5+ digit run');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.playerHp = sv.hp; S.bodyArmor = sv.armor;
+      S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
+    }
+  });
+
   // ---- Placement level gates (owner order, v0.0.86.33) ---------------------------------------------
   // Fresh workshop/cottage PLACEMENT now checks Architecture like the upgrades do: the built items are
   // tradeable, so owning one no longer implies the level that crafts it (the fields/totems reasoning).
