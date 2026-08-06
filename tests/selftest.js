@@ -18724,6 +18724,49 @@
     }
   });
 
+  // ---- ticket-0157: Inscription Scrolls are findable in the inventory ------------------------------
+  // The report: "searching for Inscription or Scroll in the Inventory screen produces no matches", with
+  // a moderate stock visible on the Improvement page. The items were there all along -- they are named
+  // 'Minor Sigil', 'Empyreal Ward', 'Warding Codex' and so on, and only 2 of the 21 contain the word
+  // "Scroll" while NONE contain "Inscription", which is the name the Enhance row uses for them. The
+  // sibling material never had the problem because every Enchant Crystal is literally named
+  // "<Gem> Enchant Crystal". Search now also matches an alias: the producing skill plus any explicit
+  // keywords on the def.
+  suite('ticket-0157: inventory search finds items by the words the game uses for them', function(){
+    ok(typeof FF.itemSearchAlias === 'function', 'the alias lookup is exported');
+    // The two words the reporter actually typed must reach every tier of the ladder.
+    ['inscription','scroll'].forEach(function(q){
+      var found = 0;
+      for(var i=0;i<FF.TIER_COUNT;i++){
+        var id = 'scroll_t'+i, nm = ((FF.ALL_SELLABLE[id]||{}).name||'').toLowerCase();
+        if(nm.indexOf(q) !== -1 || FF.itemSearchAlias(id).indexOf(q) !== -1) found++;
+      }
+      eq(found, FF.TIER_COUNT, 'searching "' + q + '" reaches all ' + FF.TIER_COUNT + ' scroll tiers');
+    });
+    // Vacuity guard: prove the NAMES alone would not have found them, so the alias is doing the work.
+    var byNameOnly = 0;
+    for(var j=0;j<FF.TIER_COUNT;j++){
+      if(((FF.ALL_SELLABLE['scroll_t'+j]||{}).name||'').toLowerCase().indexOf('inscription') !== -1) byNameOnly++;
+    }
+    eq(byNameOnly, 0, 'no scroll is named "Inscription", which is why the search failed');
+    // The generalised half: crafted AND gathered items answer to the skill that produces them.
+    ok(FF.itemSearchAlias('carpentry_t0').indexOf('carpentry') !== -1, 'a Plank is findable by "carpentry"');
+    ok(FF.itemSearchAlias('mining_t0').indexOf('mining') !== -1, 'an ore is findable by "mining" (gathered items too)');
+    // The Enchant Crystal sibling must not regress: it was already findable by its own name.
+    ok(((FF.ALL_SELLABLE['enchant_t20']||{}).name||'').toLowerCase().indexOf('enchant crystal') !== -1,
+       'Enchant Crystals still say what they are in their own name');
+    // The improvement readout's summed figure now names the tiers it adds up ("can only see my highest tier").
+    var S = FF._state, svInv = S.inventory;
+    try {
+      S.inventory = {}; S.inventory['scroll_t20'] = 12; S.inventory['scroll_t19'] = 3;
+      var bd = FF.ownedIdsBreakdown(['scroll_t19','scroll_t20']);
+      ok(/Eternal Sigil: 3/.test(bd) && /Ward of the Gods: 12/.test(bd), 'the breakdown names each tier and its count: ' + bd);
+      ok(/title="/.test(FF.improveMaterialSpan('scroll_t', 19, 1)), 'the readout carries the breakdown as a title');
+      S.inventory = {};
+      eq(FF.ownedIdsBreakdown(['scroll_t19','scroll_t20']), 'You hold none of these.', 'an empty bag says so plainly');
+    } finally { S.inventory = svInv; }
+  });
+
   // ---- Code review v0.0.86.43, finding 1: the offline Faith settle must not clobber the sims --------
   // planOfflineFaithActivity runs BEFORE the offline gather/craft/combat sims and the settle runs AFTER,
   // and the settle used to ASSIGN plan.finalFaith -- a snapshot of the pre-sim pool. Plunder (Treasure
