@@ -16975,7 +16975,7 @@
       // Weapon damage -- wands are fully elemental, so name the element on the damage line.
       if(b.dmgMin||b.dmgMax){
         var _elemTag = (d.kind==='weapon' && b.element && isWandWeapon(b.typeId)) ? (' '+ELEMENT_META[b.element].label) : '';
-        baseLines.push('Damage '+Math.round((b.dmgMin||0)*_wem)+'–'+Math.round((b.dmgMax||0)*_wem)+_elemTag+(_wem>1?' (+'+d.enhance+')':''));
+        baseLines.push('Damage '+fmtRange(Math.round((b.dmgMin||0)*_wem), Math.round((b.dmgMax||0)*_wem), '–')+_elemTag+(_wem>1?' (+'+d.enhance+')':''));
       }
       // A ring's / amulet's inherent typed value (fire damage, familiar potency = summon efficiency,
       // accuracy, damage resistance, defense, ...) -- shown with its precise label and +enhance, so the
@@ -16985,7 +16985,7 @@
       } else if(d.kind==='amulet' && b.kind==='resistance'){
         baseLines.push('+'+Math.round((b.bonus||0)*_jEnh*100)+'% damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
       } else {
-        if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*_jEnh*10)/10)+(_jEnh>1?' (+'+d.enhance+')':''));
+        if(b.defense) baseLines.push('Defense '+fmtDec(b.defense*_jEnh, 1)+(_jEnh>1?' (+'+d.enhance+')':''));
         // Ward: reflects a share of matching-element hits (rarity adds a full-reflect chance).
         if(b.reflect!=null) baseLines.push('Reflects '+Math.round(b.reflect*100)+'% '+(b.element?ELEMENT_META[b.element].label+' ':'')+'damage'+(b.fullReflectChance?' • '+Math.round(b.fullReflectChance*100)+'% full reflect':''));
         // Quiver: arrow-damage bonus + chance a shot keeps its arrow.
@@ -17181,7 +17181,7 @@
       var item = STACKABLE_WEAPON_ITEMS[id];
       var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
       return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:avg,
-        statHtml:item.dmgMin+'-'+item.dmgMax+' dmg &bull; off-hand &minus;30% dmg, +30% timer',
+        statHtml:fmtRange(item.dmgMin, item.dmgMax, '-')+' dmg &bull; off-hand &minus;30% dmg, +30% timer',
         equipped:!!(curOff && curOff.id===id), canEquip:meetsProficiencyRequirement(state.xp.claw, item.tierIndex),
         lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
         action:'equipOffhandClaw', data:'data-item="'+id+'"' }; // whole-row equips to the OFF hand (no clawId -> single button)
@@ -17411,7 +17411,7 @@
     var uniqueCard = function(uid){ var u=state.uniqueItems[uid]; if(!u) return ''; var eqd=uniqueIsEquipped(uid);
       return '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta"'+(eqd?' style="color:var(--gold);"':'')+'>'+(eqd?'Equipped · ':'')+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div>'+uniqueEnchantChips(u)+'</button>'; };
     var baseCard = function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return '';
-      return '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; };
+      return '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+fmt(state.inventory[id]||0)+'</div></div></div></button>'; };
     // Equipped gear first -- what you're actually wearing, so it's obvious what to improve.
     if(fEqBases.length || fEqUniques.length){
       html += '<div class="guild-section-title" style="margin-top:8px;font-size:12px;color:var(--gold);">Equipped</div>';
@@ -21463,7 +21463,7 @@
       var fatName = recipe.fatId ? ((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat') : '';
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.meatId]||0)+' Meat, '+(state.inventory[recipe.hideId]||0)+' Hide'+(recipe.fatId?', '+(state.inventory[recipe.fatId]||0)+' '+fatName:'')+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+fmt(state.inventory[recipe.meatId]||0)+' Meat, '+fmt(state.inventory[recipe.hideId]||0)+' Hide'+(recipe.fatId?', '+fmt(state.inventory[recipe.fatId]||0)+' '+fatName:'')+'</div></div></div>';
       html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span>'+(recipe.fatId?'<span>'+fatChance+'% Fat</span>':'')+'</div>';
       html += '<div class="chance-line">Output: <b>0-3 Meat</b> at <b>'+meatChance+'%</b>/ea &nbsp;|&nbsp; <b>0-3 Hide</b> at <b>'+hideChance+'%</b>/ea'+(recipe.fatId?' &nbsp;|&nbsp; <b>0-3 '+fatName+'</b> at <b>'+fatChance+'%</b>/ea':'')+' (three independent rolls each)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
@@ -21491,7 +21491,7 @@
       var name = (ALL_SELLABLE[k]||{}).name || k;
       var ok = have >= need;
       var idAttr = idPrefix ? ' id="'+idPrefix+'-'+k+'"' : '';
-      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+need+'x '+name+' ('+have+' owned)</span>';
+      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+fmt(need)+'x '+name+' ('+fmt(have)+' owned)</span>';
     });
     return parts.join(', ');
   }
@@ -21696,7 +21696,7 @@
     var html = '<div class="guild-section-title" style="margin-top:10px;">Cottages</div>';
     html += '<div class="empty-note" style="margin-bottom:6px;">Place a Cottage on paved estate ground next to a Workshop, then assign Peons in the <b>Peons</b> tab to work that workshop’s skill. A cottage links to a single adjacent workshop; surround one workshop with cottages for more peons.</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(FORESTRY_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(FORESTRY_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+fmt(owned)+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Houses a Peon. Place next to a Workshop of tier '+ (sel+1) +' or higher</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('cottage','',tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('architecture', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
@@ -21726,7 +21726,7 @@
     var wIcon = isGather ? GATHERING_SKILLS[skillId].icon : svgIcon('castle', workshopSkillColor(skillId));
     var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
     var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+fmt(owned)+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b>. +'+Math.round(data.speedPct*100)+'% '+(isGather?'gathering':'crafting')+' speed, '+Math.round(data.doublePct*100)+'% double output</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('workshop',skillId,tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('architecture', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
@@ -21761,7 +21761,7 @@
     owned.forEach(function(recipe){
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+fmt(qty)+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xpBoost*100)+'% XP</span><span>'+Math.round(recipe.teaDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="drinkTea" data-item="'+recipe.id+'">Drink</button>';
       html += '</div>';
@@ -21789,7 +21789,7 @@
     owned.forEach(function(recipe){
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+fmt(qty)+'</div></div></div>';
       html += '<div class="item-stats"><span>'+Math.round(recipe.brewYield*100)+'% bonus output</span><span>'+Math.round(recipe.brewDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="drinkBrew" data-item="'+recipe.id+'">Drink</button>';
       html += '</div>';
@@ -21817,7 +21817,7 @@
     owned.forEach(function(recipe){
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+fmt(qty)+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+(recipe.feastRegen||0)+' HP/5s</span><span>+'+recipe.heal+' HP &bull; '+Math.round(recipe.feastDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="serveFeast" data-item="'+recipe.id+'">Serve</button>';
       html += '</div>';
@@ -21845,7 +21845,7 @@
     owned.forEach(function(recipe){
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+fmt(qty)+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.tomeSpeedBonus*100)+'% Speed</span><span>'+Math.round(recipe.tomeDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="studyTome" data-item="'+recipe.id+'">Study</button>';
       html += '</div>';
@@ -21873,7 +21873,7 @@
     owned.forEach(function(recipe){
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+fmt(qty)+'</div></div></div>';
       html += '<div class="item-stats"><span>&minus;'+Math.round(recipe.scrollBonus*100)+'% DMG taken</span><span>'+Math.round(recipe.scrollDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="readScroll" data-item="'+recipe.id+'">Read</button>';
       html += '</div>';
@@ -21912,7 +21912,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       var relicOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'relic_t'+recipe.tierIndex+'_'+r; }));
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+relicOwnedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+fmt(relicOwnedTotal)+'</div></div></div>';
       html += '<div class="item-stats">'+xpStat('archaeology', recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>Normal: +'+Math.round(relicPreview*100)+'% dmg/armor</span></div>';
       html += '<div class="chance-line">Output: <b>1x Relic</b> at <b>'+successPct+'%</b> success (else a Broken Relic) &nbsp;|&nbsp; Rare <b>'+(chances.rare*100).toFixed(2)+'%</b>, Supreme <b>'+(chances.supreme*100).toFixed(2)+'%</b>, Fantastic <b>'+(chances.fantastic*100).toFixed(2)+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
@@ -22028,7 +22028,7 @@
     var toolOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
     var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
     var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+fmt(toolOwnedTotal)+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(toolBenefitLabel(tt))+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     var statLine = (data.successBonus != null)
@@ -22111,7 +22111,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var armorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(armorOwnedTotal)+'</div></div></div>';
         html += '<div class="inputs-line">Tier: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare'+(mat.rarityIds.length>2?'/supreme/fantastic':'')+' odds)</div>';
@@ -22253,7 +22253,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var leatherOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(leatherOwnedTotal)+'</div></div></div>';
         html += '<div class="inputs-line">Wildlife: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22286,7 +22286,7 @@
     var beltFillId = beltIsActive ? (beltActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+beltActiveSlot.index) : '';
     var beltOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+fmt(beltOwnedTotal)+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+fmt(beltData.defense)+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
@@ -22321,7 +22321,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stqOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stquiver_'+q.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+stqOwnedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+fmt(stqOwnedTotal)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('quiver',q.id,tierRange(maxUnlocked),sel,WILDLIFE_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(q.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22369,7 +22369,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var tailorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(tailorOwnedTotal)+'</div></div></div>';
         html += '<div class="inputs-line">Fiber: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22421,7 +22421,7 @@
       var ringFantasticMult = rt.kind ? WAND_RARITY_DMG_MULT.fantastic : getRarity('fantastic').mult;
       // Match every other forge card: requirement + live owned count, not just the bonus.
       var ringOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'ring_'+rt.id+'_t'+sel+'_'+r; }));
-      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+ringOwned+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+fmt(ringOwned)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22456,7 +22456,7 @@
       var normPct = isWard ? Math.round(amData.bonus*100) : 0;
       html += '<div class="item-card'+(amIsActive?' active-item':'')+'">';
       var amOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
-      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+amOwned+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+fmt(amOwned)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+fmt(amData.defense)+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22497,7 +22497,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stwOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(stwOwnedTotal)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22666,7 +22666,7 @@
     return { ok: meetsProficiencyRequirement(state.xp[pid], t), label:(SKILL_LABELS[pid]||pid), lvl:lvl };
   }
   // A staff deals no damage (support weapon) -- show its block instead of a 0-0 dmg range.
-  function stackableWeaponStatLabel(item){ return isStaff(item.typeId) ? (item.dmgMin+'-'+item.dmgMax+' dmg &bull; block '+Math.round((item.block||0)*100)+'%') : (item.dmgMin+'-'+item.dmgMax+' dmg'); }
+  function stackableWeaponStatLabel(item){ var _d = fmtRange(item.dmgMin, item.dmgMax, '-'); return isStaff(item.typeId) ? (_d+' dmg &bull; block '+Math.round((item.block||0)*100)+'%') : (_d+' dmg'); }
   // One equip candidate for a stackable weapon item.
   function weaponCandidate(id, current, curAvg){
     var item = STACKABLE_WEAPON_ITEMS[id];
@@ -22893,7 +22893,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stsOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stshield_'+s.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+fmt(stsOwnedTotal)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22974,7 +22974,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stward_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+ownedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ward',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(w.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>reflect '+Math.round(data.reflect*100)+'%</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the full-reflect rarity odds)</div>';
@@ -23017,7 +23017,7 @@
     var html = '<h3 style="margin-top:14px">Forge Scepter</h3>';
     html += '<div class="section-intro">A <b>Scepter</b> is a one-handed weapon that deals <b>half blunt, half '+elementLabel('light')+'</b> damage. The blunt half is weighed against enemy armour, the '+elementLabel('light')+' half against their element (+20% vs enemies weak to Light). Rarity is special: rare/supreme/fantastic scepters deal <b>2x / 4x / 8x</b> damage. Scepters share the <b>Scepters</b> weapon proficiency, trained by scepter damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
@@ -23054,7 +23054,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
@@ -23096,7 +23096,7 @@
     var html = '<h3 style="margin-top:14px">Carve Staff</h3>';
     html += '<div class="section-intro">A <b>Staff</b> is a two-handed weapon that deals no damage and never attacks. Instead it grants <b>Block</b> ('+Math.round(STAFF_BLOCK_MIN*100)+'% at Tier 1 up to '+Math.round(STAFF_BLOCK_MAX*100)+'% at the top tier) and <b>'+STAFF_BASE_FAMILIAR_SLOTS+' extra active-familiar slots</b>, so combat runs on your summons. Rarity grants even more slots: rare/supreme/fantastic = '+STAFF_RARITY_FAMILIAR_SLOTS.rare+'/'+STAFF_RARITY_FAMILIAR_SLOTS.supreme+'/'+STAFF_RARITY_FAMILIAR_SLOTS.fantastic+' slots. Staves share the <b>Staves</b> proficiency (familiar efficiency, +1% at Lv 1 up to +100% at Lv 100, trained by familiar damage).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">5s Downbeat swing &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+ownedTotal+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">5s Downbeat swing &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>block '+Math.round(data.block*100)+'%</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the rarity odds. Higher rarity = more familiar slots)</div>';
@@ -23138,7 +23138,7 @@
       var html3 = '';
       if(hasOffhandClaw(state)){
         var ohClaw = getEquippedOffhandClawItem(state);
-        html3 += '<div class="shop-current">Off-hand Claw: <b style="color:var(--text)">'+(ohClaw?ohClaw.name:'Claws')+'</b> ('+(ohClaw?ohClaw.dmgMin+'-'+ohClaw.dmgMax+' dmg':'')+' &bull; &minus;30% dmg, +30% timer) <button class="action-btn stop" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px" data-action="unequipOffhandClaw">Unequip</button></div>';
+        html3 += '<div class="shop-current">Off-hand Claw: <b style="color:var(--text)">'+(ohClaw?ohClaw.name:'Claws')+'</b> ('+(ohClaw?fmtRange(ohClaw.dmgMin, ohClaw.dmgMax, '-')+' dmg':'')+' &bull; &minus;30% dmg, +30% timer) <button class="action-btn stop" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px" data-action="unequipOffhandClaw">Unequip</button></div>';
       } else if(ohEq){
         var _ohDesc = isWard(state.equippedOffhand)
           ? ('reflects '+Math.round((ohEq.reflect||0)*100)+'% '+elementLabel(ohEq.element))
@@ -23357,7 +23357,7 @@
 
   function autoEatNextFoodLabel(){
     var next = getNextAutoEatFood();
-    return next ? (next.icon+' '+next.name+' (x'+(state.inventory[next.id]||0)+')') : 'None available';
+    return next ? (next.icon+' '+next.name+' (x'+fmt(state.inventory[next.id]||0)+')') : 'None available';
   }
   // One-line live state for the panel HEADER, so a collapsed panel still reads at a glance:
   // "60% · Next: Rat Meal (x22) · 1,007 food".
@@ -23407,7 +23407,7 @@
       html += '<button class="style-btn'+(active?' active':'')+'" data-action="setAutoEatThreshold" data-value="'+t+'">'+Math.round(t*100)+'%</button>';
     });
     html += '</div>';
-    html += '<div class="physique-bonus">Next food: <b id="autoEatNextFoodText">'+autoEatNextFoodLabel()+'</b> &nbsp;|&nbsp; Total food: <b id="autoEatTotalFoodText">'+getTotalAutoEatFoodQty()+'</b></div>';
+    html += '<div class="physique-bonus">Next food: <b id="autoEatNextFoodText">'+autoEatNextFoodLabel()+'</b> &nbsp;|&nbsp; Total food: <b id="autoEatTotalFoodText">'+fmt(getTotalAutoEatFoodQty())+'</b></div>';
     return html;
   }
 
@@ -23609,7 +23609,7 @@
       owned.forEach(function(id){
         var item = TOOL_ITEMS[id];
         var qty = state.inventory[id]||0;
-        html += '<button class="style-btn" data-action="equipTool" data-item="'+id+'">'+tt.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span></button>';
+        html += '<button class="style-btn" data-action="equipTool" data-item="'+id+'">'+tt.icon+' '+item.name+' <span class="style-lvl">x'+fmt(qty)+'</span></button>';
       });
       html += '</div>';
     }
@@ -23891,7 +23891,7 @@
     if(state.activePotion){
       var an = (ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion;
       html += '<div class="physique-bonus">Active: <b>'+escapeHtml(an)+'</b>. '+potionEffectDesc(state.activePotion)
-        + ' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' &bull; x'+(state.inventory[state.activePotion]||0)+' spare'
+        + ' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' &bull; x'+fmt(state.inventory[state.activePotion]||0)+' spare'
         + ' <button class="action-btn stop" data-action="deactivatePotion" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px;">Stow</button></div>';
     }
     var any = false;
@@ -23904,7 +23904,7 @@
       owned.forEach(function(id){
         var it = ALL_SELLABLE[id] || {}; var qty = state.inventory[id]||0; var active = state.activePotion===id;
         html += '<button class="style-btn'+(active?' active':'')+'" data-action="activatePotion" data-item="'+id+'">'
-          + '<span>' + (it.icon||'') + ' ' + escapeHtml(it.name||id) + ' <span class="style-lvl">x'+qty+'</span></span>'
+          + '<span>' + (it.icon||'') + ' ' + escapeHtml(it.name||id) + ' <span class="style-lvl">x'+fmt(qty)+'</span></span>'
           + '<span class="style-type" style="text-transform:none;">'+escapeHtml(potionEffectDesc(id))+'</span></button>';
       });
       html += '</div>';
@@ -23925,7 +23925,7 @@
     html += '<div class="style-row">';
     food.forEach(function(f){
       html += '<button class="style-btn'+(f.active?' active':'')+'" data-action="'+f.action+'" data-item="'+f.id+'">'
-        + '<span>'+(f.icon||'')+' '+escapeHtml(f.name)+' <span class="style-lvl">x'+f.qty+'</span></span>'
+        + '<span>'+(f.icon||'')+' '+escapeHtml(f.name)+' <span class="style-lvl">x'+fmt(f.qty)+'</span></span>'
         + '<span class="style-type" style="text-transform:none;">'+f.desc+'</span></button>';
     });
     html += '</div>';
@@ -24914,7 +24914,7 @@
     var chips=[];
     POTION_TYPE_IDS.forEach(function(type){
       for(var i=0;i<TIER_COUNT;i++){ var id=type+'_t'+i, qty=state.inventory[id]||0; if(qty>0){ var it=ALL_SELLABLE[id]||{};
-        chips.push('<button class="arena-item-chip'+(state.activePotion===id?' on':'')+'" data-action="activatePotion" data-item="'+id+'" data-tip="'+escapeHtml(potionEffectDesc(id))+'"><span>'+(it.icon||'')+' '+escapeHtml(it.name||id)+'</span><span class="qty">x'+qty+'</span></button>');
+        chips.push('<button class="arena-item-chip'+(state.activePotion===id?' on':'')+'" data-action="activatePotion" data-item="'+id+'" data-tip="'+escapeHtml(potionEffectDesc(id))+'"><span>'+(it.icon||'')+' '+escapeHtml(it.name||id)+'</span><span class="qty">x'+fmt(qty)+'</span></button>');
       } }
     });
     if(chips.length) h += '<div class="arena-chip-grid">'+chips.join('')+'</div>';
@@ -24923,7 +24923,7 @@
     var food = foodConsumableList();
     if(food.length){
       h += '<div class="arena-chip-grid" style="margin-top:5px;">'+food.map(function(f){
-        return '<button class="arena-item-chip'+(f.active?' on':'')+'" data-action="'+f.action+'" data-item="'+f.id+'" data-tip="'+escapeHtml(f.name+'. '+f.desc)+'"><span>'+(f.icon||'')+' '+escapeHtml(f.name)+'</span><span class="qty">x'+f.qty+'</span></button>';
+        return '<button class="arena-item-chip'+(f.active?' on':'')+'" data-action="'+f.action+'" data-item="'+f.id+'" data-tip="'+escapeHtml(f.name+'. '+f.desc)+'"><span>'+(f.icon||'')+' '+escapeHtml(f.name)+'</span><span class="qty">x'+fmt(f.qty)+'</span></button>';
       }).join('')+'</div>';
     }
     return h+'</div>';
@@ -31384,7 +31384,7 @@
             var matsSummary = Object.keys(r.inputs).map(function(k){
               var itemName = (ALL_SELLABLE[k]||{}).name || k;
               var owned = state.inventory[k]||0;
-              return itemName+' x'+r.inputs[k]+' (have '+owned+')';
+              return itemName+' x'+fmt(r.inputs[k])+' (have '+fmt(owned)+')';
             }).join(', ');
             html += '<button class="estate-paving-option'+((levelOk&&matsOk)?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+((levelOk&&matsOk)?'':'disabled')+'>';
             html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+matsSummary+'</span>';
@@ -31646,7 +31646,7 @@
           placeable.forEach(function(it){
             var wLvOk = estateBuildTierLevelOk(it.tierIndex); // placements level-gate too (v0.0.86.33)
             html += '<button class="estate-paving-option'+(wLvOk?'':' locked')+'" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'" '+(wLvOk?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+(state.inventory[it.id]||0)+'</span>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+fmt(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -31661,7 +31661,7 @@
           placeableC.forEach(function(it){
             var cLvOk = estateBuildTierLevelOk(it.tierIndex);
             html += '<button class="estate-paving-option'+(cLvOk?'':' locked')+'" data-action="estatePlaceCottage" data-x="'+x+'" data-y="'+y+'" data-cottage="'+it.id+'" '+(cLvOk?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(cLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+(state.inventory[it.id]||0)+'</span>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(cLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+fmt(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -31678,7 +31678,7 @@
               var itT = itemTierFromId(it.id);
               var tLvOk = totemLevelOk(itT);
               html += '<button class="estate-paving-option'+(tLvOk?'':' locked')+'" data-action="estatePlaceTotem" data-x="'+x+'" data-y="'+y+'" data-totem="'+it.id+'" '+(tLvOk?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(tLvOk?'':'Totems Lv'+totemLevelReq(itT)+' &bull; ')+'+'+itT+' yield &bull; x'+(state.inventory[it.id]||0)+'</span>';
+              html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(tLvOk?'':'Totems Lv'+totemLevelReq(itT)+' &bull; ')+'+'+itT+' yield &bull; x'+fmt(state.inventory[it.id]||0)+'</span>';
               html += '</button>';
             });
             html += '</div>';
@@ -31699,7 +31699,7 @@
             var pupId='paving_t'+put, pupRec=getPavingRecipe(pupId), pupOwn=state.inventory[pupId]||0, pupAff=pupOwn>=ESTATE_PAVE_TILE_COST;
             var pupLvl = estatePaveTierLevelOk(put);   // upgrades obey the same Paving level as laying fresh
             html += '<button class="estate-paving-option'+((pupAff&&pupLvl)?'':' locked')+'" data-action="estateUpgradePavement" data-x="'+x+'" data-y="'+y+'" data-tier="'+put+'" '+((pupAff&&pupLvl)?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(put)+' '+(pupRec?pupRec.icon+' '+escapeHtml(pupRec.name):escapeHtml(pupId))+'</span><span class="style-lvl">'+(pupLvl?('x'+pupOwn+'/'+ESTATE_PAVE_TILE_COST):('Paving Lv '+((pupRec&&pupRec.levelReq)||TIER_LEVELS[put])+' Req.'))+'</span>';
+            html += '<span>'+tierChipHtml(put)+' '+(pupRec?pupRec.icon+' '+escapeHtml(pupRec.name):escapeHtml(pupId))+'</span><span class="style-lvl">'+(pupLvl?('x'+fmt(pupOwn)+'/'+fmt(ESTATE_PAVE_TILE_COST)):('Paving Lv '+((pupRec&&pupRec.levelReq)||TIER_LEVELS[put])+' Req.'))+'</span>';
             html += '</button>';
           }
           html += '</div>';
@@ -32198,7 +32198,7 @@
     html += '<div class="section-intro">Forestry, Botany, and Herbalism each have a small chance to turn up a Critter Cache. Opening one gives 3 Seeds (one Fiber, one Grain, and one Herb), heavily weighted toward common tiers.</div>';
     var nestQty = state.inventory.critter_cache||0;
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('chest','#8a6a42')+'</div><div><div class="item-name">Critter Cache</div><div class="item-meta">Owned: '+nestQty+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('chest','#8a6a42')+'</div><div><div class="item-name">Critter Cache</div><div class="item-meta">Owned: '+fmt(nestQty)+'</div></div></div>';
     html += '<div class="style-row"><button class="action-btn" data-action="openCritterCache" '+(nestQty>0?'':'disabled')+' style="width:auto;flex:1 1 auto">Open</button>';
     html += '<button class="action-btn" data-action="openAllCritterCaches" '+(nestQty>1?'':'disabled')+' style="width:auto;flex:1 1 auto">Open All ('+fmt(nestQty)+')</button></div>';
     html += '</div></div>';
@@ -32412,7 +32412,7 @@
     BROKEN_RELIC_ITEMS.forEach(function(relic, i){ var q = state.inventory[relic.id]||0; if(q>0 && !state.lockedItems[relic.id]){ relicCount += q; relicFaith += q * brokenRelicFaithRestore(i); } });
     html += '<div class="physique-bonus" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
       + '<span class="gab-tea-auto" data-action="toggleAutoSacrificeRelics" style="cursor:pointer;">'+(state.autoSacrificeRelics?'☑':'☐')+' Auto-sacrifice Broken Relics</span>'
-      + '<span style="font-size:12px;color:var(--text-dim);">Offers Broken Relics to refill Faith only when the full value fits (no waste). Held: <b>'+relicCount+'</b> (~'+Math.round(relicFaith)+' Faith)</span>'
+      + '<span style="font-size:12px;color:var(--text-dim);">Offers Broken Relics to refill Faith only when the full value fits (no waste). Held: <b>'+fmt(relicCount)+'</b> (~'+fmt(relicFaith)+' Faith)</span>'
       + '</div>';
     // Auto-sacrifice list (Scum's ticket): every per-card flag, OWNED OR NOT. Cards below only render
     // for owned items, and switching a flag on at a Faith deficit usually consumes every copy at once --
@@ -32434,7 +32434,7 @@
         + '<div style="font-size:12px;margin-bottom:5px;">Auto-sacrifice list <span style="color:var(--text-dim);">These items refill Faith automatically, including every copy you craft later. Click one to stop.</span></div>'
         + '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
       autoShown.forEach(function(d){
-        html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+(d.owned||0)+' &times;</button>';
+        html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+fmt(d.owned||0)+' &times;</button>';
       });
       if(!autoShown.length) html += '<span style="font-size:11px;color:var(--text-dim);">None of your flagged items are in your inventory right now.</span>';
       html += '</div>';
@@ -32488,10 +32488,10 @@
       // Non-stackable off-hands are a single held item; everything else stacks in inventory. This count
       // is the number remaining and ticks down live as you sacrifice (the card vanishes when it hits 0).
       var qty = r.category==='offhand' ? 1 : (state.inventory[r.id]||0);
-      var metaText = r.category==='relic' ? ('Owned: '+qty) : ('Tier '+r.tier+' · Owned: '+qty);
+      var metaText = r.category==='relic' ? ('Owned: '+fmt(qty)) : ('Tier '+r.tier+' · Owned: '+fmt(qty));
       html += '<div class="item-card">';
       html += '<div class="item-top"><div class="item-icon">'+r.icon+'</div><div><div class="item-name">'+r.item.name+'</div><div class="item-meta">'+metaText+'</div></div></div>';
-      html += '<div class="item-stats"><span>Restores ~'+restorePreview+' Faith</span></div>';
+      html += '<div class="item-stats"><span>Restores ~'+fmt(restorePreview)+' Faith</span></div>';
       html += '<button class="action-btn" data-action="sacrifice" data-category="'+r.category+'" data-id="'+r.id+'">Sacrifice</button>';
       // Per-card auto-sacrifice: offers this item to refill Faith when the full value fits (no waste),
       // just like the Broken Relic toggle. Broken Relics already have the global toggle above, so their
@@ -38110,7 +38110,7 @@
     if(m < 60) return Math.round(m) + 'm';
     var h = m / 60;
     if(h < 48) return (h < 10 ? (Math.round(h * 10) / 10) : Math.round(h)) + 'h';
-    return Math.round(h / 24) + 'd';
+    return fmt(Math.round(h / 24)) + 'd';
   }
   // The remain column (owner pick 2, v0.0.86.16): finite runs append the finish ETA ("137 left · ≈9m"),
   // endless ones show the production RATE instead of a bare infinity ("∞ · ~412/h", success-weighted).
@@ -38164,7 +38164,7 @@
   // human unit replaced the raw "453:23:52 total (x1700 stocked)" wall (owner pick 10, v0.0.86.16).
   function gabBuffTimeText(active, invCount){
     var txt = formatDuration(Math.max(0, active.expiresAt - Date.now())) + ' left';
-    if((invCount|0) > 0) txt += ' • ≈' + gabShortEta(buffTotalRunwayMs(active, invCount)) + ' runway (×' + (invCount|0) + ')';
+    if((invCount|0) > 0) txt += ' • ≈' + gabShortEta(buffTotalRunwayMs(active, invCount)) + ' runway (×' + fmt(invCount|0) + ')';
     return txt;
   }
   // Tome buff widget: study an available Tome (or the active one's countdown) for a work-speed buff,
@@ -38963,7 +38963,7 @@
           var have = state.inventory[k]||0;
           var need = recipe.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39005,7 +39005,7 @@
           var have = state.inventory[k]||0;
           var need = data.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39028,7 +39028,7 @@
           var have = state.inventory[k]||0;
           var need = data.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39051,7 +39051,7 @@
           var have = state.inventory[k]||0;
           var need = shieldData.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39073,7 +39073,7 @@
           var have = state.inventory[k]||0;
           var need = quiverData.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39095,7 +39095,7 @@
         var el = document.getElementById('inp-ring-'+rt.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = rData.inputs[k];
-          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39110,7 +39110,7 @@
         var el = document.getElementById('inp-amulet-'+at.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = aData.inputs[k];
-          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39130,7 +39130,7 @@
         var el = document.getElementById('inp-ward-'+w.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = wData.inputs[k];
-          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39149,7 +39149,7 @@
         var el = document.getElementById('inp-scepter-'+s.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = sData.inputs[k];
-          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -39169,7 +39169,7 @@
         var el = document.getElementById('inp-wand-'+w.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = wData.inputs[k];
-          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -40746,7 +40746,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.40';
+  var GAME_VERSION = '0.0.86.41';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

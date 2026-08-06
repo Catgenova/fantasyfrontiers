@@ -18591,6 +18591,81 @@
     }
   });
 
+  // ---- ticket-0152, second report: the SAME rule everywhere, not just the two scanned panels --------
+  // Mr Cookie: "Works, but I think it should be that way across the board", with the item cards under the
+  // fixed panel still reading "Damage 32208-80496". The first pass scanned exactly the two renderers named
+  // in the report, so every other surface stayed unguarded and 16 of them were still printing raw runs.
+  // This sweeps EVERY zero-arg exported renderer plus the item-card family, which is what makes the rule
+  // hold for readouts nobody has thought to look at yet.
+  suite('ticket-0152: no unformatted large numbers ANYWHERE a renderer prints', function(){
+    var S = FF._state;
+    function bareBigRuns(html){
+      var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
+      var out = [], m, re = /(^|[^\d,.])(\d{5,})/g;
+      while((m = re.exec(txt))){ out.push(m[2]); if(out.length > 3) break; }
+      return out;
+    }
+    var sv = { xp:S.xp, phys:S.physique, inv:S.inventory, armor:S.bodyArmor, gold:S.gold, faith:S.faith,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity, uniq:S.uniqueItems };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique);
+      Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.equippedMainhand = 'greatsword'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'plate',tier:TOP,rarity:'fantastic'}, chest:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      gauntlets:{material:'plate',tier:TOP,rarity:'fantastic'}, boots:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      back:{material:'tailoring',tier:TOP,rarity:'fantastic'} };
+      S.gold = 987654321; S.faith = 25925907;
+      // A 7-figure count of EVERY item: the quantity readouts ("Owned:", "x<n>", "(<n> owned)") were the
+      // biggest family of offenders and only a fat bag exposes them.
+      S.inventory = {};
+      Object.keys(FF.ALL_SELLABLE).forEach(function(k){ S.inventory[k] = 1234567; });
+      var scanned = 0, bad = [];
+      function check(name, html){
+        if(html == null) return;
+        scanned++;
+        var runs = bareBigRuns(html);
+        if(runs.length) bad.push(name + ': ' + runs.join(','));
+      }
+      Object.keys(FF).forEach(function(k){
+        if(typeof FF[k] !== 'function' || FF[k].length > 0) return;
+        if(!/^(render|.*Html$|.*Text$|.*Label$|.*Line$)/.test(k)) return;
+        var html; try { html = FF[k](); } catch(e){ return; }   // needs state this fixture lacks
+        check(k, html);
+      });
+      // The item-card family from the report, one top-tier fantastic +15 per kind.
+      [['weapon','stweapon_greatsword_t'+TOP+'_fantastic'], ['ring','ring_fire_t'+TOP+'_fantastic'],
+       ['amulet','amulet_t'+TOP+'_fantastic'], ['relic','relic_t'+TOP+'_fantastic'],
+       ['belt','belt_t'+TOP+'_fantastic'], ['bodyarmor','bodyarmor_plate_chest_t'+TOP+'_fantastic']
+      ].forEach(function(pair){
+        var d = { uid:'u_'+pair[0], kind:pair[0], base:pair[1], rarity:'fantastic', tier:TOP, enhance:15, enchants:[] };
+        ['uniqueBaseStatLines','uniqueCardBody','renderUniqueEquipCard','discordItemStatsText'].forEach(function(n){
+          if(typeof FF[n] !== 'function') return;
+          var r; try { r = FF[n](d); } catch(e){ return; }
+          check(n+'('+pair[0]+')', Array.isArray(r) ? r.join(' | ') : r);
+        });
+      });
+      eq(bad.join(' || '), '', 'no renderer prints a bare 5+ digit run (offenders listed)');
+      // VACUITY GUARDS. Swallowing throws is how this suite stays runnable across renderers with varied
+      // state needs, but it is also how it could silently scan nothing at all: pin a floor on the count,
+      // and prove the fixture really pushes figures into the grouped range.
+      ok(scanned >= 40, 'the sweep really exercised the renderers (scanned ' + scanned + ')');
+      ok(/\d,\d{3}/.test(FF.renderCombatStatsPanel()), 'the fixture reaches comma-grouped magnitudes');
+      // The reported card itself, pinned by content rather than by absence.
+      var w = { uid:'u_w', kind:'weapon', base:'stweapon_greatsword_t'+TOP+'_fantastic',
+                rarity:'fantastic', tier:TOP, enhance:15, enchants:[] };
+      var dmgLine = FF.uniqueBaseStatLines(w).filter(function(l){ return /^Damage /.test(l); })[0] || '';
+      ok(/\d,\d{3}/.test(dmgLine), 'the item card damage range is grouped: ' + dmgLine);
+    } finally {
+      S.inventory = sv.inv; S.gold = sv.gold; S.faith = sv.faith; S.uniqueItems = sv.uniq;
+      S.xp = sv.xp; S.physique = sv.phys; S.playerHp = sv.hp; S.bodyArmor = sv.armor;
+      S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
+    }
+  });
+
   // ---- ticket-0156: a stat row's label and value never touch (Thausale) ---------------------------
   // The report: "the defence value is too close to the name", with a screenshot showing "Blunt Def69%"
   // reading as one word. Cause: .stat-row is space-between with no gap, which pushes the pair to the
