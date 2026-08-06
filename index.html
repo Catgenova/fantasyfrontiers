@@ -14872,10 +14872,13 @@
 
   // ---- Cottages: an Architecture building (log cabin), 21 tiers. Placed on paved estate tiles next to
   // a Workshop, a Cottage lets you assign a Peon to work that workshop's skill (see the Peons tab).
-  // Recipe: 100 planks + the tier's stonework + one previous-tier Cottage. Not per-skill -- one line.
+  // Recipe: 10 planks + the tier's stonework + one previous-tier Cottage. Not per-skill -- one line.
+  // The plank count was a flat 100 until v0.0.86.40 (owner order). A Workshop of the same tier bills
+  // 10 + tier*3, so the cottage was asking 1.4x to 10x a workshop's timber for a smaller building.
+  var COTTAGE_PLANKS = 10;               // planks per Cottage, every tier (owner order, was 100)
   function cottageTierColor(tier){ return workshopTierColor(tier); }
   function getCottageTierData(tier){
-    var inputs = buildingStoneInputs(tier); inputs['carpentry_t'+tier] = 100;
+    var inputs = buildingStoneInputs(tier); inputs['carpentry_t'+tier] = COTTAGE_PLANKS;
     if(tier > 0) inputs['cottage_t'+(tier-1)] = 1;
     return { tierIndex: tier, name: FORESTRY_NAMES[tier] + ' Cottage', levelReq: TIER_LEVELS[tier], xp: tierXp(40, tier), time: tierTime(20, 0.6, tier), inputs: inputs }; // named after the plank's wood (Maple Cottage ...)
   }
@@ -19960,7 +19963,7 @@
   function craftCottage(tierIndex){
     var data = getCottageTierData(tierIndex);
     if(getLevel(state.xp.architecture) < data.levelReq){ addLog('Architecture level too low to build ' + data.name + '.', 'danger'); return; }
-    if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs 100 planks + the tier\'s bricks and pillars' + (tierIndex>0?' + a '+FORESTRY_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
+    if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs ' + COTTAGE_PLANKS + ' planks + the tier\'s bricks and pillars' + (tierIndex>0?' + a '+FORESTRY_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
     placeNewCraftActivity('architecture', null, 'cottage', { type:'craft', craftKind:'cottage', tierIndex:tierIndex, progress:0 });
   }
   function equipTool(itemId){
@@ -29294,8 +29297,10 @@
       queuedMsg: 'Queued the pavement upgrade at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + '.'
     });
   }
-  // Upgrade a placed Workshop or Cottage to ANY higher tier the pavement supports (in one step), for 100x
-  // that target tier's Plank (carpentry_t<n>). The job takes as long as building that tier FRESH would
+  // Upgrade a placed Workshop or Cottage to ANY higher tier the pavement supports (in one step). The price
+  // is the BUILT target building itself (v0.0.86.30/.31) -- the plank constant below survives only to keep
+  // pre-patch in-flight jobs (matVer < 2) payable and cancellable at the terms they started on.
+  // The job takes as long as building that tier FRESH would
   // (kind 'workshop'/'cottage' with upgrade:true -- the server's duration table already charges the fresh
   // build time for the target id). The old building keeps working until the upgrade completes. The target
   // tier is capped at the tile's pavement tier -- pave higher to go higher. targetTier defaults to the
@@ -40741,7 +40746,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.39';
+  var GAME_VERSION = '0.0.86.40';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40864,7 +40869,7 @@
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
-      estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
+      estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, COTTAGE_PLANKS:COTTAGE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
