@@ -30100,7 +30100,7 @@
   }
 
   // ---- Peons UI (a category tab: PEON_MAX_SLOTS personal + PEON_MAX_SLOTS guild slots) ----
-  var peonPicker = { open:false, scope:null, x:null, y:null, producer:null, candle:false, barrel:false };
+  var peonPicker = { open:false, scope:null, x:null, y:null, producer:null, candle:false, barrel:false, change:false };
   var peonPickerProducers = []; // equipment producers for the current cottage's skill, indexed for dispatch
   function peonSkillIcon(skillId){ return (GATHERING_SKILLS[skillId] && GATHERING_SKILLS[skillId].icon) || (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].icon) || svgIcon('person','var(--text-faint)'); }
   function renderPeonsTab(){
@@ -30213,6 +30213,9 @@
              + (tProv ? '<span style="color:var(--gold);">'+escapeHtml(tBarrel)+'</span> &bull; covers ~'+formatHoursCompact(peonProvisionCoverageMs(t))+' past the 12h cap &bull; '+(state.inventory[t.barrelId]||0)+' in the bag'
                       : '<span style="color:var(--text-faint);">Not provisioned</span> &bull; works only within the 12h offline cap')+'</div>';
         html += '<button class="mini-btn" data-action="peonOpenBarrel" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'" style="margin-bottom:5px;">'+(t.barrelId?'Change barrel':'Provision the cottage')+'</button>';
+        // Re-task without stopping (ticket-0158): Stop deletes the task and burns the candle + provisions
+        // with it, so changing tier used to cost both. This keeps them.
+        html += '<button class="mini-btn" data-action="peonOpenChange" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'" style="margin-bottom:5px;">Change task or tier</button>';
         html += '<button class="action-btn stop" data-action="peonStop" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'">Stop</button>';
       } else if(freeCount > 0){
         html += '<div class="item-top"><div class="item-icon">'+svgIcon('person','var(--text-faint)')+'</div><div><div class="item-name">Empty slot</div><div class="item-meta">'+freeCount+' free cottage'+(freeCount===1?'':'s')+'</div></div></div>';
@@ -30228,28 +30231,64 @@
     html += '</div>';
     return html;
   }
-  function peonAssignCore(){ // shared validation; returns { tasks, skillId } or null (closes picker on failure)
+  // CHANGE MODE re-points an existing peon instead of adding one (ticket-0158). The two occupancy rules
+  // invert: the cottage MUST already hold the peon we are re-tasking, and no new slot is consumed.
+  function peonAssignCore(){ // shared validation; returns { tasks, skillId, existing } or null
     var scope = peonPicker.scope, grid = peonGridFor(scope);
     if(!grid || peonPicker.x === null){ peonPicker.open = false; renderPeonPicker(); return null; }
     var adj = estateAdjacentWorkshop(grid, peonPicker.x, peonPicker.y);
     if(!adj){ addLog('That cottage is no longer next to a workshop.', 'danger'); peonPicker.open = false; render(); return null; }
     var tasks = peonTasksFor(scope);
-    if(tasks.length >= PEON_MAX_SLOTS){ addLog('All '+PEON_MAX_SLOTS+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return null; }
-    if(peonTaskAt(scope, peonPicker.x, peonPicker.y)){ addLog('That cottage already has a peon.', 'danger'); peonPicker.open = false; render(); return null; }
-    return { tasks:tasks, skillId:WORKSHOP_ITEMS[adj.workshopId].skillId };
+    var existing = peonTaskAt(scope, peonPicker.x, peonPicker.y);
+    if(peonPicker.change){
+      if(!existing){ addLog('That cottage no longer has a peon to re-task.', 'danger'); peonPicker.open = false; render(); return null; }
+    } else {
+      if(tasks.length >= PEON_MAX_SLOTS){ addLog('All '+PEON_MAX_SLOTS+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return null; }
+      if(existing){ addLog('That cottage already has a peon.', 'danger'); peonPicker.open = false; render(); return null; }
+    }
+    return { tasks:tasks, skillId:WORKSHOP_ITEMS[adj.workshopId].skillId, existing:existing };
+  }
+  // Re-point a task in place. The CANDLE and the BARREL stay lit and stocked -- that is the whole point of
+  // the ticket: stopping a peon deletes its task, and with it a part-burned candle (a GodFlame can have 15
+  // hours left) and its provisioning, so switching tier used to cost both. Progress resets, because part of
+  // a tier-9 action must not count toward a tier-12 one, and the fields belonging to the OTHER kind are
+  // cleared so the tick (which dispatches purely on task.kind) can never read a stale itemId or tierIndex.
+  function peonRetask(t, fields){
+    t.kind = fields.kind;
+    if(fields.kind === 'special'){
+      t.craftKind = fields.craftKind; t.params = fields.params; t.tierIndex = fields.tierIndex;
+      delete t.itemId;
+    } else {
+      t.itemId = fields.itemId;
+      delete t.craftKind; delete t.params; delete t.tierIndex;
+    }
+    t.progress = 0;
+    return t;
   }
   function peonAssign(kind, itemId){
     var c = peonAssignCore(); if(!c) return;
-    c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:kind, itemId:itemId, progress:0 });
-    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
-    saveGame(); peonPicker.open = false; render();
+    if(c.existing && peonPicker.change){
+      peonRetask(c.existing, { kind:kind, itemId:itemId });
+      peonSetTasks(peonPicker.scope, c.tasks);
+      addLog('Your peon switched to ' + peonTaskName(c.existing) + '. The candle and provisions carried over.', 'important');
+    } else {
+      c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:kind, itemId:itemId, progress:0 });
+      bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
+    }
+    saveGame(); peonPicker.open = false; peonPicker.change = false; render();
   }
   function peonAssignSpecial(tierIndex){
     var p = peonPicker.producer; if(!p) return;
     var c = peonAssignCore(); if(!c) return;
-    c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, progress:0 });
-    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
-    saveGame(); peonPicker.open = false; render();
+    if(c.existing && peonPicker.change){
+      peonRetask(c.existing, { kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex });
+      peonSetTasks(peonPicker.scope, c.tasks);
+      addLog('Your peon switched to ' + peonTaskName(c.existing) + '. The candle and provisions carried over.', 'important');
+    } else {
+      c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, progress:0 });
+      bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
+    }
+    saveGame(); peonPicker.open = false; peonPicker.change = false; render();
   }
   function peonStop(scope, x, y){ peonSetTasks(scope, peonTasksFor(scope).filter(function(t){ return !(t.x===x && t.y===y); })); saveGame(); render(); }
   // Swapping candles discards whatever was left of the one alight -- you blew it out to fit a new one.
@@ -30317,7 +30356,8 @@
     var tasks = peonTasksFor(scope), occ = {}; tasks.forEach(function(t){ occ[t.x+'_'+t.y] = 1; });
     var free = sources.filter(function(s){ return !occ[s.x+'_'+s.y]; });
     var html = '<div class="familiar-popup-card" style="max-width:460px;text-align:left;max-height:82dvh;overflow:auto;">';
-    html += '<div class="familiar-popup-title">Assign a Peon &bull; '+(scope==='guild'?'Guild':'My')+' Estate</div>';
+    html += '<div class="familiar-popup-title">'+(peonPicker.change?'Change Task':'Assign a Peon')+' &bull; '+(scope==='guild'?'Guild':'My')+' Estate</div>';
+    if(peonPicker.change) html += '<div class="empty-note" style="margin-bottom:10px;">Pick what this peon works on next. Its <b>candle</b> and <b>provisions</b> carry over; only its progress on the current action is lost.</div>';
     if(peonPicker.x === null){
       html += '<div class="empty-note" style="margin-bottom:10px;">Pick a cottage to staff. Each shows its linked workshop skill and the highest action tier it can run.</div>';
       if(!free.length) html += '<div class="empty-note">No free cottages. Build a Cottage next to a Workshop first.</div>';
@@ -39763,16 +39803,21 @@
     closeTrackerPicker: function(btn, e){ trackerPickerOpen = false; renderTrackerPicker(); },
     toggleTrackedSkill: function(btn, e){ toggleTrackedSkill(btn.getAttribute('data-skill')); },
     peonOpenPicker: function(btn, e){
-      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null, candle:false, barrel:false }; renderPeonPicker();
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null, candle:false, barrel:false, change:false }; renderPeonPicker();
     },
-    peonClosePicker: function(btn, e){ peonPicker.open = false; peonPicker.candle = false; peonPicker.barrel = false; renderPeonPicker(); },
+    peonClosePicker: function(btn, e){ peonPicker.open = false; peonPicker.candle = false; peonPicker.barrel = false; peonPicker.change = false; renderPeonPicker(); },
+    peonOpenChange: function(btn, e){
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10),
+                     y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:false, barrel:false, change:true };
+      renderPeonPicker();
+    },
     peonOpenCandle: function(btn, e){
-      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10), y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:true, barrel:false };
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10), y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:true, barrel:false, change:false };
       renderPeonPicker();
     },
     peonPickCandle: function(btn, e){ peonSetCandle(peonPicker.scope, peonPicker.x, peonPicker.y, btn.getAttribute('data-item')); },
     peonOpenBarrel: function(btn, e){
-      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10), y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:false, barrel:true };
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10), y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:false, barrel:true, change:false };
       renderPeonPicker();
     },
     peonPickBarrel: function(btn, e){ peonSetBarrel(peonPicker.scope, peonPicker.x, peonPicker.y, btn.getAttribute('data-item')); },
@@ -39780,7 +39825,12 @@
       peonPicker.x = parseInt(btn.getAttribute('data-x'),10); peonPicker.y = parseInt(btn.getAttribute('data-y'),10); peonPicker.producer = null; renderPeonPicker();
     },
     peonPickBack: function(btn, e){
-      if(peonPicker.producer){ peonPicker.producer = null; } else { peonPicker.x = null; peonPicker.y = null; } renderPeonPicker();
+      if(peonPicker.producer){ peonPicker.producer = null; }
+      // In change mode the cottage is fixed (step 1 lists only FREE cottages, which excludes this one),
+      // so stepping back out of the action list closes the picker rather than stranding the player.
+      else if(peonPicker.change){ peonPicker.open = false; peonPicker.change = false; }
+      else { peonPicker.x = null; peonPicker.y = null; }
+      renderPeonPicker();
     },
     peonPickTask: function(btn, e){ peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item')); },
     peonPickProducer: function(btn, e){
@@ -40864,7 +40914,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.44';
+  var GAME_VERSION = '0.0.86.45';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40978,7 +41028,7 @@
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
-      peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
+      peonTaskTier:peonTaskTier, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateCancelJob:estateCancelJob, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, estateJobFromServer:estateJobFromServer, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,

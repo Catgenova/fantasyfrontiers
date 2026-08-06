@@ -18724,6 +18724,94 @@
     }
   });
 
+  // ---- ticket-0158: re-task a peon without stopping it (Mr Cookie) --------------------------------
+  // The request: "make Peons switch the tier of task they are doing instead of fully cancelling". Stop
+  // DELETES the task, and the candle and the Provision Barrel live on that task object, so changing tier
+  // used to throw away a part-burned candle (a GodFlame can carry 15 hours) and the cottage's
+  // provisioning. peonRetask re-points the task in place and keeps both.
+  suite('ticket-0158: a peon can change task or tier without losing its candle', function(){
+    ok(typeof FF.peonRetask === 'function', 'peonRetask is exported');
+    var S = FF._state;
+    var sv = { tasks: JSON.parse(JSON.stringify(FF.peonTasksFor('personal') || [])) };
+    try {
+      // A working peon with a part-burned candle and a stocked barrel: exactly the screenshot's state.
+      var t = { x:3, y:4, skillId:'mining', kind:'gather', itemId:'mining_t9', progress:1234,
+                candleId:'chandlery_t20', candleMs:54872000, barrelId:'cooperage_t20', barrelMs:7200000 };
+      FF.peonSetTasks('personal', [t]);
+      // Re-point it to a different TIER of the same gather.
+      FF.peonRetask(t, { kind:'gather', itemId:'mining_t12' });
+      eq(t.itemId, 'mining_t12', 'the task now points at the new tier');
+      eq(FF.peonTaskTier(t), 12, 'and the tier readout follows it');
+      eq(t.candleId, 'chandlery_t20', 'the candle is still assigned');
+      eq(t.candleMs, 54872000, '...with every millisecond of burn intact (the point of the ticket)');
+      eq(t.barrelId, 'cooperage_t20', 'the barrel is still assigned');
+      eq(t.barrelMs, 7200000, '...and still stocked');
+      eq(t.progress, 0, 'progress on the abandoned action is dropped, not carried into the new tier');
+      eq(t.x, 3, 'the peon stays in its cottage');
+      eq(t.skillId, 'mining', 'and keeps the workshop skill it is bound to');
+      // Switching to an EQUIPMENT producer must not leave a stale itemId behind: the tick dispatches
+      // purely on task.kind, so a leftover field from the other branch is a live wrong-item hazard.
+      FF.peonRetask(t, { kind:'special', craftKind:'tool', params:{ skillId:'mining' }, tierIndex:7 });
+      eq(t.kind, 'special', 'the kind switched');
+      eq(t.tierIndex, 7, 'the special tier is set');
+      ok(!('itemId' in t), 'the gather itemId is CLEARED, so the tick cannot read a stale one');
+      eq(t.candleMs, 54872000, 'the candle survives a kind change too');
+      // ...and back the other way.
+      FF.peonRetask(t, { kind:'gather', itemId:'mining_t2' });
+      ok(!('tierIndex' in t) && !('craftKind' in t), 'the special fields are cleared on the way back');
+      eq(t.itemId, 'mining_t2', 'and the gather item is set');
+      // Contrast with Stop, which is still the way to free the cottage: it removes the task outright,
+      // candle and all. That is the behaviour the ticket wanted an alternative to, not a replacement for.
+      FF.peonStop('personal', 3, 4);
+      ok(!FF.peonTaskAt('personal', 3, 4), 'Stop still clears the cottage entirely');
+    } finally { FF.peonSetTasks('personal', sv.tasks); }
+  });
+
+  // The WIRED path, not just the helper. peonAssignCore refuses long before the change branch when the
+  // cottage is not really next to exactly one workshop, so a helper-only test would have passed while the
+  // button did nothing (that is exactly what the first probe of this feature showed).
+  suite('ticket-0158: the change-task picker path re-tasks in place through peonAssign', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var g = S.estate.grid;
+    var sv = { tasks: JSON.parse(JSON.stringify(FF.peonTasksFor('personal') || [])),
+               c34: JSON.parse(JSON.stringify(g[3][4])), c35: JSON.parse(JSON.stringify(g[3][5])),
+               picker: FF._peonPicker() };
+    try {
+      // A real cottage beside exactly ONE Mining workshop (estateAdjacentWorkshop demands exactly one).
+      g[3][4].type = 'paved'; g[3][4].cottageId = 'cottage_t20'; g[3][4].workshopId = null;
+      g[3][5].type = 'paved'; g[3][5].workshopId = 'workshop_mining_t20'; g[3][5].cottageId = null;
+      [[2,4],[4,4],[3,3]].forEach(function(p){ if(g[p[0]] && g[p[0]][p[1]]) g[p[0]][p[1]].workshopId = null; });
+      ok(FF.estateAdjacentWorkshop(g, 3, 4), 'the fixture cottage really has one adjacent workshop');
+      FF.peonSetTasks('personal', [{ x:3, y:4, skillId:'mining', kind:'gather', itemId:'mining_t9', progress:1234,
+                                     candleId:'chandlery_t20', candleMs:54872000, barrelId:'cooperage_t20', barrelMs:7200000 }]);
+      // Drive it exactly as the button does.
+      FF._peonPicker({ open:true, scope:'personal', x:3, y:4, producer:null, candle:false, barrel:false, change:true });
+      FF.peonAssign('gather', 'mining_t12');
+      var t2 = FF.peonTaskAt('personal', 3, 4);
+      ok(t2, 'the peon is still in its cottage');
+      eq(t2.itemId, 'mining_t12', 'the wired path really switched the tier');
+      eq(t2.candleMs, 54872000, 'and the part-burned candle came through the real path');
+      eq(t2.progress, 0, 'with progress reset');
+      eq((FF.peonTasksFor('personal')||[]).length, 1, 'no second peon was created');
+      ok(FF._peonPicker().open === false && FF._peonPicker().change === false, 'the picker closed and cleared its mode');
+      // Change mode on a cottage with NO peon must refuse rather than conjure one. Same VALID cottage, so
+      // adjacency passes and only the occupancy rule can do the refusing.
+      FF.peonSetTasks('personal', []);
+      FF._peonPicker({ open:true, scope:'personal', x:3, y:4, producer:null, candle:false, barrel:false, change:true });
+      FF.peonAssign('gather', 'mining_t1');
+      eq((FF.peonTasksFor('personal')||[]).length, 0, 're-tasking an empty cottage creates nothing');
+      // And the ordinary assign still works on that cottage, so change mode did not break the old path.
+      FF._peonPicker({ open:true, scope:'personal', x:3, y:4, producer:null, candle:false, barrel:false, change:false });
+      FF.peonAssign('gather', 'mining_t1');
+      eq((FF.peonTasksFor('personal')||[]).length, 1, 'a normal assign still staffs the cottage');
+    } finally {
+      FF.peonSetTasks('personal', sv.tasks);
+      g[3][4] = sv.c34; g[3][5] = sv.c35;
+      FF._peonPicker(sv.picker);
+    }
+  });
+
   // ---- ticket-0157: Inscription Scrolls are findable in the inventory ------------------------------
   // The report: "searching for Inscription or Scroll in the Inventory screen produces no matches", with
   // a moderate stock visible on the Improvement page. The items were there all along -- they are named
