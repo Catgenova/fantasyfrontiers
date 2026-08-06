@@ -28343,7 +28343,12 @@
   function estateJobMaterials(job){
     switch(job.kind){
       case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]]; // upgrades cost the same 20 TARGET tiles as a fresh pave
-      case 'workshop': return job.upgrade ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
+      // Workshop upgrades pay the BUILT target Workshop itself (Architecture's craft), like a fresh
+      // placement -- the flat 100-planks price predated Architecture and let players skip the whole
+      // crafting chain (owner order, v0.0.86.30). matVer 2 marks jobs started under the new price;
+      // an in-flight pre-patch upgrade (no matVer) still consumes/refunds/returns its planks, so a
+      // cancel can never mint a Workshop that was never paid.
+      case 'workshop': return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
       case 'cottage':  return job.upgrade ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]];
       case 'totem':    return [[job.totemId, 1]];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
@@ -28831,6 +28836,13 @@
       return true;
     }
     if(job.kind === 'workshop'){
+      // matVer-2 upgrade: the displaced Workshop returns to the upgrader's inventory (they paid the new
+      // one outright). giveRewards-gated like every grant here -- the grid write is idempotent and runs
+      // on every guild client, so an unguarded return would mint one Workshop per window.
+      if(giveRewards && job.upgrade && (job.matVer >= 2) && cell.workshopId && cell.workshopId !== job.workshopId){
+        addItem(cell.workshopId, 1);
+        addLog('The ' + ((WORKSHOP_ITEMS[cell.workshopId]||{}).name||'old Workshop') + ' was dismantled and returned to your inventory.', '');
+      }
       cell.workshopId = job.workshopId;
       if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
       if(giveRewards){
@@ -29153,12 +29165,15 @@
     if(tgt >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Workshop only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
     if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to raise a Workshop to ' + FORESTRY_NAMES[tgt] + ' (yours is ' + getLevel(state.xp.architecture) + ').', 'danger'); return; }
-    var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
-    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    // The price is the BUILT target Workshop from Architecture, exactly like placing one fresh (owner
+    // order, v0.0.86.30: the flat 100-planks price was outdated). The old Workshop comes back to your
+    // inventory when the upgrade completes, so upgrade-in-place never destroys value that
+    // remove-then-place would have kept.
     var newId = 'workshop_' + wIt.skillId + '_t' + tgt;
+    if((state.inventory[newId]||0) < 1){ addLog('Upgrading to a ' + ((WORKSHOP_ITEMS[newId]||{}).name || (FORESTRY_NAMES[tgt]+' Workshop')) + ' needs that built Workshop itself. Craft it in Architecture.', 'danger'); return; }
     var wTier = tgt + 1; // same 30 min/tier as building this tier fresh
-    estateEnqueueOrStart('workshop', x, y, { workshopId:newId, upgrade:true }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, {
-      jobFields: { workshopId:newId, upgrade:true },
+    estateEnqueueOrStart('workshop', x, y, { workshopId:newId, upgrade:true, matVer:2 }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, {
+      jobFields: { workshopId:newId, upgrade:true, matVer:2 },
       startedMsg: 'You began upgrading the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '. Finishes in ' + (wTier*30) + ' minutes.',
       startedFt: 'Upgrading…',
       queuedMsg: 'Queued the ' + workshopSkillLabel(wIt.skillId) + ' Workshop upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
@@ -31351,14 +31366,14 @@
           var wBlock = wCanAny ? '' : (wArchCap <= wCur && wArchCap < wPaveT
                 ? ' &bull; <span style="color:var(--hp-bad)">Architecture '+TIER_LEVELS[Math.min(wCur+1,TIER_COUNT-1)]+' needed for the next tier</span>'
                 : ' &bull; <span style="color:var(--hp-bad)">pave higher first</span>');
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(wMax>=0?escapeHtml(FORESTRY_NAMES[wMax]):'. ')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+wBlock+'</div>';
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(wMax>=0?escapeHtml(FORESTRY_NAMES[wMax]):'. ')+') &bull; needs that tier’s built Workshop (craft it in Architecture); the old one returns to your inventory'+wBlock+'</div>';
           html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(wCanAny?'':'disabled')+'>'+(wCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):(wArchCap <= wCur && wArchCap < wPaveT ? 'Train Architecture' : 'Pave higher'))+'</button></div>';
           if(estateBuildUpgradeMenuOpen && wCanAny){
             html += '<div class="estate-paving-library">';
             for(var wt=wCur+1; wt<=wMax; wt++){
-              var wpid='carpentry_t'+wt, wpown=state.inventory[wpid]||0, waff=wpown>=ESTATE_BUILDING_UPGRADE_PLANKS, wico=(WORKSHOP_ITEMS['workshop_'+wIt.skillId+'_t'+wt]||{}).icon||'';
+              var wid2='workshop_'+wIt.skillId+'_t'+wt, wOwn=state.inventory[wid2]||0, waff=wOwn>=1, wico=(WORKSHOP_ITEMS[wid2]||{}).icon||'';
               html += '<button class="estate-paving-option'+(waff?'':' locked')+'" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" data-tier="'+wt+'" '+(waff?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(wt)+' '+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">x'+wpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '<span>'+tierChipHtml(wt)+' '+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">'+(waff?'ready':'x0/1 &bull; craft it')+'</span>';
               html += '</button>';
             }
             html += '</div>';
@@ -40519,7 +40534,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.29';
+  var GAME_VERSION = '0.0.86.30';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

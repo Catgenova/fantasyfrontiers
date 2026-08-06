@@ -607,37 +607,45 @@
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
   suite('estate: upgrade workshop & cottage', function(){
-    eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'a building upgrade costs 100 planks');
+    eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'a COTTAGE upgrade still costs 100 planks (workshops moved to the built-Workshop price, v0.0.86.30)');
     var s = FF._state;
     FF.estUse(false);
     var cell = s.estate.grid[0][0];
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
     var savedJob = s.estate.job, savedQueue = s.estate.queue;
-    var savedInv = { c2:s.inventory['carpentry_t2'], c3:s.inventory['carpentry_t3'], c4:s.inventory['carpentry_t4'] };
+    var savedInv = { c2:s.inventory['carpentry_t2'], w2:s.inventory['workshop_mining_t2'], w3:s.inventory['workshop_mining_t3'], w4:s.inventory['workshop_mining_t4'] };
     var savedArch = s.xp.architecture;
     s.estate.job = null; s.estate.queue = [];
     // An upgrade now needs the tier's ARCHITECTURE level, same as building it fresh (ticket-0134). This
     // suite predates that gate and passed only because the gate did not exist -- grant the skill so it keeps
-    // testing what it means to test (the job/time/plank mechanics), and the gate gets its own checks below.
+    // testing what it means to test (the job/time/material mechanics), and the gate gets its own checks below.
     s.xp.architecture = FF.SKILL_XP_FLOOR[100];
-    // Workshop t2 on t5 pavement -> upgrade to t3 for 100x the t3 plank, taking the fresh t3 build time.
+    // Workshop t2 on t5 pavement -> upgrade to t3 for the BUILT t3 Workshop (v0.0.86.30, owner order:
+    // the flat 100-planks price was outdated), taking the fresh t3 build time.
     cell.type = 'paved'; cell.paveTileId = 'paving_t5'; cell.cottageId = null; cell.workshopId = 'workshop_mining_t2';
-    s.inventory['carpentry_t3'] = 100;
+    s.inventory['workshop_mining_t3'] = 1; s.inventory['workshop_mining_t2'] = 0;
     FF.estateUpgradeWorkshop(0, 0);
     var wjob = s.estate.job;
     ok(wjob && wjob.kind === 'workshop' && wjob.upgrade === true, 'the workshop upgrade starts a timed job');
+    ok(wjob.matVer >= 2, 'the job is stamped with the new price version (pre-patch jobs keep refunding planks)');
     eq(wjob.readyAt - wjob.startAt, 4 * FF.ESTATE_WORKSHOP_MS_PER_TIER, 'a t4 (index 3) upgrade takes the fresh-build 120 min');
     eq(cell.workshopId, 'workshop_mining_t2', 'the old workshop keeps working until the job completes');
-    eq(s.inventory['carpentry_t3'], 0, 'the upgrade consumed 100 next-tier planks at start');
-    FF.applyEstateJobCompletion(s.estate, wjob, false, false);
+    eq(s.inventory['workshop_mining_t3'], 0, 'the upgrade consumed the BUILT target Workshop at start');
+    FF.applyEstateJobCompletion(s.estate, wjob, true, false);
     s.estate.job = null;
     eq(cell.workshopId, 'workshop_mining_t3', 'completion raises the workshop one tier, same skill');
+    eq(s.inventory['workshop_mining_t2'], 1, 'the displaced workshop returns to inventory on completion');
     // Pavement too low blocks it: workshop t3 -> t4 needs pavement >= t4, but the pavement is t3.
-    cell.paveTileId = 'paving_t3'; s.inventory['carpentry_t4'] = 100;
+    cell.paveTileId = 'paving_t3'; s.inventory['workshop_mining_t4'] = 1;
     FF.estateUpgradeWorkshop(0, 0);
     ok(!s.estate.job, 'no job while the pavement is too low');
     eq(cell.workshopId, 'workshop_mining_t3', 'no upgrade while the pavement is too low');
-    eq(s.inventory['carpentry_t4'], 100, '...and no planks are spent when blocked');
+    eq(s.inventory['workshop_mining_t4'], 1, '...and the built Workshop is not spent when blocked');
+    // Without the built target Workshop in the bag, the upgrade refuses and points at Architecture.
+    delete s.inventory['workshop_mining_t4']; cell.paveTileId = 'paving_t5'; s.log = s.log || [];
+    FF.estateUpgradeWorkshop(0, 0);
+    ok(!s.estate.job, 'no job without the built target Workshop');
+    ok(/Craft it in Architecture/.test((s.log[s.log.length-1]||{}).msg || ''), 'the refusal points at the Architecture craft');
     // Cottage t1 on t5 pavement -> upgrade to t2 for 100x the t2 plank, taking the fresh t2 build time.
     cell.workshopId = null; cell.cottageId = 'cottage_t1'; cell.paveTileId = 'paving_t5';
     s.inventory['carpentry_t2'] = 100;
@@ -651,18 +659,19 @@
     eq(cell.cottageId, 'cottage_t2', 'completion raises the cottage one tier');
     eq(s.inventory['carpentry_t2'], 0, 'the cottage upgrade spent 100 next-tier planks');
     // ARCHITECTURE GATES THE UPGRADE (ticket-0134): drop the skill to nothing and the same call, on the same
-    // fully-paved tile with the planks in hand, must refuse and spend nothing.
+    // fully-paved tile with the built Workshop in hand, must refuse and spend nothing.
     s.xp.architecture = 0;
     cell.cottageId = null; cell.workshopId = 'workshop_mining_t2'; cell.paveTileId = 'paving_t5';
-    s.inventory['carpentry_t3'] = 100;
+    s.inventory['workshop_mining_t3'] = 1;
     FF.estateUpgradeWorkshop(0, 0);
     ok(!s.estate.job, 'no job when Architecture is too low for the target tier');
     eq(cell.workshopId, 'workshop_mining_t2', 'the workshop stays put when Architecture is too low');
-    eq(s.inventory['carpentry_t3'], 100, '...and no planks are spent');
+    eq(s.inventory['workshop_mining_t3'], 1, '...and the built Workshop is not spent');
     // restore
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot;
     s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.architecture = savedArch;
-    s.inventory['carpentry_t2'] = savedInv.c2; s.inventory['carpentry_t3'] = savedInv.c3; s.inventory['carpentry_t4'] = savedInv.c4;
+    s.inventory['carpentry_t2'] = savedInv.c2;
+    s.inventory['workshop_mining_t2'] = savedInv.w2; s.inventory['workshop_mining_t3'] = savedInv.w3; s.inventory['workshop_mining_t4'] = savedInv.w4;
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
 
@@ -748,21 +757,21 @@
     eq(cell.paveTileId, 'paving_t2', 'no upgrade without 20 of the target tile');
     eq(s.inventory['paving_t7'], 5, 'nothing spent on an unaffordable jump');
 
-    // C) A Workshop jumps straight to any tier the pavement supports.
+    // C) A Workshop jumps straight to any tier the pavement supports (paying the built target Workshop).
     cell.paveTileId='paving_t9'; cell.workshopId='workshop_mining_t1'; cell.cottageId=null;
-    s.inventory['carpentry_t5']=100;
+    s.inventory['workshop_mining_t5']=1;
     FF.estateUpgradeWorkshop(0,0,5);
     finishJob();
     eq(cell.workshopId, 'workshop_mining_t5', 'workshop jumps from t1 to t5 in one step, same skill');
-    eq(s.inventory['carpentry_t5'], 0, 'spent 100 of the target-tier plank');
+    eq(s.inventory['workshop_mining_t5'], 0, 'spent the built target-tier Workshop');
 
     // D) A target above the pavement tier is blocked; up to the pavement tier is allowed.
-    cell.paveTileId='paving_t5'; cell.workshopId='workshop_mining_t1'; s.inventory['carpentry_t6']=100;
+    cell.paveTileId='paving_t5'; cell.workshopId='workshop_mining_t1'; s.inventory['workshop_mining_t6']=1;
     FF.estateUpgradeWorkshop(0,0,6);
     ok(!s.estate.job, 'no job past what the pavement supports');
     eq(cell.workshopId, 'workshop_mining_t1', 'no upgrade past what the pavement supports');
-    eq(s.inventory['carpentry_t6'], 100, 'nothing spent when the target exceeds pavement support');
-    s.inventory['carpentry_t5']=100;
+    eq(s.inventory['workshop_mining_t6'], 1, 'nothing spent when the target exceeds pavement support');
+    s.inventory['workshop_mining_t5']=1;
     FF.estateUpgradeWorkshop(0,0,5);
     finishJob();
     eq(cell.workshopId, 'workshop_mining_t5', 'jumping up to exactly the pavement tier is allowed');
@@ -772,6 +781,8 @@
     s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['paving_t5']=savedInv.p5; s.inventory['paving_t7']=savedInv.p7;
     s.inventory['carpentry_t5']=savedInv.c5; s.inventory['carpentry_t6']=savedInv.c6;
+    delete s.inventory['workshop_mining_t5']; delete s.inventory['workshop_mining_t6'];
+    delete s.inventory['workshop_mining_t1']; // the displaced t1 returned on completion (v0.0.86.30)
     s.xp.architecture = savedArch2; s.xp.paving = savedPave2;
     FF.estRecomputeWorkshops();
   });
@@ -15576,10 +15587,10 @@
       var g = []; for(var x=0;x<3;x++){ g[x]=[]; for(var y=0;y<3;y++) g[x][y] = { type:'stone', height:5, obstacle:null, fieldTier:null, owned:true, pavementTier:20 }; }
       g[1][1].workshopId = 'workshop_carpentry_t0';
       S.estate = { grid:g, job:null, queue:[] };
-      S.inventory = {}; S.inventory['carpentry_t10'] = 100000;
+      S.inventory = {}; S.inventory['workshop_carpentry_t10'] = 1;
       FF.estateUpgradeWorkshop(1, 1, 10);
-      eq(S.estate.job, null, 'a level-1 architect cannot jump a Workshop to tier 10 even with the planks');
-      eq(S.inventory['carpentry_t10'], 100000, '...and spends nothing trying');
+      eq(S.estate.job, null, 'a level-1 architect cannot jump a Workshop to tier 10 even with the built Workshop in hand');
+      eq(S.inventory['workshop_carpentry_t10'], 1, '...and spends nothing trying');
     } finally {
       S.xp.architecture = saved.xp; S.inventory = saved.inv; S.estate = saved.estate;
     }
