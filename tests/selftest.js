@@ -961,6 +961,56 @@
     eq(FF.CRAFT_TOOL_NAMES.goldsmithing, "Goldsmith's Loupe", "goldsmithing's tool is now the Goldsmith's Loupe");
   });
 
+  // ---- Tool equip level gate (owner order, v0.0.86.42) ---------------------------------------------
+  // A tool is FORGED under Blacksmithing, so nothing ever checked the skill it actually serves, and
+  // tools are tradeable: a Mining 1 character could buy a t20 Pickaxe and wear the whole speed curve.
+  // Wielding now asks for the SERVED skill at that tier's level, the same TIER_LEVELS ladder the
+  // Digging / Architecture / Totems / Fletching gates use.
+  suite('tools: wielding a tool needs its tier level in the skill it serves', function(){
+    var S = FF._state;
+    ok(typeof FF.toolEquipLevelReq === 'function' && typeof FF.toolEquipLevelOk === 'function', 'gate helpers exported');
+    // The ladder is the shared one, pinned against TIER_LEVELS rather than restated.
+    eq(FF.toolEquipLevelReq(0), FF.TIER_LEVELS[0], 't0 asks for the first rung (free)');
+    eq(FF.toolEquipLevelReq(5), FF.TIER_LEVELS[5], 't5 asks for its own rung');
+    eq(FF.toolEquipLevelReq(FF.TIER_COUNT-1), 100, 'the top tool asks for Lv 100');
+    var sv = { inv:S.inventory, xp:S.xp, gt:S.gatherTools, gr:S.gatherToolRarities, log:S.log.slice() };
+    try {
+      S.inventory = {}; S.xp = Object.assign({}, S.xp);
+      S.gatherTools = Object.assign({}, S.gatherTools); S.gatherToolRarities = Object.assign({}, S.gatherToolRarities);
+      var TOP = FF.TIER_COUNT - 1;
+      var topId = 'tool_mining_t'+TOP+'_normal', lowId = 'tool_mining_t0_normal';
+      S.inventory[topId] = 1; S.inventory[lowId] = 1;
+      S.gatherTools.mining = 0; S.xp.mining = 0;
+      // The reported hole: a bought top-tier tool at Lv 1 in the served skill.
+      ok(!FF.toolEquipLevelOk(FF.TOOL_ITEMS[topId]), 'a t20 Pickaxe is refused at Mining Lv 1');
+      FF.equipTool(topId);
+      eq(S.gatherTools.mining || 0, 0, 'the refused tool did not equip');
+      eq(S.inventory[topId], 1, '...and was not consumed');
+      ok(/needs Mining Lv 100/.test((S.log[S.log.length-1]||{}).msg || ''), 'the refusal names the skill and level');
+      // The t0 tool is wieldable at Lv 1, so the gate is not a blanket block.
+      FF.equipTool(lowId);
+      eq(S.gatherTools.mining, 1, 'the t0 tool equips at Lv 1 (tier index + 1)');
+      // EQUIP BEST must pick the best USABLE tool, not nominate the locked one and bounce.
+      S.inventory[lowId] = 1;                       // a spare to swap back in
+      var best = FF.bestOwnedToolForSkill('mining');
+      ok(best && best.tierIndex === 0, 'Equip Best skips the over-level tool and picks the wieldable one');
+      // At the level, the same top tool goes on.
+      S.xp.mining = FF.xpFloorForLevel(100);
+      ok(FF.toolEquipLevelOk(FF.TOOL_ITEMS[topId]), 'Mining 100 clears the top tool');
+      FF.equipTool(topId);
+      eq(S.gatherTools.mining, TOP + 1, 'the top tool equips once the level is there');
+      eq(S.inventory[topId] || 0, 0, '...and was consumed');
+      // The panel shows the bar instead of a bare button, so a locked tool explains itself.
+      S.xp.mining = 0; S.gatherTools.mining = 0; S.inventory[topId] = 1;
+      var card = FF.renderToolCardFor('mining');
+      ok(/style-btn-locked/.test(card) && /disabled/.test(card), 'a locked tool renders as a disabled, locked button');
+      ok(/Mining Lv 100/.test(card), 'the locked button names the requirement');
+      ok(/higher Mining level/.test(card), 'the card carries a lock note');
+    } finally {
+      S.inventory = sv.inv; S.xp = sv.xp; S.gatherTools = sv.gt; S.gatherToolRarities = sv.gr; S.log = sv.log;
+    }
+  });
+
   // ---- Architecture split: Carpentry keeps Planks; buildings + Woodcarving move to Construction -----
   suite('architecture: the Carpentry split + stonework building bills', function(){
     // The new skill exists in Construction; Carpentry stays (planks only); Woodcarving moved over.
@@ -17615,10 +17665,14 @@
   suite('blacksmithing: equip best tool', function(){
     ok(typeof FF.equipBestTool === 'function' && typeof FF.bestOwnedToolForSkill === 'function', 'equip-best helpers exported');
     var s = FF._state;
-    var sv = { inv:s.inventory, gt:s.gatherTools, gr:s.gatherToolRarities };
+    var sv = { inv:s.inventory, gt:s.gatherTools, gr:s.gatherToolRarities, xp:s.xp };
     try {
       var sk = 'herbalism';
       s.inventory = {}; s.gatherTools = {}; s.gatherToolRarities = {};
+      // Max the served skills: since v0.0.86.42 wielding a tool needs that skill at the tier's level, and
+      // this suite is about the aggregate SCORE picking the winner, not about the level bar. Without this
+      // the t5 tool below is locked at Lv 1 and bestOwnedToolForSkill correctly returns null.
+      s.xp = Object.assign({}, s.xp); s.xp.herbalism = FF.xpFloorForLevel(100); s.xp.mining = FF.xpFloorForLevel(100);
       s.gatherTools[sk] = 0; s.gatherToolRarities[sk] = 'normal';
       s.inventory['tool_'+sk+'_t2_normal'] = 1;
       s.inventory['tool_'+sk+'_t5_rare'] = 1;
@@ -17650,7 +17704,7 @@
       eq(s.gatherToolRarities[mk], 'supreme', 'the equipped tool is the Supreme');
       eq(s.inventory['tool_'+mk+'_t'+pair.hi+'_rare']||0, 1, 'the higher-tier Rare stays in the bag (it scored lower)');
     } finally {
-      s.inventory = sv.inv; s.gatherTools = sv.gt; s.gatherToolRarities = sv.gr;
+      s.inventory = sv.inv; s.gatherTools = sv.gt; s.gatherToolRarities = sv.gr; s.xp = sv.xp;
     }
   });
 

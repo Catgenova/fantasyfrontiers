@@ -14825,7 +14825,10 @@
   var WORKSHOP_SKILL_IDS = CRAFT_SKILL_IDS.concat(GATHER_SKILL_IDS);
   var WORKSHOP_GATHER_SET = {}; GATHER_SKILL_IDS.forEach(function(id){ WORKSHOP_GATHER_SET[id] = true; });
   function isGatherWorkshop(skillId){ return !!WORKSHOP_GATHER_SET[skillId]; }
-  function workshopSkillLabel(skillId){ return ((CRAFTING_SKILLS[skillId] || GATHERING_SKILLS[skillId] || {}).label) || (typeof SKILL_LABELS!=='undefined' && SKILL_LABELS[skillId]) || skillId; }
+  // A skill's DISPLAY name ('mining' -> 'Mining'). Named for the workshops until v0.0.86.42, when the
+  // tool equip gate needed the same resolution: the def tables carry `label`, not `name`, so reading
+  // `.name` silently falls through to the raw lowercase id and ships 'needs mining Lv 100' to players.
+  function skillDisplayLabel(skillId){ return ((CRAFTING_SKILLS[skillId] || GATHERING_SKILLS[skillId] || {}).label) || (typeof SKILL_LABELS!=='undefined' && SKILL_LABELS[skillId]) || skillId; }
   function workshopBonusPct(tierIndex){ return 0.025 + (tierIndex/(TIER_COUNT-1))*0.125; } // DOUBLE-OUTPUT chance: t0=2.5%, t20=15%
   // SPEED is decoupled from double-output and scaled to 0.6x (gather-speed rebalance): t0=1.5%, t20=9%.
   var WORKSHOP_SPEED_SCALE = 0.6;
@@ -14848,7 +14851,7 @@
     if(tierIndex > 0) inputs['workshop_'+skillId+'_t'+(tierIndex-1)] = 1; // upgrades consume the previous-tier Workshop
     return {
       tierIndex: tierIndex,
-      name: FORESTRY_NAMES[tierIndex] + ' ' + workshopSkillLabel(skillId) + ' Workshop', // named after the plank's wood (Maple ...)
+      name: FORESTRY_NAMES[tierIndex] + ' ' + skillDisplayLabel(skillId) + ' Workshop', // named after the plank's wood (Maple ...)
       levelReq: TIER_LEVELS[tierIndex],   // Architecture level, staggered every 5
       xp: tierXp(30, tierIndex),
       time: tierTime(15, 0.5, tierIndex),
@@ -14862,7 +14865,7 @@
     for(var _wt=0; _wt<TIER_COUNT; _wt++){
       var _wid = 'workshop_'+skillId+'_t'+_wt;
       WORKSHOP_ITEMS[_wid] = {
-        id:_wid, name: FORESTRY_NAMES[_wt] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
+        id:_wid, name: FORESTRY_NAMES[_wt] + ' ' + skillDisplayLabel(skillId) + ' Workshop',
         icon: isGatherWorkshop(skillId) ? (GATHERING_SKILLS[skillId].icon) : svgIcon('castle', workshopSkillColor(skillId)), sell: tierSell(30, _wt),
         tierIndex:_wt, skillId:skillId
       };
@@ -19966,9 +19969,30 @@
     if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs ' + COTTAGE_PLANKS + ' planks + the tier\'s bricks and pillars' + (tierIndex>0?' + a '+FORESTRY_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
     placeNewCraftActivity('architecture', null, 'cottage', { type:'craft', craftKind:'cottage', tierIndex:tierIndex, progress:0 });
   }
+  // TOOLS NEED THE SKILL THEY SERVE, at the same tier ladder every other gate uses (owner order, the
+  // Digging/Architecture/Totems/Fletching pattern). The hole this closes: a tool is FORGED under
+  // Blacksmithing, so its craft checks Blacksmithing and nothing else, and tools are tradeable -- so a
+  // Mining 1 character could buy a t20 Pickaxe and wear the whole speed curve. The requirement is read
+  // off the SERVED skill (a Mining Pickaxe asks for Mining), because that is the ladder the tool
+  // shortcuts. Already-equipped tools are deliberately NOT stripped; see equipTool's comment.
+  function toolEquipLevelReq(tierIndex){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, tierIndex|0))] || 1; }
+  function toolEquipLevelOk(item){
+    if(!item) return false;
+    return getLevel(state.xp[item.skillId]||0) >= toolEquipLevelReq(item.tierIndex);
+  }
   function equipTool(itemId){
     var item = TOOL_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
+    // The gate lives HERE because equipTool is the only writer of a tool tier: the panel button, the
+    // inventory quick-action and Equip Best all funnel through it, so one check covers every path.
+    // Note this does not touch a tool already equipped from before the rule. Retroactively unequipping
+    // would take a working bonus away from players mid-session for a rule they could not have known.
+    if(!toolEquipLevelOk(item)){
+      addLog('The ' + item.name + ' needs ' + skillDisplayLabel(item.skillId) + ' Lv ' +
+             toolEquipLevelReq(item.tierIndex) + ' to wield. You are Lv ' +
+             getLevel(state.xp[item.skillId]||0) + '.', 'danger');
+      return;
+    }
     var tiers = item.isGather ? state.gatherTools : state.craftTools;
     var rarities = item.isGather ? state.gatherToolRarities : state.craftToolRarities;
     var currentTier = tiers[item.skillId]||0;
@@ -20009,6 +20033,9 @@
     for(var id in state.inventory){
       if((state.inventory[id]||0) <= 0) continue;
       var it = TOOL_ITEMS[id]; if(!it || it.skillId !== skillId) continue;
+      // Skip tools the level gate would refuse, so "Equip Best" picks the best tool you can actually
+      // WIELD instead of nominating a locked one and bouncing off equipTool with a refusal.
+      if(!toolEquipLevelOk(it)) continue;
       var sc = toolAggregateScore(it.skillId, it.isGather, it.tierIndex, it.rarity);
       if(sc > bestScore){ bestScore = sc; best = it; }
     }
@@ -21721,7 +21748,7 @@
     var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
     var ready = lvl >= data.levelReq && hasInputs(data.inputs);
     var owned = state.inventory['workshop_'+skillId+'_t'+sel]||0;
-    var lbl = workshopSkillLabel(skillId);
+    var lbl = skillDisplayLabel(skillId);
     var isGather = isGatherWorkshop(skillId);
     var wIcon = isGather ? GATHERING_SKILLS[skillId].icon : svgIcon('castle', workshopSkillColor(skillId));
     var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
@@ -22037,6 +22064,13 @@
     html += '<div class="item-stats">'+xpStat('blacksmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLine+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
+    // WIELDING is a separate bar from FORGING: this card's Lv gate is Blacksmithing, but the tool asks
+    // for the skill it serves before it can be equipped. Surfaced here so nobody forges a tier they
+    // cannot use yet (and so the requirement is visible without owning one).
+    if(getLevel(state.xp[tt.skillId]||0) < toolEquipLevelReq(sel)){
+      html += '<div class="lock-note">Wielding this tier needs '+escapeHtml(skillDisplayLabel(tt.skillId))+
+              ' Lv '+toolEquipLevelReq(sel)+'. You are Lv '+getLevel(state.xp[tt.skillId]||0)+'.</div>';
+    }
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
     if(isActive){
       html += activeSlot.primary
@@ -23606,12 +23640,25 @@
       html += '<div class="empty-note">No '+tt.name+' in inventory. Forge one in Refining &rarr; Blacksmithing.</div>';
     } else {
       html += '<div class="style-row">';
+      var lockedCount = 0;
       owned.forEach(function(id){
         var item = TOOL_ITEMS[id];
         var qty = state.inventory[id]||0;
-        html += '<button class="style-btn" data-action="equipTool" data-item="'+id+'">'+tt.icon+' '+item.name+' <span class="style-lvl">x'+fmt(qty)+'</span></button>';
+        // A tool above your level stays VISIBLE but reads as locked and names the bar, so the panel
+        // explains itself rather than making the player click and read a refusal in the log.
+        var usable = toolEquipLevelOk(item);
+        if(!usable) lockedCount++;
+        html += '<button class="style-btn'+(usable?'':' style-btn-locked')+'"'+(usable?'':' disabled')+' data-action="equipTool" data-item="'+id+'">'
+             +  tt.icon+' '+item.name+' <span class="style-lvl">'
+             +  (usable ? ('x'+fmt(qty)) : (skillDisplayLabel(tt.skillId)+' Lv '+toolEquipLevelReq(item.tierIndex)))
+             +  '</span></button>';
       });
       html += '</div>';
+      if(lockedCount > 0){
+        html += '<div class="lock-note">'+fmt(lockedCount)+' '+(lockedCount===1?'tool needs':'tools need')+' a higher '
+             +  skillDisplayLabel(tt.skillId)+' level. Each tier asks for its own level, up to Lv '
+             +  toolEquipLevelReq(TIER_COUNT-1)+' for the top tool.</div>';
+      }
     }
     if(current) html += '<button class="action-btn stop" data-action="unequipTool" data-skill="'+tt.skillId+'">Unequip</button>';
     html += '</div></div>';
@@ -29022,7 +29069,7 @@
         var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('architecture', cotXp);
-        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Architecture XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
+        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Architecture XP.' + (cadj ? ' Linked to the adjacent ' + skillDisplayLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
@@ -29343,9 +29390,9 @@
     var wTier = tgt + 1; // same 30 min/tier as building this tier fresh
     estateEnqueueOrStart('workshop', x, y, { workshopId:newId, upgrade:true, matVer:2 }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, {
       jobFields: { workshopId:newId, upgrade:true, matVer:2 },
-      startedMsg: 'You began upgrading the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '. Finishes in ' + (wTier*30) + ' minutes.',
+      startedMsg: 'You began upgrading the ' + skillDisplayLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '. Finishes in ' + (wTier*30) + ' minutes.',
       startedFt: 'Upgrading…',
-      queuedMsg: 'Queued the ' + workshopSkillLabel(wIt.skillId) + ' Workshop upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
+      queuedMsg: 'Queued the ' + skillDisplayLabel(wIt.skillId) + ' Workshop upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
     });
   }
   function estateUpgradeCottage(x, y, targetTier){
@@ -30061,7 +30108,7 @@
       if(i < tasks.length){
         var t = tasks[i];
         var nm = peonTaskName(t);
-        html += '<div class="item-top"><div class="item-icon">'+peonSkillIcon(t.skillId)+'</div><div><div class="item-name">'+escapeHtml(workshopSkillLabel(t.skillId))+' Peon</div><div class="item-meta">'+(t.kind==='gather'?'Gathering ':'Crafting ')+escapeHtml(nm)+' &bull; ('+t.x+','+t.y+')</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+peonSkillIcon(t.skillId)+'</div><div><div class="item-name">'+escapeHtml(skillDisplayLabel(t.skillId))+' Peon</div><div class="item-meta">'+(t.kind==='gather'?'Gathering ':'Crafting ')+escapeHtml(nm)+' &bull; ('+t.x+','+t.y+')</div></div></div>';
         html += '<div class="progress-track"><div class="progress-fill" id="peonFill-'+scope+'-'+i+'" style="width:0%"></div></div>';
         // Output rate. This is the number the whole peon is FOR, so it leads: what actually lands in the
         // bag per hour, at the peon's current lit/unlit speed. The "at" clue-in tells the player the
@@ -30210,7 +30257,7 @@
       if(!free.length) html += '<div class="empty-note">No free cottages. Build a Cottage next to a Workshop first.</div>';
       free.forEach(function(s){
         html += '<button class="tracker-chip on" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px;" data-action="peonPickSource" data-x="'+s.x+'" data-y="'+s.y+'">';
-        html += '<span>'+peonSkillIcon(s.skillId)+' '+escapeHtml(workshopSkillLabel(s.skillId))+' &bull; ('+s.x+','+s.y+')</span><span class="style-lvl">up to '+TIER_NAMES[s.tierCap]+'</span></button>';
+        html += '<span>'+peonSkillIcon(s.skillId)+' '+escapeHtml(skillDisplayLabel(s.skillId))+' &bull; ('+s.x+','+s.y+')</span><span class="style-lvl">up to '+TIER_NAMES[s.tierCap]+'</span></button>';
       });
     } else {
       var src = sources.filter(function(s){ return s.x===peonPicker.x && s.y===peonPicker.y; })[0];
@@ -30227,7 +30274,7 @@
         // Step 2: gather items / standard recipes (assign directly) + equipment producers (open a tier submenu).
         var opts = peonOptionsFor(src);
         peonPickerProducers = peonSpecialProducers(src.skillId);
-        html += '<div class="empty-note" style="margin-bottom:10px;"><b>'+escapeHtml(workshopSkillLabel(src.skillId))+'</b> cottage at ('+src.x+','+src.y+'). Choose an action (tier ≤ '+TIER_NAMES[src.tierCap]+').</div>';
+        html += '<div class="empty-note" style="margin-bottom:10px;"><b>'+escapeHtml(skillDisplayLabel(src.skillId))+'</b> cottage at ('+src.x+','+src.y+'). Choose an action (tier ≤ '+TIER_NAMES[src.tierCap]+').</div>';
         if(!opts.length && !peonPickerProducers.length) html += '<div class="empty-note">This skill has no peon-runnable '+(isGatherWorkshop(src.skillId)?'gather':'recipe')+'.</div>';
         if(opts.length){
           html += '<div class="tracker-picker-grid">';
@@ -31556,7 +31603,7 @@
         var wIt = WORKSHOP_ITEMS[cell.workshopId];
         var wSpd = Math.round(workshopSpeedPct(wIt?wIt.tierIndex:0)*100), wPct = Math.round(workshopBonusPct(wIt?wIt.tierIndex:0)*100);
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wSpd+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
+        html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wSpd+'% '+escapeHtml(skillDisplayLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveWorkshop" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
         // The list is capped by BOTH the pavement and Architecture (ticket-0134) -- an upgrade needs the same
@@ -31577,7 +31624,7 @@
             for(var wt=wCur+1; wt<=wMax; wt++){
               var wid2='workshop_'+wIt.skillId+'_t'+wt, wOwn=state.inventory[wid2]||0, waff=wOwn>=1, wico=(WORKSHOP_ITEMS[wid2]||{}).icon||'';
               html += '<button class="estate-paving-option'+(waff?'':' locked')+'" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" data-tier="'+wt+'" '+(waff?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(wt)+' '+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">'+(waff?'ready':'x0/1 &bull; craft it')+'</span>';
+              html += '<span>'+tierChipHtml(wt)+' '+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+skillDisplayLabel(wIt.skillId))+'</span><span class="style-lvl">'+(waff?'ready':'x0/1 &bull; craft it')+'</span>';
               html += '</button>';
             }
             html += '</div>';
@@ -31587,7 +31634,7 @@
         var cIt = COTTAGE_ITEMS[cell.cottageId];
         var cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(workshopSkillLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop. Assign a Peon in the <b>Peons</b> tab.') : 'Not linked. Place beside exactly one Workshop.')+'</div>';
+        html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(skillDisplayLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop. Assign a Peon in the <b>Peons</b> tab.') : 'Not linked. Place beside exactly one Workshop.')+'</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveCottage" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
         var cCur = cIt?cIt.tierIndex:0, cPaveT = pavementTierOf(cell), cArchCap = estateArchitectureTierCap();
@@ -31735,7 +31782,7 @@
       html += '<div class="estate-action-info"><b>Paved:</b> '+tierChipHtml(Math.max(0,pT))+' '+(pavedRecipe?pavedRecipe.icon+' '+escapeHtml(pavedRecipe.name):'Unknown')+'</div>';
       if(cell.workshopId){
         var wIt = WORKSHOP_ITEMS[cell.workshopId], wSpd = Math.round(workshopSpeedPct(wIt?wIt.tierIndex:0)*100), wPct = Math.round(workshopBonusPct(wIt?wIt.tierIndex:0)*100);
-        html += '<div class="estate-action-info"><b>Workshop:</b> '+tierChipHtml(wIt?wIt.tierIndex:0)+' '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wSpd+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
+        html += '<div class="estate-action-info"><b>Workshop:</b> '+tierChipHtml(wIt?wIt.tierIndex:0)+' '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wSpd+'% '+escapeHtml(skillDisplayLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
       } else if(cell.cottageId){
         var cIt = COTTAGE_ITEMS[cell.cottageId], cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
         html += '<div class="estate-action-info"><b>Cottage:</b> '+tierChipHtml(cIt?cIt.tierIndex:0)+' '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+(cAdj?' &middot; Linked to an adjacent Workshop':' &middot; Not linked')+'</div>';
@@ -31791,13 +31838,13 @@
     html += '<div class="estate-action-info" style="margin:-4px 0 8px">Tap any entry to highlight its tile on the estate above.</div>';
     if(data.workshops.length){
       html += '<div class="guild-section-title" style="margin-top:2px">Workshops &bull; '+data.workshops.length+'</div>';
-      data.workshops.sort(function(a,b){ var la=workshopSkillLabel(a.it.skillId), lb=workshopSkillLabel(b.it.skillId); return la<lb?-1:(la>lb?1:a.it.tierIndex-b.it.tierIndex); });
+      data.workshops.sort(function(a,b){ var la=skillDisplayLabel(a.it.skillId), lb=skillDisplayLabel(b.it.skillId); return la<lb?-1:(la>lb?1:a.it.tierIndex-b.it.tierIndex); });
       data.workshops.forEach(function(w){
         var spd = Math.round(workshopSpeedPct(w.it.tierIndex)*100), pct = Math.round(workshopBonusPct(w.it.tierIndex)*100);
         var att = w.attached.total ? (w.attached.total+' ('+estateAttachedTierStr(w.attached.byTier)+')') : 'none';
         html += '<div class="'+rowCls(w.x,w.y)+'" data-action="estateSelectTile" data-x="'+w.x+'" data-y="'+w.y+'">';
         html += '<span class="ebr-icon">'+w.it.icon+'</span>';
-        html += '<div class="ebr-main"><div class="ebr-name">'+escapeHtml(workshopSkillLabel(w.it.skillId))+' Workshop<span class="ebr-tier">T'+(w.it.tierIndex+1)+'</span></div>';
+        html += '<div class="ebr-main"><div class="ebr-name">'+escapeHtml(skillDisplayLabel(w.it.skillId))+' Workshop<span class="ebr-tier">T'+(w.it.tierIndex+1)+'</span></div>';
         html += '<div class="ebr-sub">('+w.x+', '+w.y+') &bull; +'+spd+'% speed &bull; +'+pct+'% double-output &bull; Cottages: '+att+'</div></div>';
         html += '</div>';
       });
@@ -31806,7 +31853,7 @@
       html += '<div class="guild-section-title" style="margin-top:10px">Cottages &bull; '+data.cottages.length+'</div>';
       data.cottages.sort(function(a,b){ return a.it.tierIndex - b.it.tierIndex; });
       data.cottages.forEach(function(c){
-        var link = c.linked ? (escapeHtml(workshopSkillLabel(WORKSHOP_ITEMS[c.linked.workshopId].skillId))+' Workshop ('+c.linked.x+', '+c.linked.y+')')
+        var link = c.linked ? (escapeHtml(skillDisplayLabel(WORKSHOP_ITEMS[c.linked.workshopId].skillId))+' Workshop ('+c.linked.x+', '+c.linked.y+')')
                              : '<span style="color:var(--text-faint)">unattached</span>';
         html += '<div class="'+rowCls(c.x,c.y)+'" data-action="estateSelectTile" data-x="'+c.x+'" data-y="'+c.y+'">';
         html += '<span class="ebr-icon">'+c.it.icon+'</span>';
@@ -40746,7 +40793,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.41';
+  var GAME_VERSION = '0.0.86.42';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40952,7 +40999,7 @@
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, pickFertilizerTier:pickFertilizerTier, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openTreasureChests:openTreasureChests, CHEST_MAX_GOLD:CHEST_MAX_GOLD, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
-      TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
+      TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, toolEquipLevelReq:toolEquipLevelReq, toolEquipLevelOk:toolEquipLevelOk, skillDisplayLabel:skillDisplayLabel, renderToolCardFor:renderToolCardFor, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES, marketItemSubcategory:marketItemSubcategory, marketItemTierHtml:marketItemTierHtml, marketSubLabel:marketSubLabel,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
