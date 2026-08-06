@@ -18724,6 +18724,71 @@
     }
   });
 
+  // ---- ticket-0159: the first-swing gate must not eat EARNED payouts (Mr Cookie) -------------------
+  // Regression from v0.0.86.28. The gate holds carried per-second engines until the encounter's first
+  // swing, which is right for Bramble/Blaze/Plague. But two engines are the DELAYED PAYOUT of a swing
+  // already landed: the Spellblade's Afterimage train (1s per generation) and the Juggernaut's Aftershock
+  // (a swing rings over 12s). Both queues are state-scoped and carry between foes, so on a one-shot
+  // farming chain the kill cleared playerSwungOnce and the whole payout was confiscated during the 6s/9s
+  // before the next swing. The tell in the report: Echo Trains and Runic Tempo visible in the effects
+  // bar with nothing in the log, because Tempo climbs whether or not applyEffectDamage did anything.
+  suite('ticket-0159: earned payouts (Afterimage, Aftershock) survive the first-swing gate', function(){
+    var S = FF._state;
+    ok(typeof FF.effectGateOpen === 'function', 'the gate exemption helper is exported');
+    // The contract, stated on the helper itself: earned:true opens the gate, nothing else does.
+    var svAct = S.activity;
+    try {
+      S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:1e12, playerSwungOnce:false };
+      ok(!FF.combatEffectsArmed(), 'the gate is CLOSED before the first swing of an encounter');
+      ok(!FF.effectGateOpen(), '...so an unmarked effect is held');
+      ok(!FF.effectGateOpen({}), '...and an empty opts is held');
+      ok(FF.effectGateOpen({ earned:true }), '...but an EARNED payout passes');
+      S.activity.playerSwungOnce = true;
+      ok(FF.effectGateOpen(), 'after the first swing everything passes');
+    } finally { S.activity = svAct; }
+    // End to end on the real Spellblade engine, in the exact state the farming chain produces.
+    var sv = { xp:S.xp, mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity,
+               oh:S.equippedOffhand, ohT:S.equippedOffhandTier, armor:S.bodyArmor, act:S.activity,
+               echoes:S.sbEchoes, tempo:S.sbTempo, hp:S.playerHp };
+    try {
+      S.xp = Object.assign({}, S.xp);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      var TOP = FF.TIER_COUNT - 1;
+      // The class is derived from GEAR: greatsword, EMPTY offhand, chain helm+chest, leather gloves+boots.
+      S.equippedMainhand = 'greatsword'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.equippedOffhand = null; S.equippedOffhandTier = 0;
+      S.bodyArmor = { helmet:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      chest:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      gauntlets:{material:'leather', tier:TOP, rarity:'fantastic'},
+                      boots:{material:'leather', tier:TOP, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      eq(FF.activeClassId(S), 'spellblade', 'the fixture really is a Spellblade (gear-derived)');
+      ok(FF.spellbladeBonus(1, S), 'and Afterimage (Lv1) is live');
+      // A FRESH foe that has not been swung at, with a train already due: the post-kill state.
+      S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:1e15, tickAccum:0,
+                     monsterTickAccum:0, specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false };
+      S.sbEchoes = [{ at: Date.now()-1, dmg: 1e9, gen:1, paid:0, id:1 }];
+      S.sbTempo = 0;
+      var hpBefore = S.activity.monsterHp;
+      FF.applySbEchoTick(50);
+      ok(hpBefore - S.activity.monsterHp > 0,
+         'the Afterimage LANDS on a foe not yet swung at (dealt ' + (hpBefore - S.activity.monsterHp) + ')');
+      // Vacuity guard: a CONTINUOUS engine on the same closed gate must still be held, or the fix is a
+      // blanket removal of the gate rather than a targeted exemption.
+      S.activity.playerSwungOnce = false;
+      var hp2 = S.activity.monsterHp;
+      FF.applyEffectDot(5e8, 'Bramble');
+      eq(S.activity.monsterHp, hp2, 'a carried per-second engine is STILL gated before the first swing');
+      FF.applyEffectDamage(5e8, 'Gloria', {});
+      eq(S.activity.monsterHp, hp2, '...and so is an unmarked discrete effect');
+    } finally {
+      S.xp = sv.xp; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
+      S.bodyArmor = sv.armor; S.activity = sv.act; S.sbEchoes = sv.echoes; S.sbTempo = sv.tempo;
+      S.playerHp = sv.hp;
+    }
+  });
+
   // ---- ticket-0158: re-task a peon without stopping it (Mr Cookie) --------------------------------
   // The request: "make Peons switch the tier of task they are doing instead of fully cancelling". Stop
   // DELETES the task, and the candle and the Provision Barrel live on that task object, so changing tier

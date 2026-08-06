@@ -9542,14 +9542,14 @@
       var mult = (set2D2('spellblade', st) ? SB_OVERFLOW_MULT : 1) * sbWaveMultFor(liveNow, st);
       var dmg = Math.round(e.dmg * mult);
       if(dmg > 0 && (a.monsterHp||0) > 0){
-        applyEffectDamage(dmg, 'Afterimage', { detail: 'gen ' + e.gen + (mult !== 1 ? ' x ' + mult.toFixed(2) : '') + ' (ratio ' + Math.round(r*100) + '%, depth ' + depth + ')' });
+        applyEffectDamage(dmg, 'Afterimage', { earned:true, detail: 'gen ' + e.gen + (mult !== 1 ? ' x ' + mult.toFixed(2) : '') + ' (ratio ' + Math.round(r*100) + '%, depth ' + depth + ')' });
         e.paid += dmg;
         if(spellbladeBonus(60, st)) st.sbTempo = Math.min(SB_TEMPO_MAX, (st.sbTempo||0) + 1); // Runic Tempo
         if(setFullD2('spellblade', st)){ a.sbResonStacks = Math.min(SB_RESON_MAX, ((a.sbResonUntil||0) > now ? (a.sbResonStacks||0) : 0) + 1); a.sbResonUntil = now + SB_RESON_MS; } // Runic Detonation
       }
       if(e.gen < depth){ st.sbEchoes.push({ at: e.at + SB_ECHO_MS, dmg: e.dmg * r, gen: e.gen + 1, paid: e.paid, id: e.id }); }
       else if(setFullD3('spellblade', st) && e.paid > 0 && st.activity && st.activity.type==='combat' && (st.activity.monsterHp||0) > 0){
-        applyEffectDamage(Math.round(e.paid * SB_CABOOSE_PCT), 'The Caboose', { detail: fmt(Math.round(e.paid)) + ' train total x 25%' }); // The Caboose
+        applyEffectDamage(Math.round(e.paid * SB_CABOOSE_PCT), 'The Caboose', { earned:true, detail: fmt(Math.round(e.paid)) + ' train total x 25%' }); // The Caboose
       }
     }
     if(!(st.sbEchoes||[]).length && st.sbTempo) st.sbTempo = 0; // the last echo faded
@@ -10411,7 +10411,7 @@
     if(!a || a.type!=='combat' || activeClassId(st) !== 'juggernaut' || !juggernautBonus(1, st)) return;
     var now = Date.now(), l = st.jgEchoes||[], dps = 0;
     for(var i=0;i<l.length;i++){ if(l[i].until > now) dps += l[i].dps; }
-    if(dps > 0) applyEffectDot(dps * jgResonanceMult(st) * dtMs/1000, 'Aftershock');
+    if(dps > 0) applyEffectDot(dps * jgResonanceMult(st) * dtMs/1000, 'Aftershock', { earned:true });
     if(l.length){ st.jgEchoes = l.filter(function(e){ return e.until > now; }); }
     if(!(st.jgEchoes||[]).length && (st.jgResonance||0) > 0) st.jgResonance = 0; // silence
   }
@@ -18944,9 +18944,23 @@
     var a = state.activity;
     return !(a && a.type === 'combat' && !a.playerSwungOnce);
   }
+  // EARNED PAYOUTS ARE EXEMPT (ticket-0159, a regression from the gate above). Two engines are not
+  // carried per-second ticks at all -- they are the DELAYED PAYOUT of a swing the player already landed:
+  // the Spellblade's Afterimage train (a swing repeats itself 1s later, generation by generation) and the
+  // Juggernaut's Aftershock (a swing rings 50% of itself over the next 12s). Both queues are
+  // STATE-scoped and deliberately carry between foes, which is what made the gate lethal to them: on a
+  // one-shot farming chain the kill clears playerSwungOnce, the whole payout comes due during the 6s or
+  // 9s before the next swing lands, and every generation was silently confiscated. Measured: an
+  // Afterimage worth 1e9 dealt exactly 0 on a fresh foe while Runic Tempo still climbed, which is why
+  // the effects bar showed a live train with nothing in the log.
+  // The gate's purpose is to stop engines that tick ON THEIR OWN from killing fresh mobs before the
+  // player acts. It must not confiscate damage a swing has already paid for. Pass earned:true ONLY for
+  // that: a payout queued by a landed swing. A continuous engine (Bramble, Blaze, Plague, Searing Light,
+  // Unraveling, Decay, Bleed, Frostbite) must NEVER set it -- those are exactly what the gate is for.
+  function effectGateOpen(opts){ return (opts && opts.earned) || combatEffectsArmed(); }
   function applyEffectDamage(dmg, name, opts){
     opts = opts || {};
-    if(!combatEffectsArmed()) return false; // no effect damage before the encounter's first swing
+    if(!effectGateOpen(opts)) return false; // no effect damage before the encounter's first swing (earned payouts excepted)
     // Pass the RAW value through: DoT slices are fractional and rounding here would change the damage.
     var killed = applyChipDamage(dmg);
     var shown = Math.round(dmg);
@@ -18960,8 +18974,8 @@
   // fraction of a second and tell the player nothing. Accumulate per effect and emit one row per second:
   // "Frostbite ticks the foe for 4.1B over 1s", which is also the number a player actually wants.
   var _clDotAccum = {}, CL_DOT_WINDOW_MS = 1000;
-  function applyEffectDot(dmg, name){
-    if(!combatEffectsArmed()) return false; // DoT slices wait for the encounter's first swing too
+  function applyEffectDot(dmg, name, opts){
+    if(!effectGateOpen(opts)) return false; // DoT slices wait for the encounter's first swing too (earned payouts excepted)
     var killed = applyChipDamage(dmg);
     if(offlineCapture || !name || !(dmg > 0)) return killed;
     var e = _clDotAccum[name];
@@ -40914,7 +40928,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.45';
+  var GAME_VERSION = '0.0.86.46';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41028,7 +41042,7 @@
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
-      peonTaskTier:peonTaskTier, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
+      peonTaskTier:peonTaskTier, applySbEchoTick:applySbEchoTick, spellbladeBonus:spellbladeBonus, effectGateOpen:effectGateOpen, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateCancelJob:estateCancelJob, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, estateJobFromServer:estateJobFromServer, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,
