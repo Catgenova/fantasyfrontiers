@@ -2450,8 +2450,19 @@
     ok(pA.died, 'a short Faith pool runs the miracle dry before the window ends');
     eq(Math.round(pA.aliveMs), Math.round(80/perSec*1000), 'alive time = Faith / drain rate');
     eq(pA.finalFaith, 0, 'Faith ends at 0 when it runs dry');
-    ok(pA.fraction > 0 && pA.fraction < 1, 'the buff covers only part of a window it cannot outlast');
+    // v0.0.86.35 (owner order): the buff's COVERAGE is the whole window once it was activated with Faith
+    // to spend, even though its FUEL ran out early. The old rule (coverage == fuel) is kept as
+    // fuelFraction, which is what the offline log reports and what XP still keys off.
+    eq(pA.fraction, 1, 'an activated buff covers offline crafts for the whole window');
+    ok(pA.fuelFraction > 0 && pA.fuelFraction < 1, 'while its FUEL still only stretches part of the window');
+    eq(Math.round(pA.xp), Math.round(FF.FAITH_ACTIVITY_TIERS.miracle[0].xpPerSec * pA.aliveMs/1000),
+       'XP follows the fuel burned, not the coverage, so persisting the buff mints no XP');
     eq(s.faith, 80, 'planning does not mutate live Faith (the offline pass applies it)');
+    // No Faith at logout means there was no live buff to persist: coverage stays zero.
+    var svF = s.faith; s.faith = 0;
+    var pZ = FF.planOfflineFaithActivity(3600*1000);
+    eq(pZ.fraction, 0, 'a buff with no Faith at logout covers nothing');
+    s.faith = svF;
 
     // B) Ample Faith outlasts a short window -> buff active the whole time, Faith just drains.
     s.faith = 100;
@@ -18320,6 +18331,58 @@
       S.estate.job = savedJob; S.estate.queue = savedQueue;
       S.xp.totems = svXp; S.log = svLog;
       delete S.inventory['totem_t1']; delete S.inventory['totem_t2']; delete S.inventory['totem_t3']; delete S.inventory['totem_t5'];
+    }
+  });
+
+  // ---- Faith buffs stay activated across the away window (owner order, v0.0.86.35) -----------------
+  // Measured cause: endgame faithMax ~2,112 vs Miracle t19 draining 36.5/sec meant a FULL pool bought 58
+  // seconds, so a 12h window got 0.13% coverage AND the activity was switched off on return. Now the
+  // activated buff covers the window, keeps costing its fuel, and stays selected (dormant at 0 Faith).
+  suite('faith actives: an activated buff persists offline and stays selected', function(){
+    var S = FF._state;
+    ok(FF.FAITH_OFFLINE_BUFF_PERSISTS === true, 'the persist rule is on (flip the constant to restore fuel-limited coverage)');
+    var sv = { fa:S.faithActivity, faith:S.faith, auto:S.autoSacrificeRelics, xpM:S.xp.miracle, dry:S._faithDryWarned };
+    try {
+      S.faithActivity = { type:'miracle', tier:0 };
+      S.autoSacrificeRelics = false;
+      S.faith = 1;                                   // barely any fuel: dies almost immediately
+      var p = FF.planOfflineFaithActivity(12*3600*1000);
+      ok(p.died, 'the fixture really runs dry (otherwise this proves nothing)');
+      eq(p.fraction, 1, 'the rarity buff still covers the whole 12h window');
+      ok(p.fuelFraction < 0.01, 'even though its fuel covered under 1% of it');
+      // A dormant activity grants NO rarity bonus live (it has no Faith), so persistence is not a cheat.
+      S.faith = 0;
+      eq(FF.faithRarityBonus('miracle'), 0, 'a dormant (0 Faith) activity gives no live rarity bonus');
+      S.faith = 50;
+      ok(FF.faithRarityBonus('miracle') >= 0, 'and it resumes as a normal live buff once Faith returns');
+      // The offline ctx is what gates offline crafts: at coverage 1 the bonus always applies.
+      var tierChance = FF.FAITH_ACTIVITY_TIERS.miracle[19].chance;
+      ok(tierChance > 0, 'the top Miracle tier really carries a Fantastic bonus');
+      // THE LIVE HALF. Without this the offline fix is undone on arrival: the live tick used to clear the
+      // activity the instant Faith hit 0, so a returning player watched their buff vanish. And leaving it
+      // selected only works because the payouts are gated -- the XP/familiar rolls ran BEFORE the old dry
+      // check, so a dormant activity would otherwise have paid Faith XP forever for free.
+      S.faithActivity = { type:'miracle', tier:0 };
+      S.faith = 0; S._faithDryWarned = true;         // dormant, notice already shown
+      var xpBefore = S.xp.miracle || 0;
+      FF.applyFaithActivityTick(60000);              // a full minute dormant
+      ok(S.faithActivity && S.faithActivity.type === 'miracle', 'a dormant activity is NEVER switched off by the live tick');
+      eq(S.xp.miracle || 0, xpBefore, 'and pays NO XP while dormant (the free-XP hole stays shut)');
+      eq(S.faith, 0, 'Faith cannot go negative while dormant');
+      // Refill: it resumes on its own, spending Faith and paying XP again.
+      S.faith = 50;
+      FF.applyFaithActivityTick(1000);
+      ok(S.faith < 50, 'once Faith returns the activity resumes spending it');
+      ok((S.xp.miracle || 0) > xpBefore, 'and pays XP again');
+      ok(S.faithActivity.type === 'miracle', 'still the same activity the player chose');
+      // Draining to empty keeps it selected rather than clearing it.
+      S.faith = 0.001;
+      FF.applyFaithActivityTick(5000);
+      eq(S.faith, 0, 'the drain floors at zero');
+      ok(S.faithActivity && S.faithActivity.type === 'miracle', 'running dry live leaves the activity ACTIVATED (it used to clear itself)');
+    } finally {
+      S.faithActivity = sv.fa; S.faith = sv.faith; S.autoSacrificeRelics = sv.auto;
+      S.xp.miracle = sv.xpM; S._faithDryWarned = sv.dry;
     }
   });
 

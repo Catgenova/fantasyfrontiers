@@ -5375,6 +5375,15 @@
   // Faith activity, so the rarity buff applies to only the fraction of the away-window it stayed alive
   // (per-craft coin-flip == gating the first `alive` ms at a uniform craft rate). null during live play.
   var offlineFaithCtx = null;
+  // OWNER ORDER (v0.0.86.35): an ACTIVATED Faith buff stays activated across the away window and counts
+  // toward offline craft rarity. Measured before the change: endgame faithMax is ~2,112 and Miracle t19
+  // drains 36.5 Faith/sec, so a FULL pool bought 58 seconds -- 0.13% of a 12h window -- and the activity
+  // was then switched OFF, so players returned to find their buff gone and their offline crafts rolled at
+  // base rates. The buff's COVERAGE is now the whole window; its FUEL (Faith, auto-sacrificed relics) is
+  // still spent, and the XP/familiar rewards still scale with the fuel actually burned, so this grants no
+  // free XP -- only the rarity buff the player deliberately turned on. Flip this to restore fuel-limited
+  // coverage.
+  var FAITH_OFFLINE_BUFF_PERSISTS = true;
   function faithRarityBonus(faithType){
     if(offlineFaithCtx){
       if(offlineFaithCtx.type !== faithType || Math.random() >= offlineFaithCtx.fraction) return 0;
@@ -17407,6 +17416,44 @@
     state.faithActivity = { type:kind, tier:tierIndex };
   }
   function stopFaithActivity(){ state.faithActivity = { type:null, tier:0 }; }
+  // The live Faith-activity tick, extracted so its dormancy contract is unit-testable (house pattern:
+  // one applyXTick(dtMs) per engine). Owner order v0.0.86.35: an activity with no Faith goes DORMANT, it
+  // is never switched off -- see the comment inside.
+  function applyFaithActivityTick(dt){
+      if(state.faithActivity && state.faithActivity.type){
+        var favData = FAITH_ACTIVITY_TIERS[state.faithActivity.type][state.faithActivity.tier];
+        if(favData){
+          // An activity with NO Faith goes DORMANT, it is not switched off (owner order, v0.0.86.35: an
+          // activated buff stays activated). Two things depend on getting this shape right:
+          //   1. It must not deactivate, or the first tick after login would undo the offline pass's
+          //      "still activated" contract and the player would watch their buff vanish on arrival.
+          //   2. It must not pay OUT while dormant. The XP and familiar rolls used to run BEFORE the dry
+          //      check, so simply leaving the activity selected would have granted Faith XP and familiar
+          //      summons forever at zero cost. Both are now gated on having Faith to burn.
+          if(state.faith > 0){
+            state.faith = Math.max(0, state.faith - favData.faithPerSec*dt/1000);
+            addXp(state.faithActivity.type, favData.xpPerSec*dt/1000);
+            state._faithFamiliarAccum = (state._faithFamiliarAccum||0) + dt;
+            while(state._faithFamiliarAccum >= 1000){
+              state._faithFamiliarAccum -= 1000;
+              maybeSummonFamiliar(state.faithActivity.type);
+              addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], state.faithActivity.tier));
+            }
+            if(state.faith <= 0){
+              state._faithDryWarned = true;  // one line, not one per frame
+              addLog('Your ' + state.faithActivity.type + ' has run out of Faith. It stays active and resumes the moment you restore some.', 'danger');
+              needsRender = true;
+            }
+          } else if(!state._faithDryWarned){
+            state._faithDryWarned = true;
+            addLog('Your ' + state.faithActivity.type + ' is dormant until you restore some Faith.', 'danger');
+            needsRender = true;
+          }
+          if(state.faith > 0 && state._faithDryWarned){ state._faithDryWarned = false; needsRender = true; } // refilled: re-arm the notice and show it live again
+        }
+      }
+  }
+
   // Faith restored by sacrificing one piece of gear (non-relic): a tier curve, +50% for jewelry, and a
   // rarity multiplier so a Rare/Supreme/Fantastic offering restores 2x/4x/8x Faith (getRarity().mult).
   function sacrificeGearFaith(tier, jewelryBoost, rarity){
@@ -20003,6 +20050,8 @@
   // as it would online, and fades when they run dry.
   function planOfflineFaithActivity(capped){
     var fa = state.faithActivity;
+    // `fraction` is the RARITY coverage (what offlineFaithCtx gates crafts by); `aliveMs` is the FUEL
+    // actually burned, which XP and familiar rolls key off. They were the same number until v0.0.86.35.
     var plan = { type:(fa&&fa.type)||null, tier:(fa&&fa.tier)||0, aliveMs:0, fraction:0, xp:0,
                  finalFaith:state.faith, relicsSpent:{}, relicCount:0, faithFromRelics:0, died:false };
     if(!plan.type) return plan;
@@ -20038,8 +20087,14 @@
         plan.finalFaith = 0;
       }
     }
-    plan.fraction = capped > 0 ? Math.max(0, Math.min(1, plan.aliveMs/capped)) : 0;
+    // XP and familiar rolls follow the FUEL BURNED (aliveMs), so persisting the buff never mints XP.
     plan.xp = tierData.xpPerSec * plan.aliveMs/1000;
+    // The rarity COVERAGE is the whole window once the buff was activated with Faith to spend (owner
+    // order): the point of turning Miracle on before logging off is that your offline crafts roll with it.
+    // Without Faith at logout there was never a live buff to persist, so coverage stays fuel-limited.
+    var fuelFraction = capped > 0 ? Math.max(0, Math.min(1, plan.aliveMs/capped)) : 0;
+    plan.fuelFraction = fuelFraction;
+    plan.fraction = (FAITH_OFFLINE_BUFF_PERSISTS && plan.aliveMs > 0) ? 1 : fuelFraction;
     return plan;
   }
 
@@ -20218,9 +20273,17 @@
         if(faithPlan.xp > 0) addXp(faithPlan.type, faithPlan.xp);
         Object.keys(faithPlan.relicsSpent).forEach(function(rid){ state.inventory[rid] = Math.max(0, (state.inventory[rid]||0) - faithPlan.relicsSpent[rid]); });
         state.faith = Math.max(0, Math.min(faithMax(state), faithPlan.finalFaith));
-        if(faithPlan.died) stopFaithActivity();
+        // The activity STAYS SELECTED even when its Faith ran dry (owner order): the player turned it on,
+        // so it is still on when they return -- dormant at 0 Faith, resuming the moment they refill. The
+        // live loop keeps the same contract (see the faith block in the main loop).
+        if(faithPlan.died && !FAITH_OFFLINE_BUFF_PERSISTS) stopFaithActivity();
         var _fas = Math.round(faithPlan.aliveMs/1000);
-        addLog('Your ' + faithPlan.type + ' kept its blessing for ' + Math.floor(_fas/60) + 'm ' + (_fas%60) + 's while away' + (faithPlan.relicCount>0 ? ', auto-sacrificing ' + faithPlan.relicCount + ' Broken Relic' + (faithPlan.relicCount===1?'':'s') : '') + (faithPlan.died ? ' before your Faith ran dry.' : '.'), 'important');
+        // The blessing covered the whole away window (that is the point of activating it); the Faith it
+        // BURNED is the separate number, so say both rather than implying the buff stopped with the fuel.
+        addLog('Your ' + faithPlan.type + ' blessed everything you made while away'
+          + (faithPlan.relicCount>0 ? ', auto-sacrificing ' + faithPlan.relicCount + ' Broken Relic' + (faithPlan.relicCount===1?'':'s') : '')
+          + '. It burned ' + Math.floor(_fas/60) + 'm ' + (_fas%60) + 's of Faith'
+          + (faithPlan.died ? ' and is now dormant until you restore some. It stays active.' : '.'), 'important');
       }catch(e){}
     }
     // Guild-estate peons run client-side against the shared grid, which isn't loaded yet at
@@ -40033,24 +40096,7 @@
 
     autoEatCheck();
 
-    if(state.faithActivity && state.faithActivity.type){
-      var favData = FAITH_ACTIVITY_TIERS[state.faithActivity.type][state.faithActivity.tier];
-      if(favData){
-        state.faith = Math.max(0, state.faith - favData.faithPerSec*dt/1000);
-        addXp(state.faithActivity.type, favData.xpPerSec*dt/1000);
-        state._faithFamiliarAccum = (state._faithFamiliarAccum||0) + dt;
-        while(state._faithFamiliarAccum >= 1000){
-          state._faithFamiliarAccum -= 1000;
-          maybeSummonFamiliar(state.faithActivity.type);
-          addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], state.faithActivity.tier));
-        }
-        if(state.faith <= 0){
-          addLog('Your ' + state.faithActivity.type + ' faded as your Faith ran dry.', 'danger');
-          state.faithActivity = { type:null, tier:0 };
-          needsRender = true;
-        }
-      }
-    }
+    applyFaithActivityTick(dt);
     autoSacrificeRelicsCheck(); // top up Faith from Broken Relics when enabled (no-op otherwise)
     autoSacrificeItemsCheck();  // top up Faith from per-card flagged equipment (no-op unless any flagged)
     autoActionsCheck(); // opt-in auto open-caches/chests + harvest/plant/fertilize crops (all off by default)
@@ -40626,7 +40672,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.34';
+  var GAME_VERSION = '0.0.86.35';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40779,7 +40825,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, FAITH_OFFLINE_BUFF_PERSISTS:FAITH_OFFLINE_BUFF_PERSISTS, applyFaithActivityTick:applyFaithActivityTick, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, renderEquipArrowSection:renderEquipArrowSection, FORESTRY_NAMES:FORESTRY_NAMES, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,
