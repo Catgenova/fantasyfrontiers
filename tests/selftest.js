@@ -2478,6 +2478,54 @@
     var pC = FF.planOfflineFaithActivity(3600*1000);
     ok(pC.relicCount > 0, 'relics are auto-sacrificed to feed the miracle');
     ok(pC.aliveMs > pA.aliveMs, 'relics extend how long the buff stays alive');
+
+    // D) FLAGGED OFFERINGS fuel the away window too (owner order, v0.0.86.37). The per-card
+    // auto-sacrifice list was live-only, so a player who marked a pile of gear got nothing from it while
+    // away and the buff still starved. Relics go FIRST, then anything else marked.
+    var svAuto = s.autoSacrifice;
+    s.autoSacrifice = {};
+    s.faith = 80; s.autoSacrificeRelics = false; s.inventory[rid0] = 0;   // no relics: isolate the item path
+    var pNoItems = FF.planOfflineFaithActivity(3600*1000);
+    // Stock a real stackable offering: collectSacrificeRows only lists what is OWNED and unlocked, and by
+    // this point in the suite the fixture bag is empty of them.
+    var fid = Object.keys(FF.STACKABLE_WEAPON_ITEMS)[0];
+    var svFlagInv = s.inventory[fid], svFlagLock = s.lockedItems[fid];
+    s.inventory[fid] = 500; s.lockedItems[fid] = false;
+    var flagRow = FF.collectSacrificeRows().filter(function(r){ return r.id === fid; })[0];
+    ok(!!flagRow, 'the seeded offering shows up as a sacrificeable row');
+    ok(FF.sacRowRestore(flagRow) > 0, 'and it restores real Faith');
+    s.autoSacrifice[FF.sacRowKey(flagRow)] = true;
+    var pD = FF.planOfflineFaithActivity(3600*1000);
+    ok(pD.itemCount > 0, 'flagged offerings are spent to feed the buff while away');
+    ok(pD.faithFromItems > 0, 'and they contribute real Faith');
+    ok(pD.aliveMs > pNoItems.aliveMs, 'which extends how long the buff stays alive');
+    eq(s.inventory[fid], 500, 'planning is still PURE: the offerings are consumed by the offline settle, not the plan');
+    // Ordering: with BOTH available, relics are drawn on first (the owner's explicit requirement).
+    s.autoSacrificeRelics = true; s.inventory[rid0] = 50; s.faith = 80;
+    var pE = FF.planOfflineFaithActivity(3600*1000);
+    ok(pE.relicCount > 0, 'relics are still spent when both sources are available');
+    ok(pE.faithFromRelics > 0, 'and their Faith is credited under the relic tally');
+    ok(pE.itemCount === 0 || pE.faithFromRelics > 0, 'flagged offerings only pick up what the relics leave short');
+    // An UNFLAGGED item is never touched, however much Faith it would give.
+    s.autoSacrifice = {}; s.autoSacrificeRelics = false; s.inventory[rid0] = 0; s.faith = 80;
+    var pF = FF.planOfflineFaithActivity(3600*1000);
+    eq(pF.itemCount, 0, 'nothing unflagged is ever sacrificed');
+    // THE SETTLE MUST ACTUALLY CONSUME THEM. The plan is pure, so if applyOfflineProgress forgets to
+    // decrement the offerings the buff is fuelled for free and the items stay in the bag -- a minting bug
+    // the plan-level assertions above cannot see (proven: deleting the decrement failed nothing until
+    // this ran the real offline pass).
+    var svAct2 = s.activity, svFaith2 = s.faith, svCap = s.faithActivity;
+    try {
+      s.activity = { type:null };
+      s.faithActivity = { type:'miracle', tier:0 };
+      s.faith = 5;                                  // starves at once, so offerings must be drawn on
+      s.autoSacrificeRelics = false; s.autoSacrifice = {};
+      s.inventory[fid] = 400; s.lockedItems[fid] = false;
+      s.autoSacrifice[FF.sacRowKey(FF.collectSacrificeRows().filter(function(r){ return r.id===fid; })[0])] = true;
+      FF.applyOfflineProgress(3600*1000);
+      ok((s.inventory[fid]||0) < 400, 'the offline pass really consumes the flagged offerings it burned');
+    } finally { s.activity = svAct2; s.faith = svFaith2; s.faithActivity = svCap; }
+    s.inventory[fid] = svFlagInv; s.lockedItems[fid] = svFlagLock; s.autoSacrifice = svAuto;
     s.inventory[rid0] = savedRelic; s.lockedItems[rid0] = savedLock;
 
     // restore

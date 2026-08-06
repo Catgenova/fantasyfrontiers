@@ -20069,7 +20069,8 @@
     // `fraction` is the RARITY coverage (what offlineFaithCtx gates crafts by); `aliveMs` is the FUEL
     // actually burned, which XP and familiar rolls key off. They were the same number until v0.0.86.35.
     var plan = { type:(fa&&fa.type)||null, tier:(fa&&fa.tier)||0, aliveMs:0, fraction:0, xp:0,
-                 finalFaith:state.faith, relicsSpent:{}, relicCount:0, faithFromRelics:0, died:false };
+                 finalFaith:state.faith, relicsSpent:{}, relicCount:0, faithFromRelics:0,
+                 itemsSpent:{}, itemCount:0, faithFromItems:0, died:false };
     if(!plan.type) return plan;
     var tierData = FAITH_ACTIVITY_TIERS[plan.type] && FAITH_ACTIVITY_TIERS[plan.type][plan.tier];
     if(!tierData) return plan;
@@ -20094,12 +20095,39 @@
         }
       }
       plan.faithFromRelics = fromRelics;
+      // ---- Flagged offerings pick up where the relics leave off (owner order, v0.0.86.37) ----------
+      // The per-card auto-sacrifice list was a LIVE-ONLY top-up (autoSacrificeItemsCheck runs in the main
+      // loop), so a player who flagged a pile of gear got nothing from it while away and their buff still
+      // starved. Relics go first, exactly as asked, then anything else marked for sacrifice, largest
+      // offering first (the same preference the relic pass and the live top-up both use).
+      // Deliberately ignores Oblation's chance to return the offering: the plan has to be deterministic,
+      // and under-crediting the refund spends slightly MORE than live would, never less.
+      var fromItems = 0;
+      if(shortfall > 0 && state.autoSacrifice){
+        var _sacFuel = collectSacrificeRows()
+          .filter(function(r){ return r.category !== 'relic' && state.autoSacrifice[sacRowKey(r)]; })
+          .map(function(r){ return { row:r, each:sacRowRestore(r) }; })
+          .filter(function(e){ return e.each > 0 && (state.inventory[e.row.id]||0) > 0; });
+        _sacFuel.sort(function(x, y){ return y.each - x.each; });
+        for(var _si=0; _si<_sacFuel.length && shortfall>0; _si++){
+          var _e = _sacFuel[_si];
+          var _have = state.inventory[_e.row.id]||0;
+          var _useN = Math.min(_have, Math.ceil(shortfall/_e.each));
+          if(_useN <= 0) continue;
+          plan.itemsSpent[_e.row.id] = (plan.itemsSpent[_e.row.id]||0) + _useN;
+          plan.itemCount += _useN;
+          fromItems += _useN * _e.each;
+          shortfall -= _useN * _e.each;
+        }
+      }
+      plan.faithFromItems = fromItems;
+      var fromOfferings = fromRelics + fromItems;
       if(shortfall <= 0){
         plan.aliveMs = capped;
-        plan.finalFaith = Math.max(0, Math.min(mx, faith + fromRelics - need));
+        plan.finalFaith = Math.max(0, Math.min(mx, faith + fromOfferings - need));
       } else {
         plan.died = true;
-        plan.aliveMs = Math.min(capped, (faith + fromRelics) / perSec * 1000);
+        plan.aliveMs = Math.min(capped, (faith + fromOfferings) / perSec * 1000);
         plan.finalFaith = 0;
       }
     }
@@ -20288,6 +20316,7 @@
       try{
         if(faithPlan.xp > 0) addXp(faithPlan.type, faithPlan.xp);
         Object.keys(faithPlan.relicsSpent).forEach(function(rid){ state.inventory[rid] = Math.max(0, (state.inventory[rid]||0) - faithPlan.relicsSpent[rid]); });
+        Object.keys(faithPlan.itemsSpent||{}).forEach(function(iid){ state.inventory[iid] = Math.max(0, (state.inventory[iid]||0) - faithPlan.itemsSpent[iid]); });
         state.faith = Math.max(0, Math.min(faithMax(state), faithPlan.finalFaith));
         // The activity STAYS SELECTED even when its Faith ran dry (owner order): the player turned it on,
         // so it is still on when they return -- dormant at 0 Faith, resuming the moment they refill. The
@@ -20296,8 +20325,11 @@
         var _fas = Math.round(faithPlan.aliveMs/1000);
         // The blessing covered the whole away window (that is the point of activating it); the Faith it
         // BURNED is the separate number, so say both rather than implying the buff stopped with the fuel.
+        var _offerParts = [];
+        if(faithPlan.relicCount>0) _offerParts.push(faithPlan.relicCount + ' Broken Relic' + (faithPlan.relicCount===1?'':'s'));
+        if(faithPlan.itemCount>0) _offerParts.push(faithPlan.itemCount + ' flagged offering' + (faithPlan.itemCount===1?'':'s'));
         addLog('Your ' + faithPlan.type + ' blessed everything you made while away'
-          + (faithPlan.relicCount>0 ? ', auto-sacrificing ' + faithPlan.relicCount + ' Broken Relic' + (faithPlan.relicCount===1?'':'s') : '')
+          + (_offerParts.length ? ', auto-sacrificing ' + _offerParts.join(' and ') : '')
           + '. It burned ' + Math.floor(_fas/60) + 'm ' + (_fas%60) + 's of Faith'
           + (faithPlan.died ? ' and is now dormant until you restore some. It stays active.' : '.'), 'important');
       }catch(e){}
@@ -40691,7 +40723,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.36';
+  var GAME_VERSION = '0.0.86.37';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
