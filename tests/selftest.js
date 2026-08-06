@@ -18724,6 +18724,32 @@
     }
   });
 
+  // ---- Landing preview containment (owner report: the stage overlaid the landing content) ----------
+  // The preview is a fixed 900px stage scaled down, so its HEIGHT is content- and width-dependent (log
+  // rows arrive, effect rows appear, and under 820px .ar2-low stops being a two-column split). The wrap
+  // carries an explicit height from a point-in-time measurement, and it used to be overflow:visible -- so
+  // any lag between the two painted the stage over the feature cards and the login panel. Reproduced with
+  // a forced-stale slot: 394px of spill covering 13 landing elements. Two independent guards now: the wrap
+  // CLIPS, and a ResizeObserver keeps the slot exact so there is nothing to clip.
+  suite('landing preview: the stage is contained and cannot overlay the page', function(){
+    ok(typeof FF.landingFightScale === 'function' && typeof FF.landingFightMount === 'function', 'preview helpers exported');
+    // The stylesheet is built as a string by ensureLandingStyle; assert the containment is IN it, and that
+    // the badge was moved inside the wrap (at top:-9px it was the one thing clipping would have eaten).
+    var host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;';
+    document.body.appendChild(host);
+    try {
+      FF.ensureLandingStyle();
+      host.innerHTML = '<div class="ff-prev-wrap"><div class="ff-prev-badge">Live combat</div><div id="ffPrevArenaTest"></div></div>';
+      var wrap = host.querySelector('.ff-prev-wrap');
+      var badge = host.querySelector('.ff-prev-badge');
+      eq(getComputedStyle(wrap).overflow, 'hidden', 'the preview wrap clips its stage');
+      // top:0, not the old -9px: the badge must sit INSIDE the clipping box or it disappears.
+      eq(getComputedStyle(badge).top, '0px', 'the badge sits inside the clip, so it survives containment');
+      ok(getComputedStyle(wrap).position === 'relative', 'the wrap is still the badge\'s positioning context');
+    } finally { host.parentNode.removeChild(host); }
+  });
+
   // ---- ticket-0159: the first-swing gate must not eat EARNED payouts (Mr Cookie) -------------------
   // Regression from v0.0.86.28. The gate holds carried per-second engines until the encounter's first
   // swing, which is right for Bramble/Blaze/Plague. But two engines are the DELAYED PAYOUT of a swing
