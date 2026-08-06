@@ -18323,6 +18323,48 @@
     }
   });
 
+  // ---- Placement level gates (owner order, v0.0.86.33) ---------------------------------------------
+  // Fresh workshop/cottage PLACEMENT now checks Architecture like the upgrades do: the built items are
+  // tradeable, so owning one no longer implies the level that crafts it (the fields/totems reasoning).
+  suite('estate placements: buildings need their Architecture level', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var cell = S.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId, tot:cell.totemId };
+    var savedJob = S.estate.job, savedQueue = S.estate.queue;
+    var svXp = S.xp.architecture, svLog = S.log.slice();
+    try {
+      S.estate.job = null; S.estate.queue = [];
+      cell.type = 'paved'; cell.paveTileId = 'paving_t9'; cell.workshopId = null; cell.cottageId = null; cell.totemId = null;
+      // A bought t5 workshop cannot be placed at Architecture 1.
+      S.inventory['workshop_mining_t5'] = 1; S.xp.architecture = 0;
+      FF.estatePlaceWorkshop(0, 0, 'workshop_mining_t5');
+      ok(!S.estate.job, 'no build below the Architecture bar');
+      eq(S.inventory['workshop_mining_t5'], 1, 'the bought workshop is not spent on a refused build');
+      ok(/needs Architecture Lv 25/.test((S.log[S.log.length-1]||{}).msg || ''), 'the refusal names the missing level');
+      // At the level, the same placement starts.
+      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[5]);
+      FF.estatePlaceWorkshop(0, 0, 'workshop_mining_t5');
+      ok(S.estate.job && S.estate.job.kind === 'workshop' && !S.estate.job.upgrade, 'at Architecture 25 the build starts');
+      eq(S.inventory['workshop_mining_t5'], 0, 'and consumes the built workshop at start');
+      S.estate.job = null;
+      // Cottages: same gate.
+      S.inventory['cottage_t5'] = 1; S.xp.architecture = 0;
+      FF.estatePlaceCottage(0, 0, 'cottage_t5');
+      ok(!S.estate.job, 'no cottage build below the Architecture bar');
+      eq(S.inventory['cottage_t5'], 1, 'the bought cottage is not spent on a refused build');
+      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[5]);
+      FF.estatePlaceCottage(0, 0, 'cottage_t5');
+      ok(S.estate.job && S.estate.job.kind === 'cottage', 'at the level the cottage build starts');
+    } finally {
+      cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot; cell.totemId = saved.tot;
+      S.estate.job = savedJob; S.estate.queue = savedQueue;
+      S.xp.architecture = svXp; S.log = svLog;
+      delete S.inventory['workshop_mining_t5']; delete S.inventory['cottage_t5'];
+      FF.estRecomputeWorkshops();
+    }
+  });
+
   // ---- The first-swing gate (owner order, v0.0.86.28) ----------------------------------------------
   // Carried tick engines (Bramble growth, the Storm, Ember Burst, the ringing ground...) were killing
   // fresh farm mobs before the player's first swing. The gate lives at the applyEffectDamage /

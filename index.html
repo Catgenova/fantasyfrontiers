@@ -29264,6 +29264,7 @@
     var it = WORKSHOP_ITEMS[workshopId];
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(it.tierIndex)){ addLog('Building a ' + it.name + ' needs Architecture Lv ' + TIER_LEVELS[it.tierIndex] + '.', 'danger'); return; } // placements joined the level gate in v0.0.86.33: built buildings are tradeable, so owning one no longer implies the level
     if(estWorkshopMap()[it.skillId] !== undefined){ addLog('This estate already has a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop. Only one per skill.', 'danger'); return; }
     // "One workshop per skill" also has to account for one ALREADY QUEUED -- estWorkshopMap only sees the
     // real grid, so without this you could queue two Forestry workshops and get a duplicate.
@@ -29329,6 +29330,7 @@
     var it = COTTAGE_ITEMS[cottageId];
     if(!it || (state.inventory[cottageId]||0) <= 0){ addLog('You don\'t own that cottage.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(it.tierIndex)){ addLog('Building a ' + it.name + ' needs Architecture Lv ' + TIER_LEVELS[it.tierIndex] + '.', 'danger'); return; } // v0.0.86.33, same reasoning as the workshop gate above
     if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var cTier = it.tierIndex + 1; // 10 min per tier
     estateEnqueueOrStart('cottage', x, y, { cottageId:cottageId }, cTier*ESTATE_COTTAGE_MS_PER_TIER, {
@@ -31492,8 +31494,9 @@
         if(estateWorkshopMenuOpen && placeable.length){
           html += '<div class="estate-paving-library">';
           placeable.forEach(function(it){
-            html += '<button class="estate-paving-option" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'">';
-            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
+            var wLvOk = estateBuildTierLevelOk(it.tierIndex); // placements level-gate too (v0.0.86.33)
+            html += '<button class="estate-paving-option'+(wLvOk?'':' locked')+'" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'" '+(wLvOk?'':'disabled')+'>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -31506,8 +31509,9 @@
         if(estateCottageMenuOpen && placeableC.length){
           html += '<div class="estate-paving-library">';
           placeableC.forEach(function(it){
-            html += '<button class="estate-paving-option" data-action="estatePlaceCottage" data-x="'+x+'" data-y="'+y+'" data-cottage="'+it.id+'">';
-            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
+            var cLvOk = estateBuildTierLevelOk(it.tierIndex);
+            html += '<button class="estate-paving-option'+(cLvOk?'':' locked')+'" data-action="estatePlaceCottage" data-x="'+x+'" data-y="'+y+'" data-cottage="'+it.id+'" '+(cLvOk?'':'disabled')+'>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(cLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -31522,8 +31526,9 @@
             html += '<div class="estate-paving-library">';
             placeableT.forEach(function(it){
               var itT = itemTierFromId(it.id);
-              html += '<button class="estate-paving-option" data-action="estatePlaceTotem" data-x="'+x+'" data-y="'+y+'" data-totem="'+it.id+'">';
-              html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">+'+itT+' yield &bull; x'+(state.inventory[it.id]||0)+'</span>';
+              var tLvOk = totemLevelOk(itT);
+              html += '<button class="estate-paving-option'+(tLvOk?'':' locked')+'" data-action="estatePlaceTotem" data-x="'+x+'" data-y="'+y+'" data-totem="'+it.id+'" '+(tLvOk?'':'disabled')+'>';
+              html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(tLvOk?'':'Totems Lv'+totemLevelReq(itT)+' &bull; ')+'+'+itT+' yield &bull; x'+(state.inventory[it.id]||0)+'</span>';
               html += '</button>';
             });
             html += '</div>';
@@ -40608,7 +40613,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.32';
+  var GAME_VERSION = '0.0.86.33';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40734,7 +40739,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem,
+      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
