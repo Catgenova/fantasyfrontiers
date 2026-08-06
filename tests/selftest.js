@@ -2523,6 +2523,10 @@
     var pB = FF.planOfflineFaithActivity(10*1000);      // 10s
     ok(!pB.died && pB.fraction === 1, 'ample Faith keeps the buff active the whole short window');
     eq(pB.finalFaith, 100 - perSec*10, 'Faith drains by rate x time');
+    // The SETTLE applies faithBurned as a delta, not finalFaith as a snapshot (v0.0.86.43). Pin the
+    // burn figure in every branch, because the settle now depends on it rather than on finalFaith.
+    eq(pB.faithBurned, perSec*10, 'faithBurned is the Faith the activity actually consumed');
+    eq(Math.round(pA.faithBurned), 80, 'a plan that ran dry burned exactly the pool it had');
     eq(pB.relicCount, 0, 'no relics spent while Faith alone covers the window');
 
     // C) Auto-sacrificed relics extend a dying miracle (more alive time than with no relics).
@@ -18717,6 +18721,125 @@
       S.xp = sv.xp; S.physique = sv.phys; S.playerHp = sv.hp; S.bodyArmor = sv.armor;
       S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
       S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
+    }
+  });
+
+  // ---- Code review v0.0.86.43, finding 1: the offline Faith settle must not clobber the sims --------
+  // planOfflineFaithActivity runs BEFORE the offline gather/craft/combat sims and the settle runs AFTER,
+  // and the settle used to ASSIGN plan.finalFaith -- a snapshot of the pre-sim pool. Plunder (Treasure
+  // Hunter D2 full) grants Faith on every offline kill, so every point of it was thrown away. Measured at
+  // 85 Faith over a 5-minute window before the fix. The settle now applies faithBurned as a delta.
+  // MUST drive the REAL applyOfflineProgress. A first draft of this suite computed the settle's
+  // arithmetic inside the test and passed with the bug reinstated -- the whole defect is WHERE the
+  // subtraction happens, so only the real pass can see it. The mid-window Faith source is Plunder, which
+  // needs the Treasure Hunter D2 set worn and offline kills, exactly as the original repro did.
+  suite('offline Faith: the settle charges a delta, so Faith earned mid-window survives', function(){
+    var S = FF._state;
+    var sv = { faith:S.faith, fa:S.faithActivity, inv:S.inventory, act:S.activity, hp:S.playerHp,
+               xp:S.xp, phys:S.physique, asr:S.autoSacrificeRelics, as:S.autoSacrifice,
+               uniq:S.uniqueItems, armor:S.bodyArmor, cls:S.playerClass,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity };
+    try {
+      S.inventory = {}; S.autoSacrificeRelics = false; S.autoSacrifice = {};
+      S.xp = Object.assign({}, S.xp); S.physique = Object.assign({}, S.physique);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.playerClass = 'treasureHunter';
+      S.equippedMainhand = 'scimitar'; S.equippedMainhandTier = FF.TIER_COUNT-1; S.equippedMainhandRarity = 'fantastic';
+      // Full D2 Treasure Hunter set: Plunder grants Faith per kill.
+      S.uniqueItems = {}; S.bodyArmor = {};
+      ['helmet','chest','gauntlets','boots'].forEach(function(sl){
+        var uid = 'u_rev_'+sl;
+        S.uniqueItems[uid] = { uid:uid, kind:'bodyarmor', base:'bodyarmor_plate_'+sl+'_t20_fantastic',
+                               rarity:'fantastic', tier:20, enhance:0, enchants:[], set:'treasureHunter', setLayer:'d2' };
+        S.bodyArmor[sl] = { uid:uid, material:'plate', tier:20, rarity:'fantastic' };
+      });
+      ok(FF.setFullD2('treasureHunter'), 'the D2 set is worn, so Plunder is live');
+      var WINDOW = 5*60*1000;
+      function freshFight(){
+        var m = FF.monsterById('wildlife_rabbit');
+        S.activity = { type:'combat', monsterId:m.id, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0,
+                       specialAccum:0, duelStartedAt:Date.now(), guardianBondUsed:false, cheatDeathUsed:false };
+        S.playerHp = FF.maxHp(S);
+      }
+      // CONTROL: no Faith activity, so nothing settles and Plunder's Faith is plainly visible. The pool
+      // must start below faithMax or Plunder's own min() has no room and there is nothing to lose.
+      S.faithActivity = null; S.faith = 1000;
+      freshFight();
+      FF.applyOfflineProgress(WINDOW);
+      var plunder = S.faith - 1000;
+      ok(plunder > 0, 'the fixture really earns Faith mid-window from offline kills (got ' + plunder + ')');
+      // THE CASE: same window with a Faith activity running. The settle must charge only what the
+      // activity burned, leaving the Plunder Faith in place.
+      S.faithActivity = { type:'devotion', tier:0 };
+      S.faith = 1000;
+      var plan = FF.planOfflineFaithActivity(WINDOW);
+      ok(!plan.died && plan.finalFaith > 0, 'the plan survives the window, so finalFaith is a real number');
+      freshFight();
+      FF.applyOfflineProgress(WINDOW);
+      ok(S.faith > plan.finalFaith,
+         'Faith earned during the sims survives the settle (got ' + S.faith + ', pre-sim snapshot was ' + plan.finalFaith + ')');
+    } finally {
+      S.faith = sv.faith; S.faithActivity = sv.fa; S.inventory = sv.inv; S.activity = sv.act;
+      S.playerHp = sv.hp; S.xp = sv.xp; S.physique = sv.phys;
+      S.autoSacrificeRelics = sv.asr; S.autoSacrifice = sv.as;
+      S.uniqueItems = sv.uniq; S.bodyArmor = sv.armor; S.playerClass = sv.cls;
+      S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT; S.equippedMainhandRarity = sv.mhR;
+    }
+  });
+
+  // ---- Code review v0.0.86.43, finding 2: an estate cancel refunds what was PAID -------------------
+  // estateCancelJobLocal hand-rolled a per-kind refund list and ignored matVer, while estateJobMaterials
+  // branches a workshop/cottage UPGRADE on it: a pre-patch job paid 100 planks, a matVer-2 job paid the
+  // built building. So cancelling a pre-patch upgrade handed back a crafted Workshop nobody paid for and
+  // kept the planks. The queue-removal paths always used estateJobRefund and were right; only the active
+  // cancel was wrong. Both now go through the one helper.
+  suite('estate: cancelling a job refunds exactly what it charged', function(){
+    var S = FF._state;
+    ok(typeof FF.estateJobRefund === 'function' && typeof FF.estateJobMaterials === 'function', 'material helpers exported');
+    FF.estUse(false);
+    var sv = { inv:S.inventory, job:S.estate.job, q:S.estate.queue, log:S.log.slice() };
+    try {
+      var WS = 'workshop_mining_t5', PLANK = 'carpentry_t5';
+      // A PRE-PATCH upgrade (no matVer): the charge was planks, so the refund must be planks.
+      var oldJob = { kind:'workshop', upgrade:true, workshopId:WS, x:0, y:0 };
+      eq(JSON.stringify(FF.estateJobMaterials(oldJob)), JSON.stringify([[PLANK, FF.ESTATE_BUILDING_UPGRADE_PLANKS]]),
+         'a pre-patch upgrade is priced in planks');
+      S.inventory = {}; S.estate.queue = [];
+      S.estate.job = oldJob;
+      FF.estateCancelJob();
+      eq(S.inventory[PLANK]||0, FF.ESTATE_BUILDING_UPGRADE_PLANKS, 'cancelling it returns the planks');
+      eq(S.inventory[WS]||0, 0, 'and does NOT mint the Workshop it never paid for');
+      // A matVer-2 upgrade paid the built building, so THAT is what comes back.
+      var newJob = { kind:'workshop', upgrade:true, workshopId:WS, x:0, y:0, matVer:2 };
+      S.inventory = {}; S.estate.job = newJob;
+      FF.estateCancelJob();
+      eq(S.inventory[WS]||0, 1, 'a matVer-2 upgrade returns the built Workshop');
+      eq(S.inventory[PLANK]||0, 0, '...and no planks');
+      // Cottages ride the same migration.
+      var oldCot = { kind:'cottage', upgrade:true, cottageId:'cottage_t5', x:0, y:0 };
+      S.inventory = {}; S.estate.job = oldCot;
+      FF.estateCancelJob();
+      eq(S.inventory[PLANK]||0, FF.ESTATE_BUILDING_UPGRADE_PLANKS, 'a pre-patch cottage upgrade returns planks too');
+      eq(S.inventory['cottage_t5']||0, 0, 'and mints no Cottage');
+      // The kinds with a flat price are unchanged by the refactor.
+      S.inventory = {}; S.estate.job = { kind:'field', fieldTier:3, x:0, y:0 };
+      FF.estateCancelJob();
+      eq(S.inventory['digging_t3']||0, 100, 'a cancelled Field still returns its 100 soil');
+      // Every refund now agrees with the charge, by construction, for every kind the table prices.
+      [{ kind:'pave', paveTileId:'paving_t2', x:0, y:0 },
+       { kind:'totem', totemId:'totem_t4', x:0, y:0 },
+       { kind:'raise', x:0, y:0 }
+      ].forEach(function(j){
+        var mats = FF.estateJobMaterials(j);
+        S.inventory = {}; S.estate.job = j;
+        FF.estateCancelJob();
+        mats.forEach(function(m){
+          eq(S.inventory[m[0]]||0, m[1], 'cancelled ' + j.kind + ' returns its ' + m[0]);
+        });
+      });
+    } finally {
+      S.inventory = sv.inv; S.estate.job = sv.job; S.estate.queue = sv.q; S.log = sv.log;
     }
   });
 

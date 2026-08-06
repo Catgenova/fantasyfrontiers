@@ -20116,18 +20116,23 @@
     var fa = state.faithActivity;
     // `fraction` is the RARITY coverage (what offlineFaithCtx gates crafts by); `aliveMs` is the FUEL
     // actually burned, which XP and familiar rolls key off. They were the same number until v0.0.86.35.
+    // `faithBurned` is what the activity actually CONSUMED over aliveMs. The settle applies it as a
+    // DELTA rather than assigning `finalFaith`, because finalFaith is a snapshot of the pre-sim pool and
+    // the offline sims run between the plan and the settle -- Plunder (Treasure Hunter D2 full) grants
+    // Faith on every offline kill, and assigning the snapshot threw all of it away. finalFaith is kept
+    // because it is still the honest "where the pool lands if nothing else touches it" figure.
     var plan = { type:(fa&&fa.type)||null, tier:(fa&&fa.tier)||0, aliveMs:0, fraction:0, xp:0,
-                 finalFaith:state.faith, relicsSpent:{}, relicCount:0, faithFromRelics:0,
+                 finalFaith:state.faith, faithBurned:0, relicsSpent:{}, relicCount:0, faithFromRelics:0,
                  itemsSpent:{}, itemCount:0, faithFromItems:0, died:false };
     if(!plan.type) return plan;
     var tierData = FAITH_ACTIVITY_TIERS[plan.type] && FAITH_ACTIVITY_TIERS[plan.type][plan.tier];
     if(!tierData) return plan;
     var perSec = tierData.faithPerSec;
-    if(!(perSec > 0)){ plan.aliveMs = capped; plan.fraction = 1; plan.xp = tierData.xpPerSec*capped/1000; return plan; }
+    if(!(perSec > 0)){ plan.aliveMs = capped; plan.fraction = 1; plan.xp = tierData.xpPerSec*capped/1000; plan.faithBurned = 0; return plan; }
     var need = perSec * capped/1000;                 // Faith to survive the whole window
     var mx = faithMax(state), faith = state.faith;
     if(faith >= need){
-      plan.aliveMs = capped; plan.finalFaith = faith - need;
+      plan.aliveMs = capped; plan.finalFaith = faith - need; plan.faithBurned = need;
     } else {
       var shortfall = need - faith, fromRelics = 0;
       if(state.autoSacrificeRelics){
@@ -20172,10 +20177,12 @@
       var fromOfferings = fromRelics + fromItems;
       if(shortfall <= 0){
         plan.aliveMs = capped;
+        plan.faithBurned = need;
         plan.finalFaith = Math.max(0, Math.min(mx, faith + fromOfferings - need));
       } else {
         plan.died = true;
         plan.aliveMs = Math.min(capped, (faith + fromOfferings) / perSec * 1000);
+        plan.faithBurned = perSec * plan.aliveMs/1000;   // everything the pool + offerings could give
         plan.finalFaith = 0;
       }
     }
@@ -20365,7 +20372,13 @@
         if(faithPlan.xp > 0) addXp(faithPlan.type, faithPlan.xp);
         Object.keys(faithPlan.relicsSpent).forEach(function(rid){ state.inventory[rid] = Math.max(0, (state.inventory[rid]||0) - faithPlan.relicsSpent[rid]); });
         Object.keys(faithPlan.itemsSpent||{}).forEach(function(iid){ state.inventory[iid] = Math.max(0, (state.inventory[iid]||0) - faithPlan.itemsSpent[iid]); });
-        state.faith = Math.max(0, Math.min(faithMax(state), faithPlan.finalFaith));
+        // A DELTA, not the plan's snapshot. finalFaith was computed from the PRE-SIM pool, and the sims
+        // above run in between: Plunder (Treasure Hunter D2 full) grants Faith on every offline kill, and
+        // assigning the snapshot here discarded every point of it. Measured: 85 Faith lost over a 5-minute
+        // window, scaling with the window toward the 12h cap. Credit the offerings, charge what the
+        // activity burned, and leave anything the sims added alone.
+        state.faith = Math.max(0, Math.min(faithMax(state),
+          state.faith + (faithPlan.faithFromRelics||0) + (faithPlan.faithFromItems||0) - (faithPlan.faithBurned||0)));
         // The activity STAYS SELECTED even when its Faith ran dry (owner order): the player turned it on,
         // so it is still on when they return -- dormant at 0 Faith, resuming the moment they refill. The
         // live loop keeps the same contract (see the faith block in the main loop).
@@ -20374,8 +20387,8 @@
         // The blessing covered the whole away window (that is the point of activating it); the Faith it
         // BURNED is the separate number, so say both rather than implying the buff stopped with the fuel.
         var _offerParts = [];
-        if(faithPlan.relicCount>0) _offerParts.push(faithPlan.relicCount + ' Broken Relic' + (faithPlan.relicCount===1?'':'s'));
-        if(faithPlan.itemCount>0) _offerParts.push(faithPlan.itemCount + ' flagged offering' + (faithPlan.itemCount===1?'':'s'));
+        if(faithPlan.relicCount>0) _offerParts.push(fmt(faithPlan.relicCount) + ' Broken Relic' + (faithPlan.relicCount===1?'':'s'));
+        if(faithPlan.itemCount>0) _offerParts.push(fmt(faithPlan.itemCount) + ' flagged offering' + (faithPlan.itemCount===1?'':'s'));
         addLog('Your ' + faithPlan.type + ' blessed everything you made while away'
           + (_offerParts.length ? ', auto-sacrificing ' + _offerParts.join(' and ') : '')
           + '. It burned ' + Math.floor(_fas/60) + 'm ' + (_fas%60) + 's of Faith'
@@ -28921,24 +28934,31 @@
   function estateCancelJobLocal(target){
     var job = target && target.job;
     if(!job) return;
+    // REFUND THROUGH estateJobRefund, never a hand-rolled per-kind list. This used to duplicate the
+    // material table and drifted from it: estateJobMaterials branches a workshop/cottage UPGRADE on
+    // matVer (a pre-patch job paid 100 planks, a matVer-2 job paid the built building), and this path
+    // ignored that, handing a cancelled pre-patch upgrade a crafted Workshop it never paid for while
+    // keeping the planks. The queue-removal paths always used the helper and were correct; only the
+    // ACTIVE-job cancel was wrong. One source of truth means the two cannot disagree again.
+    var _refund = estateJobMaterials(job);
+    estateJobRefund(job);
+    // The message names what actually came back, so a pre-patch upgrade says planks rather than implying
+    // the building returned.
+    var _refundText = _refund.map(function(m){
+      return fmt(m[1]) + 'x ' + ((ALL_SELLABLE[m[0]]||{}).name || m[0]);
+    }).join(' and ');
     if(job.kind === 'pave'){
-      addItem(job.paveTileId, ESTATE_PAVE_TILE_COST); // refund the paving tiles
-      addLog('You cancelled paving (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_PAVE_TILE_COST + ' tiles.', 'important');
+      addLog('You cancelled paving (' + job.x + ', ' + job.y + ') and recovered your ' + _refundText + '.', 'important');
     } else if(job.kind === 'workshop'){
-      addItem(job.workshopId, 1); // refund the workshop
-      addLog('You cancelled building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + ' (returned to inventory).', 'important');
+      addLog('You cancelled building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + ' and recovered ' + _refundText + '.', 'important');
     } else if(job.kind === 'cottage'){
-      addItem(job.cottageId, 1); // refund the cottage
-      addLog('You cancelled building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + ' (returned to inventory).', 'important');
+      addLog('You cancelled building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + ' and recovered ' + _refundText + '.', 'important');
     } else if(job.kind === 'totem'){
-      addItem(job.totemId, 1); // refund the totem
-      addLog('You cancelled raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + ' (returned to inventory).', 'important');
+      addLog('You cancelled raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + ' and recovered ' + _refundText + '.', 'important');
     } else if(job.kind === 'field'){
-      addItem('digging_t'+job.fieldTier, 100); // refund the soil
-      addLog('You cancelled tilling the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field (recovered 100 ' + diggingResName(job.fieldTier) + ').', 'important');
+      addLog('You cancelled tilling the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field and recovered ' + _refundText + '.', 'important');
     } else if(job.kind === 'raise'){
-      addItem(ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST); // refund the reserved Dirt
-      addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'important');
+      addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + _refundText + '.', 'important');
     } else if(job.kind === 'clear'){
       addLog('You stopped clearing the obstacle at (' + job.x + ', ' + job.y + ').', 'important');
     } else if(job.kind === 'assist'){
@@ -40793,7 +40813,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.42';
+  var GAME_VERSION = '0.0.86.43';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40909,7 +40929,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
-      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, estateJobFromServer:estateJobFromServer, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateCancelJob:estateCancelJob, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, estateJobFromServer:estateJobFromServer, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,
       getCraftToolTierData:getCraftToolTierData, CRAFT_TOOL_NAMES:CRAFT_TOOL_NAMES, GATHER_TOOL_NAMES:GATHER_TOOL_NAMES,
       workshopBonusPct:workshopBonusPct, workshopSpeedPct:workshopSpeedPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,
