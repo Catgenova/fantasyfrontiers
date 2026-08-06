@@ -675,12 +675,14 @@
     var saved = { type:cell.type, field:cell.fieldTier, obst:cell.obstacle, owned:cell.owned };
     var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedDig = { d2:s.inventory['digging_t2'], d5:s.inventory['digging_t5'] };
+    var savedDigXp = s.xp.digging;
     var plotMap = s.farmingPlots, savedPlot = plotMap['0,0'];
     try {
       s.estate.job = null; s.estate.queue = [];
       cell.type = 'dirt'; cell.obstacle = null; cell.owned = true; cell.fieldTier = 2;
       plotMap['0,0'] = { cropType:'fiber', tierIndex:2, plantedAt:1, readyAt:9e15 }; // a crop growing on the field
       s.inventory['digging_t5'] = 100;
+      s.xp.digging = FF.xpFloorForLevel(FF.fieldDiggingReq(5)); // v0.0.86.29: upgrades obey the Digging tier ladder too
       // Upgrade the t2 Field straight to t5 in place -> a timed 'field' upgrade job, target-tier soil at start.
       FF.estateUpgradeField(0, 0, 5);
       var fjob = s.estate.job;
@@ -705,6 +707,7 @@
       cell.type = saved.type; cell.fieldTier = saved.field; cell.obstacle = saved.obst; cell.owned = saved.owned;
       s.estate.job = savedJob; s.estate.queue = savedQueue;
       s.inventory['digging_t2'] = savedDig.d2; s.inventory['digging_t5'] = savedDig.d5;
+      s.xp.digging = savedDigXp;
       if(savedPlot === undefined) delete plotMap['0,0']; else plotMap['0,0'] = savedPlot;
     }
   });
@@ -18203,6 +18206,46 @@
       ok(/spec-soon/.test(arena), 'and the foe ring flashes');
       ok(/ar2Pct-foe/.test(arena), 'the foe orb carries its percentage');
     } finally { S.activity = svAct2; S.playerHp = svHp2; }
+  });
+
+  // ---- Field tier gate (owner order, v0.0.86.29: tier-systems day) ---------------------------------
+  // Tilling or upgrading to a Field of tier N requires Digging level TIER_LEVELS[N] -- the ladder every
+  // gather tier already uses. Soil is Marketplace-tradeable, so holding 100 of a tier no longer implies
+  // the level; the gate closes the buy-your-way-to-Lime hole (owner example: Moss needs Digging 5).
+  suite('estate fields: tilling a tier needs that tier’s Digging level', function(){
+    var S = FF._state;
+    // The ladder itself: TIER_LEVELS, the same one every gather tier uses.
+    eq(FF.fieldDiggingReq(0), 1, 'a Sand Field needs Digging 1');
+    eq(FF.fieldDiggingReq(1), 5, 'a Moss Field needs Digging 5 (the owner example)');
+    eq(FF.fieldDiggingReq(10), 50, 'a Peat Field needs Digging 50');
+    eq(FF.fieldDiggingReq(20), 100, 'a Lime Field needs Digging 100');
+    eq(FF.fieldDiggingReq(999), 100, 'garbage tiers clamp to the top of the ladder');
+    FF.estUse(false);
+    var cell = S.estate.grid[0][0];
+    var saved = { type:cell.type, field:cell.fieldTier, obst:cell.obstacle, owned:cell.owned, h:cell.height };
+    var savedJob = S.estate.job, savedQueue = S.estate.queue;
+    var svXp = S.xp.digging, svDig = S.inventory['digging_t1'], svLog = S.log.slice();
+    try {
+      S.estate.job = null; S.estate.queue = [];
+      cell.type = 'dirt'; cell.obstacle = null; cell.owned = true; cell.fieldTier = null; cell.height = 2;
+      S.inventory['digging_t1'] = 100;     // bought Moss soil: affordable, but unearned
+      S.xp.digging = 0;                    // Digging Lv 1
+      ok(!FF.fieldDiggingOk(1), 'Digging 1 does not clear the Moss bar');
+      FF.estatePlaceField(0, 0, 1);
+      ok(!S.estate.job, 'no till job starts below the bar');
+      eq(S.inventory['digging_t1'], 100, 'no soil is spent on a refused till');
+      ok(/needs Digging Lv 5/.test((S.log[S.log.length-1]||{}).msg || ''), 'the refusal names the missing level');
+      // At Digging 5 the same call goes through: the till starts and pays its soil.
+      S.xp.digging = FF.xpFloorForLevel(5);
+      ok(FF.fieldDiggingOk(1), 'Digging 5 clears the Moss bar');
+      FF.estatePlaceField(0, 0, 1);
+      ok(S.estate.job && S.estate.job.kind === 'field' && S.estate.job.fieldTier === 1, 'at Digging 5 the Moss till starts');
+      eq(S.inventory['digging_t1'], 0, 'and consumes its 100 soil at start');
+    } finally {
+      cell.type = saved.type; cell.fieldTier = saved.field; cell.obstacle = saved.obst; cell.owned = saved.owned; cell.height = saved.h;
+      S.estate.job = savedJob; S.estate.queue = savedQueue;
+      S.xp.digging = svXp; S.inventory['digging_t1'] = svDig; S.log = svLog;
+    }
   });
 
   // ---- The first-swing gate (owner order, v0.0.86.28) ----------------------------------------------

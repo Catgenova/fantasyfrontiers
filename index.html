@@ -29367,6 +29367,13 @@
   // plot (see the Farming tab) capped at its tier. Max ESTATE_MAX_FIELDS per estate (personal + guild).
   function estateFieldCount(grid){ var n=0; if(grid) grid.forEach(function(col){ col.forEach(function(c){ if(c && c.fieldTier != null) n++; }); }); return n; }
   function diggingResName(tier){ return (ALL_SELLABLE['digging_t'+tier]||{}).name || (DIGGING_NAMES[tier]||'resource'); }
+  // ---- The Field tier gate (owner order, v0.0.86.29: tier-systems day) ---------------------------
+  // Tilling (or upgrading to) a Field of tier N requires the Digging LEVEL that tier represents:
+  // TIER_LEVELS[N], the same ladder every gather tier uses (Sand Lv 1, Moss Lv 5, ... Lime Lv 100).
+  // Holding 100 of the tier's soil already implied the level when self-gathered, but soil is
+  // Marketplace-tradeable, so a fresh account could buy its way to a top-tier plot on day one.
+  function fieldDiggingReq(tier){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, tier|0))] || 1; }
+  function fieldDiggingOk(tier){ return getLevel(state.xp.digging||0) >= fieldDiggingReq(tier); }
   function estatePlaceField(x, y, tier){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell) return;
@@ -29381,6 +29388,7 @@
     // directly as well as through the queue exploit.
     if((pc.height|0) <= 0){ addLog('That tile is underwater. Raise it above the waterline before tilling a Field.', 'danger'); return; }
     var def = FARM_FIELD_TIERS['field_t'+tier]; if(!def) return;
+    if(!fieldDiggingOk(tier)){ addLog('Tilling a ' + def.name + ' needs Digging Lv ' + fieldDiggingReq(tier) + '.', 'danger'); return; }
     // Cap counts fields ALREADY QUEUED as well, so you can't queue past the ESTATE_MAX_FIELDS ceiling.
     var queuedFields = estIsGuild ? 0 : estateQueue().filter(function(q){ return q.kind==='field'; }).length;
     if(estateFieldCount(estActive.grid) + queuedFields >= ESTATE_MAX_FIELDS){ addLog('This estate already has (or has queued) the maximum of ' + ESTATE_MAX_FIELDS + ' Fields.', 'danger'); return; }
@@ -29421,6 +29429,7 @@
     if(!(tgt > cur)){ addLog('Choose a higher Field tier to upgrade to.', 'danger'); return; }
     if(tgt >= TIER_COUNT){ addLog('This Field is already the top tier.', 'danger'); return; }
     var def = FARM_FIELD_TIERS['field_t'+tgt]; if(!def) return;
+    if(!fieldDiggingOk(tgt)){ addLog('Upgrading to a ' + def.name + ' needs Digging Lv ' + fieldDiggingReq(tgt) + '.', 'danger'); return; }
     if(!hasInputs(def.inputs)){ addLog('Upgrading to a ' + def.name + ' needs 100 ' + diggingResName(tgt) + '.', 'danger'); return; }
     estateEnqueueOrStart('field', x, y, { fieldTier:tgt, upgrade:true }, fieldBuildMs(tgt), {
       jobFields: { fieldTier:tgt, upgrade:true },
@@ -31269,8 +31278,9 @@
             html += '<div class="estate-paving-library">';
             fUpOpts.forEach(function(d){
               var own = state.inventory['digging_t'+d.tierIndex]||0;
-              html += '<button class="estate-paving-option" data-action="estateUpgradeField" data-x="'+x+'" data-y="'+y+'" data-tier="'+d.tierIndex+'">';
-              html += '<span>'+tierChipHtml(d.tierIndex)+' '+d.icon+' '+escapeHtml(d.name)+'</span><span class="style-lvl">x'+fmt(own)+'/100</span>';
+              var upLvlOk = fieldDiggingOk(d.tierIndex); // tier gate: upgrades obey the same Digging ladder
+              html += '<button class="estate-paving-option'+(upLvlOk?'':' locked')+'" data-action="estateUpgradeField" data-x="'+x+'" data-y="'+y+'" data-tier="'+d.tierIndex+'" '+(upLvlOk?'':'disabled')+'>';
+              html += '<span>'+tierChipHtml(d.tierIndex)+' '+d.icon+' '+escapeHtml(d.name)+'</span><span class="style-lvl">'+(upLvlOk?'':'Digging Lv'+fieldDiggingReq(d.tierIndex)+' &bull; ')+'x'+fmt(own)+'/100</span>';
               html += '</button>';
             });
             html += '</div>';
@@ -31300,15 +31310,16 @@
       var placeableFields = placeableFieldsFor(estActive.grid);
       var atFieldCap = estateFieldCount(estActive.grid) >= ESTATE_MAX_FIELDS;
       html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Place Field</b><br>Till this tile into a Farming plot from 100 of the matching Digging resource. Grows crops up to the field’s tier; takes 5 min/tier &amp; grants Digging XP. <b>Altitude matters:</b> crops grow faster below z10 (down to &minus;50% at z1) and slower above it (up to +50% at z19). This tile is z'+(cell.height|0)+'. Max '+ESTATE_MAX_FIELDS+' per estate ('+estateFieldCount(estActive.grid)+' built).</div>';
+      html += '<div class="estate-action-info"><b>Place Field</b><br>Till this tile into a Farming plot from 100 of the matching Digging resource. Each tier also needs its <b>Digging level</b> (Moss Lv 5, Lime Lv 100). Grows crops up to the field’s tier; takes 5 min/tier &amp; grants Digging XP. <b>Altitude matters:</b> crops grow faster below z10 (down to &minus;50% at z1) and slower above it (up to +50% at z19). This tile is z'+(cell.height|0)+'. Max '+ESTATE_MAX_FIELDS+' per estate ('+estateFieldCount(estActive.grid)+' built).</div>';
       html += '<button class="action-btn" data-action="estateToggleFieldMenu" '+((placeableFields.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(atFieldCap?'Max Fields':(placeableFields.length?(estateFieldMenuOpen?'Close List':'Choose'):'None ready')))+'</button>';
       html += '</div>';
       if(estateFieldMenuOpen && placeableFields.length){
         html += '<div class="estate-paving-library">';
         placeableFields.forEach(function(def){
           var owned = state.inventory['digging_t'+def.tierIndex]||0;
-          html += '<button class="estate-paving-option" data-action="estatePlaceField" data-x="'+x+'" data-y="'+y+'" data-tier="'+def.tierIndex+'">';
-          html += '<span>'+tierChipHtml(def.tierIndex)+' '+def.icon+' '+escapeHtml(def.name)+'</span><span class="style-lvl">x'+fmt(owned)+'/100</span>';
+          var lvlOk = fieldDiggingOk(def.tierIndex); // tier gate: the paving-menu treatment, requirement shown on the locked row
+          html += '<button class="estate-paving-option'+(lvlOk?'':' locked')+'" data-action="estatePlaceField" data-x="'+x+'" data-y="'+y+'" data-tier="'+def.tierIndex+'" '+(lvlOk?'':'disabled')+'>';
+          html += '<span>'+tierChipHtml(def.tierIndex)+' '+def.icon+' '+escapeHtml(def.name)+'</span><span class="style-lvl">'+(lvlOk?'':'Digging Lv'+fieldDiggingReq(def.tierIndex)+' &bull; ')+'x'+fmt(owned)+'/100</span>';
           html += '</button>';
         });
         html += '</div>';
@@ -40508,7 +40519,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.28';
+  var GAME_VERSION = '0.0.86.29';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40634,6 +40645,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
+      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
