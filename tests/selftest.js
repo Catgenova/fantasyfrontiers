@@ -607,7 +607,7 @@
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
   suite('estate: upgrade workshop & cottage', function(){
-    eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'a COTTAGE upgrade still costs 100 planks (workshops moved to the built-Workshop price, v0.0.86.30)');
+    eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'the legacy plank price survives only for pre-patch in-flight jobs (matVer < 2)');
     var s = FF._state;
     FF.estUse(false);
     var cell = s.estate.grid[0][0];
@@ -646,18 +646,26 @@
     FF.estateUpgradeWorkshop(0, 0);
     ok(!s.estate.job, 'no job without the built target Workshop');
     ok(/Craft it in Architecture/.test((s.log[s.log.length-1]||{}).msg || ''), 'the refusal points at the Architecture craft');
-    // Cottage t1 on t5 pavement -> upgrade to t2 for 100x the t2 plank, taking the fresh t2 build time.
+    // Cottage t1 on t5 pavement -> upgrade to t2 for the BUILT t2 Cottage (v0.0.86.31, the Workshop
+    // treatment), taking the fresh t2 build time; the displaced t1 returns on completion.
     cell.workshopId = null; cell.cottageId = 'cottage_t1'; cell.paveTileId = 'paving_t5';
-    s.inventory['carpentry_t2'] = 100;
+    s.inventory['cottage_t2'] = 1; s.inventory['cottage_t1'] = 0;
     FF.estateUpgradeCottage(0, 0);
     var cjob = s.estate.job;
     ok(cjob && cjob.kind === 'cottage' && cjob.upgrade === true, 'the cottage upgrade starts a timed job');
+    ok(cjob.matVer >= 2, 'the cottage job carries the new price version too');
     eq(cjob.readyAt - cjob.startAt, 3 * FF.ESTATE_COTTAGE_MS_PER_TIER, 'a t3 (index 2) cottage upgrade takes the fresh-build 30 min');
     eq(cell.cottageId, 'cottage_t1', 'the old cottage stands until the job completes');
-    FF.applyEstateJobCompletion(s.estate, cjob, false, false);
+    eq(s.inventory['cottage_t2'], 0, 'the upgrade consumed the BUILT target Cottage at start');
+    FF.applyEstateJobCompletion(s.estate, cjob, true, false);
     s.estate.job = null;
     eq(cell.cottageId, 'cottage_t2', 'completion raises the cottage one tier');
-    eq(s.inventory['carpentry_t2'], 0, 'the cottage upgrade spent 100 next-tier planks');
+    eq(s.inventory['cottage_t1'], 1, 'the displaced cottage returns to inventory on completion');
+    // Without the built target Cottage, the upgrade refuses and points at Architecture.
+    s.inventory['cottage_t3'] = 0;
+    FF.estateUpgradeCottage(0, 0);
+    ok(!s.estate.job, 'no job without the built target Cottage');
+    ok(/Craft it in Architecture/.test((s.log[s.log.length-1]||{}).msg || ''), 'the cottage refusal points at the Architecture craft');
     // ARCHITECTURE GATES THE UPGRADE (ticket-0134): drop the skill to nothing and the same call, on the same
     // fully-paved tile with the built Workshop in hand, must refuse and spend nothing.
     s.xp.architecture = 0;
@@ -672,6 +680,7 @@
     s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.architecture = savedArch;
     s.inventory['carpentry_t2'] = savedInv.c2;
     s.inventory['workshop_mining_t2'] = savedInv.w2; s.inventory['workshop_mining_t3'] = savedInv.w3; s.inventory['workshop_mining_t4'] = savedInv.w4;
+    delete s.inventory['cottage_t1']; delete s.inventory['cottage_t2']; delete s.inventory['cottage_t3'];
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
 

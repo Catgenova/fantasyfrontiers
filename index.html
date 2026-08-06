@@ -28349,7 +28349,7 @@
       // an in-flight pre-patch upgrade (no matVer) still consumes/refunds/returns its planks, so a
       // cancel can never mint a Workshop that was never paid.
       case 'workshop': return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
-      case 'cottage':  return job.upgrade ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]];
+      case 'cottage':  return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]]; // cottages joined the built-building price in v0.0.86.31 (same matVer migration as workshops)
       case 'totem':    return [[job.totemId, 1]];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
@@ -28855,6 +28855,12 @@
       return true;
     }
     if(job.kind === 'cottage'){
+      // matVer-2 upgrade: the displaced Cottage returns to the upgrader's inventory (see the Workshop
+      // branch above for why this is giveRewards-gated).
+      if(giveRewards && job.upgrade && (job.matVer >= 2) && cell.cottageId && cell.cottageId !== job.cottageId){
+        addItem(cell.cottageId, 1);
+        addLog('The ' + ((COTTAGE_ITEMS[cell.cottageId]||{}).name||'old Cottage') + ' was dismantled and returned to your inventory.', '');
+      }
       cell.cottageId = job.cottageId;
       if(giveRewards){
         if(!job.upgrade) bumpStat('cottage_built'); // cottages raised (not upgrades), powers "Hearth and Home"
@@ -29192,12 +29198,13 @@
     if(tgt >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Cottage only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
     if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to raise a Cottage to ' + FORESTRY_NAMES[tgt] + ' (yours is ' + getLevel(state.xp.architecture) + ').', 'danger'); return; }
-    var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
-    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    // Same price as the Workshop move (v0.0.86.30): the BUILT target Cottage from Architecture, with
+    // the displaced one returned on completion. The flat 100-planks price is legacy (matVer < 2 jobs).
     var newId = 'cottage_t' + tgt;
+    if((state.inventory[newId]||0) < 1){ addLog('Upgrading to a ' + ((COTTAGE_ITEMS[newId]||{}).name || (FORESTRY_NAMES[tgt]+' Cottage')) + ' needs that built Cottage itself. Craft it in Architecture.', 'danger'); return; }
     var cTier = tgt + 1; // same 10 min/tier as building this tier fresh
-    estateEnqueueOrStart('cottage', x, y, { cottageId:newId, upgrade:true }, cTier*ESTATE_COTTAGE_MS_PER_TIER, {
-      jobFields: { cottageId:newId, upgrade:true },
+    estateEnqueueOrStart('cottage', x, y, { cottageId:newId, upgrade:true, matVer:2 }, cTier*ESTATE_COTTAGE_MS_PER_TIER, {
+      jobFields: { cottageId:newId, upgrade:true, matVer:2 },
       startedMsg: 'You began upgrading the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '. Finishes in ' + (cTier*10) + ' minutes.',
       startedFt: 'Upgrading…',
       queuedMsg: 'Queued the Cottage upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
@@ -31393,14 +31400,14 @@
           var cBlock = cCanAny ? '' : (cArchCap <= cCur && cArchCap < cPaveT
                 ? ' &bull; <span style="color:var(--hp-bad)">Architecture '+TIER_LEVELS[Math.min(cCur+1,TIER_COUNT-1)]+' needed for the next tier</span>'
                 : ' &bull; <span style="color:var(--hp-bad)">pave higher first</span>');
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(cMax>=0?escapeHtml(FORESTRY_NAMES[cMax]):'. ')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+cBlock+'</div>';
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(cMax>=0?escapeHtml(FORESTRY_NAMES[cMax]):'. ')+') &bull; needs that tier’s built Cottage (craft it in Architecture); the old one returns to your inventory'+cBlock+'</div>';
           html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(cCanAny?'':'disabled')+'>'+(cCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):(cArchCap <= cCur && cArchCap < cPaveT ? 'Train Architecture' : 'Pave higher'))+'</button></div>';
           if(estateBuildUpgradeMenuOpen && cCanAny){
             html += '<div class="estate-paving-library">';
             for(var ct=cCur+1; ct<=cMax; ct++){
-              var cpid='carpentry_t'+ct, cpown=state.inventory[cpid]||0, caff=cpown>=ESTATE_BUILDING_UPGRADE_PLANKS, cico=(COTTAGE_ITEMS['cottage_t'+ct]||{}).icon||'';
+              var cid2='cottage_t'+ct, cOwn=state.inventory[cid2]||0, caff=cOwn>=1, cico=(COTTAGE_ITEMS[cid2]||{}).icon||'';
               html += '<button class="estate-paving-option'+(caff?'':' locked')+'" data-action="estateUpgradeCottage" data-x="'+x+'" data-y="'+y+'" data-tier="'+ct+'" '+(caff?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(ct)+' '+cico+' '+escapeHtml(FORESTRY_NAMES[ct]+' Cottage')+'</span><span class="style-lvl">x'+cpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '<span>'+tierChipHtml(ct)+' '+cico+' '+escapeHtml(FORESTRY_NAMES[ct]+' Cottage')+'</span><span class="style-lvl">'+(caff?'ready':'x0/1 &bull; craft it')+'</span>';
               html += '</button>';
             }
             html += '</div>';
@@ -40534,7 +40541,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.30';
+  var GAME_VERSION = '0.0.86.31';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
