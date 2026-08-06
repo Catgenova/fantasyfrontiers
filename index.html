@@ -11910,9 +11910,25 @@
   function shaftSuccessRate(state){ return Math.min(1, BASE_SHAFT_SUCCESS + craftToolSuccessBonus(state, 'fletching')); }
   function makeShaftInputs(logTierIndex){ var o = {}; o['forestry_t'+logTierIndex] = 1; return o; }
   function shaftOutputFor(logTierIndex){ return 15*(logTierIndex+1); }
+  // ---- ticket-0154: cutting shafts is TIER-GATED like every other refining step ------------------
+  // Reported (Fletching Skill): "I was able to start at level 1 fletching and fletch any arrow type for
+  // which I had wood... at least needing skill level X to work on arrow type X." The ARROW recipes were
+  // always level-gated (TIER_LEVELS[ingotTier]); the hole was the SHAFT step feeding them, which had
+  // levelReq 1 and accepted any log tier -- and shaft output scales hard with the log
+  // (shaftOutputFor: 15 per Willow log, 315 per Sequoia), with XP scaling off that output. So a brand-new
+  // Fletcher holding bought top-tier logs cut 315 shafts and earned 21x the intended XP per craft.
+  // Now a tier-N log needs Fletching TIER_LEVELS[N] -- exactly how Carpentry gates sawing that same log
+  // into a tier-N Plank, and the same ladder Forestry needed to fell it.
+  function shaftLogLevelReq(logTierIndex){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, logTierIndex|0))] || 1; }
+  function shaftLogLevelOk(logTierIndex){ return getLevel(state.xp.fletching||0) >= shaftLogLevelReq(logTierIndex); }
   function startShaftCraft(logTierIndex){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     if((state.inventory['forestry_t'+logTierIndex]||0) <= 0) return;
+    if(!shaftLogLevelOk(logTierIndex)){
+      var _slName = (GATHERING_SKILLS.forestry.items[logTierIndex]||{}).name || 'that log';
+      addLog('Cutting shafts from ' + _slName + ' needs Fletching Lv ' + shaftLogLevelReq(logTierIndex) + '.', 'danger');
+      return;
+    }
     var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = { type:'craft', skill:'fletching', itemId:'fletching_shaft', progress:0, logTierIndex: logTierIndex };
@@ -21878,7 +21894,7 @@
     var shaftPct = Math.round(shaftSuccessRate(state)*100);
     var shaftIsActive = act.type==='craft' && act.skill==='fletching' && act.itemId==='fletching_shaft';
     html += '<div class="card-grid"><div class="item-card'+(shaftIsActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('dowel','#a8895c')+'</div><div><div class="item-name">Shafts</div><div class="item-meta">Any Log tier works</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('dowel','#a8895c')+'</div><div><div class="item-name">Shafts</div><div class="item-meta">Each Log tier needs its Fletching level</div></div></div>';
     if(ownedLogTiers.length===0){
       html += '<div class="empty-note">No logs owned. Gather some in Forestry first.</div>';
     } else {
@@ -21892,6 +21908,9 @@
       html += '<div class="progress-track"><div class="progress-fill"'+(shaftIsActive?' id="liveActionFill"':'')+' style="width:'+shaftBarPct+'%"></div></div>';
       if(shaftIsActive){
         html += '<button class="action-btn stop" data-action="stop">Stop</button>';
+      } else if(!shaftLogLevelOk(selectedShaftLogTier)){
+        // Same treatment as a locked recipe card: name the requirement rather than offering a dead button.
+        html += '<div class="lock-note">Locked until Fletching level '+shaftLogLevelReq(selectedShaftLogTier)+'</div>';
       } else {
         html += '<button class="action-btn" data-action="startShaftCraft" data-tier="'+selectedShaftLogTier+'">Cut Shafts</button>';
       }
@@ -40672,7 +40691,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.35';
+  var GAME_VERSION = '0.0.86.36';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40825,7 +40844,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, FAITH_OFFLINE_BUFF_PERSISTS:FAITH_OFFLINE_BUFF_PERSISTS, applyFaithActivityTick:applyFaithActivityTick, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, FAITH_OFFLINE_BUFF_PERSISTS:FAITH_OFFLINE_BUFF_PERSISTS, shaftLogLevelReq:shaftLogLevelReq, shaftLogLevelOk:shaftLogLevelOk, startShaftCraft:startShaftCraft, shaftOutputFor:shaftOutputFor, applyFaithActivityTick:applyFaithActivityTick, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, renderEquipArrowSection:renderEquipArrowSection, FORESTRY_NAMES:FORESTRY_NAMES, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,

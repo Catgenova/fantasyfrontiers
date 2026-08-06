@@ -18334,6 +18334,50 @@
     }
   });
 
+  // ---- ticket-0154: cutting shafts needs the log tier's Fletching level ----------------------------
+  // Reported: level-1 Fletching could work any arrow type the player had wood for. The ARROW recipes were
+  // always gated; the hole was the SHAFT step that feeds them (levelReq 1, any log tier) -- and shaft
+  // output scales 15 -> 315 per log across the tiers with XP following the output, so a fresh Fletcher on
+  // bought Sequoia logs cut 21x the shafts and XP of the intended level-1 craft.
+  suite('ticket-0154: shaft cutting is gated by the log tier’s Fletching level', function(){
+    var S = FF._state;
+    // The ladder mirrors Carpentry's (a tier-N log -> tier-N plank needs TIER_LEVELS[N]).
+    eq(FF.shaftLogLevelReq(0), 1, 'the first log (Willow) cuts shafts at Fletching 1');
+    eq(FF.shaftLogLevelReq(1), 5, 'the second log needs Fletching 5');
+    eq(FF.shaftLogLevelReq(20), 100, 'the top log needs Fletching 100');
+    var carp = FF.CRAFTING_SKILLS.carpentry.recipes;
+    eq(FF.shaftLogLevelReq(7), carp[7].levelReq, 'and it is the SAME bar Carpentry sets for sawing that log');
+    // The exploit's scale, pinned so nobody "simplifies" the output curve without seeing the stakes.
+    eq(FF.shaftOutputFor(0), 15, 'a Willow log yields 15 shafts');
+    eq(FF.shaftOutputFor(20), 315, 'a Sequoia log yields 315 -- 21x, which is why the gate matters');
+    var sv = { xp:S.xp.fletching, act:S.activity, extra:S.extraCraftSlots, inv:S.inventory['forestry_t20'], log:S.log.slice() };
+    try {
+      S.activity = { type:null }; S.extraCraftSlots = [];
+      S.inventory['forestry_t20'] = 50;      // bought top-tier logs
+      S.xp.fletching = 0;                    // Fletching Lv 1
+      ok(!FF.shaftLogLevelOk(20), 'Lv 1 cannot process the top log');
+      FF.startShaftCraft(20);
+      ok(S.activity.type !== 'craft', 'no shaft craft starts below the bar');
+      ok(/needs Fletching Lv 100/.test((S.log[S.log.length-1]||{}).msg || ''), 'the refusal names the level');
+      eq(S.inventory['forestry_t20'], 50, 'and no log is consumed');
+      // The bottom of the ladder still works at Lv 1, so a fresh Fletcher is never stuck.
+      ok(FF.shaftLogLevelOk(0), 'Willow shafts are still available at Lv 1');
+      S.inventory['forestry_t0'] = 5;
+      FF.startShaftCraft(0);
+      ok(S.activity.type === 'craft' && S.activity.itemId === 'fletching_shaft' && S.activity.logTierIndex === 0,
+         'cutting the first-tier log starts normally');
+      // At the level, the top log is processable.
+      S.activity = { type:null };
+      S.xp.fletching = FF.xpFloorForLevel(100);
+      ok(FF.shaftLogLevelOk(20), 'Lv 100 unlocks the top log');
+      FF.startShaftCraft(20);
+      ok(S.activity.type === 'craft' && S.activity.logTierIndex === 20, 'and the craft starts');
+    } finally {
+      S.xp.fletching = sv.xp; S.activity = sv.act; S.extraCraftSlots = sv.extra;
+      S.inventory['forestry_t20'] = sv.inv; delete S.inventory['forestry_t0']; S.log = sv.log;
+    }
+  });
+
   // ---- Faith buffs stay activated across the away window (owner order, v0.0.86.35) -----------------
   // Measured cause: endgame faithMax ~2,112 vs Miracle t19 draining 36.5/sec meant a FULL pool bought 58
   // seconds, so a 12h window got 0.13% coverage AND the activity was switched off on return. Now the
