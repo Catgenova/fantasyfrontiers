@@ -18268,6 +18268,61 @@
     }
   });
 
+  // ---- Totem tier gates + upgrade-in-place (owner order, v0.0.86.32: tier-systems day) -------------
+  // Raising or upgrading to a totem_tN requires the Totems level its recipe demands (the ladder is
+  // shifted one rank by design: t1 at Lv 1), and upgrades pay the BUILT target totem with the old one
+  // returned on completion -- the same treatment fields, workshops and cottages got this week.
+  suite('estate totems: level-gated raises and upgrade-in-place', function(){
+    var S = FF._state;
+    eq(FF.totemLevelReq(1), 1, 'the first totem (t1) raises at Totems Lv 1');
+    eq(FF.totemLevelReq(2), 5, 'a t2 totem needs Totems Lv 5');
+    eq(FF.totemLevelReq(20), 95, 'the top totem (t20) needs Totems Lv 95');
+    FF.estUse(false);
+    var cell = S.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId, tot:cell.totemId };
+    var savedJob = S.estate.job, savedQueue = S.estate.queue;
+    var svXp = S.xp.totems, svLog = S.log.slice();
+    try {
+      S.estate.job = null; S.estate.queue = [];
+      cell.type = 'paved'; cell.paveTileId = 'paving_t9'; cell.workshopId = null; cell.cottageId = null; cell.totemId = null;
+      // PLACEMENT is level-gated: a bought t2 totem cannot be raised at Totems Lv 1.
+      S.inventory['totem_t2'] = 1; S.xp.totems = 0;
+      FF.estatePlaceTotem(0, 0, 'totem_t2');
+      ok(!S.estate.job, 'no raise below the Totems bar');
+      eq(S.inventory['totem_t2'], 1, 'the bought totem is not spent on a refused raise');
+      ok(/needs Totems Lv 5/.test((S.log[S.log.length-1]||{}).msg || ''), 'the refusal names the missing level');
+      // UPGRADE: totem_t1 placed, jump to t3 under the recipe gate, paying the built t3.
+      cell.totemId = 'totem_t1';
+      S.inventory['totem_t3'] = 1; S.inventory['totem_t1'] = 0;
+      S.xp.totems = 0;
+      FF.estateUpgradeTotem(0, 0, 3);
+      ok(!S.estate.job, 'no upgrade below the target tier level (t3 needs Lv 10)');
+      eq(S.inventory['totem_t3'], 1, 'nothing spent on the refused upgrade');
+      S.xp.totems = FF.xpFloorForLevel(FF.totemLevelReq(3));
+      FF.estateUpgradeTotem(0, 0, 3);
+      var tjob = S.estate.job;
+      ok(tjob && tjob.kind === 'totem' && tjob.upgrade === true && tjob.totemId === 'totem_t3', 'at the level the upgrade starts a timed totem job');
+      eq(S.inventory['totem_t3'], 0, 'the upgrade consumed the BUILT target totem at start');
+      eq(cell.totemId, 'totem_t1', 'the old totem stands until the job completes');
+      FF.applyEstateJobCompletion(S.estate, tjob, true, false);
+      S.estate.job = null;
+      eq(cell.totemId, 'totem_t3', 'completion raises the totem to the chosen tier');
+      eq(S.inventory['totem_t1'], 1, 'the displaced totem returns to inventory on completion');
+      // Pavement caps the jump; the queue validator understands totem upgrades.
+      cell.paveTileId = 'paving_t3'; S.inventory['totem_t5'] = 1; S.xp.totems = FF.xpFloorForLevel(100);
+      FF.estateUpgradeTotem(0, 0, 5);
+      ok(!S.estate.job, 'no upgrade past what the pavement supports');
+      eq(S.inventory['totem_t5'], 1, 'nothing spent past the pavement cap');
+      ok(FF.estateQueuedJobValid({ kind:'totem', upgrade:true, totemId:'totem_t5' }, { type:'paved', paveTileId:'paving_t9', totemId:'totem_t3' }).ok, 'a queued totem upgrade validates against the live tile');
+      ok(!FF.estateQueuedJobValid({ kind:'totem', upgrade:true, totemId:'totem_t3' }, { type:'paved', paveTileId:'paving_t9', totemId:'totem_t3' }).ok, 'an equal-tier queued upgrade is rejected');
+    } finally {
+      cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot; cell.totemId = saved.tot;
+      S.estate.job = savedJob; S.estate.queue = savedQueue;
+      S.xp.totems = svXp; S.log = svLog;
+      delete S.inventory['totem_t1']; delete S.inventory['totem_t2']; delete S.inventory['totem_t3']; delete S.inventory['totem_t5'];
+    }
+  });
+
   // ---- The first-swing gate (owner order, v0.0.86.28) ----------------------------------------------
   // Carried tick engines (Bramble growth, the Storm, Ember Burst, the ringing ground...) were killing
   // fresh farm mobs before the player's first swing. The gate lives at the applyEffectDamage /

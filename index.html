@@ -26010,7 +26010,7 @@
         var ni = spells.length ? ((cc.index||0) % spells.length) : 0;
         var nextName = spells.length ? spells[ni].name : '';
         html += '<div class="ar2-fam" id="ar2Fam-'+cid+'" title="'+escapeHtml(comp.name)
-              + (nextName ? ' \u2014 next: '+escapeHtml(nextName) : '')+'">';
+              + (nextName ? '. Next: '+escapeHtml(nextName) : '')+'">';
         html += '<div class="ar2-fam-box"><div class="ar2-fam-slot">'+comp.icon+'</div>'
               + '<img src="art/Square_icons (1).png" alt="">'
               + '<div class="ar2-fam-cast"><i id="arenaCast-'+cid+'" style="width:'+castPct+'%"></i></div></div>';
@@ -28437,7 +28437,14 @@
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
-      case 'totem':    if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+      case 'totem':    if(job.upgrade){
+                         var _utT = itemTierFromId(job.totemId);
+                         if(c.type!=='paved' || !c.totemId) return { ok:false, msg:'that tile no longer has a totem' };
+                         if(itemTierFromId(c.totemId) >= _utT) return { ok:false, msg:'that totem is already at or above the target tier' };
+                         if(pavementTierOf(c) < _utT) return { ok:false, msg:'the pavement no longer supports that tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
     }
@@ -28595,7 +28602,7 @@
       case 'pave':     var pr = getPavingRecipe(job.paveTileId); return job.upgrade ? ('Upgrade pavement' + (pr ? ' to ' + pr.name : '')) : ('Pave' + (pr ? ' with ' + pr.name : ''));
       case 'workshop': return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
       case 'cottage':  return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
-      case 'totem':    return 'Raise ' + ((totemItem(job.totemId)||{}).name || 'Totem');
+      case 'totem':    return (job.upgrade ? 'Upgrade to ' : 'Raise ') + ((totemItem(job.totemId)||{}).name || 'Totem');
       case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
     }
     return job.kind;
@@ -28873,13 +28880,19 @@
       return true;
     }
     if(job.kind === 'totem'){
+      // Upgrade: the displaced totem returns to the upgrader's inventory (see the Workshop branch
+      // for why this is giveRewards-gated on the idempotent guild grid write).
+      if(giveRewards && job.upgrade && cell.totemId && cell.totemId !== job.totemId){
+        addItem(cell.totemId, 1);
+        addLog('The ' + ((totemItem(cell.totemId)||{}).name||'old totem') + ' was dismantled and returned to your inventory.', '');
+      }
       cell.totemId = job.totemId;
       if(giveRewards){
-        bumpStat('totem_raised'); // totems raised on the estate
+        if(!job.upgrade) bumpStat('totem_raised'); // totems raised (not upgrades), powers the raise quests
         var ttT = itemTierFromId(job.totemId);
         var ttXp = estateBuildXp(ttT);
         addXp('totems', ttXp);
-        addLog('Finished raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + '. Fields within 1 tile now yield +' + ttT + ' crops per harvest. +' + ttXp + ' Totems XP.', 'important');
+        addLog('Finished ' + (job.upgrade?'upgrading to':'raising') + ' the ' + ((totemItem(job.totemId)||{}).name||'totem') + '. Fields within 1 tile now yield +' + ttT + ' crops per harvest. +' + ttXp + ' Totems XP.', 'important');
         if(isGuild) guildLogPush('estate', 'raised the ' + ((totemItem(job.totemId)||{}).name||'Totem') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
@@ -29120,7 +29133,7 @@
     var nextId = 'paving_t' + tgt;
     var recipe = getPavingRecipe(nextId);
     if(!estatePaveTierLevelOk(tgt)){
-      addLog('Upgrading to ' + (recipe ? recipe.name : nextId) + ' requires Paving level ' + ((recipe && recipe.levelReq) || TIER_LEVELS[tgt]) + ' \u2014 the same as laying it fresh.', 'danger');
+      addLog('Upgrading to ' + (recipe ? recipe.name : nextId) + ' requires Paving level ' + ((recipe && recipe.levelReq) || TIER_LEVELS[tgt]) + ', the same as laying it fresh.', 'danger');
       return;
     }
     var owned = state.inventory[nextId] || 0;
@@ -29346,6 +29359,12 @@
   var ESTATE_TOTEM_MS_PER_TIER = 2*60*1000;  // raising a totem takes 2 min per tier
   var estateTotemMenuOpen = false;
   function totemItem(id){ return (typeof id === 'string' && /^totem_t\d+$/.test(id)) ? ALL_CRAFT_RECIPES[id] : null; }
+  // ---- Totem tier gates (owner order, v0.0.86.32: tier-systems day) ------------------------------
+  // Raising OR upgrading to a totem_tN requires the Totems level its own recipe demands (the recipe
+  // ladder is shifted one rank by design: totem_t1 gates at Lv 1 -- see the recipe table comment).
+  // Totems are tradeable, so owning one no longer implies the level that crafts it.
+  function totemLevelReq(tier){ var r = ALL_CRAFT_RECIPES['totem_t'+tier]; return (r && r.levelReq) || 1; }
+  function totemLevelOk(tier){ return getLevel(state.xp.totems||0) >= totemLevelReq(tier); }
   function placeableTotemsFor(cell){
     var pave = pavementTierOf(cell), out = [];
     (CRAFTING_SKILLS.totems.recipes || []).forEach(function(r){ if((state.inventory[r.id]||0) > 0 && itemTierFromId(r.id) <= pave) out.push(r); });
@@ -29366,12 +29385,38 @@
     if(!it || (state.inventory[totemId]||0) <= 0){ addLog('You don\'t own that totem.', 'danger'); return; }
     var tTier = itemTierFromId(totemId);
     if(tTier > pavementTierOf(pc)){ addLog('That totem needs pavement of tier ' + (tTier+1) + ' or higher.', 'danger'); return; }
+    if(!totemLevelOk(tTier)){ addLog('Raising a ' + it.name + ' needs Totems Lv ' + totemLevelReq(tTier) + '.', 'danger'); return; }
     estateEnqueueOrStart('totem', x, y, { totemId:totemId }, (tTier+1)*ESTATE_TOTEM_MS_PER_TIER, {
       jobFields: { totemId:totemId },
       closeMenu: function(){ estateTotemMenuOpen = false; },
       startedMsg: 'You began raising a ' + it.name + ' at (' + x + ', ' + y + '). Finishes in ' + ((tTier+1)*2) + ' minutes.',
       startedFt: 'Raising…',
       queuedMsg: 'Queued raising a ' + it.name + ' at (' + x + ', ' + y + ').'
+    });
+  }
+  // Upgrade a placed totem to ANY higher tier the pavement supports, in place -- the field/building
+  // pattern completed for the last placeable (owner order, v0.0.86.32). Pays the BUILT target totem
+  // (the Totems craft) with its recipe's own level gate; the displaced totem returns on completion.
+  // No matVer stamp needed: totem upgrades are brand new, so no legacy jobs can exist.
+  function estateUpgradeTotem(x, y, targetTier){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(!pc.totemId) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var cur = itemTierFromId(pc.totemId), paveT = pavementTierOf(pc);
+    var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
+    if(!(tgt > cur)){ addLog('Choose a higher totem tier to upgrade to.', 'danger'); return; }
+    var newId = 'totem_t' + tgt, tIt = totemItem(newId);
+    if(!tIt){ addLog('This totem is already the top tier.', 'danger'); return; }
+    if(paveT < tgt){ addLog('The pavement under this totem only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
+    if(!totemLevelOk(tgt)){ addLog('Upgrading to a ' + tIt.name + ' needs Totems Lv ' + totemLevelReq(tgt) + '.', 'danger'); return; }
+    if((state.inventory[newId]||0) < 1){ addLog('Upgrading to a ' + tIt.name + ' needs that built totem itself. Craft it in Totems.', 'danger'); return; }
+    estateEnqueueOrStart('totem', x, y, { totemId:newId, upgrade:true }, (tgt+1)*ESTATE_TOTEM_MS_PER_TIER, {
+      jobFields: { totemId:newId, upgrade:true },
+      startedMsg: 'You began upgrading the totem at (' + x + ', ' + y + ') to a ' + tIt.name + '. Finishes in ' + ((tgt+1)*2) + ' minutes.',
+      startedFt: 'Upgrading\u2026',
+      queuedMsg: 'Queued the totem upgrade at (' + x + ', ' + y + ') to a ' + tIt.name + '.'
     });
   }
   function estateRemoveTotem(x, y){
@@ -31035,7 +31080,7 @@
       if(edge){
         estateHoveredEdge = edge;
         estateHoveredTile = null;
-        if(info) info.textContent = 'Border ('+edge.orient+', '+edge.x+', '+edge.y+') \u2014 select to inspect';
+        if(info) info.textContent = 'Border ('+edge.orient+', '+edge.x+', '+edge.y+'). Select to inspect';
       } else {
         estateHoveredEdge = null;
         var tile = estateFindTileAt(p.x, p.y, originX, originY);
@@ -31419,6 +31464,25 @@
         html += '<div class="estate-action-info"><b>Totem:</b> '+(tIt?tIt.icon+' '+escapeHtml(tIt.name):'Unknown')+'<br>+'+tTierHere+' crop yield per harvest for every Field within 1 tile.</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveTotem" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
+        // Upgrade the totem in place (v0.0.86.32): any higher tier the pavement supports, paying the
+        // built target totem under its recipe's own Totems level -- the field/building pattern.
+        var ttCur = tTierHere|0, ttPaveT = pavementTierOf(cell);
+        var ttMax = Math.min(ttPaveT, TIER_COUNT-1);
+        if(ttCur < ttMax){
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Totem</b><br>Jump to any tier your pavement supports (up to '+escapeHtml(FORESTRY_NAMES[ttMax])+') &bull; needs that tier&rsquo;s built totem (craft it in Totems); the old one returns to your inventory</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(estToggleBlockedByOther()?'disabled':'')+'>'+(estToggleBlockedByOther()?'In use':(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'))+'</button></div>';
+          if(estateBuildUpgradeMenuOpen && !estToggleBlockedByOther()){
+            html += '<div class="estate-paving-library">';
+            for(var tt=ttCur+1; tt<=ttMax; tt++){
+              var tid2='totem_t'+tt, tDef=totemItem(tid2); if(!tDef) continue;
+              var tLvlOk=totemLevelOk(tt), tOwn=state.inventory[tid2]||0, tAff=tLvlOk && tOwn>=1;
+              html += '<button class="estate-paving-option'+(tAff?'':' locked')+'" data-action="estateUpgradeTotem" data-x="'+x+'" data-y="'+y+'" data-tier="'+tt+'" '+(tAff?'':'disabled')+'>';
+              html += '<span>'+tierChipHtml(tt)+' '+tDef.icon+' '+escapeHtml(tDef.name)+'</span><span class="style-lvl">'+(tLvlOk?(tAff?'ready':'x0/1 &bull; craft it'):'Totems Lv'+totemLevelReq(tt))+'</span>';
+              html += '</button>';
+            }
+            html += '</div>';
+          }
+        }
       } else {
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
@@ -39292,6 +39356,9 @@
     estatePlaceField: function(btn, e){
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
     },
+    estateUpgradeTotem: function(btn, e){
+      estateUpgradeTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
+    },
     estateRemoveField: function(btn, e){ estateRemoveField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
     estateUpgradeField: function(btn, e){ estateUpgradeField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tier')); estateBuildUpgradeMenuOpen = false; },
     estateToggleBorderMenu: function(btn, e){
@@ -40541,7 +40608,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.31';
+  var GAME_VERSION = '0.0.86.32';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40667,7 +40734,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField,
+      fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
