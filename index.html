@@ -36385,13 +36385,25 @@
   //   * ledger-only (0): Legendary equipment lives in inventory but is NOT in ALL_SELLABLE (untradeable).
   //     It must still be in the catalog so the ledger's item_sync accepts it (otherwise adoption would clamp
   //     a legit legendary away); the market gate rejects it because tradeable is 0.
+  //   * ledger-only (0), NEVER in inventory: the base keys that MINTED UNIQUES carry. Armour set pieces
+  //     (bodyarmor_*_t21..t24_*) exist only as the `base` of a unique in state.uniqueItems -- nobody ever
+  //     holds one as a stack. They still have to be catalogued because save_game's forged-unique audit
+  //     reads item_catalog as the allowlist for a unique's base key. THE MISS WAS LIVE AND FIRING: the
+  //     set-tier armour is generated AFTER `Object.assign(ALL_SELLABLE, BODY_ARMOR_ITEMS)` runs, so the
+  //     whole t21-t24 family was absent at every rarity, and every honest owner of a Masterwork armour set
+  //     was reported hourly as base_not_in_catalog (Valuren, 4 of 76 uniques). Only the fact that
+  //     UNIQUE_VALIDATE_ENFORCE is off kept it from DELETING their set. Adding the whole BODY_ARMOR_ITEMS
+  //     map is deliberate: the t0-t20 keys are already tradeable above and `!(k in out)` leaves them at 1,
+  //     so this can only ever add the minted-only tiers, and it keeps working if a t25 layer ships.
   // Dumped to supabase/seeds/item_catalog_seed.sql (scripts/dump-item-catalog.mjs) and CI-checked, so the
-  // server catalog can never silently drift behind a client that ships new items.
+  // server catalog can never silently drift behind a client that ships new items. The client-side guard that
+  // the two families above are COMPLETE is in the selftest suite: it mints every set piece and builds every
+  // legendary base, then asserts each one is in here.
   function buildItemCatalog(){
     var out = {};
     Object.keys(ALL_SELLABLE).forEach(function(k){ if(k !== 'gold' && /^[A-Za-z0-9_]{1,64}$/.test(k)) out[k] = 1; });
     [LEGENDARY_GEAR_ITEMS, LEGENDARY_GEAR_ITEMS_D2, LEGENDARY_GEAR_ITEMS_D3, LEGENDARY_GEAR_ITEMS_D4,
-     LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS].forEach(function(map){
+     LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS, BODY_ARMOR_ITEMS].forEach(function(map){
       if(map) Object.keys(map).forEach(function(k){ if(/^[A-Za-z0-9_]{1,64}$/.test(k) && !(k in out)) out[k] = 0; });
     });
     return out;
@@ -42060,7 +42072,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.89.0';
+  var GAME_VERSION = '0.0.89.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

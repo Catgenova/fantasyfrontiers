@@ -12219,6 +12219,78 @@
     ok(!('fake_item_does_not_exist' in cat), 'a made-up item key is absent from the catalog');
   });
 
+  // ---- Item catalog: the MINTED-UNIQUE base keys (the half the suite above never covered) --------------
+  // The suite above proves every INVENTORY key is catalogued. A unique's `base` is a second, disjoint
+  // universe: a Masterwork armour set piece and a legendary weapon/shield/ward are MINTED straight into
+  // state.uniqueItems and never sit in inventory at all. save_game's forged-unique audit reads item_catalog
+  // as the allowlist for that base key, so an uncatalogued base reads as an INVENTED item.
+  //
+  // This shipped broken and was firing: the set-tier armour (t21 D1 / t22 D2 / t23 D3 / t24 D4) is generated
+  // after `Object.assign(ALL_SELLABLE, BODY_ARMOR_ITEMS)`, so buildItemCatalog missed the whole family at
+  // every rarity and every honest owner of a set was reported hourly as base_not_in_catalog. Enforcement
+  // being off is the only reason it cost noise rather than somebody's gear.
+  //
+  // Mint through the REAL path (mintSetPiece / the craftMastercraft base construction), never a hand-built
+  // string: the string is what the bug already agreed with. The keys must also stay UNTRADEABLE, or a minted
+  // unique becomes listable on the market.
+  suite('item catalog: every minted unique base is on the allowlist', function(){
+    var cat = FF.buildItemCatalog(), S = FF._state;
+    var RARS = ['normal','rare','supreme','fantastic'];
+    var bases = [], missing = [], tradeableMinted = [];
+    var keptUniques = S.uniqueItems;
+    S.uniqueItems = {};
+
+    // 1. Armour set pieces: every layer x class x slot x rarity the game can forge.
+    var defsByLayer = { d1: FF.D1_SET_DEFS, d2: FF.D2_SET_DEFS, d3: FF.D3_SET_DEFS, d4: FF.D4_SET_DEFS };
+    ['d1','d2','d3','d4'].forEach(function(L){
+      var defs = defsByLayer[L];
+      ok(!!defs && Object.keys(defs).length > 0, 'set defs are on the seam for ' + L);
+      Object.keys(defs || {}).forEach(function(cls){
+        Object.keys(defs[cls].pieces).forEach(function(slot){
+          RARS.forEach(function(r){
+            var uid = FF.mintSetPiece(cls, slot, r, L);
+            ok(!!uid, 'mintSetPiece forged ' + [L,cls,slot,r].join('/'));
+            if(!uid) return;
+            var base = S.uniqueItems[uid].base;
+            bases.push(base);
+            if(!(base in cat)) missing.push(base);
+            if(cat[base] === 1) tradeableMinted.push(base);
+            delete S.uniqueItems[uid];
+          });
+        });
+      });
+    });
+    var setPieceCount = bases.length;
+    ok(setPieceCount > 1000, 'minted every set piece through the real path (' + setPieceCount + ' forged)');
+
+    // 2. Legendary weapon/shield/ward bases, built exactly as craftMastercraft builds them.
+    var legMaps = { d1: FF.D1_LEG_GEAR_MAP, d2: FF.D2_LEG_GEAR_MAP, d3: FF.D3_LEG_GEAR_MAP, d4: FF.D4_LEG_GEAR_MAP };
+    ['d1','d2','d3','d4'].forEach(function(L){
+      var map = legMaps[L];
+      ok(!!map && Object.keys(map).length > 0, 'legendary gear map is on the seam for ' + L);
+      Object.keys(map || {}).forEach(function(k){
+        var g = map[k], top = FF.legGearBaseTopTier(g.base);
+        var isShield = (FF.STACKABLE_SHIELD_TYPES || []).some(function(o){ return o.id === g.base; });
+        var prefix = FF.WARD_TYPE_MAP[g.base] ? 'stward_' : (isShield ? 'stshield_' : 'stweapon_');
+        RARS.forEach(function(r){
+          var base = prefix + g.base + '_t' + top + '_' + r;
+          bases.push(base);
+          if(!(base in cat)) missing.push(base);
+        });
+      });
+    });
+    ok(bases.length - setPieceCount > 100, 'built every legendary gear base (' + (bases.length - setPieceCount) + ' keys)');
+
+    S.uniqueItems = keptUniques;
+
+    eq(missing.length, 0, 'every minted unique base is catalogued (missing ' + missing.length +
+       ', e.g. ' + missing.slice(0,3).join(', ') + ')');
+    eq(tradeableMinted.length, 0, 'no minted set-piece base is market-tradeable (' + tradeableMinted.slice(0,3).join(', ') + ')');
+    // The specific key the live digest reported, named so a regression is unmistakable.
+    ok('bodyarmor_chain_helmet_t21_rare' in cat, 'the D1 chain helmet from the false-positive signal is catalogued');
+    eq(cat['bodyarmor_chain_helmet_t21_rare'], 0, 'and it is ledger-only, not tradeable');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });
