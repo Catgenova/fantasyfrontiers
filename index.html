@@ -35143,6 +35143,10 @@
   // NOTE: the game is client-authoritative, so these numbers are self-reported/trust-based --
   // fine for a showcase board, but a competitive one would need server-side progression checks.
   var LEADERBOARD_LIMIT = 50;
+  // Online-only has no server-side equivalent (presence is a realtime channel, not a column), so that view
+  // pulls a deeper page and narrows it on the client. Kept well under a heavy read: the leaderboard view is
+  // a slim projection with no estate blob.
+  var LEADERBOARD_LIMIT_WIDE = 300;
   var leaderboardData = [];
   var leaderboardMetric = 'total'; // 'total' | 'gold' | 'skill:<id>' | 'stat:<key>'
   var leaderboardMortalOnly = false; // when true, the board lists only Mortal-path players
@@ -35525,42 +35529,69 @@
       }
     }catch(e){}
   }
+  // ticket-0165 (Valuren): "Pressing the mortal only filter will only show the mortals in the already
+  // revealed top50". Exactly right -- one query fetched the top LEADERBOARD_LIMIT by total_level and BOTH
+  // filters then narrowed that truncated list, so a Mortal outside the top 50 could never appear. Mortals
+  // carry an XP-rate debuff, so they are structurally rare near the top: the filter was showing the empty
+  // set almost by construction.
+  //
+  // The two filters are NOT symmetrical, which is the thing to keep straight:
+  //   * MORTAL is a real column on the leaderboard view, so it becomes a server-side .eq() and the query
+  //     returns a full page of actual Mortals. This is the reported fix.
+  //   * ONLINE is client-side PRESENCE (isPlayerOnline reads the realtime channel); the server has no such
+  //     column, so it cannot be queried at all. The honest best is to widen the page so the client has more
+  //     rows to find online players in, and to say so in the UI rather than imply a true online ranking.
+  // Because the query now depends on the filter, the 20-second cache is keyed by it -- otherwise toggling
+  // the box would re-render the same cached rows and look broken.
+  function leaderboardQueryKey(){
+    return (leaderboardMortalOnly ? 'm1' : 'm0') + '|' + (leaderboardOnlineOnly ? 'o1' : 'o0');
+  }
+  var leaderboardLastKey = '';
+  function leaderboardPageSize(){
+    // Online-only cannot be filtered server-side, so give the client a deeper pool to search.
+    return leaderboardOnlineOnly ? LEADERBOARD_LIMIT_WIDE : LEADERBOARD_LIMIT;
+  }
   async function leaderboardFetch(force){
     if(!CHAT_ENABLED){ leaderboardStatus = 'unconfigured'; return; }
     if(leaderboardStatus === 'loading') return;
     var now = Date.now();
+    var _key = leaderboardQueryKey();
+    if(_key !== leaderboardLastKey) force = true;      // the filters changed the QUERY, not just the view
     if(!force && leaderboardData.length && now - leaderboardLastFetch < 20000) return;
+    leaderboardLastKey = _key;
     leaderboardStatus = 'loading';
     if(currentCategory==='leaderboard' && !profileView) render();
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       // Read the bounded `leaderboard` view (public projection, no heavy estate blob). Fall back to the
       // base `profiles` table on servers where the view isn't migrated yet, so deploy order can't break it.
-      var res = await chatClient.from('leaderboard')
-        .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at')
-        .order('total_level', { ascending:false })
-        .limit(LEADERBOARD_LIMIT);
+      // The mortal filter is applied HERE, by the server, so the page is a full page of Mortals rather
+      // than the Mortals that happened to be in the top 50 by level. lbApplyFilters wraps every fallback
+      // so the behaviour cannot drift between them.
+      var _size = leaderboardPageSize();
+      function lbApplyFilters(q, hasMortalCol){
+        if(leaderboardMortalOnly && hasMortalCol) q = q.eq('mortal', true);
+        return q.order('total_level', { ascending:false }).limit(_size);
+      }
+      var res = await lbApplyFilters(chatClient.from('leaderboard')
+        .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at'), true);
       if(res.error){
-        res = await chatClient.from('profiles')
-          .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at')
-          .order('total_level', { ascending:false })
-          .limit(LEADERBOARD_LIMIT);
+        res = await lbApplyFilters(chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at'), true);
       }
       if(res.error){
         // The `class`/`has_estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them but
         // keep stats/mortal, so the board doesn't lose its stat rankings or Mortal styling. When mastery
         // is absent over-100 skills just show as 100 (graceful pre-deploy degradation).
-        res = await chatClient.from('profiles')
-          .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
-          .order('total_level', { ascending:false })
-          .limit(LEADERBOARD_LIMIT);
+        res = await lbApplyFilters(chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at'), true);
       }
       if(res.error){
         // Older server: stats/mortal not migrated either -- minimal columns so the board still loads.
-        res = await chatClient.from('profiles')
-          .select('id,username,total_level,gold,skills,equipment,updated_at')
-          .order('total_level', { ascending:false })
-          .limit(LEADERBOARD_LIMIT);
+        // Last resort: no `mortal` column on this server at all, so the filter cannot be applied server-side
+        // and the client narrowing below is all there is. Degrades to the old behaviour rather than erroring.
+        res = await lbApplyFilters(chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,equipment,updated_at'), false);
       }
       if(res.error) throw res.error;
       leaderboardData = res.data || [];
@@ -35752,7 +35783,7 @@
     if(authUser) html += '<button class="action-btn" data-action="viewMyProfile" style="width:auto;flex:0 0 auto;">My Profile</button>';
     html += '<label class="lb-metric"><span>Rank by</span><select id="lbMetricSelect" class="chat-input">'+lbMetricOptions()+'</select></label>';
     html += '<label class="lb-filter-toggle" title="Show only Mortal-path players"><input type="checkbox" data-action="toggleMortalOnly"'+(leaderboardMortalOnly?' checked':'')+'> <span>Mortals only</span></label>';
-    html += '<label class="lb-filter-toggle" title="Show only players currently online"><input type="checkbox" data-action="toggleOnlineOnly"'+(leaderboardOnlineOnly?' checked':'')+'> <span>Online only</span></label>';
+    html += '<label class="lb-filter-toggle" title="Show only players currently online. Presence is not a ranked column, so this searches a wider page rather than ranking every online player."><input type="checkbox" data-action="toggleOnlineOnly"'+(leaderboardOnlineOnly?' checked':'')+'> <span>Online only</span></label>';
     html += '</div>';
     if(leaderboardStatus==='loading' && !leaderboardData.length){ html += '<div class="empty-note">Loading the rankings\u2026</div>'; }
     else if(leaderboardStatus==='error'){ html += '<div class="empty-note">Couldn\'t load the leaderboard. Make sure the <code>profiles</code> table and its read policy exist.</div>'; }
@@ -35760,6 +35791,8 @@
     else {
       // Two independent narrowing filters, applied in sequence so they compose.
       var rows = leaderboardData;
+      // The server already filtered this page when it could (ticket-0165). This second pass covers the
+      // pre-migration server with no `mortal` column, and the instant between the toggle and the refetch.
       if(leaderboardMortalOnly) rows = rows.filter(function(p){ return p.mortal === true; });
       // Online mirrors the row's own dot, which counts YOU as online unconditionally -- otherwise the
       // filter would hide you from your own board in the moment before presence syncs.
@@ -39693,8 +39726,10 @@
     authLogout: function(btn, e){ authLogout(); },
     leaderboardRefresh: function(btn, e){ leaderboardFetch(true); },
     choosePath: function(btn, e){ choosePath(btn.getAttribute('data-path')); },
-    toggleMortalOnly: function(btn, e){ leaderboardMortalOnly = !leaderboardMortalOnly; render(); },
-    toggleOnlineOnly: function(btn, e){ leaderboardOnlineOnly = !leaderboardOnlineOnly; render(); },
+    // ticket-0165: both toggles change the QUERY (mortal server-side, online via a wider page), so they
+    // must REFETCH, not merely re-render a cached top 50. leaderboardFetch forces itself when the key moves.
+    toggleMortalOnly: function(btn, e){ leaderboardMortalOnly = !leaderboardMortalOnly; render(); leaderboardFetch(true); },
+    toggleOnlineOnly: function(btn, e){ leaderboardOnlineOnly = !leaderboardOnlineOnly; render(); leaderboardFetch(true); },
     viewProfile: function(btn, e){
       var _pid = btn.getAttribute('data-id');
       var _p = leaderboardData.filter(function(x){ return String(x.id)===String(_pid); })[0];
@@ -41013,7 +41048,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.60';
+  var GAME_VERSION = '0.0.86.61';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41147,7 +41182,7 @@
       // ticket-0161: every zero-arg tab renderer goes on the seam, so the renderer sweeps (bare big
       // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
       // here for 13 versions because these were the tabs the sweep could not reach.
-      renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
+      renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, leaderboardQueryKey:leaderboardQueryKey, leaderboardPageSize:leaderboardPageSize, LEADERBOARD_LIMIT:LEADERBOARD_LIMIT, LEADERBOARD_LIMIT_WIDE:LEADERBOARD_LIMIT_WIDE, leaderboardFetch:leaderboardFetch, _lbSetFilters:function(m,o){ leaderboardMortalOnly=!!m; leaderboardOnlineOnly=!!o; }, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, taskRunsForTarget:taskRunsForTarget, taskRunsHorizon:taskRunsHorizon, taskRunsRemaining:taskRunsRemaining, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, renderWorkshopForge:renderWorkshopForge, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,

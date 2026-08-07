@@ -6081,6 +6081,37 @@
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
   });
 
+  // ---- ticket-0165: the leaderboard filters must drive the QUERY, not narrow a cached page (Valuren) --
+  // "Pressing the mortal only filter will only show the mortals in the already revealed top50, when there
+  // are alot more players." Exactly right: one fetch took the top LEADERBOARD_LIMIT by total_level and both
+  // filters narrowed THAT list, so a Mortal outside the top 50 could never appear -- and Mortals carry an
+  // XP-rate debuff, which makes them structurally rare near the top. The filter showed the empty set almost
+  // by construction. The two filters are not symmetrical and the fix reflects that: `mortal` is a real
+  // column and becomes a server-side .eq(); presence is a realtime channel with no column, so online-only
+  // can only widen the page it searches.
+  suite('ticket-0165: leaderboard filters change the query, not just the view', function(){
+    ok(typeof FF.leaderboardQueryKey === 'function', 'the filter-aware cache key is exported');
+    ok(typeof FF.leaderboardPageSize === 'function', 'the page sizer is exported');
+    ok(FF.LEADERBOARD_LIMIT_WIDE > FF.LEADERBOARD_LIMIT,
+       'the online-only page is DEEPER than the default (' + FF.LEADERBOARD_LIMIT_WIDE + ' > ' + FF.LEADERBOARD_LIMIT + ')');
+    // The cache key must move with EITHER filter, or a toggle re-renders the same cached rows and the
+    // player sees nothing change -- which is what "does not check more than the top 50" looked like.
+    FF._lbSetFilters(false, false); var k00 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(true, false);  var k10 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(false, true);  var k01 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(true, true);   var k11 = FF.leaderboardQueryKey();
+    ok(k00 !== k10, 'toggling Mortal-only changes the query key');
+    ok(k00 !== k01, 'toggling Online-only changes the query key');
+    ok(k10 !== k11 && k01 !== k11, 'the two filters compose into a distinct key');
+    eq(new Set([k00, k10, k01, k11]).size, 4, 'all four filter combinations are distinct queries');
+    // Page size follows the online filter, because presence cannot be filtered server-side.
+    FF._lbSetFilters(false, false); eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'default page is the normal limit');
+    FF._lbSetFilters(true, false);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'mortal-only is server-filtered, so the page stays normal');
+    FF._lbSetFilters(false, true);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, 'online-only widens the page');
+    FF._lbSetFilters(true, true);   eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, '...and still widens it alongside mortal-only');
+    FF._lbSetFilters(false, false);
+  });
+
   // ---- ticket-0164: auto-roll forecasts its cost and confirms an expensive run (Valuren) ------------
   // "i miss rolled one with a flat stat fire ... dumped like 5k enchantstones." Auto-roll spends until it
   // hits or the stock empties, all on ONE click, with no forecast -- so replacing a mis-rolled line could
