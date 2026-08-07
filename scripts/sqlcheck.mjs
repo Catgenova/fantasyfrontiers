@@ -45,7 +45,7 @@ if (!files.length) { console.error('sqlcheck: no migrations found -- refusing to
 // The checker runs in python because libpg_query's only maintained binding here is pglast. It reports one
 // line per failing file and exits non-zero; a clean run prints a count.
 const PY = `
-import sys, json
+import sys, json, re
 try:
     from pglast import parser
     from pglast.parser import ParseError
@@ -53,6 +53,44 @@ except Exception as e:
     sys.stderr.write('sqlcheck: pglast is not installed (%s).\\n' % e)
     sys.stderr.write('sqlcheck: install it with:  pip install pglast\\n')
     sys.exit(2)
+
+# libpg_query's plpgsql parser only descends into CREATE FUNCTION bodies. An anonymous DO block is invisible
+# to it -- proven by planting an undeclared variable inside one and watching the check report clean.
+# Migrations here use DO blocks for conditional logic (scheduling, guarded grants), so that blind spot
+# covered whole file bodies. Each DO body is a complete plpgsql block, i.e. exactly what a function body is,
+# so wrapping it in a synthetic CREATE FUNCTION gets it parsed.
+#
+# The bodies come from the PARSE TREE, not a regex. A regex over the raw text matched a commented-out
+# "-- do \$\$" in 20260731180000 and reported a syntax error in a migration that is applied and working.
+# DoStmt nodes only exist for real statements, so comments and nested dollar-quoting stop being a problem.
+def do_bodies(node, out):
+    if isinstance(node, dict):
+        if 'DoStmt' in node:
+            for arg in (node['DoStmt'].get('args') or []):
+                d = arg.get('DefElem') or {}
+                if d.get('defname') == 'as':
+                    s = (d.get('arg') or {}).get('String') or {}
+                    v = s.get('sval', s.get('str'))
+                    if isinstance(v, str): out.append(v)
+        for v in node.values(): do_bodies(v, out)
+    elif isinstance(node, list):
+        for v in node: do_bodies(v, out)
+    return out
+
+def do_block_errors(sql):
+    out = []
+    try:
+        tree = json.loads(parser.parse_sql_json(sql))
+    except Exception:
+        return out   # a statement-level parse failure is already reported by the caller
+    for i, body in enumerate(do_bodies(tree, [])):
+        wrapped = ("create function _sqlcheck_do_%d() returns void language plpgsql as "
+                   "$sqlcheckwrap$%s$sqlcheckwrap$;" % (i, body))
+        try:
+            parser.parse_plpgsql_json(wrapped)
+        except ParseError as e:
+            out.append('DO block %d: %s' % (i + 1, str(e).split('\\n')[0]))
+    return out
 
 bad = 0
 for path in sys.argv[1:]:
@@ -66,6 +104,7 @@ for path in sys.argv[1:]:
         # which is a serialization quirk in the dump, NOT a problem with the SQL.
         parser.parse_plpgsql_json(sql)
     except ParseError as e: errs.append('plpgsql: ' + str(e).split('\\n')[0])
+    errs.extend(do_block_errors(sql))
     if errs:
         bad += 1
         print('FAIL ' + path.rsplit('/', 1)[-1])
