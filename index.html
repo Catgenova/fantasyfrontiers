@@ -8493,7 +8493,9 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === a && a.type==='combat' && (a.monsterHp||0) > 0; _s++){
-      applyEffectDamage(dmg, 'Breach');
+      // earned: the wall is ALREADY SPENT two lines up, so a confiscated Breach costs the player the whole
+      // Barrier for nothing -- and it is funded by banked Guards off heraldHitAvg, not a carried tick.
+      applyEffectDamage(dmg, 'Breach', { earned:true });
       if(!offlineCapture) spawnCombatFloat((isCrit ? '\u2727 Breach -' : 'Breach -')+fmt(dmg), 'ft-crit', true);
     }
     if(st.activity === a && a.type==='combat'){
@@ -8539,7 +8541,9 @@
     if(_rt > 0){
       var _rtN = heraldRetortStrikes(state_); // Cave-In / Full Retort (D1 2pc): double strikes each
       for(var _r = 0; _r < _rtN && state_.activity === act && act.type==='combat' && (act.monsterHp||0) > 0; _r++){
-        applyEffectDamage(_rt, 'Retort');
+        // earned: a Guard is an EVENT, and the counterblow is a share of the player's own banked hits
+        // (heraldHitAvg), not a carried per-second tick -- see the first-swing gate. Ticket-0160.
+        applyEffectDamage(_rt, 'Retort', { earned:true });
         if(!offlineCapture) spawnCombatFloat('⟲ Retort -'+fmt(_rt), 'ft-reflect', true);
       }
     }
@@ -8547,7 +8551,7 @@
     heraldBarrierAdd(heraldBarrierCap(state_) * HERALD_BARRIER_PER_GUARD, state_);
     // Elemental Bastion (Herald D4 full): a Guard reflects an elemental burst of the prevented damage.
     var _eb = d4HeraldBastionReflect(prevented, monster, state_);
-    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion'); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
+    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion', { earned:true }); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
     // (Brittle Guard's block-Sunder retired: Rending Barbs holds the Sunder from the Bramble's tick now.)
     // Thornwall (legendary shield): a Block feeds the Bramble and forces an immediate tear.
     if(legActive('thornwall') && sentinelBonus(1)){
@@ -8571,7 +8575,7 @@
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
       if(legActive('rimeshell')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Thornwall (D2): a Block reflects 120% of the damage it prevented.
-      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyEffectDamage(_tw, 'Thornwall'); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
+      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyEffectDamage(_tw, 'Thornwall', { earned:true }); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
       // Bulwark of the Breach (D2): every Block banks a Barrier worth 2% of max Health.
       if(legActive('bulwarkbreach')) legBarrierAdd(maxHp(state) * LEG_BULWARKBREACH_PCT);
       // ---- D3 (Underground) legendary shields (Batch S): all Block-triggered ----
@@ -8592,7 +8596,7 @@
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Guard reflects an elemental burst of the prevented damage.
-      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyEffectDamage(_db, 'Dragonscale Bulwark'); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
+      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyEffectDamage(_db, 'Dragonscale Bulwark', { earned:true }); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
   }
   // Unbreakable (Lv60): the fraction of a blocked hit that still lands (0.25 = -75%), else the usual half.
   function heraldBlockMult(st){ st = st || state; return heraldBonus(60, st) ? HERALD_UNBREAKABLE_MULT : 0.5; }
@@ -10388,7 +10392,7 @@
     st.jgEchoes = [];
     st.jgResonance = setFullD3('juggernaut', st) ? 1 : 0;
     if(setFullD4('juggernaut', st)) jgRingEcho(st, dmg);
-    applyEffectDamage(dmg, 'The Big One', { detail: fmt(Math.round(remaining)) + ' ringing x Resonance ' + res + ' (+' + Math.round(jgResonancePer(st)*res*100) + '%)' + (set2D4('juggernaut', st) ? ' x Epicenter +40%' : '') });
+    applyEffectDamage(dmg, 'The Big One', { earned:true, detail: fmt(Math.round(remaining)) + ' ringing x Resonance ' + res + ' (+' + Math.round(jgResonancePer(st)*res*100) + '%)' + (set2D4('juggernaut', st) ? ' x Epicenter +40%' : '') });
     if(!offlineCapture) spawnCombatFloat('THE BIG ONE -'+fmt(dmg), 'ft-crit', true);
     return dmg; }
   // Called from classOnHit for every landed main-hand hit: erupt first (the Big One is THIS swing's
@@ -11926,6 +11930,12 @@
     var p = (places == null) ? 2 : places;
     return n.toLocaleString(undefined, { maximumFractionDigits: p });
   }
+  // Ticket-0160 (owner): "place commas in percentages over 999". The ticket-0152 guard deliberately
+  // tolerates FOUR-digit runs (version strings, years), which is exactly the width a big percentage
+  // lands in, so four-figure percents sailed past it: a fantastic +15 Ring of Fire reads +2400% and a
+  // relic +2016%. This is the percent chokepoint -- it comma-groups AND appends the sign, so a call site
+  // cannot group the number and then forget the '%'. Pass places for the fractional tags (crit rows).
+  function fmtPct(n, places){ return fmtDec(Number(n) || 0, (places == null) ? 0 : places) + '%'; }
   // Compact big-number readout (82.4B) for the stage's stats strip, where an endgame DPS in full
   // comma notation (82,400,000,000) would not fit its plinth. Two significant styles: one decimal
   // below 100 of a unit, whole numbers above. Sub-1000 values print as-is.
@@ -16996,9 +17006,9 @@
       // accuracy, damage resistance, defense, ...) -- shown with its precise label and +enhance, so the
       // card says WHAT the piece boosts and by how much, not just a bare "% damage".
       if(d.kind==='ring'){
-        baseLines.push('+'+Math.round(ringItemBonus(b)*_jEnh*100)+'% '+ringBonusPlainLabel(b)+(_jEnh>1?' (+'+d.enhance+')':''));
+        baseLines.push('+'+fmtPct(ringItemBonus(b)*_jEnh*100)+' '+ringBonusPlainLabel(b)+(_jEnh>1?' (+'+d.enhance+')':''));
       } else if(d.kind==='amulet' && b.kind==='resistance'){
-        baseLines.push('+'+Math.round((b.bonus||0)*_jEnh*100)+'% damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
+        baseLines.push('+'+fmtPct((b.bonus||0)*_jEnh*100)+' damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
       } else {
         if(b.defense) baseLines.push('Defense '+fmtDec(b.defense*_jEnh, 1)+(_jEnh>1?' (+'+d.enhance+')':''));
         // Ward: reflects a share of matching-element hits (rarity adds a full-reflect chance).
@@ -17012,7 +17022,7 @@
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
-    if(d.kind==='relic') baseLines.push('+'+Math.round(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+'% Damage & Armour');
+    if(d.kind==='relic') baseLines.push('+'+fmtPct(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+' Damage & Armour');
     // A Belt's headline stat is its concurrent task slots (rarity-scaled).
     if(d.kind==='belt' && BELT_RARITY_SLOTS[d.rarity]) baseLines.push(BELT_RARITY_SLOTS[d.rarity]+' task slot'+(BELT_RARITY_SLOTS[d.rarity]>1?'s':''));
     return baseLines;
@@ -18946,10 +18956,43 @@
   // 9s before the next swing lands, and every generation was silently confiscated. Measured: an
   // Afterimage worth 1e9 dealt exactly 0 on a fresh foe while Runic Tempo still climbed, which is why
   // the effects bar showed a live train with nothing in the log.
+  // THIRD INSTANCE, ticket-0160: "Herald retort is unable to deal a killing blow". The Herald's Guard
+  // payouts (Retort, Breach, Elemental Bastion) are the same shape and were confiscated the same way.
+  // Measured on a live 20s fight: heraldHitAvg 68,427, a Retort worth 23,949, the Barrier banking, and
+  // ZERO Retort rows in the log. The mechanism is farming, not the Brace clock: the player one-shot the
+  // foe (82,850 into an 18,407 HP champion), so defeatMonster cleared playerSwungOnce and the gate was
+  // shut for the whole of every foe's life except the instant of the swing that killed it. Which is
+  // exactly why it "cannot land a killing blow": on any foe the Retort could kill, it never fires at all.
+  // The Breach was worse than silent -- it zeroes the Barrier BEFORE applying, so a confiscated Breach
+  // spent the whole wall for nothing.
+  //
   // The gate's purpose is to stop engines that tick ON THEIR OWN from killing fresh mobs before the
-  // player acts. It must not confiscate damage a swing has already paid for. Pass earned:true ONLY for
-  // that: a payout queued by a landed swing. A continuous engine (Bramble, Blaze, Plague, Searing Light,
-  // Unraveling, Decay, Bleed, Frostbite) must NEVER set it -- those are exactly what the gate is for.
+  // player acts. It must not confiscate damage the player has already paid for. Pass earned:true for
+  // that and only that, which covers two shapes: a payout QUEUED by a landed swing (the Afterimage
+  // train, the Aftershock), and a discrete response to an in-fight EVENT that is funded by the player's
+  // own banked hits (the Guard payouts, which scale off heraldHitAvg). A continuous engine (Bramble,
+  // Blaze, Plague, Searing Light, Unraveling, Decay, Bleed, Frostbite) must NEVER set it -- those are
+  // exactly what the gate is for, even when a legendary forces a tick early (Thornwall's forced tear
+  // stays gated on purpose: the damage is the Bramble's, and the Bramble is a carried engine).
+  //
+  // FULL AUDIT of all 47 call sites (owner order, v0.0.86.51). Four families:
+  //   1. ON-HIT, inside classOnHit -- SAFE, no flag needed. classOnHit is called from playerAttackTick
+  //      AFTER the stamp, so the gate is already open: Draw-Cut, Decree, Grave Strike, Combust, Harvest,
+  //      Companion Strike, the on-hit Shatter, the on-hit Tear, the on-hit Rot fire.
+  //   2. CARRIED PER-FRAME TICKS -- correctly GATED, leave them: Decay, Bramble, Unraveling, Searing
+  //      Light, Plague, Bleed, Frostbite, Blaze, Familiar Poison. These are the gate's whole purpose.
+  //   3. RETALIATION (a response to the enemy's action, funded by the hit taken) -- now EXEMPT: the Herald
+  //      Guard payouts, Thornwall, Dragonscale Bulwark, Thorn Lash, the Thorns enchant, Signet of the
+  //      Bramble, Phylactery Lash, Cinders, Ward Reflect. Plus The Big One, which rides the same tick as
+  //      the already-exempt Aftershock and is funded by the same ringing ground.
+  //   4. CLOCK ERUPTIONS -- STILL GATED, and this is a KNOWN OPEN ISSUE, not a verdict. Twelve Lv80-ish
+  //      capstones fire on their own cadence rather than on a swing: Storm Bolt/Thunderclap, Gloria,
+  //      Sunbrand, the tick-driven Rot and Soulflay, Pandemic, the full-meter Shatter/Deathfrost, Bloom,
+  //      the Patient Eye Tear, Doom, Falling Axe, Flashover, Brimover. By the 100%-shut measurement above
+  //      they are dead in a farming chain. They were NOT exempted here because unlike family 3 they can
+  //      fire with no enemy action at all, so exempting them reintroduces exactly the zero-swing kills the
+  //      gate was ordered for -- and restoring that much capstone damage is a cross-class balance change
+  //      with anti-cheat knock-ons (progress IS damage: see the progress-jump detector). Owner's call.
   function effectGateOpen(opts){ return (opts && opts.earned) || combatEffectsArmed(); }
   function applyEffectDamage(dmg, name, opts){
     opts = opts || {};
@@ -19479,6 +19522,15 @@
       spawnCombatFloat('Blocked', 'ft-success', false);
       heraldGuardFire(_preBlock - rawDmg, monster, act, armorDefense, false); // every Guard-triggered effect (a Brace runs this same path)
     }
+    // ---- THE RETALIATION FAMILY (all earned:true, gate audit v0.0.86.51) ---------------------------
+    // Everything from here to the Ward Reflect below is a RESPONSE TO THE ENEMY'S OWN ACTION, funded by
+    // the hit the player just took (or, for the Thorn Lash, by the player's recent hit via dotBase). None
+    // of them is a carried per-second engine, so none is what the first-swing gate is for -- and the gate
+    // was confiscating all of them for the whole of every foe's life in a farming chain. Measured over a
+    // real 30s loop: with a foe the player one-shots the gate is shut 100% of sampled time (the stamp is
+    // set and cleared inside one playerAttackTick, so nothing outside that call ever sees it open); with a
+    // foe that survives its swings it is shut 20%, which is the ~2s of each engagement the gate is meant
+    // to cover. Farming is the endgame default, so "100%" is the number that matters.
     // Sentinel "the Bramble" -- Thorn Lash (Lv20): a foe that strikes you is raked by the hedge, scaled
     // by the field's growth off YOUR recent hit (dotBase) -- never the incoming damage. The old reflect
     // returned shares of a ~4-digit monster hit against 1e11-scale player damage and was invisible at
@@ -19486,7 +19538,7 @@
     if(sentinelBonus(20) && act && act.type==='combat' && (act.monsterHp||0) > 0){
       var _lash = snLashDamage(blocked, state);
       if(_lash > 0){
-        applyEffectDamage(_lash, 'Thorn Lash', { detail: 'growth ' + Math.round(snGrowth(state)) + (blocked ? ', Block x2' : '') });
+        applyEffectDamage(_lash, 'Thorn Lash', { earned:true, detail: 'growth ' + Math.round(snGrowth(state)) + (blocked ? ', Block x2' : '') });
         spawnCombatFloat('⟲ Thorn Lash -'+fmt(_lash), 'ft-reflect', true);
       }
     }
@@ -19494,12 +19546,12 @@
     // available to any class (Spellblade Empowered Runes amplifies it like every other enchant).
     var _thornsEnch = Math.round((equippedEnchantTotals(state).thorns || 0) * spellbladeEnchantBoost(state));
     if(_thornsEnch > 0){
-      applyEffectDamage(_thornsEnch, 'Thorns');
+      applyEffectDamage(_thornsEnch, 'Thorns', { earned:true });
       spawnCombatFloat('⟲ Thorns (ench) -'+fmt(_thornsEnch), 'ft-reflect', true);
     }
     // Signet of the Bramble (D2): reflect a share of every incoming hit back at the attacker.
     var _bramble = legendaryRingBonus('d2_bramble', state);
-    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyEffectDamage(_brd, 'Bramble'); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
+    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyEffectDamage(_brd, 'Bramble', { earned:true }); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
     var shieldCounter = weightedShieldCounter(offhandStyle, monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
@@ -19539,7 +19591,7 @@
       state.reaperShield -= _absorbed; dmgToPlayer -= _absorbed;
       if(_absorbed > 0) spawnCombatFloat('Absorbed '+Math.round(_absorbed)+'!', 'ft-success', false);
       // Phylactery Lash (Reaper D3 full): the shield lashes the attacker for all of the damage it absorbed.
-      if(_absorbed > 0 && setFullD3('reaper')){ var _lash = Math.round(_absorbed); if(_lash > 0){ applyEffectDamage(_lash, 'Phylactery Lash'); spawnCombatFloat('Phylactery Lash -'+fmt(_lash), 'ft-crit', true); } }
+      if(_absorbed > 0 && setFullD3('reaper')){ var _lash = Math.round(_absorbed); if(_lash > 0){ applyEffectDamage(_lash, 'Phylactery Lash', { earned:true }); spawnCombatFloat('Phylactery Lash -'+fmt(_lash), 'ft-crit', true); } }
     }
     if((state.lumenShield||0) > 0 && dmgToPlayer > 0){
       var _lBefore = state.lumenShield;
@@ -19593,7 +19645,7 @@
     // Shroud of Cinders (D4 cloak): a hit you take exhales a Fire retort at the attacker.
     if(dmgToPlayer > 0 && legendaryCloakBonus('d4_cinders', state) > 0 && act && act.type==='combat' && act.monsterHp > 0){
       var _cin = Math.max(1, Math.round(dmgToPlayer * legendaryCloakBonus('d4_cinders', state) * elementDmgMult(state, 'fire')));
-      applyEffectDamage(_cin, 'Cinders'); if(!offlineCapture) spawnCombatFloat(svgIcon('flame','#e8641e')+' Cinders -'+fmt(_cin), 'ft-crit', true);
+      applyEffectDamage(_cin, 'Cinders', { earned:true }); if(!offlineCapture) spawnCombatFloat(svgIcon('flame','#e8641e')+' Cinders -'+fmt(_cin), 'ft-crit', true);
     }
     // Knight Rally (Lv 20): a blow you take rallies the line to its lord -- the Banner rises +1.
     if(dmgToPlayer > 0 && knightBonus(20)) knBannerRaise(1);
@@ -19613,7 +19665,7 @@
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
-      applyEffectDamage(wardReflected, 'Ward Reflect');
+      applyEffectDamage(wardReflected, 'Ward Reflect', { earned:true });
       // Was a player-side spawnFloatingText, which put damage dealt to the ENEMY over your own health bar
       // and styled it as a generic 'rare' proc. It's retaliation like the rest -- same anchor, same colour.
       spawnCombatFloat('⟲ Ward -'+fmt(wardReflected)+(monster.element?' '+elementIcon(monster.element):''), 'ft-reflect', true);
@@ -23311,7 +23363,7 @@
     var _enchRow = function(label, stat, pct, suffix){ var v = enchTot[stat]||0; if(!v) return ''; var disp = pct ? ('+'+fmtDec(v, 1)+'%') : ('+'+fmt(v)); return '<div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> '+label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+(suffix||'')+'</span></div>'; };
     // Inline "(+X% relic)" tag, appended to the Attack Damage and Armor rows whose numbers already fold the
     // relic bonus in (mirrors the enchant "(+X ench)" tag convention above).
-    var _relicTag = _relicBonusStat > 0 ? ' <span style="color:var(--gold);font-size:11px">(+'+Math.round(_relicBonusStat*100)+'% relic)</span>' : '';
+    var _relicTag = _relicBonusStat > 0 ? ' <span style="color:var(--gold);font-size:11px">(+'+fmtPct(_relicBonusStat*100)+' relic)</span>' : '';
     // Fold the Weapon/All Damage (%) and Flat Damage enchants into the displayed Attack Damage so the
     // number reflects them (they were previously only listed in a separate block).
     var _dmgEnchMult = 1 + (enchTot.pctDamage||0)/100, _flatEnch = Math.round(enchTot.flatDamage||0);
@@ -23347,16 +23399,16 @@
       dmgTypeHtml = TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType;
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+fmtPct((weaponProficiency-1)*100)+'</span></div>';
     var _critChancePct = Math.round(playerCritChance(null)*10000)/100; // same chain the combat roll uses (no foe -> Quickdraw term is 0)
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+fmtPct(_critChancePct, 2)+(enchCrit>0?' <span style="color:var(--gold)">(+'+fmtPct(enchTot.critChance, 1)+' ench)</span>':'')+'</span></div>';
     var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + d3SetCritDmgBonus(state) + enchCritDmg)*100)/100;
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+fmtDec(_critDmgMult, 2)+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+fmtPct(enchTot.critDamage, 1)+' ench)</span>':'')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+fmt(playerAccuracy(state))+_et('accuracy',true)+'</span></div>';
     if(weaponStyle.hand==='bow'){
-      html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+fmtPct(getLeatherArmorBonuses(state).bowDmgBonus*100)+'</span></div>';
     } else {
-      html += '<div class="stat-row"><span class="stat-label">Chain Melee Bonus</span><span class="stat-value">+'+Math.round(getChainArmorMeleeBonus(state)*100)+'%</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Chain Melee Bonus</span><span class="stat-value">+'+fmtPct(getChainArmorMeleeBonus(state)*100)+'</span></div>';
     }
     // Enchant-only offensive effects (no base stat of their own): gold ✦ rows shown only when worn.
     html += _enchRow('Lifesteal','lifesteal',true,' of dmg');
@@ -27857,6 +27909,16 @@
   // merge: the GAME_VERSION bump stays mandatory per merge, but this list is only touched when the owner
   // asks for a "daily blast", which condenses that day's releases into one entry.
   var PATCH_NOTES = [
+    { v:'0.0.86', date:'Aug 6', heading:'Level gates land, and the numbers finally read straight', items:[
+      '<b>Levels gate the estate and your tools</b>: tilling a <b>Field</b> tier needs that tier&rsquo;s <b>Digging</b> level, placing or upgrading a building needs its <b>Architecture</b> level (and Workshop and Cottage upgrades are paid from the tier you have <b>built</b>, not the one you are buying), <b>totem raises</b> are gated too and can now be <b>upgraded in place</b>, cutting <b>shafts</b> needs the log tier&rsquo;s <b>Fletching</b> level, and <b>wielding a tool requires its tier level in the skill it serves</b>.',
+      '<b>Cottages cost 10 planks per tier</b> instead of 100.',
+      '<b>Peons can change task or tier without stopping</b>: no more cancelling the job and losing the progress just to move a worker down a tier. Cancelling an estate job now also <b>refunds its materials</b>, itemised in the log, for every job kind.',
+      '<b>Inventory finds items by the words the game uses for them</b>: searching &ldquo;Inscription&rdquo; or &ldquo;Scroll&rdquo; turns up your scrolls, and every crafted and gathered item answers to its <b>producing skill&rsquo;s name</b> as well as its own. The Improvement page shows your <b>full breakdown across tiers</b>, not just the highest you hold.',
+      '<b>Masterwork gear stopped quoting a material tier you cannot buy</b>: t21&ndash;t24 all improve with <b>t20</b> materials, in the label and in the count.',
+      '<b>Faith survives going offline</b>: actives stay activated while you are away and <b>bless offline craft rarity</b>, flagged offerings feed the buff <b>after</b> your relics are spent, and a bug that could <b>eat the Faith you earned offline</b> is fixed.',
+      '<b>Spellblade Afterimages and Juggernaut Aftershocks fire again</b>: the new first-swing gate was confiscating damage a previous swing had already earned, so the echoes never landed and never reached the combat log.',
+      'Display: <b>large numbers are comma-grouped everywhere</b> (all 72 renderers, from recipe inputs to live-updating counts), <b>stat rows keep a minimum gap</b> so a long label cannot touch its own value, and the landing page&rsquo;s <b>combat preview stays inside its frame</b> on desktop and mobile.'
+    ]},
     { v:'0.0.86', date:'Aug 5', heading:'The arena learns to count, and everything folds', items:[
       'The fight screen: a <b>session stats rail</b> (time, DPS, kills, hits, best single blow), <b>percentages on the health orbs</b>, an <b>Auto-Eat waterline</b> on your glass with a red pulse below 25% HP, and enemy specials that <b>telegraph</b> past 80% charge and explain themselves on hover.',
       '<b>Loot banners got their own lane</b> between the plinths, so damage numbers stop painting over them and over the foe&rsquo;s weakness line.',
@@ -40815,7 +40877,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.49';
+  var GAME_VERSION = '0.0.86.52';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40941,7 +41003,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, COTTAGE_PLANKS:COTTAGE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
+      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,

@@ -2304,6 +2304,17 @@
     var html = FF.renderPatchNotes();
     ok(html.indexOf(FF.PATCH_NOTES[0].heading) !== -1, 'the rendered notes lead with the newest release heading');
     ok(html.indexOf(FF.PATCH_NOTES[0].items[0]) !== -1, 'the newest release’s items render');
+    // The no-em-dash / no-emoji owner rule covers patch notes, but PATCH_NOTES is excluded from the
+    // def-table deep scan because the HISTORICAL entries predate the rule and keep their dashes. So
+    // guard the NEWEST entry only: that is always the one being written, and the rule applies to it.
+    var newest = FF.PATCH_NOTES[0];
+    var newestText = [newest.heading].concat(newest.items).join(' ');
+    ok(newestText.indexOf('—') === -1 && newestText.indexOf('&mdash;') === -1,
+      'the newest release entry carries no em dash, literal or entity (owner rule)');
+    ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(newestText),
+      'the newest release entry carries no emoji (owner rule)');
+    // renderPatchNotes escapes headings, so an entity there ships as literal text to the player.
+    ok(newest.heading.indexOf('&') === -1, 'the newest heading is plain text, no HTML entities');
   });
 
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
@@ -18760,6 +18771,97 @@
     }
   });
 
+  // ---- ticket-0160: percentages over 999 are comma-grouped too (owner) -----------------------------
+  // Follow-on from ticket-0152. That guard tolerates FOUR-digit runs on purpose (version strings, years),
+  // which is exactly the width a big percentage lands in, so four-figure percents sailed straight past it:
+  // a fantastic +15 Ring of Fire read "+2400% Fire damage", a relic "+2016% Damage & Armour", and the
+  // combat panel "(+1920% relic)". fmtPct() is the chokepoint (it groups AND appends the sign, so a site
+  // cannot group the number then forget the '%'), and this scans for the shape rather than the sites.
+  suite('ticket-0160: no unformatted percentages over 999', function(){
+    eq(FF.fmtPct(2400), '2,400%', 'fmtPct groups four figures and appends the sign');
+    eq(FF.fmtPct(999), '999%', 'three figures stay ungrouped');
+    eq(FF.fmtPct(1380.44, 1), '1,380.4%', 'fmtPct keeps the requested decimals while grouping');
+    eq(FF.fmtPct(0), '0%', 'zero renders plainly');
+    var S = FF._state;
+    // A bare 4+ digit run immediately before a '%' -- the ticket's exact shape. Commas make it not match.
+    function bareBigPct(html){
+      var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
+      var out = [], m, re = /(^|[^\d,.])(\d{4,})\s*%/g;
+      while((m = re.exec(txt))){ out.push(m[2] + '%'); if(out.length > 3) break; }
+      return out;
+    }
+    var sv = { xp:S.xp, phys:S.physique, armor:S.bodyArmor, uniq:S.uniqueItems, jew:S.jewelrySlots,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity,
+               mhU:S.equippedMainhandUid, rlU:S.equippedRelicUid, rlT:S.equippedRelicTier, rlR:S.equippedRelicRarity };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.equippedMainhand = 'greatsword'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'plate',tier:TOP,rarity:'fantastic'}, chest:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      gauntlets:{material:'plate',tier:TOP,rarity:'fantastic'}, boots:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      back:{material:'tailoring',tier:TOP,rarity:'fantastic'} };
+      // MAX-ROLL enchants on a fantastic +15 kit: the only fixture that drives the "(+X% ench)" and
+      // "(+X% relic)" tags into four figures, which is where the report came from.
+      function maxEnch(kind){
+        return (FF.ENCHANT_MODS[kind] || []).filter(function(m){ return m.pct; }).slice(0, 4)
+          .map(function(m){ return { mod:m.id, roll:m.max }; });
+      }
+      S.uniqueItems = {};
+      function mint(uid, kind, base){
+        S.uniqueItems[uid] = { uid:uid, kind:kind, base:base, tier:TOP, rarity:'fantastic', enhance:15, enchants:maxEnch(kind) };
+        return uid;
+      }
+      S.equippedMainhandUid = mint('w', 'weapon', 'stweapon_greatsword_t'+TOP+'_fantastic');
+      S.equippedRelicUid = mint('rl', 'relic', 'relic_t'+TOP+'_fantastic');
+      S.equippedRelicTier = TOP; S.equippedRelicRarity = 'fantastic';
+      S.jewelrySlots = {};
+      (FF.RING_SLOT_IDS || []).forEach(function(sl, i){
+        S.jewelrySlots[sl] = { typeId:'ringFire', tier:TOP+1, rarity:'fantastic', uid:mint('rg'+i, 'ring', 'ring_fire_t'+TOP+'_fantastic') };
+      });
+      var scanned = 0, bad = [];
+      Object.keys(FF).forEach(function(k){
+        if(typeof FF[k] !== 'function' || FF[k].length > 0) return;
+        if(!/^(render|.*Html$|.*Text$|.*Label$|.*Line$)/.test(k)) return;
+        var html; try { html = FF[k](); } catch(e){ return; }   // needs state this fixture lacks
+        scanned++;
+        var runs = bareBigPct(html);
+        if(runs.length) bad.push(k + ': ' + runs.join(','));
+      });
+      // The item-card family, which is where the ring and relic lines live.
+      [['ring','ring_fire_t'+TOP+'_fantastic'], ['relic','relic_t'+TOP+'_fantastic'],
+       ['amulet','amulet_t'+TOP+'_fantastic'], ['weapon','stweapon_greatsword_t'+TOP+'_fantastic']
+      ].forEach(function(pair){
+        var d = { uid:'c_'+pair[0], kind:pair[0], base:pair[1], rarity:'fantastic', tier:TOP, enhance:15, enchants:maxEnch(pair[0]) };
+        ['uniqueBaseStatLines','uniqueCardBody','renderUniqueEquipCard','discordItemStatsText'].forEach(function(n){
+          if(typeof FF[n] !== 'function') return;
+          var r; try { r = FF[n](d); } catch(e){ return; }
+          scanned++;
+          var runs = bareBigPct(Array.isArray(r) ? r.join(' | ') : r);
+          if(runs.length) bad.push(n+'('+pair[0]+'): ' + runs.join(','));
+        });
+      });
+      eq(bad.join(' || '), '', 'no renderer prints a percentage over 999 without commas (offenders listed)');
+      // VACUITY GUARDS, same reasoning as ticket-0152: throws are swallowed to keep the sweep runnable, so
+      // pin the count AND prove the fixture really drives percentages past 999. Without these the suite
+      // would pass just as happily against a fixture that produces no large percentage at all.
+      ok(scanned >= 40, 'the sweep really exercised the renderers (scanned ' + scanned + ')');
+      var ringLine = FF.uniqueBaseStatLines({ uid:'c_r', kind:'ring', base:'ring_fire_t'+TOP+'_fantastic',
+                                              rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })[0] || '';
+      ok(/^\+\d,\d{3}% /.test(ringLine), 'the reported ring line is grouped: ' + ringLine);
+      var relicLine = FF.uniqueBaseStatLines({ uid:'c_l', kind:'relic', base:'relic_t'+TOP+'_fantastic',
+                                               rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })
+                        .filter(function(l){ return /Damage & Armour/.test(l); })[0] || '';
+      ok(/^\+\d,\d{3}% /.test(relicLine), 'the reported relic line is grouped: ' + relicLine);
+      ok(/\(\+\d,\d{3}% relic\)/.test(FF.renderCombatStatsPanel()), 'the panel relic tag is grouped');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.bodyArmor = sv.armor; S.uniqueItems = sv.uniq;
+      S.jewelrySlots = sv.jew; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
+      S.equippedRelicUid = sv.rlU; S.equippedRelicTier = sv.rlT; S.equippedRelicRarity = sv.rlR;
+    }
+  });
+
   // ---- Landing preview containment (owner report: the stage overlaid the landing content) ----------
   // The preview is a fixed 900px stage scaled down, so its HEIGHT is content- and width-dependent (log
   // rows arrive, effect rows appear, and under 820px .ar2-low stops being a two-column split). The wrap
@@ -18848,6 +18950,151 @@
       S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
       S.bodyArmor = sv.armor; S.activity = sv.act; S.sbEchoes = sv.echoes; S.sbTempo = sv.tempo;
       S.playerHp = sv.hp;
+    }
+  });
+
+  // ---- ticket-0160: the Herald's Guard payouts survive the first-swing gate ------------------------
+  // "Herald retort is unable to deal a killing blow" -- the THIRD instance of the ticket-0159 regression.
+  // Measured on a live 20s fight before the fix: heraldHitAvg 68,427, a Retort worth 23,949, the Barrier
+  // banking (so heraldGuardFire was definitely running), and ZERO Retort rows in the combat log. The
+  // mechanism is FARMING, not the Brace clock: the player one-shot the foe, so defeatMonster cleared
+  // playerSwungOnce and the gate stayed shut for the whole of every foe's life except the instant of the
+  // swing that killed it. Hence the exact symptom reported -- on any foe the Retort is big enough to
+  // kill, it never fires at all. The Breach was worse than silent: it zeroes the Barrier BEFORE applying,
+  // so a confiscated Breach spent the entire wall for nothing.
+  suite('ticket-0160: the Herald Retort and Breach land on a foe not yet swung at', function(){
+    var S = FF._state;
+    var sv = { xp:S.xp, phys:S.physique, mh:S.equippedMainhand, mhT:S.equippedMainhandTier,
+               mhR:S.equippedMainhandRarity, oh:S.equippedOffhand, ohT:S.equippedOffhandTier,
+               ohR:S.equippedOffhandRarity, armor:S.bodyArmor, act:S.activity, uniq:S.uniqueItems,
+               hitAvg:S.heraldHitAvg, barrier:S.heraldBarrier, hp:S.playerHp };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      // Gear-derived class: Mace + Large Shield + full Plate.
+      S.equippedMainhand = 'mace'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.equippedOffhand = 'shieldLarge'; S.equippedOffhandTier = TOP; S.equippedOffhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      chest:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      gauntlets:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      boots:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      S.uniqueItems = {};
+      eq(FF.activeClassId(S), 'herald', 'the fixture really is a Herald (gear-derived)');
+      ok(FF.heraldBonus(20, S), 'and Retort (Lv20) is live');
+      // The recent-hit EMA the Retort is a share of. State-scoped, so it survives the kill that closed the
+      // gate -- which is exactly why the Retort has damage to deal on a foe it has not swung at yet.
+      S.heraldHitAvg = 1000000;
+      var rt = FF.heraldRetortDamage(S);
+      ok(rt > 0, 'the Retort has a damage value (' + rt + ')');
+
+      // THE POST-KILL STATE: a fresh foe, no swing yet, in a farming chain.
+      function freshFoe(hp){
+        S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:hp, tickAccum:0, monsterTickAccum:0,
+                       specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false };
+        return S.activity;
+      }
+      var act = freshFoe(rt * 100);
+      ok(!FF.combatEffectsArmed(), 'the gate is CLOSED on the fresh foe');
+      var hp0 = act.monsterHp;
+      FF.heraldGuardFire(500, null, act, 500, true);
+      ok(hp0 - S.activity.monsterHp >= rt,
+         'the Retort LANDS through the closed gate (dealt ' + (hp0 - S.activity.monsterHp) + ', expected >= ' + rt + ')');
+
+      // THE REPORTED SYMPTOM: it must be able to land the KILLING blow, not merely tick a healthy foe.
+      act = freshFoe(Math.max(1, Math.floor(rt / 2)));
+      var killed = FF.applyEffectDamage(rt, 'Retort', { earned:true });
+      ok(killed === true, 'a Retort worth more than the foe s remaining HP reports the kill');
+
+      // The Breach: it spends the wall FIRST, so a gated Breach is a pure loss. Fill the wall and fire.
+      act = freshFoe(1e15);
+      if(FF.heraldBonus(80, S)){
+        S.heraldBarrier = FF.heraldBarrierCap(S);
+        var bHp = act.monsterHp;
+        var dealt = FF.heraldBreachFire(S);
+        ok(dealt > 0, 'the Breach reports damage on a foe not yet swung at (' + dealt + ')');
+        ok(bHp - S.activity.monsterHp > 0, '...and the foe actually took it, so the wall was not spent for nothing');
+        eq(S.heraldBarrier, 0, 'the wall is spent by the Breach that paid out');
+      }
+
+      // VACUITY GUARDS, the ticket-0159 pattern: prove the gate in this fixture is genuinely closed, so
+      // the assertions above are testing the exemption and not a gate that happens to be open.
+      act = freshFoe(1e15);
+      var hp2 = act.monsterHp;
+      FF.applyEffectDot(5e8, 'Bramble');
+      eq(S.activity.monsterHp, hp2, 'a carried per-second engine is STILL gated before the first swing');
+      FF.applyEffectDamage(5e8, 'Gloria', {});
+      eq(S.activity.monsterHp, hp2, '...and so is an unmarked discrete effect');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
+      S.equippedOffhandRarity = sv.ohR; S.bodyArmor = sv.armor; S.activity = sv.act; S.uniqueItems = sv.uniq;
+      S.heraldHitAvg = sv.hitAvg; S.heraldBarrier = sv.barrier; S.playerHp = sv.hp;
+    }
+  });
+
+  // ---- Gate audit: the RETALIATION family survives the closed gate (owner order) -------------------
+  // Sweeping all 47 applyEffectDamage/applyEffectDot sites after ticket-0160 found a whole family with the
+  // Herald's defect: damage that answers the ENEMY'S action, funded by the hit just taken. It was being
+  // confiscated for the whole of every foe's life in a farming chain, because with a one-shot foe the
+  // stamp is set and cleared inside a single playerAttackTick and nothing outside that call ever sees the
+  // gate open (measured: 100% shut over a 30s loop, versus 20% when the foe survives its swings).
+  // Drives the REAL monsterAttackTick, so it covers the wiring and not just the flag.
+  suite('gate audit: retaliation (Thorn Lash, Thorns enchant) lands on a foe not yet swung at', function(){
+    var S = FF._state;
+    var sv = { xp:S.xp, phys:S.physique, mh:S.equippedMainhand, mhT:S.equippedMainhandTier,
+               mhR:S.equippedMainhandRarity, oh:S.equippedOffhand, ohT:S.equippedOffhandTier,
+               ohR:S.equippedOffhandRarity, armor:S.bodyArmor, act:S.activity, uniq:S.uniqueItems,
+               hp:S.playerHp, growth:S.snGrowth, chestUid:S.bodyArmorUids };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      // Sentinel: Maul + Medium Shield + full Chain. Its Thorn Lash is the headline case -- the class's
+      // whole identity is retaliation, so a gated lash means the class does nothing while farming.
+      S.equippedMainhand = 'maul'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.equippedOffhand = 'shieldMedium'; S.equippedOffhandTier = TOP; S.equippedOffhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      chest:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      gauntlets:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      boots:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      S.uniqueItems = {};
+      eq(FF.activeClassId(S), 'sentinel', 'the fixture really is a Sentinel (gear-derived)');
+      // sentinelBonus is not on the seam; the class level is, and Lv20 is what Thorn Lash needs.
+      ok(FF.classLevel(S, 'sentinel') >= 20, 'and the class is at least Lv20, so Thorn Lash is live');
+      // A grown hedge and a banked recent hit, both of which survive the kill that closed the gate.
+      S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:1e15, tickAccum:0, monsterTickAccum:0,
+                     specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false, dotHitAvg:1e9 };
+      S.snGrowth = FF.snGrowCap(S);
+      ok(!FF.combatEffectsArmed(), 'the gate is CLOSED on the fresh foe');
+      ok(FF.snLashDamage(false, S) > 0, 'the lash has a damage value (' + FF.snLashDamage(false, S) + ')');
+      // Drive real enemy swings. Dodge and block are rolls, so take many attempts and keep the player
+      // alive; the assertion is that SOME retaliation landed, which cannot happen if the gate eats it.
+      var mon = FF.MONSTERS[0];
+      var hp0 = S.activity.monsterHp;
+      FF._clReset && FF._clReset();
+      for(var i = 0; i < 60; i++){
+        S.playerHp = FF.maxHp(S);
+        S.activity.playerSwungOnce = false;   // the farming-chain state, re-asserted every attempt
+        try { FF.monsterAttackTick(mon); } catch(e){ break; }
+        if(!S.activity || S.activity.type !== 'combat') break;
+      }
+      var dealt = hp0 - ((S.activity && S.activity.monsterHp) || hp0);
+      ok(dealt > 0, 'retaliation LANDED on a foe not yet swung at (dealt ' + dealt + ' over 60 enemy swings)');
+      var rows = (FF._combatLog ? FF._combatLog() : []).map(function(e){ return e.spName || ''; });
+      ok(rows.indexOf('Thorn Lash') !== -1, 'and the Thorn Lash reached the combat log');
+      // VACUITY GUARD: the same closed gate must still hold a carried engine, or this is a blanket removal.
+      S.activity.playerSwungOnce = false;
+      var hp2 = S.activity.monsterHp;
+      FF.applyEffectDot(5e8, 'Bramble');
+      eq(S.activity.monsterHp, hp2, 'a carried per-second engine is STILL gated before the first swing');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
+      S.equippedOffhandRarity = sv.ohR; S.bodyArmor = sv.armor; S.activity = sv.act; S.uniqueItems = sv.uniq;
+      S.playerHp = sv.hp; S.snGrowth = sv.growth;
     }
   });
 
