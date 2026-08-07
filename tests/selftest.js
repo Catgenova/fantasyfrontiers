@@ -6081,6 +6081,62 @@
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
   });
 
+  // ---- ticket-0164: auto-roll forecasts its cost and confirms an expensive run (Valuren) ------------
+  // "i miss rolled one with a flat stat fire ... dumped like 5k enchantstones." Auto-roll spends until it
+  // hits or the stock empties, all on ONE click, with no forecast -- so replacing a mis-rolled line could
+  // cost 10 crystals or 20,000 and the player could not tell which. Measured on a full 4-slot fantastic t20
+  // weapon: critDamage at its floor 10, critDamage MAXED 3,085, a raw Fire line at 2050 20,030. The cost is
+  // exactly predictable, so it is now predicted, shown, and gated behind a confirming second click.
+  suite('ticket-0164: auto-roll forecasts its crystal cost and gates an expensive run', function(){
+    ok(typeof FF.enchantAutoForecast === 'function', 'the forecast helper is exported');
+    var TOP = FF.TIER_COUNT - 1, ctx = { tier:TOP, magicWeapon:false };
+    // The arithmetic: 1/poolSize for the mod, times the share of the range that clears the target, times
+    // (enchants + 1) crystals per attempt. Weapon pool is 12; critDamage is 5..30, so 26 values.
+    var atFloor = FF.enchantAutoForecast('weapon', ctx, 'critDamage', 5, 4);
+    eq(atFloor.attempts, 12, 'any roll of the mod clears its floor, so 12 rolls (one per pool slot)');
+    eq(atFloor.crystals, 60, '...at 5 crystals each on a full 4-slot item');
+    var maxed = FF.enchantAutoForecast('weapon', ctx, 'critDamage', 30, 4);
+    eq(maxed.attempts, 312, 'a MAXED critDamage needs 12 x 26 rolls');
+    eq(maxed.crystals, 1560, '...which is 1,560 crystals, the number the player never saw');
+    // Per-attempt cost falls with fewer occupied slots, which is why an empty item is cheap to roll.
+    eq(FF.enchantAutoForecast('weapon', ctx, 'critDamage', 30, 0).crystals, 312, 'an empty item pays 1 per roll');
+    eq(FF.enchantAutoForecast('weapon', ctx, 'critDamage', 30, 4).perAttempt, 5, 'a full 4-slot item pays 5 per roll');
+    // A raw, tier-scaled line has a far wider range, which is what made Valuren's run so expensive.
+    var raw = FF.enchantAutoForecast('weapon', ctx, 'fireDamage', 2050, 4);
+    ok(raw.crystals > 3000, 'a near-max raw roll forecasts thousands of crystals (' + raw.crystals + ')');
+    eq(FF.enchantAutoForecast('weapon', ctx, 'critDamage', 999, 4), null, 'an unreachable target forecasts null');
+    ok(FF.AUTOROLL_CONFIRM_AT > 0, 'the confirm threshold is a positive number of crystals');
+
+    // END TO END: the first click on an expensive run must spend NOTHING and arm; the second must fire.
+    var S = FF._state;
+    var sv = { inv:S.inventory, uniq:S.uniqueItems };
+    try {
+      var key = 'enchant_t' + FF.improveMatTier(TOP);
+      function seed(){
+        S.inventory = {}; S.inventory[key] = 50000;
+        S.uniqueItems = { u1:{ uid:'u1', base:'stweapon_greatsword_t'+TOP+'_fantastic', kind:'weapon',
+          tier:TOP, rarity:'fantastic', enhance:0, enchants:[
+            { mod:'critDamage', roll:30 }, { mod:'critChance', roll:12 },
+            { mod:'weaponDamage', roll:25 }, { mod:'fireDamage', roll:900 } ] } };
+      }
+      // NB: seed() FIRST -- as a second argument it would evaluate after the call (this test caught itself).
+      seed();
+      eq(FF.enchantCrystalsAvailable(TOP), 50000, 'the stock helper counts what is spendable');
+      var before = S.inventory[key];
+      var first = FF.improveAutoRoll('critDamage', 30, 'u1', 3);
+      eq(first, null, 'the FIRST click on an expensive run does not run');
+      eq(S.inventory[key], before, '...and spends not one crystal');
+      var second = FF.improveAutoRoll('critDamage', 30, 'u1', 3);
+      ok(second && second.spent > 0, 'the SECOND, confirming click runs (spent ' + (second && second.spent) + ')');
+      ok(second && second.placed && second.placed.mod === 'critDamage' && second.placed.roll >= 30,
+         '...and lands the target');
+      // A CHEAP run must never ask: the gate exists for the 5,000-crystal case, not for every click.
+      seed();
+      var cheap = FF.improveAutoRoll('critDamage', 5, 'u1', 3);
+      ok(cheap && cheap.spent > 0, 'a cheap run fires on the first click (spent ' + (cheap && cheap.spent) + ')');
+    } finally { S.inventory = sv.inv; S.uniqueItems = sv.uniq; }
+  });
+
   // ---- ticket-0162: a queued run's remaining time is for the TARGET, not the whole stack -------------
   // "In crafting, the remaining time calculated is based on your entire stack, this time is incorrect when
   // you queue a job for x amount of items." Exactly right: describeTask reported taskRunsRemaining(), the

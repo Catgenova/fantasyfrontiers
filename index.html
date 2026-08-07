@@ -16225,6 +16225,13 @@
   function improveMatTier(itemTier){ return Math.min(itemTier, TIER_COUNT - 1); }
   // Plan `count` Enchant Crystals of tier >= the item's MATERIAL tier, cheapest (lowest) tiers first.
   // Returns { plan:{enchant_t<n>:qty}, maxTier } or null if the player can't cover it.
+  // Total crystals usable for an item of this tier (its own tier and every tier above -- planEnchantCrystals
+  // walks upward). Used by the auto-roll forecast to say what the player actually has to spend.
+  function enchantCrystalsAvailable(itemTier){
+    var t0 = improveMatTier(itemTier), n = 0;
+    for(var t = t0; t < TIER_COUNT; t++) n += state.inventory['enchant_t' + t] || 0;
+    return n;
+  }
   function planEnchantCrystals(itemTier, count){
     itemTier = improveMatTier(itemTier);
     var plan = {}, need = count, maxTier = itemTier;
@@ -16834,6 +16841,35 @@
   //              already carries the target mod at >= the target value.
   // modIdArg/minArg/selOverride/slotArg let the test suite drive it without the DOM.
   // Returns { placed, spent } for tests.
+  // ticket-0164 (Valuren): "dumped like 5k enchantstones". Auto-roll spends until it hits or the stock is
+  // empty, and it does the whole run on ONE click with no forecast -- so a player replacing a mis-rolled
+  // line cannot tell whether that click costs 10 crystals or 20,000. Measured on a full 4-slot fantastic
+  // t20 weapon: critDamage at its floor costs 10, critDamage MAXED costs 3,085, and a raw Fire line at
+  // 2050 costs 20,030. The arithmetic was always honest; it was just invisible.
+  //
+  // The cost is exactly predictable, so predict it. Per attempt the player pays (enchants + 1) crystals,
+  // and an attempt succeeds when the pool lands the right mod AND the roll clears the target:
+  //     P = (1 / poolSize) * (max - target + 1) / (max - min + 1)
+  // Expected crystals = perAttempt / P. Shown before the click, and a spend past AUTOROLL_CONFIRM_AT needs
+  // a second, confirming click (the pattern the sell/sacrifice buttons already use).
+  var AUTOROLL_CONFIRM_AT = 250;   // expected crystals above which the button arms instead of firing
+  var improveAutoArmed = null;     // '<mod>|<target>|<slot>' once warned, so changing the target re-arms
+  function enchantAutoForecast(kind, ctx, modId, target, enchantCount){
+    var pool = enchantPoolForItem(kind, !!(ctx && ctx.magicWeapon));
+    var m = enchantModById(kind, modId);
+    if(!pool || !pool.length || !m) return null;
+    var r = enchantModRange(m, (ctx && ctx.tier) || 0);
+    // Clamp UP to the floor only. An ASK ABOVE the ceiling is unreachable and must report so -- clamping it
+    // down would quote the price of a target the caller did not ask for (caught by its own test).
+    var want = Math.max(r.min, target || r.min);
+    if(want > r.max) return null;                               // unreachable; the caller's guard refuses
+    var span = Math.max(1, r.max - r.min + 1);
+    var hits = Math.max(0, r.max - want + 1);
+    if(hits <= 0) return null;
+    var p = (1 / pool.length) * (hits / span);
+    var perAttempt = Math.max(1, (enchantCount || 0) + 1);
+    return { p:p, attempts:Math.ceil(1 / p), crystals:Math.ceil(perAttempt / p), perAttempt:perAttempt };
+  }
   function improveAutoRoll(modIdArg, minArg, selOverride, slotArg){
     if(improvePending) return null;
     var sel = selOverride || improveSel; if(!sel) return null;
@@ -16890,6 +16926,22 @@
       if(slotChoice >= curEnchants.length){ blockedNotice('That enchant slot no longer exists. Pick a slot again.'); improveAutoSlot = 'auto'; render(); return null; }
       if(curEnchants[slotChoice].mod===modId && curEnchants[slotChoice].roll>=target){ addLog('Slot '+(slotChoice+1)+' already carries +'+curEnchants[slotChoice].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target).','important'); render(); return null; }
     }
+    // ARM-AND-CONFIRM on an expensive run (ticket-0164). Every guard above has passed, so this is a run
+    // that WILL spend; forecast it and make the player agree to the number first. Placed here, after the
+    // "already satisfied" checks, so a click that was going to cost nothing never asks for confirmation.
+    var _fc = enchantAutoForecast(kind, { tier:tier, magicWeapon:magicWeapon }, modId, target, curEnchants.length);
+    if(_fc && _fc.crystals > AUTOROLL_CONFIRM_AT){
+      var _armKey = modId + '|' + target + '|' + slotChoice;
+      if(improveAutoArmed !== _armKey){
+        improveAutoArmed = _armKey;
+        addLog('Auto-roll for ' + m.label + ' \u2265 +' + target + (m.pct?'%':'') + ' is expected to cost about '
+          + fmt(_fc.crystals) + ' Enchant Crystals (' + fmt(_fc.attempts) + ' rolls at ' + _fc.perAttempt
+          + ' each). You have ' + fmt(enchantCrystalsAvailable(tier)) + '. Click Auto roll again to spend them.', 'danger');
+        render();
+        return null;
+      }
+    }
+    improveAutoArmed = null;   // this click is the confirming one (or the run was cheap): let it fire
     // Convert the source into a unique now (like improveEnchant) so hits have a home.
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel));
     if(!uid){ return null; } improveSel = uid;
@@ -17324,12 +17376,28 @@
     html += '<select id="improveAutoModSel" style="'+inStyle+'max-width:260px;">'+opts+'</select>';
     html += '<label style="font-size:12px;color:var(--text-dim);">min <input id="improveAutoMinInput" type="number" min="'+mdRange.min+'" max="'+mdRange.max+'" step="1" value="'+minVal+'" style="'+inStyle+'width:66px;"></label>';
     html += '<select id="improveAutoSlotSel" style="'+inStyle+'max-width:300px;" title="Where the winning roll lands">'+sopts+'</select>';
-    html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">Auto roll ≥ +'+minVal+suf+'</button>';
+    // ticket-0164: the cost, BEFORE the click. A run past AUTOROLL_CONFIRM_AT needs a confirming second
+    // click, and the button says so rather than silently arming.
+    var _fcast = enchantAutoForecast(kind, ctx, curMod, minVal, curEnchants.length);
+    var _armKeyUi = curMod + '|' + minVal + '|' + slotSel;
+    var _armedNow = _fcast && _fcast.crystals > AUTOROLL_CONFIRM_AT && improveAutoArmed === _armKeyUi;
+    html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">'
+      + (_armedNow ? 'Confirm: spend ~'+fmt(_fcast.crystals) : 'Auto roll ≥ +'+minVal+suf) + '</button>';
     html += '</div>';
     var landNote = slotSel === 'new' ? 'The hit lands in a <b>new unused slot</b>, existing enchants (even a matching '+escapeHtml(md.label)+') are left untouched.'
                  : slotSel !== 'auto' ? 'The hit <b>replaces slot '+(slotSel+1)+'</b> ('+escapeHtml(enchantLabelText(kind, curEnchants[slotSel]))+'). Other enchants are left untouched.'
                  : 'Fills an empty slot, or upgrades your current '+escapeHtml(md.label)+'. Other enchants are left untouched.';
     html += '<div class="empty-note" style="margin-top:4px;">Spends Enchant Crystals repeatedly until <b style="color:var(--gold);">'+escapeHtml(md.label)+' ≥ +'+minVal+suf+'</b> is rolled, or you run out. '+landNote+'</div>';
+    // The forecast itself: expected crystals against what the player actually holds, red when it exceeds
+    // the stock. This is the number whose absence cost Valuren 5,000 crystals.
+    if(_fcast){
+      var _haveC = enchantCrystalsAvailable(tier);
+      var _short = _fcast.crystals > _haveC;
+      html += '<div class="empty-note" style="margin-top:2px;">Expected cost: <b style="color:'
+        + (_short ? 'var(--danger)' : 'var(--gold)') + ';">~' + fmt(_fcast.crystals) + ' Enchant Crystals</b> ('
+        + fmt(_fcast.attempts) + ' rolls at ' + _fcast.perAttempt + ' each). You have ' + fmt(_haveC) + '.'
+        + (_short ? ' <b>Not enough</b> to expect a hit: lower the target or the slot cost.' : '') + '</div>';
+    }
     html += '</div>';
     return html;
   }
@@ -40945,7 +41013,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.59';
+  var GAME_VERSION = '0.0.86.60';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41096,7 +41164,7 @@
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
-      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
+      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantAutoForecast:enchantAutoForecast, enchantCrystalsAvailable:enchantCrystalsAvailable, AUTOROLL_CONFIRM_AT:AUTOROLL_CONFIRM_AT, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, equipCandidateRowHtml:equipCandidateRowHtml, bankUniqueBlob:bankUniqueBlob, bankUniqueRevive:bankUniqueRevive, uniqueBaseName:uniqueBaseName, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
