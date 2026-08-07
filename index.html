@@ -8487,7 +8487,9 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === a && a.type==='combat' && (a.monsterHp||0) > 0; _s++){
-      applyEffectDamage(dmg, 'Breach');
+      // earned: the wall is ALREADY SPENT two lines up, so a confiscated Breach costs the player the whole
+      // Barrier for nothing -- and it is funded by banked Guards off heraldHitAvg, not a carried tick.
+      applyEffectDamage(dmg, 'Breach', { earned:true });
       if(!offlineCapture) spawnCombatFloat((isCrit ? '\u2727 Breach -' : 'Breach -')+fmt(dmg), 'ft-crit', true);
     }
     if(st.activity === a && a.type==='combat'){
@@ -8533,7 +8535,9 @@
     if(_rt > 0){
       var _rtN = heraldRetortStrikes(state_); // Cave-In / Full Retort (D1 2pc): double strikes each
       for(var _r = 0; _r < _rtN && state_.activity === act && act.type==='combat' && (act.monsterHp||0) > 0; _r++){
-        applyEffectDamage(_rt, 'Retort');
+        // earned: a Guard is an EVENT, and the counterblow is a share of the player's own banked hits
+        // (heraldHitAvg), not a carried per-second tick -- see the first-swing gate. Ticket-0160.
+        applyEffectDamage(_rt, 'Retort', { earned:true });
         if(!offlineCapture) spawnCombatFloat('⟲ Retort -'+fmt(_rt), 'ft-reflect', true);
       }
     }
@@ -8541,7 +8545,7 @@
     heraldBarrierAdd(heraldBarrierCap(state_) * HERALD_BARRIER_PER_GUARD, state_);
     // Elemental Bastion (Herald D4 full): a Guard reflects an elemental burst of the prevented damage.
     var _eb = d4HeraldBastionReflect(prevented, monster, state_);
-    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion'); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
+    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion', { earned:true }); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
     // (Brittle Guard's block-Sunder retired: Rending Barbs holds the Sunder from the Bramble's tick now.)
     // Thornwall (legendary shield): a Block feeds the Bramble and forces an immediate tear.
     if(legActive('thornwall') && sentinelBonus(1)){
@@ -18959,10 +18963,24 @@
   // 9s before the next swing lands, and every generation was silently confiscated. Measured: an
   // Afterimage worth 1e9 dealt exactly 0 on a fresh foe while Runic Tempo still climbed, which is why
   // the effects bar showed a live train with nothing in the log.
+  // THIRD INSTANCE, ticket-0160: "Herald retort is unable to deal a killing blow". The Herald's Guard
+  // payouts (Retort, Breach, Elemental Bastion) are the same shape and were confiscated the same way.
+  // Measured on a live 20s fight: heraldHitAvg 68,427, a Retort worth 23,949, the Barrier banking, and
+  // ZERO Retort rows in the log. The mechanism is farming, not the Brace clock: the player one-shot the
+  // foe (82,850 into an 18,407 HP champion), so defeatMonster cleared playerSwungOnce and the gate was
+  // shut for the whole of every foe's life except the instant of the swing that killed it. Which is
+  // exactly why it "cannot land a killing blow": on any foe the Retort could kill, it never fires at all.
+  // The Breach was worse than silent -- it zeroes the Barrier BEFORE applying, so a confiscated Breach
+  // spent the whole wall for nothing.
+  //
   // The gate's purpose is to stop engines that tick ON THEIR OWN from killing fresh mobs before the
-  // player acts. It must not confiscate damage a swing has already paid for. Pass earned:true ONLY for
-  // that: a payout queued by a landed swing. A continuous engine (Bramble, Blaze, Plague, Searing Light,
-  // Unraveling, Decay, Bleed, Frostbite) must NEVER set it -- those are exactly what the gate is for.
+  // player acts. It must not confiscate damage the player has already paid for. Pass earned:true for
+  // that and only that, which covers two shapes: a payout QUEUED by a landed swing (the Afterimage
+  // train, the Aftershock), and a discrete response to an in-fight EVENT that is funded by the player's
+  // own banked hits (the Guard payouts, which scale off heraldHitAvg). A continuous engine (Bramble,
+  // Blaze, Plague, Searing Light, Unraveling, Decay, Bleed, Frostbite) must NEVER set it -- those are
+  // exactly what the gate is for, even when a legendary forces a tick early (Thornwall's forced tear
+  // stays gated on purpose: the damage is the Bramble's, and the Bramble is a carried engine).
   function effectGateOpen(opts){ return (opts && opts.earned) || combatEffectsArmed(); }
   function applyEffectDamage(dmg, name, opts){
     opts = opts || {};
@@ -40966,7 +40984,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.49';
+  var GAME_VERSION = '0.0.86.50';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

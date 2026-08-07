@@ -18917,6 +18917,87 @@
     }
   });
 
+  // ---- ticket-0160: the Herald's Guard payouts survive the first-swing gate ------------------------
+  // "Herald retort is unable to deal a killing blow" -- the THIRD instance of the ticket-0159 regression.
+  // Measured on a live 20s fight before the fix: heraldHitAvg 68,427, a Retort worth 23,949, the Barrier
+  // banking (so heraldGuardFire was definitely running), and ZERO Retort rows in the combat log. The
+  // mechanism is FARMING, not the Brace clock: the player one-shot the foe, so defeatMonster cleared
+  // playerSwungOnce and the gate stayed shut for the whole of every foe's life except the instant of the
+  // swing that killed it. Hence the exact symptom reported -- on any foe the Retort is big enough to
+  // kill, it never fires at all. The Breach was worse than silent: it zeroes the Barrier BEFORE applying,
+  // so a confiscated Breach spent the entire wall for nothing.
+  suite('ticket-0160: the Herald Retort and Breach land on a foe not yet swung at', function(){
+    var S = FF._state;
+    var sv = { xp:S.xp, phys:S.physique, mh:S.equippedMainhand, mhT:S.equippedMainhandTier,
+               mhR:S.equippedMainhandRarity, oh:S.equippedOffhand, ohT:S.equippedOffhandTier,
+               ohR:S.equippedOffhandRarity, armor:S.bodyArmor, act:S.activity, uniq:S.uniqueItems,
+               hitAvg:S.heraldHitAvg, barrier:S.heraldBarrier, hp:S.playerHp };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      // Gear-derived class: Mace + Large Shield + full Plate.
+      S.equippedMainhand = 'mace'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.equippedOffhand = 'shieldLarge'; S.equippedOffhandTier = TOP; S.equippedOffhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      chest:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      gauntlets:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      boots:{material:'plate', tier:TOP, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      S.uniqueItems = {};
+      eq(FF.activeClassId(S), 'herald', 'the fixture really is a Herald (gear-derived)');
+      ok(FF.heraldBonus(20, S), 'and Retort (Lv20) is live');
+      // The recent-hit EMA the Retort is a share of. State-scoped, so it survives the kill that closed the
+      // gate -- which is exactly why the Retort has damage to deal on a foe it has not swung at yet.
+      S.heraldHitAvg = 1000000;
+      var rt = FF.heraldRetortDamage(S);
+      ok(rt > 0, 'the Retort has a damage value (' + rt + ')');
+
+      // THE POST-KILL STATE: a fresh foe, no swing yet, in a farming chain.
+      function freshFoe(hp){
+        S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:hp, tickAccum:0, monsterTickAccum:0,
+                       specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false };
+        return S.activity;
+      }
+      var act = freshFoe(rt * 100);
+      ok(!FF.combatEffectsArmed(), 'the gate is CLOSED on the fresh foe');
+      var hp0 = act.monsterHp;
+      FF.heraldGuardFire(500, null, act, 500, true);
+      ok(hp0 - S.activity.monsterHp >= rt,
+         'the Retort LANDS through the closed gate (dealt ' + (hp0 - S.activity.monsterHp) + ', expected >= ' + rt + ')');
+
+      // THE REPORTED SYMPTOM: it must be able to land the KILLING blow, not merely tick a healthy foe.
+      act = freshFoe(Math.max(1, Math.floor(rt / 2)));
+      var killed = FF.applyEffectDamage(rt, 'Retort', { earned:true });
+      ok(killed === true, 'a Retort worth more than the foe s remaining HP reports the kill');
+
+      // The Breach: it spends the wall FIRST, so a gated Breach is a pure loss. Fill the wall and fire.
+      act = freshFoe(1e15);
+      if(FF.heraldBonus(80, S)){
+        S.heraldBarrier = FF.heraldBarrierCap(S);
+        var bHp = act.monsterHp;
+        var dealt = FF.heraldBreachFire(S);
+        ok(dealt > 0, 'the Breach reports damage on a foe not yet swung at (' + dealt + ')');
+        ok(bHp - S.activity.monsterHp > 0, '...and the foe actually took it, so the wall was not spent for nothing');
+        eq(S.heraldBarrier, 0, 'the wall is spent by the Breach that paid out');
+      }
+
+      // VACUITY GUARDS, the ticket-0159 pattern: prove the gate in this fixture is genuinely closed, so
+      // the assertions above are testing the exemption and not a gate that happens to be open.
+      act = freshFoe(1e15);
+      var hp2 = act.monsterHp;
+      FF.applyEffectDot(5e8, 'Bramble');
+      eq(S.activity.monsterHp, hp2, 'a carried per-second engine is STILL gated before the first swing');
+      FF.applyEffectDamage(5e8, 'Gloria', {});
+      eq(S.activity.monsterHp, hp2, '...and so is an unmarked discrete effect');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
+      S.equippedOffhandRarity = sv.ohR; S.bodyArmor = sv.armor; S.activity = sv.act; S.uniqueItems = sv.uniq;
+      S.heraldHitAvg = sv.hitAvg; S.heraldBarrier = sv.barrier; S.playerHp = sv.hp;
+    }
+  });
+
   // ---- ticket-0158: re-task a peon without stopping it (Mr Cookie) --------------------------------
   // The request: "make Peons switch the tier of task they are doing instead of fully cancelling". Stop
   // DELETES the task, and the candle and the Provision Barrel live on that task object, so changing tier
