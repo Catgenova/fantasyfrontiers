@@ -6,13 +6,20 @@
 // this exercises the real functions out of the real file rather than a copy that could drift.
 //
 // Method: the module is Deno-flavoured (a remote import plus Deno.serve), so we slice off the import line
-// and everything from Deno.serve onward, append an export block, and import the remainder. Node runs the
-// TypeScript directly (type-stripping), so what runs here IS the shipped source above that cut point.
+// and everything from Deno.serve onward, append an export block, and import the remainder. What runs here
+// IS the shipped source above that cut point.
+//
+// The types are stripped with the TYPESCRIPT COMPILER, not by letting node import the .ts directly. Node's
+// own type-stripping needs 22.6+, and CI pins Node 20 -- so the first version of this test passed locally
+// on 22.22 and failed the deploy instantly on 20 with an unknown-file-extension error. Transpiling makes
+// the test independent of the runtime's TS support, which is the property a CI gate actually needs.
 //
 // Run: node scripts/test-save-uniques.mjs
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const SRC = 'supabase/functions/save_game/index.ts';
 const src = readFileSync(SRC, 'utf8');
@@ -26,10 +33,14 @@ for (const needle of ['function auditUniques', 'function stripFindings', 'UNIQUE
   if (head.indexOf(needle) < 0) { console.error('FAIL: harness sliced away ' + needle); process.exit(1); }
 }
 head += '\nexport { auditUniques, stripFindings, UNIQUE_ENHANCE_MAX, UNIQUE_VALIDATE_ENFORCE };\n';
+const js = ts.transpileModule(head, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  fileName: 'save_game_head.ts',
+}).outputText;
 const dir = mkdtempSync(join(tmpdir(), 'ffsave-'));
-const modPath = join(dir, 'save_game_head.ts');
-writeFileSync(modPath, head);
-const M = await import(modPath);
+const modPath = join(dir, 'save_game_head.mjs');
+writeFileSync(modPath, js);
+const M = await import(pathToFileURL(modPath).href);
 
 let pass = 0, fail = 0;
 function ok(cond, label) { if (cond) { pass++; } else { fail++; console.error('  FAIL: ' + label); } }
