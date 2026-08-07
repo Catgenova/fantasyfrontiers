@@ -11919,6 +11919,12 @@
     var p = (places == null) ? 2 : places;
     return n.toLocaleString(undefined, { maximumFractionDigits: p });
   }
+  // Ticket-0160 (owner): "place commas in percentages over 999". The ticket-0152 guard deliberately
+  // tolerates FOUR-digit runs (version strings, years), which is exactly the width a big percentage
+  // lands in, so four-figure percents sailed past it: a fantastic +15 Ring of Fire reads +2400% and a
+  // relic +2016%. This is the percent chokepoint -- it comma-groups AND appends the sign, so a call site
+  // cannot group the number and then forget the '%'. Pass places for the fractional tags (crit rows).
+  function fmtPct(n, places){ return fmtDec(Number(n) || 0, (places == null) ? 0 : places) + '%'; }
   // Compact big-number readout (82.4B) for the stage's stats strip, where an endgame DPS in full
   // comma notation (82,400,000,000) would not fit its plinth. Two significant styles: one decimal
   // below 100 of a unit, whole numbers above. Sub-1000 values print as-is.
@@ -17014,9 +17020,9 @@
       // accuracy, damage resistance, defense, ...) -- shown with its precise label and +enhance, so the
       // card says WHAT the piece boosts and by how much, not just a bare "% damage".
       if(d.kind==='ring'){
-        baseLines.push('+'+Math.round(ringItemBonus(b)*_jEnh*100)+'% '+ringBonusPlainLabel(b)+(_jEnh>1?' (+'+d.enhance+')':''));
+        baseLines.push('+'+fmtPct(ringItemBonus(b)*_jEnh*100)+' '+ringBonusPlainLabel(b)+(_jEnh>1?' (+'+d.enhance+')':''));
       } else if(d.kind==='amulet' && b.kind==='resistance'){
-        baseLines.push('+'+Math.round((b.bonus||0)*_jEnh*100)+'% damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
+        baseLines.push('+'+fmtPct((b.bonus||0)*_jEnh*100)+' damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
       } else {
         if(b.defense) baseLines.push('Defense '+fmtDec(b.defense*_jEnh, 1)+(_jEnh>1?' (+'+d.enhance+')':''));
         // Ward: reflects a share of matching-element hits (rarity adds a full-reflect chance).
@@ -17030,7 +17036,7 @@
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
-    if(d.kind==='relic') baseLines.push('+'+Math.round(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+'% Damage & Armour');
+    if(d.kind==='relic') baseLines.push('+'+fmtPct(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+' Damage & Armour');
     // A Belt's headline stat is its concurrent task slots (rarity-scaled).
     if(d.kind==='belt' && BELT_RARITY_SLOTS[d.rarity]) baseLines.push(BELT_RARITY_SLOTS[d.rarity]+' task slot'+(BELT_RARITY_SLOTS[d.rarity]>1?'s':''));
     return baseLines;
@@ -23318,7 +23324,7 @@
     var _enchRow = function(label, stat, pct, suffix){ var v = enchTot[stat]||0; if(!v) return ''; var disp = pct ? ('+'+fmtDec(v, 1)+'%') : ('+'+fmt(v)); return '<div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> '+label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+(suffix||'')+'</span></div>'; };
     // Inline "(+X% relic)" tag, appended to the Attack Damage and Armor rows whose numbers already fold the
     // relic bonus in (mirrors the enchant "(+X ench)" tag convention above).
-    var _relicTag = _relicBonusStat > 0 ? ' <span style="color:var(--gold);font-size:11px">(+'+Math.round(_relicBonusStat*100)+'% relic)</span>' : '';
+    var _relicTag = _relicBonusStat > 0 ? ' <span style="color:var(--gold);font-size:11px">(+'+fmtPct(_relicBonusStat*100)+' relic)</span>' : '';
     // Fold the Weapon/All Damage (%) and Flat Damage enchants into the displayed Attack Damage so the
     // number reflects them (they were previously only listed in a separate block).
     var _dmgEnchMult = 1 + (enchTot.pctDamage||0)/100, _flatEnch = Math.round(enchTot.flatDamage||0);
@@ -23354,16 +23360,16 @@
       dmgTypeHtml = TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType;
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+fmtPct((weaponProficiency-1)*100)+'</span></div>';
     var _critChancePct = Math.round(playerCritChance(null)*10000)/100; // same chain the combat roll uses (no foe -> Quickdraw term is 0)
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+fmtPct(_critChancePct, 2)+(enchCrit>0?' <span style="color:var(--gold)">(+'+fmtPct(enchTot.critChance, 1)+' ench)</span>':'')+'</span></div>';
     var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + d3SetCritDmgBonus(state) + enchCritDmg)*100)/100;
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+fmtDec(_critDmgMult, 2)+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+fmtPct(enchTot.critDamage, 1)+' ench)</span>':'')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+fmt(playerAccuracy(state))+_et('accuracy',true)+'</span></div>';
     if(weaponStyle.hand==='bow'){
-      html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+fmtPct(getLeatherArmorBonuses(state).bowDmgBonus*100)+'</span></div>';
     } else {
-      html += '<div class="stat-row"><span class="stat-label">Chain Melee Bonus</span><span class="stat-value">+'+Math.round(getChainArmorMeleeBonus(state)*100)+'%</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Chain Melee Bonus</span><span class="stat-value">+'+fmtPct(getChainArmorMeleeBonus(state)*100)+'</span></div>';
     }
     // Enchant-only offensive effects (no base stat of their own): gold ✦ rows shown only when worn.
     html += _enchRow('Lifesteal','lifesteal',true,' of dmg');
@@ -40960,7 +40966,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.48';
+  var GAME_VERSION = '0.0.86.49';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41086,7 +41092,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, COTTAGE_PLANKS:COTTAGE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
+      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,

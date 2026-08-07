@@ -18735,6 +18735,97 @@
     }
   });
 
+  // ---- ticket-0160: percentages over 999 are comma-grouped too (owner) -----------------------------
+  // Follow-on from ticket-0152. That guard tolerates FOUR-digit runs on purpose (version strings, years),
+  // which is exactly the width a big percentage lands in, so four-figure percents sailed straight past it:
+  // a fantastic +15 Ring of Fire read "+2400% Fire damage", a relic "+2016% Damage & Armour", and the
+  // combat panel "(+1920% relic)". fmtPct() is the chokepoint (it groups AND appends the sign, so a site
+  // cannot group the number then forget the '%'), and this scans for the shape rather than the sites.
+  suite('ticket-0160: no unformatted percentages over 999', function(){
+    eq(FF.fmtPct(2400), '2,400%', 'fmtPct groups four figures and appends the sign');
+    eq(FF.fmtPct(999), '999%', 'three figures stay ungrouped');
+    eq(FF.fmtPct(1380.44, 1), '1,380.4%', 'fmtPct keeps the requested decimals while grouping');
+    eq(FF.fmtPct(0), '0%', 'zero renders plainly');
+    var S = FF._state;
+    // A bare 4+ digit run immediately before a '%' -- the ticket's exact shape. Commas make it not match.
+    function bareBigPct(html){
+      var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
+      var out = [], m, re = /(^|[^\d,.])(\d{4,})\s*%/g;
+      while((m = re.exec(txt))){ out.push(m[2] + '%'); if(out.length > 3) break; }
+      return out;
+    }
+    var sv = { xp:S.xp, phys:S.physique, armor:S.bodyArmor, uniq:S.uniqueItems, jew:S.jewelrySlots,
+               mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity,
+               mhU:S.equippedMainhandUid, rlU:S.equippedRelicUid, rlT:S.equippedRelicTier, rlR:S.equippedRelicRarity };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.equippedMainhand = 'greatsword'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'plate',tier:TOP,rarity:'fantastic'}, chest:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      gauntlets:{material:'plate',tier:TOP,rarity:'fantastic'}, boots:{material:'plate',tier:TOP,rarity:'fantastic'},
+                      back:{material:'tailoring',tier:TOP,rarity:'fantastic'} };
+      // MAX-ROLL enchants on a fantastic +15 kit: the only fixture that drives the "(+X% ench)" and
+      // "(+X% relic)" tags into four figures, which is where the report came from.
+      function maxEnch(kind){
+        return (FF.ENCHANT_MODS[kind] || []).filter(function(m){ return m.pct; }).slice(0, 4)
+          .map(function(m){ return { mod:m.id, roll:m.max }; });
+      }
+      S.uniqueItems = {};
+      function mint(uid, kind, base){
+        S.uniqueItems[uid] = { uid:uid, kind:kind, base:base, tier:TOP, rarity:'fantastic', enhance:15, enchants:maxEnch(kind) };
+        return uid;
+      }
+      S.equippedMainhandUid = mint('w', 'weapon', 'stweapon_greatsword_t'+TOP+'_fantastic');
+      S.equippedRelicUid = mint('rl', 'relic', 'relic_t'+TOP+'_fantastic');
+      S.equippedRelicTier = TOP; S.equippedRelicRarity = 'fantastic';
+      S.jewelrySlots = {};
+      (FF.RING_SLOT_IDS || []).forEach(function(sl, i){
+        S.jewelrySlots[sl] = { typeId:'ringFire', tier:TOP+1, rarity:'fantastic', uid:mint('rg'+i, 'ring', 'ring_fire_t'+TOP+'_fantastic') };
+      });
+      var scanned = 0, bad = [];
+      Object.keys(FF).forEach(function(k){
+        if(typeof FF[k] !== 'function' || FF[k].length > 0) return;
+        if(!/^(render|.*Html$|.*Text$|.*Label$|.*Line$)/.test(k)) return;
+        var html; try { html = FF[k](); } catch(e){ return; }   // needs state this fixture lacks
+        scanned++;
+        var runs = bareBigPct(html);
+        if(runs.length) bad.push(k + ': ' + runs.join(','));
+      });
+      // The item-card family, which is where the ring and relic lines live.
+      [['ring','ring_fire_t'+TOP+'_fantastic'], ['relic','relic_t'+TOP+'_fantastic'],
+       ['amulet','amulet_t'+TOP+'_fantastic'], ['weapon','stweapon_greatsword_t'+TOP+'_fantastic']
+      ].forEach(function(pair){
+        var d = { uid:'c_'+pair[0], kind:pair[0], base:pair[1], rarity:'fantastic', tier:TOP, enhance:15, enchants:maxEnch(pair[0]) };
+        ['uniqueBaseStatLines','uniqueCardBody','renderUniqueEquipCard','discordItemStatsText'].forEach(function(n){
+          if(typeof FF[n] !== 'function') return;
+          var r; try { r = FF[n](d); } catch(e){ return; }
+          scanned++;
+          var runs = bareBigPct(Array.isArray(r) ? r.join(' | ') : r);
+          if(runs.length) bad.push(n+'('+pair[0]+'): ' + runs.join(','));
+        });
+      });
+      eq(bad.join(' || '), '', 'no renderer prints a percentage over 999 without commas (offenders listed)');
+      // VACUITY GUARDS, same reasoning as ticket-0152: throws are swallowed to keep the sweep runnable, so
+      // pin the count AND prove the fixture really drives percentages past 999. Without these the suite
+      // would pass just as happily against a fixture that produces no large percentage at all.
+      ok(scanned >= 40, 'the sweep really exercised the renderers (scanned ' + scanned + ')');
+      var ringLine = FF.uniqueBaseStatLines({ uid:'c_r', kind:'ring', base:'ring_fire_t'+TOP+'_fantastic',
+                                              rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })[0] || '';
+      ok(/^\+\d,\d{3}% /.test(ringLine), 'the reported ring line is grouped: ' + ringLine);
+      var relicLine = FF.uniqueBaseStatLines({ uid:'c_l', kind:'relic', base:'relic_t'+TOP+'_fantastic',
+                                               rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })
+                        .filter(function(l){ return /Damage & Armour/.test(l); })[0] || '';
+      ok(/^\+\d,\d{3}% /.test(relicLine), 'the reported relic line is grouped: ' + relicLine);
+      ok(/\(\+\d,\d{3}% relic\)/.test(FF.renderCombatStatsPanel()), 'the panel relic tag is grouped');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.bodyArmor = sv.armor; S.uniqueItems = sv.uniq;
+      S.jewelrySlots = sv.jew; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
+      S.equippedRelicUid = sv.rlU; S.equippedRelicTier = sv.rlT; S.equippedRelicRarity = sv.rlR;
+    }
+  });
+
   // ---- Landing preview containment (owner report: the stage overlaid the landing content) ----------
   // The preview is a fixed 900px stage scaled down, so its HEIGHT is content- and width-dependent (log
   // rows arrive, effect rows appear, and under 820px .ar2-low stops being a two-column split). The wrap
