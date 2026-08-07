@@ -2994,6 +2994,10 @@
   // Ko-fi support link, rendered beside the community Discord wherever it appears. A one-dev passion project:
   // the ask funds ongoing maintenance and commissioned custom art.
   var KOFI_URL = 'https://ko-fi.com/M4M4TXCV2';
+  // The button's label lives here rather than at the call site because a ticker tip quotes it verbatim
+  // ("there is a Support us on Ko-fi button..."). With the string duplicated, renaming the button would have
+  // left the tip pointing at something that no longer exists, and nothing would have failed.
+  var KOFI_LABEL = 'Support us on Ko-fi';
   function kofiLinkHtml(label, extraStyle){
     return '<a href="'+KOFI_URL+'" target="_blank" rel="noopener noreferrer" title="Support Fantasy Frontiers on Ko-fi. Helps fund maintenance and custom art" '
       + 'style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 16px;border-radius:10px;background:#72a4f2;color:#fff;font-weight:700;font-size:13px;text-decoration:none;'+(extraStyle||'')+'">'
@@ -21296,6 +21300,33 @@
     "I asked my <b>Blacksmithing</b> familiar for a pun and it just said 'forge-t about it.'",
     "<b>Confectionery</b> spins sugar into sweets and <b>Baking</b> turns Grain and Berries into pastries. Level up on a full stomach."
   ]);
+  // 20 more, every claim checked against the code that implements it rather than against memory -- the
+  // staleness pass above this list found five tips that had quietly become untrue, so new ones get verified
+  // on the way in. Notes where a tip is deliberately conditional are inline.
+  TICKER_TIPS = TICKER_TIPS.concat([
+    "Fantasy Frontiers is a one-developer passion project. If you would like to chip in, there is a <b>Support us on Ko-fi</b> button beside the community Discord link.",
+    "You can sign in with <b>Discord</b> instead of a password, and link Discord to an account you already have.",
+    "The <b>Mortal</b> path earns experience at half rate and ends for good on death, converting you to Immortal. It is a badge, not a shortcut.",
+    "A <b>Mortal guild</b> has no shared treasury. Its estate is funded per member, and cleared resources go to whoever cleared them.",
+    "The leaderboard's <b>Mortal</b> filter searches the whole board, not just the page in front of you.",
+    "<b>Enchant before you Enhance.</b> Once an item is +1 or better it can never take another enchant line.",
+    "An <b>Enhance</b> can shatter the item outright. Keep <b>Barrier Shards</b> in your bag and one is spent to save it instead.",
+    "<b>Barrier Shards</b> come from starring up familiars, and you get as many as the new star count.",
+    "A <b>+15</b> multiplies your enchant lines as well as the base stats, so a fully enchanted item gains far more from Enhancing.",
+    "<b>Auto-roll</b> tells you what a run should cost before you spend a crystal, and an expensive one asks for a second click.",
+    "Out of matching crystals, <b>Enchanting</b> will spend higher-tier ones. Leave the warning switched on so it never happens by accident.",
+    "A readied <b>Toxin</b> works on its own clock rather than on your swings, so a slow weapon gets the same value from a flask as a fast one.",
+    "Set an <b>Auto-Eat</b> threshold and you will be fed mid-fight, before the killing blow rather than after it.",
+    "Turn on <b>Advanced Combat Log</b> in Settings and each line shows the multiplier chain behind the number.",
+    "<b>Retreat</b> is always available. A fresh foe starts clean, so a fight going badly is not a fight you have to finish.",
+    "The <b>Treasure Hunter</b> spends Broken Relics as ammunition. Run dry and the class stops to dig one up instead of striking.",
+    "<b>Lock a stack</b> and it is safe: no vendor sale, no sacrifice, and no potion auto-reload will draw it down.",
+    "Some items no vendor will touch. <b>Blueprints</b> and legendary accessories change hands only through a player-priced listing.",
+    // Conditional on purpose: loadoutsFollowUpgrade returns early while a spare copy is still in inventory,
+    // so presets follow the upgrade only once the old item is gone.
+    "Replace a piece with no spare left in the bag and your saved <b>loadouts</b> follow it to the new item.",
+    "Queue a craft for a set quantity and the <b>remaining time</b> counts only what is still queued, not everything you own."
+  ]);
   // Apply the mobile-layout preference. On phones (<=540 CSS px), "Compact" renders the game at a fixed
   // 780px width scaled to fit -- the denser desktop-style layout; "off" restores the native
   // single-column mobile layout. The inline <head> script sets the compact default pre-load to avoid a
@@ -28397,7 +28428,7 @@
       + '<div class="settings-row-desc" style="text-align:center;margin:0;">Chat, get help, and hear about updates</div>'
       + discordLinkHtml('Join our Discord', 'padding:10px 22px;')
       + '<div class="settings-row-desc" style="text-align:center;margin:8px 0 0;">Enjoying the game? Help fund ongoing maintenance and custom art</div>'
-      + kofiLinkHtml('Support us on Ko-fi', 'padding:10px 22px;')
+      + kofiLinkHtml(KOFI_LABEL, 'padding:10px 22px;')
       + '<div class="settings-row-desc" style="text-align:center;margin:0;">Fantasy Frontiers v'+GAME_VERSION+'</div>' + '</div>';
     html += '</div>'; // .settings-scroll
     html += '<button class="action-btn settings-close" data-action="closeSettings">Close</button>';
@@ -41213,7 +41244,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.87.4';
+  var GAME_VERSION = '0.0.87.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41416,7 +41447,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, rareCraftChance:rareCraftChance, supremeCraftChance:supremeCraftChance, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_RARE:FAITH_BASE_RARE, FAITH_BASE_SUPREME:FAITH_BASE_SUPREME, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,

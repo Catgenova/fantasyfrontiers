@@ -3132,6 +3132,25 @@
     // whatever the balance decision turns out to be.
     ok(!/Staff<\/b> deals no damage/i.test(all) && !/Staff deals no damage/i.test(all),
        'no tip claims a Staff deals no damage (it auto-attacks; noAttack is never set)');
+
+    // ---- The Ko-fi tip. Pinned two ways, because a tip that names a button is only useful while the button
+    // is still called that: the tip must exist, and its wording must match the label kofiLinkHtml actually
+    // renders. Rename the button and this fails instead of quietly sending players looking for nothing.
+    var kofi = T.filter(function(t){ return /Ko-fi/.test(t); });
+    ok(kofi.length >= 1, 'a tip points players at Ko-fi');
+    // Reads the SHARED constant the button renders from. An earlier version of this passed the label into
+    // kofiLinkHtml from the test itself, so it echoed back whatever the test said and renaming the real
+    // button changed nothing -- caught by planting the rename and watching this pass.
+    ok(kofi.some(function(t){ return t.indexOf(FF.KOFI_LABEL) !== -1; }),
+       'the tip quotes the Ko-fi button label exactly as rendered (' + FF.KOFI_LABEL + ')');
+    ok(FF.kofiLinkHtml(FF.KOFI_LABEL).indexOf(FF.KOFI_URL) !== -1, 'and the button links to that URL');
+    ok(/^https:\/\/ko-fi\.com\//.test(FF.KOFI_URL), 'the Ko-fi URL is a real ko-fi.com link');
+
+    // A sample of the other new claims, so a future rework of these systems trips here.
+    ok(T.some(function(t){ return /Mortal guild/.test(t) && /no shared treasury/.test(t); }), 'the Mortal-guild treasury tip is present');
+    ok(T.some(function(t){ return /Enchant before you Enhance/.test(t); }), 'the enchant-before-enhance ordering tip is present');
+    ok(T.some(function(t){ return /Barrier Shards/.test(t) && /star/.test(t); }), 'the Barrier Shard source tip is present');
+    ok(T.some(function(t){ return /Toxin/.test(t) && /own clock/.test(t); }), 'the clocked-Toxin tip is present');
   });
 
   // ---- Icon shape symbols exist (previously-blank Dairy/Ranching/Tanning/Weaving/etc. icons) ---------
