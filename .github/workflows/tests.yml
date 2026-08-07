@@ -58,10 +58,37 @@ jobs:
   integration:
     name: Integration tests (live backend)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'   # nightly + manual only
+    # Nightly + manual, PLUS any PR that touches supabase/ (review finding 11).
+    #
+    # Why this is safe to run on a PR at all: integration.sh has NO production fallback. With the
+    # secrets unset it prints a skip and exits 0, so a fork PR or an unconfigured repo costs nothing.
+    # With them set it runs against the STAGING project they point at, which is what staging is for.
+    #
+    # Why it is scoped to supabase/ rather than every PR: throwaway auth users cannot be deleted with
+    # the publishable key, so each real run leaves accounts to clean up by hand. Backend changes are
+    # exactly where the browser suite has no reach (Guilds and Cloud Saves are the two largest
+    # untested surfaces in the game), so that is where the accounts are worth spending.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does this change touch the backend?
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+          if git diff --name-only "$BASE"...HEAD | grep -q '^supabase/'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No supabase/ changes in this PR; skipping the live-backend suite."
+          fi
       - name: Run backend integration tests
+        if: steps.scope.outputs.run == 'true'
         # Point these at a STAGING Supabase project via repo secrets. There is NO production fallback:
         # if the secrets are unset the script SKIPS (exits 0) rather than churn throwaway accounts on
         # the live project. Set both to a dedicated/staging project to actually exercise the backend.

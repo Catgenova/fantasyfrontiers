@@ -11,9 +11,10 @@ Two layers:
   `index.html?selftest` in headless Chrome (Puppeteer's bundled Chromium), failing the job on any
   failed assertion.
 - **`integration`** — **nightly** (`schedule`, ~08:00 UTC) + manual `workflow_dispatch` only; it
-  never runs on push/PR because it creates live accounts. Reads optional `SUPABASE_URL` /
-  `SUPABASE_PUBLISHABLE_KEY` repo secrets; with none set it uses the built-in defaults (the
-  publishable key is already public).
+  never runs on push/PR because it creates live accounts. Reads `SUPABASE_URL` /
+  `SUPABASE_PUBLISHABLE_KEY` repo secrets. There is NO production fallback: with either unset the
+  script prints a skip and exits 0, so it can never churn accounts on the live project. Point them
+  at a STAGING project to actually run.
 
 Run the unit harness locally with `cd tests && npm install && node run-unit.mjs`.
 
