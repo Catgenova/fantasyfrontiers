@@ -251,14 +251,18 @@ commit;
 --
 --   -- THE PROBE: one fantastic leg-accessory key the account has NEVER held, and deliberately NO watch
 --   -- row for it. Pick a key that is absent from player_items for this user.
---   insert into public.player_items(user_id, item_key, qty, earned_total, synced_at)
---     values (:'vu', 'legring_d4_wyrm_fantastic', 1, 1, now())
+--   -- Columns are (user_id, item_key, qty, updated_at, earned_total) -- there is NO synced_at here, that
+--   -- lives on player_item_meta. The key's doubled d4_d4_ is real: layer prefix + the item's own key.
+--   insert into public.player_items(user_id, item_key, qty, earned_total)
+--     values (:'vu', 'legring_d4_d4_wyrm_fantastic', 1, 1)
 --     on conflict (user_id, item_key) do update set qty = 1, earned_total = 1;
---   delete from public.item_earn_watch where user_id = :'vu' and item_key = 'legring_d4_wyrm_fantastic';
+--   delete from public.item_earn_watch where user_id = :'vu' and item_key = 'legring_d4_d4_wyrm_fantastic';
 --
 --   select * from public.item_unexplained_sweep(false) where flagged_user = :'vu';
 --   -- OLD body: ZERO rows -- the reported false negative, baselined at 1 so growth reads 0.
 --   -- NEW body: ONE row, family legring_d4, rule zero_base, fantastic 1 with zero non-fantastic growth.
+--   -- NOTE: the 24h per-user-per-family dedupe means the sweep RETURNS the row but only POSTS to Discord
+--   -- when the signal is new -- clear recent clamp_signals for this user+family first if you want the ping.
 --   rollback;
 --
 -- SECOND CASE -- the honest buyer must NOT flag. Same fresh key, but with a server credit recorded, which
@@ -267,7 +271,7 @@ commit;
 --   begin;
 --   -- ... same neutralize + insert as above, then:
 --   insert into public.item_credit_log(user_id, item_key, qty, created_at)
---     values (:'vu', 'legring_d4_wyrm_fantastic', 1, now());
+--     values (:'vu', 'legring_d4_d4_wyrm_fantastic', 1, now());
 --   select * from public.item_unexplained_sweep(false) where flagged_user = :'vu';
 --   -- EXPECT: zero rows. The credit is subtracted, so client_reported is 0. If this flags, the `since`
 --   -- fallback is wrong and honest buyers are being caught -- do not leave it in that state.
