@@ -19210,9 +19210,13 @@
   // ---- No em dashes in player-facing copy (owner order, v0.0.86.20) --------------------------------
   // Every player-facing description was reworked into short sentences (or comma/colon joins); this
   // guard deep-scans every string reachable from the test seam's exported def tables so a new class,
-  // set, item, quest or tooltip can't quietly reintroduce one. Exclusions: PATCH_NOTES (historical,
-  // owner-authored blasts kept verbatim) and _state (accrues fixture data from earlier suites, not
-  // shipped copy). Both '—' literals and '&mdash;' entities are banned.
+  // set, item, quest or tooltip can't quietly reintroduce one.
+  // PATCH_NOTES IS NO LONGER EXCLUDED. It used to be, on the grounds that historical owner-authored
+  // blasts were kept verbatim -- but the exclusion was unbounded, so every NEW daily blast landed in a
+  // table nothing scanned. The five historical em dashes were fixed retroactively instead, which leaves
+  // nothing to protect. THE PATTERN: this guard takes no per-table exemptions. If an entry conflicts with
+  // the rule, fix the entry. The only skip is _state, which accrues fixture data from earlier suites and
+  // is not shipped copy. Both '—' literals and '&mdash;' entities are banned.
   suite('copy: no em dashes in player-facing descriptions', function(){
     var offenders = [], seen = (typeof WeakSet !== 'undefined') ? new WeakSet() : null;
     function scan(v, path, depth){
@@ -19230,7 +19234,7 @@
       }
     }
     Object.keys(FF).forEach(function(k){
-      if(k === 'PATCH_NOTES' || k === '_state') return;
+      if(k === '_state') return;   // fixture data from earlier suites, not shipped copy
       if(typeof FF[k] === 'function') return;
       scan(FF[k], k, 0);
     });
@@ -19270,7 +19274,7 @@
       }
     }
     Object.keys(FF).forEach(function(k){
-      if(k === 'PATCH_NOTES' || k === '_state') return;
+      if(k === '_state') return;   // fixture data from earlier suites, not shipped copy
       if(typeof FF[k] === 'function') return;
       scan(FF[k], k, 0);
     });
