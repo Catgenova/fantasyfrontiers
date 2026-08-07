@@ -229,5 +229,38 @@ console.log("seamcheck: every damage source reaches the combat log.");
   console.log(`seamcheck: ${read.size} capstone quest counter(s), all written.`);
 }
 
+// ---- CHECK 6: every estate quest counter a quest reads must be written somewhere -----------------------
+// Same failure mode as the capstone counters, one system over: unhook estNote from a job-completion site and
+// the quest's bar simply never moves. No error, nothing to see. The browser suite cannot cover it without
+// driving the whole estate job pipeline, and calling bumpStat directly in a test proves only that bumpStat
+// works -- which is exactly how the first version of these guards passed with the hooks commented out.
+//
+// estNote(key, isGuild) writes BOTH est_<key> and est_g_<key>, so the guild-scoped keys are covered by the
+// same rule: drop the guild half and every Act V counter loses its writer.
+{
+  const read = new Set([...script.matchAll(/estStat\('(est_[a-z_]+)'\)/g)].map((m) => m[1]));
+  const written = new Set();
+  for (const line of L) {
+    if (/^\s*(\/\/|\*)/.test(line)) continue;
+    for (const m of line.matchAll(/bumpStat\('(est_[a-z_]+)'/g)) written.add(m[1]);
+    // cbBest is the high-water helper (est_height is a maximum reached, not a running total).
+    for (const m of line.matchAll(/cbBest\('(est_[a-z_]+)'/g)) written.add(m[1]);
+    for (const m of line.matchAll(/estNote\('([a-z_]+)'/g)) { written.add('est_' + m[1]); written.add('est_g_' + m[1]); }
+    // The helper itself declares the guild half; if that line goes, so does every est_g_ key.
+    if (/function estNote\(/.test(line) && !/est_g_/.test(line)) written.add('__NO_GUILD_HALF__');
+  }
+  if (written.has('__NO_GUILD_HALF__')) {
+    fail("estNote no longer writes the est_g_ guild-scoped half.\n"
+       + "       Every Act V Estate quest reads est_g_*, so all of them would stall at zero.");
+  }
+  const orphans = [...read].filter((k) => !written.has(k)).sort();
+  if (orphans.length) {
+    fail(`${orphans.length} estate quest counter(s) nothing writes: ${orphans.join(", ")}\n`
+       + "       An Estate quest reads the key but no bumpStat/estNote call writes it, so its progress bar\n"
+       + "       can never move. Restore the hook at the job-completion site.");
+  }
+  console.log(`seamcheck: ${read.size} estate quest counter(s), all written.`);
+}
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

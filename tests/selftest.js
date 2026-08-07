@@ -9688,10 +9688,15 @@
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
     // 116 tower + Frontier Hero + Warlord of the Frontier (the Combat capstone).
-    eq(FF.TITLES.length, 118, 'the Titles registry has one entry per tower quest (116) plus the two capstones');
-    // Both static capstones are defined before the generated tower quests, so they lead the registry.
+    // 116 tower + three capstones: Frontier Hero, Lord of the Manor (Estate), Warlord (Combat).
+    eq(FF.TITLES.length, 119, 'the Titles registry has one entry per tower quest (116) plus the three capstones');
+    // Registry order follows the QUESTS array, so the static capstones lead in the order they are defined:
+    // First Frontier, then Estate, then Combat. Asserted by SET rather than fixed indices past the first,
+    // so adding a fourth capstone does not fail here for the wrong reason.
     eq(FF.TITLES[0].id, 'title_frontier_hero', 'the Frontier Hero capstone title leads the registry');
-    eq(FF.TITLES[1].id, 'title_warlord_of_the_frontier', 'the Combat capstone title follows it');
+    var _capIds = FF.TITLES.slice(0, 3).map(function(t){ return t.id; }).sort();
+    eq(_capIds.join(','), 'title_frontier_hero,title_lord_of_the_manor,title_warlord_of_the_frontier',
+       'the three capstone titles lead the registry');
     // Order: the whole All Classes ladder (25..500 = 20 titles) comes next, then the per-class titles.
     // Indexed from the count of static capstone titles rather than a hardcoded 1, so adding a third capstone
     // moves this by itself instead of failing here.
@@ -20421,6 +20426,80 @@
     } finally {
       S.stats = svStats; S.activity = svAct; S.cbSets = svSets; S.cbStreaks = svStreaks; S.monsterKills = svMK;
       S.quests = { claimed:{} };
+    }
+  });
+
+  // ---- The Estate quest line -------------------------------------------------------------------------
+  // 51 quests built on top of the one that already existed (Clearing the Land, untouched, so anyone who
+  // claimed it keeps the claim and the number). Most counters were already there: the estate has bumped
+  // clears, paving, workshops, cottages, peons, totems and fields for a long time. What is new is
+  // terraforming, a height high-water mark, distinct-thing sets, live standing counts, and guild-SCOPED
+  // parallel keys, which are new keys rather than a change to what any existing counter means.
+  suite('estate quests: the 51-quest path', function(){
+    var S = FF._state;
+    var svStats = S.stats, svSets = S.estSets, svEstate = S.estate;
+    try {
+      var esq = FF.QUESTS.filter(function(q){ return q.cat === 'estatequests'; });
+      eq(esq.length, 51, 'the Estate line is 50 quests plus a capstone');
+      eq(esq.filter(function(q){ return q.capstone; }).length, 1, 'exactly one capstone');
+      // The pre-existing quest leads it, unchanged, and keeps number 1.
+      var one = FF.questById('clearing_the_land');
+      ok(!!one && one.cat === 'estatequests', 'Clearing the Land is still an Estate quest');
+      eq(FF.QUEST_ORDINAL['clearing_the_land'], 1, 'and it is quest 1 of the new path');
+      eq(one.reward.itemId, 'paving_t5', 'its original reward is untouched');
+      // Numbering and acts.
+      var nums = esq.filter(function(q){ return !q.capstone; }).map(function(q){ return FF.QUEST_ORDINAL[q.id]; });
+      eq(Math.min.apply(null, nums), 1, 'Estate numbering starts at 1');
+      eq(Math.max.apply(null, nums), 50, 'and runs to 50');
+      eq(new Set(nums).size, 50, 'with no duplicate numbers');
+      eq(FF.EST_ACTS.length, 5, 'five Estate acts');
+      eq(FF.EST_ACTS[FF.EST_ACTS.length - 1].to, 50, 'covering through 50');
+      for(var _i = 1; _i < FF.EST_ACTS.length; _i++){
+        eq(FF.EST_ACTS[_i].from, FF.EST_ACTS[_i - 1].to + 1, 'Estate act ' + (_i + 1) + ' is contiguous');
+      }
+      // Rewards are real items.
+      var cat = FF.buildItemCatalog();
+      esq.forEach(function(q){
+        ok(q.title && q.desc && q.how, q.id + ' has title, story and how-to');
+        ok(q.target > 0 && typeof q.progress === 'function', q.id + ' has a target and a progress reader');
+        (q.reward.items || []).forEach(function(it){
+          ok(cat[it.itemId] !== undefined, q.id + ' rewards a real catalogued item (' + it.itemId + ')');
+        });
+        if(q.reward.itemId) ok(cat[q.reward.itemId] !== undefined, q.id + ' rewards a real catalogued item (' + q.reward.itemId + ')');
+      });
+      // NO DUPLICATE QUEST IDS ANYWHERE. This is not hypothetical: the Estate line first shipped a
+      // break_the_sod that collided with the First Frontier quest of the same id, and a duplicate silently
+      // shadows one of them in QUEST_BY_ID -- the tests that broke were the OTHER quest's.
+      var _ids = FF.QUESTS.map(function(q){ return q.id; });
+      eq(new Set(_ids).size, _ids.length, 'every quest id in the game is unique');
+
+      // ---- the new counters --------------------------------------------------------------------
+      S.stats = {}; S.estSets = null;
+      FF.bumpStat('est_raised', 12); FF.bumpStat('est_lowered', 8);
+      eq(FF.estStat('est_raised') + FF.estStat('est_lowered'), 20, 'terraforming counts raises and lowers together');
+      FF.bumpStat('harvested_farming_t0', 30); FF.bumpStat('harvested_farming_t1', 20);
+      eq(FF.estCropHarvests(S), 50, 'harvest totals sum the per-crop keys rather than adding a second counter');
+      FF.bumpStat('fertilized_farming_t0', 25);
+      eq(FF.estFertilizes(S), 25, 'and so do fertilises');
+      // Standing counts read the estate live, so they behave like the "have this equipped" quests.
+      S.estate = { grid: [[{ workshopId:'mining' }, { totemId:'t1' }], [{ workshopId:'cooking' }, {}]] };
+      eq(FF.estStanding('workshopId'), 2, 'standing workshops are counted live off the grid');
+      eq(FF.estStanding('totemId'), 1, 'and so are totems');
+      // Guild-scoped keys are PARALLEL: the personal counter must not move when the guild one does.
+      S.stats = {};
+      FF.bumpStat('est_paved', 3); FF.bumpStat('est_g_paved', 1);
+      eq(FF.estStat('est_paved'), 3, 'the personal paving counter is its own number');
+      eq(FF.estStat('est_g_paved'), 1, 'and the guild one is separate');
+
+      // ---- the capstone ------------------------------------------------------------------------
+      var cap = FF.questById('lord_of_the_manor');
+      ok(!!cap && cap.reward.titleId === 'title_lord_of_the_manor', 'the capstone grants the Lord of the Manor title');
+      eq(cap.target, 50, 'and requires the other fifty');
+      S.quests = { claimed:{} };
+      esq.forEach(function(q){ if(!q.capstone) S.quests.claimed[q.id] = true; });
+      eq(cap.progress(S), 50, 'claiming all fifty completes it');
+    } finally {
+      S.stats = svStats; S.estSets = svSets; S.estate = svEstate; S.quests = { claimed:{} };
     }
   });
 

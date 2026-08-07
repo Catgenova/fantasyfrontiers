@@ -12434,6 +12434,8 @@
     yieldQty += waterBonus;
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
+    estSet('crop', cropData.id);   // Estate quests: how many DIFFERENT crops you have brought in
+    if(scope === 'guild') bumpStat('est_g_harvests', yieldQty || 1);   // Estate quest: crops off GUILD fields
     // 75% chance to recover a seed of the crop just harvested (keeps fields self-sustaining).
     var seedId = cropSeedId(plot.cropType, plot.tierIndex);
     var gotSeed = !!(seedId && Math.random() < HARVEST_SEED_DROP_CHANCE);
@@ -27436,6 +27438,309 @@
       target:10, progress:function(st){ return st.estateClears || 0; },
       nav:{ cat:'estate' },
       reward:{ kind:'item', itemId:'paving_t5', qty:20, label:'20× Sandstone Ornate Tile (Tier 5 paving)' } },
+    // ---- ESTATE (51): Clearing the Land above is quest 1, untouched, so anyone who already claimed it keeps
+    // the claim and the number. Counters come from estNote/estSet at the same job-completion sites as the
+    // existing estate stats, plus estStanding for the live "standing at once" reads.
+    { id:'level_ground', cat:'estatequests', title:'Level Ground',
+      desc:'Before anything stands on it, ground has to agree to be flat. Twenty tiles raised or dug down, and the shape of an estate starts to show.',
+      how:'Raise or lower 20 estate tiles.',
+      target:20, progress:function(st){ return estStat('est_raised') + estStat('est_lowered'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t5', qty:30 } ] } },
+    { id:'first_stones', cat:'estatequests', title:'First Stones',
+      desc:'Five paved tiles is not a courtyard. It is a promise that one is coming.',
+      how:'Pave 5 estate tiles.',
+      target:5, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t3', qty:20 } ] } },
+    { id:'roof_somewhere', cat:'estatequests', title:'A Roof Somewhere',
+      desc:'A workshop is the first building that pays you back. Put one up and a skill of your choosing gets faster forever.',
+      how:'Place your first Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats.workshop_built) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:25000 } },
+    { id:'someone_to_do_it', cat:'estatequests', title:'Someone to Do It',
+      desc:'A cottage beside exactly one workshop becomes a source of hands. Beside two it becomes a confused building.',
+      how:'Place a Cottage beside a Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats.cottage_built) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t4', qty:10 } ] } },
+    { id:'hired_hands', cat:'estatequests', title:'Hired Hands',
+      desc:'Peons are deliberately poor at everything and completely tireless, which on a frontier is the better trade.',
+      how:'House your first Peon.',
+      target:1, progress:function(st){ return (st.stats && st.stats.peons_housed) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'treasure_chest', qty:5 } ] } },
+    { id:'bed_and_board', cat:'estatequests', title:'Bed and Board',
+      desc:'They work for nothing and eat regardless. Ten provisionings and the arrangement is established.',
+      how:'Provision a Peon 10 times.',
+      target:10, progress:function(st){ return (st.stats && st.stats.peon_provisioned) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:50000 } },
+    { id:'lamps_lit', cat:'estatequests', title:'Keep the Lamps Lit',
+      desc:'Light costs a little and buys a lot. Ten lamps lit and the yard works after dark.',
+      how:'Light a Peon 10 times.',
+      target:10, progress:function(st){ return (st.stats && st.stats.peon_lit) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t8', qty:15 } ] } },
+    { id:'second_trade', cat:'estatequests', title:'Second Trade',
+      desc:'One workshop is a favour to yourself. Three is a plan.',
+      how:'Run Workshops for 3 different skills.',
+      target:3, progress:function(st){ return estSetSize('wsSkill'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t6', qty:10 } ] } },
+    { id:'the_yard', cat:'estatequests', title:'The Yard',
+      desc:'Ten tiles of proper stone. Enough to walk from the gate to the forge without finding mud.',
+      how:'Pave 10 estate tiles.',
+      target:10, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t6', qty:40 } ] } },
+    { id:'full_crew', cat:'estatequests', title:'Full Crew',
+      desc:'Five peons is the ceiling, and a full crew is the difference between an estate and a hobby.',
+      how:'Run all 5 Peon slots at once.',
+      target:5, progress:function(st){ return (st.peons && st.peons.filter ? st.peons.filter(function(p){ return p && p.taskId; }).length : 0); },
+      nav:{ cat:'estate' },
+      reward:{ gold:100000 } },
+    { id:'specialist', cat:'estatequests', title:'Specialist',
+      desc:'Eight trades under one landholder. Somebody is going to start calling this a village.',
+      how:'Run Workshops for 8 different skills.',
+      target:8, progress:function(st){ return estSetSize('wsSkill'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t8', qty:15 } ] } },
+    { id:'gatherers_yard', cat:'estatequests', title:'Gatherer\'s Yard',
+      desc:'Workshops are not only for crafting. Speed up the digging, the felling, the fishing.',
+      how:'Place a Workshop for a gathering skill.',
+      target:1, progress:function(st){ return estStat('est_workshops'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t8', qty:10 } ] } },
+    { id:'tireless', cat:'estatequests', title:'Tireless',
+      desc:'A hundred provisionings. Nobody has thanked you and nobody has quit.',
+      how:'Provision Peons 100 times.',
+      target:100, progress:function(st){ return (st.stats && st.stats.peon_provisioned) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t10', qty:20 } ] } },
+    { id:'estate_foreman', cat:'estatequests', title:'Estate Foreman',
+      desc:'Two hundred and fifty separate acts of management. The estate runs because you keep turning up.',
+      how:'Take 250 Peon actions in total.',
+      target:250, progress:function(st){ return ((st.stats && st.stats.peon_provisioned) || 0) + ((st.stats && st.stats.peon_lit) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ gold:150000 } },
+    { id:'paved_over', cat:'estatequests', title:'Paved Over',
+      desc:'Twenty tiles. A courtyard, properly speaking.',
+      how:'Pave 20 estate tiles.',
+      target:20, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t10', qty:30 } ] } },
+    { id:'two_storeys', cat:'estatequests', title:'Two Storeys',
+      desc:'Height is the only thing on an estate that cannot be bought in bulk. Get one tile to five.',
+      how:'Raise a tile to height 5.',
+      target:5, progress:function(st){ return estStat('est_height'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t10', qty:20 } ] } },
+    { id:'master_plan', cat:'estatequests', title:'Master Plan',
+      desc:'Twelve workshops standing at once, which means twelve skills that are quietly faster than everyone else\'s.',
+      how:'Have 12 Workshops standing at once.',
+      target:12, progress:function(st){ return estStanding('workshopId'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:20 } ] } },
+    { id:'bustling', cat:'estatequests', title:'Bustling',
+      desc:'Five hundred peon actions. At some point this stopped being your estate and became their workplace.',
+      how:'Take 500 Peon actions in total.',
+      target:500, progress:function(st){ return ((st.stats && st.stats.peon_provisioned) || 0) + ((st.stats && st.stats.peon_lit) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:5 } ] } },
+    { id:'estate_works', cat:'estatequests', title:'The Estate Works',
+      desc:'Fifteen trades. There is no craft on the frontier you cannot start at home.',
+      how:'Run Workshops for 15 different skills.',
+      target:15, progress:function(st){ return estSetSize('wsSkill'); },
+      nav:{ cat:'estate' },
+      reward:{ gold:250000 } },
+    { id:'till_the_first_field', cat:'estatequests', title:'The First Furrow',
+      desc:'A field is a promise to be here next season. Break the first one.',
+      how:'Place your first Farming Field.',
+      target:1, progress:function(st){ return estStat('est_fields'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'treasure_chest', qty:5 } ] } },
+    { id:'sow_and_wait', cat:'estatequests', title:'Sow and Wait',
+      desc:'Fifty harvests. Farming is the one skill that rewards you for having been patient earlier.',
+      how:'Harvest 50 crops.',
+      target:50, progress:function(st){ return estCropHarvests(st); },
+      nav:{ cat:'estate' },
+      reward:{ gold:75000 } },
+    { id:'feed_the_soil', cat:'estatequests', title:'Feed the Soil',
+      desc:'Fertilizer doubles a plot\'s yield, and a Composter sometimes declines to consume it. Spread it twenty-five times.',
+      how:'Fertilize 25 crop plots.',
+      target:25, progress:function(st){ return estFertilizes(st); },
+      nav:{ cat:'estate' },
+      reward:{ gold:100000 } },
+    { id:'raise_a_totem', cat:'estatequests', title:'Raise a Totem',
+      desc:'A totem helps every crop within one tile of it. Placement is the whole skill.',
+      how:'Raise your first Totem.',
+      target:1, progress:function(st){ return (st.stats && st.stats.totem_raised) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t12', qty:10 } ] } },
+    { id:'standing_circle', cat:'estatequests', title:'Standing Circle',
+      desc:'Three totems, sited so their circles overlap where the good soil is.',
+      how:'Have 3 Totems standing.',
+      target:3, progress:function(st){ return estStanding('totemId'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t12', qty:25 } ] } },
+    { id:'five_fields', cat:'estatequests', title:'Five Fields',
+      desc:'Five fields is a smallholding. It is also five crops ripening while you are somewhere else entirely.',
+      how:'Place 5 Farming Fields.',
+      target:5, progress:function(st){ return estStat('est_fields'); },
+      nav:{ cat:'estate' },
+      reward:{ gold:300000 } },
+    { id:'crop_rotation', cat:'estatequests', title:'Crop Rotation',
+      desc:'Ten different crops brought in. Rotation is not superstition; it is how the soil keeps agreeing to this.',
+      how:'Harvest 10 different crops.',
+      target:10, progress:function(st){ return estSetSize('crop'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t12', qty:20 } ] } },
+    { id:'green_frontier', cat:'estatequests', title:'Green Frontier',
+      desc:'Five hundred harvests. Whatever else the frontier thinks of you, it is well fed.',
+      how:'Harvest 500 crops.',
+      target:500, progress:function(st){ return estCropHarvests(st); },
+      nav:{ cat:'estate' },
+      reward:{ gold:400000 } },
+    { id:'twenty_fields', cat:'estatequests', title:'Twenty Fields',
+      desc:'Twenty fields is the ceiling. Every plot you are permitted, tilled.',
+      how:'Place all 20 Farming Fields.',
+      target:20, progress:function(st){ return estStat('est_fields'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t14', qty:25 } ] } },
+    { id:'bumper_year', cat:'estatequests', title:'Bumper Year',
+      desc:'Two and a half thousand crops. Somebody should write this year down.',
+      how:'Harvest 2,500 crops.',
+      target:2500, progress:function(st){ return estCropHarvests(st); },
+      nav:{ cat:'estate' },
+      reward:{ gold:500000 } },
+    { id:'terraced', cat:'estatequests', title:'Terraced',
+      desc:'Two hundred tiles moved up or down. The land does what you tell it now.',
+      how:'Raise or lower 200 tiles.',
+      target:200, progress:function(st){ return estStat('est_raised') + estStat('est_lowered'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t14', qty:40 } ] } },
+    { id:'high_ground', cat:'estatequests', title:'The High Ground',
+      desc:'Ten layers up. From here you can see who is coming.',
+      how:'Raise a tile to height 10.',
+      target:10, progress:function(st){ return estStat('est_height'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t14', qty:30 } ] } },
+    { id:'quarryman', cat:'estatequests', title:'Quarryman',
+      desc:'Thirty tiles of stone laid by hand. The quarry knows your name.',
+      how:'Pave 30 estate tiles.',
+      target:30, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t14', qty:20 } ] } },
+    { id:'masons_eye', cat:'estatequests', title:'Mason\'s Eye',
+      desc:'Masonry is walls, and walls are the difference between a plot and a place. Level it to 50.',
+      how:'Reach Masonry level 50.',
+      target:50, progress:function(st){ return getLevel((st.xp && st.xp.masonry) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t16', qty:25 } ] } },
+    { id:'pavers_hand', cat:'estatequests', title:'Paver\'s Hand',
+      desc:'Paving is the least glamorous skill on the estate and the one visitors actually notice. Level it to 50.',
+      how:'Reach Paving level 50.',
+      target:50, progress:function(st){ return getLevel((st.xp && st.xp.paving) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t16', qty:25 } ] } },
+    { id:'architect', cat:'estatequests', title:'Architect',
+      desc:'Architecture is what turns a collection of buildings into a design. Level it to 50.',
+      how:'Reach Architecture level 50.',
+      target:50, progress:function(st){ return getLevel((st.xp && st.xp.architecture) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ gold:750000 } },
+    { id:'the_peak', cat:'estatequests', title:'The Peak',
+      desc:'Fifteen layers. There is higher ground available, but not much, and not without a serious quantity of dirt.',
+      how:'Raise a tile to height 15.',
+      target:15, progress:function(st){ return estStat('est_height'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'relic_t16_supreme', qty:1 } ] } },
+    { id:'every_trade', cat:'estatequests', title:'Every Trade',
+      desc:'Twenty-five trades running out of one estate. This is no longer a home with workshops; it is a works with a home in it.',
+      how:'Run Workshops for 25 different skills.',
+      target:25, progress:function(st){ return estSetSize('wsSkill'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t16', qty:25 } ] } },
+    { id:'standing_grove', cat:'estatequests', title:'Standing Grove',
+      desc:'Five totems standing together, and the fields between them noticeably happier.',
+      how:'Have 5 Totems standing.',
+      target:5, progress:function(st){ return estStanding('totemId'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t16', qty:30 } ] } },
+    { id:'whole_yard', cat:'estatequests', title:'The Whole Yard',
+      desc:'Forty tiles. Not one step of it mud.',
+      how:'Pave 40 estate tiles.',
+      target:40, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ gold:1000000 } },
+    { id:'neighbourly', cat:'estatequests', title:'Neighbourly',
+      desc:'Your guild has ground of its own, funded from the treasury and shared by everyone. Go and look at it.',
+      how:'Visit a guild Estate.',
+      target:1, progress:function(st){ return (st.stats && st.stats.guild_visited) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t18', qty:10 } ] } },
+    { id:'shared_ground', cat:'estatequests', title:'Shared Ground',
+      desc:'Ten obstacles cleared on land that is not yours alone. Somebody else will build on the space you made.',
+      how:'Clear 10 obstacles on the guild Estate.',
+      target:10, progress:function(st){ return estStat('est_g_clears'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t18', qty:20 } ] } },
+    { id:'guild_paving', cat:'estatequests', title:'Guild Paving',
+      desc:'Twenty guild tiles paved. Shared stone, laid by you.',
+      how:'Pave 20 guild Estate tiles.',
+      target:20, progress:function(st){ return estStat('est_g_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t18', qty:25 } ] } },
+    { id:'common_workshop', cat:'estatequests', title:'Common Workshop',
+      desc:'A workshop on guild ground speeds a skill for whoever turns up, which is a strange and good thing to build.',
+      how:'Place a Workshop on the guild Estate.',
+      target:1, progress:function(st){ return estStat('est_g_workshops'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t18', qty:20 } ] } },
+    { id:'guild_crew', cat:'estatequests', title:'Guild Crew',
+      desc:'Five peons on guild ground, working for the guild, housed by the guild. Your name is on none of it.',
+      how:'Run 5 guild Peon slots at once.',
+      target:5, progress:function(st){ return (st.guildPeons && st.guildPeons.filter ? st.guildPeons.filter(function(p){ return p && p.taskId; }).length : 0); },
+      nav:{ cat:'estate' },
+      reward:{ gold:1500000 } },
+    { id:'treasury_works', cat:'estatequests', title:'Treasury Works',
+      desc:'Expansion is paid from the coffers, and the coffers are everyone\'s. Spend some of it well.',
+      how:'Fund a guild Estate expansion.',
+      target:1, progress:function(st){ return estStat('est_g_expansions'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'stonecutting_t18', qty:30 } ] } },
+    { id:'shared_harvest', cat:'estatequests', title:'Shared Harvest',
+      desc:'Five hundred crops off guild fields. In a Mortal guild you keep them; in any other they go to the bank.',
+      how:'Harvest 500 crops from guild Fields.',
+      target:500, progress:function(st){ return estStat('est_g_harvests'); },
+      nav:{ cat:'estate' },
+      reward:{ gold:1000000 } },
+    { id:'twin_estates', cat:'estatequests', title:'Twin Estates',
+      desc:'Twenty fields at home and twenty on guild ground, all tilled at once. Forty plots ripening while you fight.',
+      how:'Have 20 Fields on each estate at once.',
+      target:40, progress:function(st){ return estStanding('fieldTier'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'belt_t18_supreme', qty:1 } ] } },
+    { id:'frontier_township', cat:'estatequests', title:'Frontier Township',
+      desc:'Forty workshops standing across both estates. At this point the frontier is a supply chain with a view.',
+      how:'Have 40 Workshops standing across both estates.',
+      target:40, progress:function(st){ return estStanding('workshopId'); },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'enchant_t20', qty:30 } ] } },
+    { id:'landholder', cat:'estatequests', title:'Landholder',
+      desc:'Seventy-five tiles of laid stone across both estates. Every one of them cut, hauled and placed.',
+      how:'Pave 75 tiles across both estates.',
+      target:75, progress:function(st){ return estStat('est_paved'); },
+      nav:{ cat:'estate' },
+      reward:{ gold:2500000 } },
+    { id:'lord_of_the_manor', cat:'estatequests', title:'Lord of the Manor', capstone:true,
+      desc:'You arrived with a plot of dirt, an obstacle on it, and no particular right to be there. It is now terraced, paved, planted, staffed, and busy in forty trades, and the guild\'s ground beside it is the same. Nothing here grew by itself. Take the title: the frontier stopped being somewhere you survive and became somewhere you own.',
+      how:'Claim all 50 other Estate quests. Claiming this makes you Lord of the Manor.',
+      target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='estatequests' && q.id!=='lord_of_the_manor' && c[q.id]) n++; }); return n; },
+      nav:{ cat:'quests', sub:'estatequests' },
+      reward:{ titleId:'title_lord_of_the_manor', name:'Lord of the Manor', items:[ { itemId:'relic_t20_supreme', qty:1 } ], gold:5000000 } },
     // ---- COMBAT (51): the fighting arc. Counters come from questNoteCombat / questNoteKill, which ride the
     // combat log rather than being scattered through the combat code, plus one counter per class capstone.
     // Every reward item id was validated against the generated item_catalog seed before being written here.
@@ -27788,6 +28093,8 @@
     // even after claimed ones sink to the bottom. The capstone is excluded -- it gets a badge, not a number.
     QUEST_ORDINAL = {}; var _fn = 0;
     QUESTS.forEach(function(q){ if(q.cat==='gettingstarted' && !q.capstone){ _fn++; QUEST_ORDINAL[q.id] = _fn; } });
+    var _en = 0;   // Estate numbers its own 1..50 as well
+    QUESTS.forEach(function(q){ if(q.cat==='estatequests' && !q.capstone){ _en++; QUEST_ORDINAL[q.id] = _en; } });
     var _cn = 0;   // Combat numbers its own 1..50 independently of First Frontier
     QUESTS.forEach(function(q){ if(q.cat==='combatquests' && !q.capstone){ _cn++; QUEST_ORDINAL[q.id] = _cn; } });
     TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.titleId; })
@@ -27846,6 +28153,14 @@
   }
   // The First Frontier's ten narrative Acts, keyed by the stable 1-50 quest ordinals. In-progress quests are
   // grouped under these headers on the Quests page (claimable quests float above them, claimed sink below).
+  // The Estate's five acts.
+  var EST_ACTS = [
+    { title:'Act I \u00b7 Breaking Ground',      from:1,  to:10 },
+    { title:'Act II \u00b7 The Working Estate',  from:11, to:20 },
+    { title:'Act III \u00b7 Field and Furrow',   from:21, to:30 },
+    { title:'Act IV \u00b7 Stone and Skyline',   from:31, to:40 },
+    { title:'Act V \u00b7 The Guild Estate',     from:41, to:50 }
+  ];
   // Combat's five acts. Same shape as FF_ACTS, so the render path below takes either.
   var CB_ACTS = [
     { title:'Act I \u00b7 First Blood',            from:1,  to:10 },
@@ -28006,8 +28321,8 @@
       });
       return html;
     }
-    if(catId === 'gettingstarted' || catId === 'combatquests'){
-      var ACTS = (catId === 'combatquests') ? CB_ACTS : FF_ACTS;
+    if(catId === 'gettingstarted' || catId === 'combatquests' || catId === 'estatequests'){
+      var ACTS = (catId === 'combatquests') ? CB_ACTS : (catId === 'estatequests') ? EST_ACTS : FF_ACTS;
       // Ready-to-claim float to the very top; in-progress quests group under their narrative Act; claimed sink.
       var claimableQs = list.filter(questClaimable), claimedQs = list.filter(questClaimed);
       if(claimableQs.length){
@@ -28968,6 +29283,7 @@
   // Expanding the shared guild estate is a guild expense: burn the cost from the treasury
   // (server-authoritative + atomic), then add the next boundary tile to the shared blob.
   function guildEstateExpandFromTreasury(cost){
+    bumpStat('est_g_expansions');   // Estate quest: you spent the guild's coffers on ground everyone shares
     if(guildEstate.busy) return;
     guildEstate.busy = true; guildEstate.error = ''; needsRender = true;
     guildBankInvoke('spend_gold', { amount: cost }).then(function(res){
@@ -29816,6 +30132,7 @@
         }
       }
       if(giveRewards) state.estateClears = (state.estateClears || 0) + 1; // Quest tally: obstacles cleared
+      if(giveRewards) estNote('clears', isGuild);   // Estate quests: same site, so scope and timing match
       cell.obstacle = null;
       return true;
     }
@@ -29823,6 +30140,7 @@
       cell.type = 'paved'; cell.paveTileId = job.paveTileId;
       if(giveRewards){
         bumpStat('paved_estate'); // estate tiles paved, powers "Pave the Estate"
+        estNote('paved', isGuild);
         var pr = getPavingRecipe(job.paveTileId);
         var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
         addXp('paving', pavXp);
@@ -29843,6 +30161,7 @@
       if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
       if(giveRewards){
         if(!job.upgrade) bumpStat('workshop_built'); // workshops raised (not upgrades), powers "Raise a Workshop"
+        if(!job.upgrade){ estNote('workshops', isGuild); estSet('wsSkill', job.workshopId || (cell && cell.workshop)); }
         var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
         addXp('architecture', wsXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Architecture XP.', 'important');
@@ -29878,6 +30197,7 @@
       cell.totemId = job.totemId;
       if(giveRewards){
         if(!job.upgrade) bumpStat('totem_raised'); // totems raised (not upgrades), powers the raise quests
+        if(!job.upgrade) estNote('totems', isGuild);
         var ttT = itemTierFromId(job.totemId);
         var ttXp = estateBuildXp(ttT);
         addXp('totems', ttXp);
@@ -29890,6 +30210,7 @@
       cell.fieldTier = job.fieldTier;   // upgrade keeps the tile's crop untouched -- only the tier cap rises
       if(giveRewards){
         bumpStat('field_placed_' + job.fieldTier); // fields tilled on the estate (by tier), powers "Place 1 Sand Field"
+        estNote('fields', isGuild);
         var fldXp = estateBuildXp(job.fieldTier);
         addXp('digging', fldXp);
         addLog('Finished ' + (job.upgrade ? 'upgrading to' : 'the') + ' ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
@@ -29898,6 +30219,7 @@
     }
     if(job.kind === 'raise'){
       cell.height = Math.min(ESTATE_MAX_HEIGHT-1, cell.height + 1);
+      if(giveRewards){ estNote('raised', isGuild); cbBest('est_height', cell.height); }   // Estate quests: terraforming + how high you have ever built
       if(giveRewards){
         addXp('digging', ESTATE_TERRAFORM_XP);
         addLog('Finished raising (' + job.x + ', ' + job.y + ') to height ' + cell.height + '. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
@@ -29906,6 +30228,7 @@
     }
     // lower
     cell.height = Math.max(0, cell.height - 1);
+    if(giveRewards) estNote('lowered', isGuild);
     if(giveRewards){
       addItem(ESTATE_DIRT_ITEM_ID, ESTATE_LOWER_DIRT_REWARD);
       addXp('digging', ESTATE_TERRAFORM_XP);
@@ -35662,6 +35985,45 @@
   // Nine sites, one helper, so the Combat quest line can ask "how many times have you done your class's
   // signature thing" without nine bespoke stats spread through nine reworked classes.
   function cbClassEvent(key, n){ bumpStat('cb_cap_' + key, n || 1); }
+  // ---- ESTATE QUEST TELEMETRY -------------------------------------------------------------------------
+  // The Estate line needs a handful of things the estate did not record: terraforming, how high you have ever
+  // built, which workshop skills and which crops you have covered, and guild-scoped versions of counters that
+  // only ever tracked the personal estate. Each is bumped at the SAME site as its existing sibling, so scope
+  // (isGuild) and timing (job completion, not placement) cannot drift apart from the counters players already
+  // have. Guild counters are PARALLEL keys rather than a change to the existing ones: nothing already counted
+  // changes meaning.
+  function estNote(key, isGuild, n){ bumpStat('est_' + key, n || 1); if(isGuild) bumpStat('est_g_' + key, n || 1); }
+  function estSet(which, id){
+    if(!id) return;
+    if(!state.estSets) state.estSets = {};
+    if(!state.estSets[which]) state.estSets[which] = {};
+    state.estSets[which][id] = 1;
+  }
+  function estSetSize(which){ var m = state.estSets && state.estSets[which]; return m ? Object.keys(m).length : 0; }
+  function estStat(key){ return (state.stats && state.stats[key]) || 0; }
+  // Harvests and fertilises are recorded PER CROP (harvested_<id>), so the totals are sums over those keys.
+  // Reading them this way rather than adding a second counter keeps one source of truth for both.
+  function estSumPrefix(st, prefix){
+    var m = (st || state).stats; if(!m) return 0;
+    var n = 0; for(var k in m){ if(k.indexOf(prefix) === 0) n += m[k] || 0; }
+    return n;
+  }
+  function estCropHarvests(st){ return estSumPrefix(st, 'harvested_'); }
+  function estFertilizes(st){ return estSumPrefix(st, 'fertilized_'); }
+  // Standing counts read the estate LIVE rather than accumulating, like the existing "have this equipped"
+  // quests. questProgress latches on first touch, so demolishing later never revokes a claim.
+  function estStanding(kind){
+    var n = 0;
+    function scan(est){
+      if(!est || !est.grid) return;
+      for(var x = 0; x < est.grid.length; x++){
+        var col = est.grid[x]; if(!col) continue;
+        for(var y = 0; y < col.length; y++){ var c = col[y]; if(c && c[kind]) n++; }
+      }
+    }
+    scan(state.estate); scan(typeof guildEstate !== 'undefined' ? guildEstate : null);
+    return n;
+  }
   function cbSetSize(which){ var m = state.cbSets && state.cbSets[which]; return m ? Object.keys(m).length : 0; }
   function cbStat(key){ return (state.stats && state.stats[key]) || 0; }
   // The strip itself: session duration, running DPS, swings landed, kills, best single hit -- the
@@ -41698,7 +42060,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.88.0';
+  var GAME_VERSION = '0.0.89.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41901,7 +42263,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, rareCraftChance:rareCraftChance, supremeCraftChance:supremeCraftChance, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_RARE:FAITH_BASE_RARE, FAITH_BASE_SUPREME:FAITH_BASE_SUPREME, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, EST_ACTS:EST_ACTS, bumpStat:bumpStat, estStat:estStat, estSetSize:estSetSize, estStanding:estStanding, estCropHarvests:estCropHarvests, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,
