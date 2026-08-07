@@ -102,7 +102,7 @@ points plus two added since. No entry point was found that omits it.
 
 | # | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| 3 | P3 | The S1 boot ordering is load-bearing and has no regression test. `seamcheck` cannot see it and the browser suite does not exercise boot. A reordering would silently throttle every returning player's item allowance, which is exactly the failure the ledger notes warn about. | Fix batch drafted, not applied |
+| 3 | P3 | The S1 boot ordering is load-bearing and nothing enforces it but an `await` that reads like a formality. The browser suite cannot cover it: boot is async, and `suite()` is synchronous and discards return values, so an assertion inside a `.then()` is silently invisible. It belongs in `seamcheck` as a third static check. | Fix batch 1 written and held, not applied. The guard has NOT yet been proven to fail on a reintroduced bug, so it is not trusted to pass. |
 | 4 | open question | S3: the combat-session ramps survive a logout taken mid-fight, because the save restores `state.activity.type === 'combat'` and the reset is gated on the previous type. Capped, so not exploitable as far as this pass can tell, but it contradicts how the code comments read. | Needs an owner decision |
 
 ## Still to do in this phase
