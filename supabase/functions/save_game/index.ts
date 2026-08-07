@@ -140,6 +140,171 @@ function deriveProgress(d: Record<string, unknown>): number {
   return Math.min(MAX_PROGRESS, Math.floor(total));
 }
 
+// ---- FORGED-UNIQUE VALIDATION (ticket-0163, AndJustice4All) ---------------------------------------
+// Reported and reproduced: a nonexistent uid inserted into the outgoing save was accepted, survived a
+// refresh, and came back in a later unmodified save. True -- this function stored `data` verbatim apart
+// from the gold clamps, and nothing anywhere in supabase/ ever looked at uniqueItems.
+//
+// THE REPORTER'S SUGGESTED FIX MUST NOT BE APPLIED. "At minimum, strip data.uniqueItems / uidSeq /
+// equipped*Uid before storing" would delete every player's entire kit on their next save: uniqueItems is
+// not a cache of server state, it is the ONLY record that any enchanted, enhanced or legendary item
+// exists (the server does not simulate crafting -- the same reason item_sync is client-reported).
+// Stripping the equip pointers unequips everyone; stripping uidSeq causes id collisions afterwards.
+//
+// Their second point -- "accept UID references only when the referenced UID belongs to the authenticated
+// user" -- has no cross-account dimension here either: these uids live inside the account's own blob and
+// are only ever read back to that same account. The property being violated is not ownership, it is
+// PROVENANCE: the account can invent items for itself. A literal ownership check would pass trivially and
+// look like a fix while changing nothing.
+//
+// So this validates STRUCTURE instead, which is the part that needs no server-side crafting simulation:
+// a unique must name a real catalogue item, its tier/rarity must agree with the key that encodes them,
+// its enhance level must be inside the real cap, and it cannot carry more enchant slots than its rarity
+// allows. That kills the arbitrary-object class outright at zero cost to legitimate play.
+//
+// WHAT THIS DELIBERATELY DOES NOT CLOSE, stated plainly:
+//   * a CATALOGUE-VALID item that was never earned. That is the provenance gap player_items closes for
+//     stackables, and the durable answer is the same batch-validated server-side crafting project.
+//     The shadow sweep drafted in migration 20260807120000 is the interim detector for it.
+//   * per-enchant ROLL bounds. Those need the ENCHANT_MODS min/max table server-side, and the raw
+//     damage lines are tier-scaled rather than fixed, so it is a generated-seed job like item_catalog
+//     rather than a constant. Phase 2, and called out so it is not mistaken for covered.
+//   * what a memory editor does inside its own session. Equip effects are computed client-side; this
+//     stops PERSISTENCE and the guild-bank hand-off to other accounts, which is the reachable target.
+const UNIQUE_ENCHANT_SLOTS: Record<string, number> = { normal: 1, rare: 2, supreme: 3, fantastic: 4 };
+const UNIQUE_ENHANCE_MAX = 15;                       // mirrors ENHANCE_MAX in index.html
+const UNIQUE_BASE_RE = /_t(\d+)_(normal|rare|supreme|fantastic)$/;
+const UNIQUE_MAX_AUDIT = 400;                        // bases to check per save; a real pack is far under this
+// WARN-ONLY. The findings are logged and signalled; nothing is removed from the save. Turn on only after a
+// week of signals reads clean, because the enforcement path DELETES items -- a bounds bug here costs a real
+// player their gear, which is precisely the failure mode the reporter's own suggestion would have caused.
+const UNIQUE_VALIDATE_ENFORCE = false;
+
+type UniqueFinding = { uid: string; base: string; why: string };
+
+// Structural audit of data.uniqueItems. Returns the findings; the caller decides whether to act.
+async function auditUniques(
+  admin: ReturnType<typeof createClient>,
+  data: Record<string, unknown>,
+): Promise<{ findings: UniqueFinding[]; checked: number }> {
+  const bag = data.uniqueItems;
+  if (!bag || typeof bag !== "object" || Array.isArray(bag)) return { findings: [], checked: 0 };
+  const entries = Object.entries(bag as Record<string, unknown>);
+  if (!entries.length) return { findings: [], checked: 0 };
+
+  const findings: UniqueFinding[] = [];
+  const shaped: { uid: string; u: Record<string, unknown>; base: string }[] = [];
+
+  // Pass 1: shape and self-consistency, all of it local -- no catalogue needed.
+  for (const [uid, raw] of entries) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      findings.push({ uid, base: "", why: "not_an_object" });
+      continue;
+    }
+    const u = raw as Record<string, unknown>;
+    const base = typeof u.base === "string" ? u.base : "";
+    if (!base) { findings.push({ uid, base: "", why: "no_base" }); continue; }
+
+    const m = UNIQUE_BASE_RE.exec(base);
+    if (!m) { findings.push({ uid, base, why: "base_not_tier_rarity_shaped" }); continue; }
+    const keyTier = Number(m[1]), keyRarity = m[2];
+
+    // The base key ENCODES tier and rarity, so the object's own fields must agree with it. This is what
+    // catches a real base relabelled as fantastic t20: the key is the authority, the fields are a copy.
+    if (u.rarity !== undefined && u.rarity !== keyRarity) {
+      findings.push({ uid, base, why: `rarity_mismatch:${String(u.rarity)}!=${keyRarity}` });
+      continue;
+    }
+    if (u.tier !== undefined) {
+      const t = Number(u.tier);
+      if (!Number.isFinite(t) || Math.floor(t) !== keyTier) {
+        findings.push({ uid, base, why: `tier_mismatch:${String(u.tier)}!=${keyTier}` });
+        continue;
+      }
+    }
+    const enh = u.enhance === undefined ? 0 : Number(u.enhance);
+    if (!Number.isFinite(enh) || enh < 0 || Math.floor(enh) !== enh || enh > UNIQUE_ENHANCE_MAX) {
+      findings.push({ uid, base, why: `enhance_out_of_range:${String(u.enhance)}` });
+      continue;
+    }
+    if (u.enchants !== undefined) {
+      if (!Array.isArray(u.enchants)) {
+        findings.push({ uid, base, why: "enchants_not_array" });
+        continue;
+      }
+      const slots = UNIQUE_ENCHANT_SLOTS[keyRarity] || 1;
+      if (u.enchants.length > slots) {
+        findings.push({ uid, base, why: `enchant_slots:${u.enchants.length}>${slots}` });
+        continue;
+      }
+      // Each line must at least name a mod and carry a finite roll. The per-mod MAX is phase 2 (see above).
+      const bad = u.enchants.some((e) => {
+        if (!e || typeof e !== "object") return true;
+        const mod = (e as Record<string, unknown>).mod;
+        const roll = Number((e as Record<string, unknown>).roll);
+        return typeof mod !== "string" || !mod || !Number.isFinite(roll) || roll < 0;
+      });
+      if (bad) { findings.push({ uid, base, why: "enchant_line_malformed" }); continue; }
+    }
+    shaped.push({ uid, u, base });
+  }
+
+  // Pass 2: every surviving base must be a REAL item. item_catalog is the existing allowlist (generated
+  // from the client's own catalogue by scripts/dump-item-catalog.mjs and CI-checked against drift), so
+  // this needs no new data. Query the DISTINCT bases only -- a pack of 80 uniques is usually ~30 keys.
+  const distinct = Array.from(new Set(shaped.map((s) => s.base))).slice(0, UNIQUE_MAX_AUDIT);
+  if (distinct.length) {
+    const { data: known, error } = await admin.from("item_catalog").select("item_key").in("item_key", distinct);
+    // A catalogue read failure must NEVER invent findings -- that would delete real gear once enforcement
+    // is on. Fail OPEN here: the structural pass above already ran, and the sweep catches the rest.
+    if (!error && known) {
+      const ok = new Set((known as { item_key: string }[]).map((r) => r.item_key));
+      for (const s of shaped) {
+        if (distinct.indexOf(s.base) !== -1 && !ok.has(s.base)) {
+          findings.push({ uid: s.uid, base: s.base, why: "base_not_in_catalog" });
+        }
+      }
+    }
+  }
+
+  // Dangling equip pointers: harmless on their own (the client just renders nothing) but they are the
+  // signature of a hand-edited blob, so they are worth a line in the signal.
+  for (const k of ["equippedMainhandUid", "equippedOffhandUid", "equippedRelicUid", "equippedBeltUid"]) {
+    const v = data[k];
+    if (v != null && v !== "" && !Object.prototype.hasOwnProperty.call(bag as object, String(v))) {
+      findings.push({ uid: String(v), base: "", why: `dangling_pointer:${k}` });
+    }
+  }
+  return { findings, checked: entries.length };
+}
+
+// Remove the offending uniques and any equip pointer aimed at them. Only ever called with
+// UNIQUE_VALIDATE_ENFORCE on -- kept beside the audit so the two can never drift apart.
+function stripFindings(data: Record<string, unknown>, findings: UniqueFinding[]): number {
+  const bag = data.uniqueItems as Record<string, unknown> | undefined;
+  if (!bag) return 0;
+  let removed = 0;
+  const kill = new Set(findings.filter((f) => !f.why.startsWith("dangling_pointer")).map((f) => f.uid));
+  for (const uid of kill) {
+    if (Object.prototype.hasOwnProperty.call(bag, uid)) { delete bag[uid]; removed++; }
+  }
+  for (const k of ["equippedMainhandUid", "equippedOffhandUid", "equippedRelicUid", "equippedBeltUid"]) {
+    const v = data[k];
+    if (v != null && v !== "" && !Object.prototype.hasOwnProperty.call(bag, String(v))) data[k] = null;
+  }
+  // Jewelry lives in slots that carry their own uid; clear any that now point at nothing.
+  const jew = data.jewelrySlots;
+  if (jew && typeof jew === "object" && !Array.isArray(jew)) {
+    for (const slot of Object.values(jew as Record<string, unknown>)) {
+      if (slot && typeof slot === "object") {
+        const s = slot as Record<string, unknown>;
+        if (s.uid != null && !Object.prototype.hasOwnProperty.call(bag, String(s.uid))) s.uid = null;
+      }
+    }
+  }
+  return removed;
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -203,6 +368,19 @@ Deno.serve(async (req) => {
     const d = data as Record<string, unknown>;
     d.gold = normNonNeg(d.gold, ceiling);
     if ("goldEarnedTotal" in d) d.goldEarnedTotal = normNonNeg(d.goldEarnedTotal, ceiling);
+  }
+  // ---- Forged-unique audit (ticket-0163). Runs BEFORE the blob is stored, so enforcement (once it is on)
+  // strips the item rather than letting it persist. In warn-only mode nothing is removed. Best-effort by
+  // construction: a thrown audit must never cost a player their save.
+  let uniqAudit: { findings: UniqueFinding[]; checked: number } = { findings: [], checked: 0 };
+  try {
+    uniqAudit = await auditUniques(admin, data as Record<string, unknown>);
+    if (uniqAudit.findings.length && UNIQUE_VALIDATE_ENFORCE) {
+      const removed = stripFindings(data as Record<string, unknown>, uniqAudit.findings);
+      console.warn(`unique_forged ENFORCED: user=${userId} removed=${removed}`);
+    }
+  } catch (e) {
+    console.warn(`unique audit threw (ignored): ${String(e).slice(0, 200)}`);
   }
   const savedAt = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
     ? Math.floor(body.client_saved_at) : 0;
@@ -307,6 +485,37 @@ Deno.serve(async (req) => {
             }, { onConflict: "user_id" });
           }
         }
+      }
+    }
+  } catch { /* detection is best-effort -- never block a save on it */ }
+
+  // Forged-unique signal (ticket-0163). Recorded whether or not enforcement is on, so a week of real
+  // traffic tells us whether the bounds are right BEFORE anything starts deleting items. Rate-limited to
+  // ~1 row/hour/user like the others: a client re-saves every 8s and would otherwise flood the log.
+  // Deliberately NOT clamping any surface yet -- a structural finding can also mean a stale client shipped
+  // an item the catalogue seed has not been regenerated for, and that is a deploy-order mistake on our
+  // side, not cheating. Read the signals first; that distinction is exactly what the shadow week is for.
+  try {
+    if (uniqAudit.findings.length) {
+      const { data: recent } = await admin.from("clamp_signals").select("id")
+        .eq("user_id", userId).eq("kind", "unique_forged")
+        .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+      if (!recent || !recent.length) {
+        const byWhy: Record<string, number> = {};
+        for (const f of uniqAudit.findings) {
+          const key = f.why.split(":")[0];
+          byWhy[key] = (byWhy[key] || 0) + 1;
+        }
+        const detail = {
+          kind: "unique_forged",
+          uniques_checked: uniqAudit.checked,
+          finding_count: uniqAudit.findings.length,
+          by_reason: byWhy,
+          sample: uniqAudit.findings.slice(0, 8),   // uid + base + why, enough to judge without the blob
+          enforced: UNIQUE_VALIDATE_ENFORCE,
+        };
+        console.warn(`clamp signal unique_forged: user=${userId} findings=${uniqAudit.findings.length} of ${uniqAudit.checked} reasons=${Object.keys(byWhy).join(",")}`);
+        await admin.from("clamp_signals").insert({ user_id: userId, kind: "unique_forged", detail, would_clamp: false });
       }
     }
   } catch { /* detection is best-effort -- never block a save on it */ }

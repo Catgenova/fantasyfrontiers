@@ -38,6 +38,12 @@ jobs:
       - name: Check item_catalog seed is in sync with the client registries
         run: node scripts/dump-item-catalog.mjs --check
 
+      - name: Unit-test the save_game forged-unique audit
+        # Runs against the REAL edge-function source, not a copy. The audit's enforcement path deletes
+        # player items, and typecheck:functions only fails on a few high-signal codes, so this is the
+        # only thing standing between a bounds bug and someone's gear.
+        run: npm run test:functions
+
   typecheck:
     name: Typecheck (checkJs, high-signal only)
     runs-on: ubuntu-latest

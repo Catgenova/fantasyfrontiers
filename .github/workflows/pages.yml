@@ -29,6 +29,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck:functions   # edge functions are not in the build; a ReferenceError in one
                                            # shipped once and only failed at runtime, so gate on it here
+      - run: npm run test:functions # unit-tests save_game's forged-unique audit against the REAL source.
+                                    # typecheck:functions only fails on a few high-signal codes (a type
+                                    # mismatch passes), and this code's enforcement path deletes items.
       - run: npm run seamcheck      # static: the test seam is complete, and new per-foe combat state is reset
                                     # (both failure modes are silent in-browser, so they are gated here)
       - run: npm run build
