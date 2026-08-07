@@ -4016,6 +4016,12 @@
     ok(FF.gabTaskRemainText(Infinity, 5000, 70).indexOf('504/h') !== -1, 'endless runs read the success-weighted rate (3600s/5s x 70%)');
     eq(FF.gabTaskRemainText(Infinity, 0, 70), '∞', 'no cycle time -> the plain infinity');
     eq(FF.gabTaskRemainText(null, 1000, 70), '', 'combat has no remain column');
+    // ticket-0162: a QUEUED run's horizon is its target, not the whole stack, and the row shows the TIME
+    // alone (the "3/10" chip already carries the count, and at a 70% success chance the cycle figure and
+    // the item figure legitimately differ, so printing both invited a misread).
+    eq(FF.gabTaskRemainText(15, 4000, 70, true), '≈1m', 'a queued run shows the ETA only');
+    eq(FF.gabTaskRemainText(0, 4000, 70, true), '', 'a finished queued run shows nothing');
+    ok(/^137 left/.test(FF.gabTaskRemainText(137, 4000, 87, false)), 'an unqueued run still counts its cycles');
     var S = FF._state;
     var sv = { act: S.activity, extra: S.extraCraftSlots, inv: S.inventory };
     try {
@@ -6073,6 +6079,34 @@
     near(s.familiarBuffs.enemyWeakenPct, 0.99, 'Weaken clamps to 99% (enemy keeps 1% of its damage)');
     FF.castFamiliarSpell({ type:'slowEnemy', name:'Test Slow', pct:5.0, durationMs:8000 }, 100);
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
+  });
+
+  // ---- ticket-0162: a queued run's remaining time is for the TARGET, not the whole stack -------------
+  // "In crafting, the remaining time calculated is based on your entire stack, this time is incorrect when
+  // you queue a job for x amount of items." Exactly right: describeTask reported taskRunsRemaining(), the
+  // runs the INVENTORY supports, so queueing 10 off a stack of 4,000 promised the time for 4,000 (measured:
+  // "4,000 left, 7.7h" against the real ~2m). The horizon is now whichever runs out first, the materials or
+  // the target, and the residual is divided by the EXPECTED yield of a cycle (outputQty x success chance).
+  suite('ticket-0162: a queued run reports the time for its target, not the whole stack', function(){
+    ok(typeof FF.taskRunsForTarget === 'function' && typeof FF.taskRunsHorizon === 'function', 'the horizon helpers are exported');
+    // The residual over the expected yield, both terms in play.
+    eq(FF.taskRunsForTarget({ targetQty:10, producedQty:0 }, 1, 100), 10, '10 items, 1 per cycle, always succeeds');
+    eq(FF.taskRunsForTarget({ targetQty:10, producedQty:0 }, 1, 70), 15, '...at 70% success it needs ~15 cycles');
+    eq(FF.taskRunsForTarget({ targetQty:30, producedQty:0 }, 3, 100), 10, '...outputQty 3 thirds the cycles');
+    eq(FF.taskRunsForTarget({ targetQty:10, producedQty:7 }, 1, 100), 3, 'only the RESIDUAL counts once part-way through');
+    eq(FF.taskRunsForTarget({ targetQty:10, producedQty:10 }, 1, 100), 0, 'a met target needs no more cycles');
+    eq(FF.taskRunsForTarget({ producedQty:0 }, 1, 100), Infinity, 'an UNQUEUED run is not bounded by a target');
+    // The horizon takes whichever limit binds first.
+    var S = FF._state, sv = { inv:S.inventory };
+    try {
+      S.inventory = { plank:40 };
+      eq(FF.taskRunsHorizon({ targetQty:10, producedQty:0 }, { plank:1 }, 1, 100), 10, 'the target binds when materials are plentiful');
+      eq(FF.taskRunsHorizon({ targetQty:999, producedQty:0 }, { plank:1 }, 1, 100), 40, 'the materials bind when the target is huge');
+      eq(FF.taskRunsHorizon(null, { plank:1 }, 1, 100), 40, 'no activity at all falls back to the materials');
+      // Gather has no inputs table: unqueued stays endless, queued gets a real horizon.
+      eq(FF.taskRunsHorizon({ targetQty:25, producedQty:0 }, null, 1, 100), 25, 'a queued gather is bounded by its target');
+      eq(FF.taskRunsHorizon({ producedQty:0 }, null, 1, 100), null, 'an unqueued gather has no inputs and no target');
+    } finally { S.inventory = sv.inv; }
   });
 
   // ---- Buff re-application: greater magnitude, full timer (owner order, Thausale's report) -----------

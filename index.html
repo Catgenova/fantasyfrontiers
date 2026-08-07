@@ -38186,6 +38186,25 @@
     keys.forEach(function(k){ min = Math.min(min, Math.floor((state.inventory[k]||0)/inputs[k])); });
     return min;
   }
+  // ticket-0162: a QUEUED run ends at its target, not when the materials run out, and the task bar was
+  // reporting the whole stack either way -- so "make 10" off a stack of 4,000 promised the time for 4,000.
+  // Cycles still needed = the residual item count over the EXPECTED yield of one cycle. Both terms matter:
+  // outputQty because one Brewing cycle fills three casks, and the success chance because a 60% craft
+  // really does need ~1.67 cycles per item, and omitting it would under-report by 40%.
+  function taskRunsForTarget(act, outputQty, successPct){
+    if(!act || !act.targetQty) return Infinity;          // not a queued run: the materials are the limit
+    var need = act.targetQty - (act.producedQty || 0);
+    if(!(need > 0)) return 0;
+    var per = Math.max(1, outputQty || 1) * (((successPct == null) ? 100 : successPct) / 100);
+    return per > 0 ? Math.ceil(need / per) : Infinity;
+  }
+  // The horizon a task bar should report: whichever runs out first, the materials or the queued target.
+  function taskRunsHorizon(act, inputs, outputQty, successPct){
+    var mat = taskRunsRemaining(inputs);
+    var tgt = taskRunsForTarget(act, outputQty, successPct);
+    if(mat == null) return (tgt === Infinity) ? null : tgt;   // no inputs table (gather/pray) but a target
+    return Math.min(mat, tgt);
+  }
   // Per-gather-skill success chance shown on the task bar. This MUST mirror processGatherActivity's roll
   // branches exactly (ticket-0128): it used to return a flat 100 for everything but digging/mining/fishing,
   // while the tick rolls genericGatherMainChance (70% base + tool, capped 95%) for forestry, herbalism,
@@ -38205,7 +38224,8 @@
       var gi = ALL_GATHER_ITEMS[act.itemId];
       return { name:'Gathering: '+(gi?gi.name:act.itemId), icon: gi?gi.icon:svgIcon('chest','var(--cat-gathering)'),
         effTime: gi ? gi.time*1000*memoSpeedMult()*memoGatherToolSpeed(act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000,
-        progress: act.progress||0, remaining: Infinity, successPct: gatherSuccessPct(act.skill), navCat:'gathering', navSub:act.skill,
+        progress: act.progress||0, remaining: taskRunsForTarget(act, 1, gatherSuccessPct(act.skill)),
+        successPct: gatherSuccessPct(act.skill), navCat:'gathering', navSub:act.skill,
         accent: (GATHERING_SKILLS[act.skill]||{}).color || 'var(--cat-gathering)' };
     }
     if(act.type==='pray'){
@@ -38227,7 +38247,8 @@
       var sChance = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, sk);
       return { name:'Crafting: '+(d?d.name:act.craftKind), icon: svgIcon('hammer','var(--cat-crafting)'),
         effTime: d ? d.time*1000*memoSpeedMult()*memoToolSpeed(sk) : 1000, progress: act.progress||0,
-        remaining: d ? taskRunsRemaining(d.inputs) : null, successPct: Math.round(sChance*100), navCat: craftCatForSkill(sk), navSub: sk,
+        remaining: d ? taskRunsHorizon(act, d.inputs, 1, Math.round(sChance*100)) : null,
+        successPct: Math.round(sChance*100), navCat: craftCatForSkill(sk), navSub: sk,
         accent: ((CRAFTING_SKILLS[sk]||GATHERING_SKILLS[sk])||{}).color || 'var(--cat-crafting)' };
     }
     var r = ALL_CRAFT_RECIPES[act.itemId];
@@ -38239,7 +38260,7 @@
     else cpct = Math.round(craftSuccessRate(state, act.skill)*100);
     return { name:'Crafting: '+(r?r.name:act.itemId), icon: r?r.icon:svgIcon('hammer','var(--cat-crafting)'),
       effTime: r ? r.time*1000*memoSpeedMult()*memoToolSpeed(act.skill) : 1000, progress: act.progress||0,
-      remaining: taskRunsRemaining(inputs), successPct: cpct, navCat: craftCatForSkill(act.skill), navSub: act.skill,
+      remaining: taskRunsHorizon(act, inputs, (r && r.outputQty) || 1, cpct), successPct: cpct, navCat: craftCatForSkill(act.skill), navSub: act.skill,
       accent: ((CRAFTING_SKILLS[act.skill]||GATHERING_SKILLS[act.skill])||{}).color || 'var(--cat-crafting)' };
   }
   // Short human duration for ETAs/runways: "9m", "3.2h", "19d". Never seconds -- these annotate
@@ -38255,7 +38276,7 @@
   }
   // The remain column (owner pick 2, v0.0.86.16): finite runs append the finish ETA ("137 left · ≈9m"),
   // endless ones show the production RATE instead of a bare infinity ("∞ · ~412/h", success-weighted).
-  function gabTaskRemainText(rem, effTimeMs, successPct){
+  function gabTaskRemainText(rem, effTimeMs, successPct, queued){
     if(rem === Infinity){
       if(!(effTimeMs > 0)) return '∞';
       var perHour = 3600000 / effTimeMs * ((successPct == null ? 100 : successPct) / 100);
@@ -38263,6 +38284,10 @@
     }
     if(rem == null) return '';
     var eta = (effTimeMs > 0 && rem > 0) ? gabShortEta(rem * effTimeMs) : '';
+    // "N left" counts CYCLES, which is the right unit for a materials horizon but reads as items beside a
+    // queued run's own "3/10" chip -- and at a 70% success chance the two numbers legitimately differ
+    // (10 items needs ~15 cycles). So a queued run shows the TIME only and lets the chip carry the count.
+    if(queued) return eta ? '≈' + eta : '';
     return fmt(rem) + ' left' + (eta ? ' · ≈' + eta : '');
   }
   function gabTaskChanceText(pct){ return pct!=null ? pct+'%' : ''; }
@@ -38436,7 +38461,7 @@
       html += '<button class="gab-task-x" '+stop+' title="Cancel this task">✕</button>';
       html += '<span class="gab-task-skill" style="background:'+(d.accent||'transparent')+'"></span>';
       html += '<div class="gab-task-body">';
-      html += '<div class="gab-task-top"><span class="gab-task-name">'+d.icon+' '+escapeHtml(d.name)+'</span><span class="gab-task-remain" id="gabRem-'+t.key+'">'+gabTaskRemainText(d.remaining, d.effTime, d.successPct)+'</span></div>';
+      html += '<div class="gab-task-top"><span class="gab-task-name">'+d.icon+' '+escapeHtml(d.name)+'</span><span class="gab-task-remain" id="gabRem-'+t.key+'">'+gabTaskRemainText(d.remaining, d.effTime, d.successPct, !!(t.act && t.act.targetQty))+'</span></div>';
       html += '<div class="gab-task-track"><div class="gab-task-fill'+gabFillClass(t.act)+'" id="gabFill-'+t.key+'" style="width:'+pct+'%"></div></div>';
       html += '</div>';
       // A queued run shows how far through its TARGET it is, which the time-remaining figure can't convey
@@ -38511,7 +38536,7 @@
       var fill = document.getElementById('gabFill-'+t.key);
       if(fill && d.effTime) fill.style.width = clamp((d.progress||0)/d.effTime*100, 0, 100) + '%';
       var rem = document.getElementById('gabRem-'+t.key);
-      if(rem){ var rt = gabTaskRemainText(d.remaining, d.effTime, d.successPct); if(rem.textContent !== rt) rem.textContent = rt; }
+      if(rem){ var rt = gabTaskRemainText(d.remaining, d.effTime, d.successPct, !!(t.act && t.act.targetQty)); if(rem.textContent !== rt) rem.textContent = rt; }
       var ch = document.getElementById('gabChance-'+t.key);
       if(ch){ var ct = gabTaskChanceText(d.successPct); if(ch.textContent !== ct) ch.textContent = ct; }
       // Queued run: tick the n/N counter in place rather than rebuilding the card each time an item lands.
@@ -40920,7 +40945,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.55';
+  var GAME_VERSION = '0.0.86.56';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41055,7 +41080,7 @@
       // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
       // here for 13 versions because these were the tabs the sweep could not reach.
       renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
-      buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
+      buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, taskRunsForTarget:taskRunsForTarget, taskRunsHorizon:taskRunsHorizon, taskRunsRemaining:taskRunsRemaining, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, renderWorkshopForge:renderWorkshopForge, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot, placeNewActivity:placeNewActivity, queueEligibleAction:queueEligibleAction,
