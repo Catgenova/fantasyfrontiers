@@ -109,6 +109,14 @@ comment on function public.recovery_lookup_allowed(text, int, int) is
 --   Expect true for the first 10 and false on the 11th, then true again after 15 minutes.
 --   select public.recovery_lookup_allowed(null);      -- expect false (fails closed)
 --
--- STILL TO DO IN THE EDGE FUNCTION, and finding 13 is NOT closed until it is done: account_recovery's
--- get_questions branch must call recovery_lookup_allowed() and return 429 when it returns false.
--- The migration alone only supplies the limiter; nothing calls it yet.
+-- ---- DEPLOY ORDER MATTERS: MIGRATION FIRST, THEN THE FUNCTION ---------------------------------------
+-- account_recovery's get_questions branch ALREADY calls recovery_lookup_allowed() and returns 429 when
+-- it is false or errors (that shipped with this review; the function is not waiting on anything).
+--
+-- Because that call FAILS CLOSED, the order is not optional:
+--   1. Apply THIS MIGRATION first.
+--   2. Then deploy the account_recovery edge function.
+-- Deploy the function against a database without recovery_lookup_allowed() and every get_questions
+-- call takes the error branch and returns 429, which breaks password recovery lookups for everyone
+-- until the migration lands. Applying the migration first is harmless in the other direction: the
+-- limiter simply sits unused until the new function is live.
