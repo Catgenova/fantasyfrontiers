@@ -63,8 +63,10 @@ begin
 
   for v_row in
     with w as (
-      -- Every equipment-family key, with its last-seen earned figure. A key never seen before is baselined
-      -- at its CURRENT value, so its first delta is zero -- this is what makes the first run flag nothing.
+      -- Every equipment-family key, with its last-seen earned figure.
+      -- SUPERSEDED (kept because it names the bug): "a key never seen before is baselined at its CURRENT
+      -- value, so its first delta is zero". That was per-KEY, and it is what made a single injected
+      -- fantastic invisible -- the injection became its own baseline.
       -- 20260807160000: baselining is PER-ACCOUNT, not per-key. A key with no watch row on an account
       -- that is ALREADY under watch did not exist at the last sweep, so its whole earned_total is growth
       -- and `seen` is 0. Only an account with no watch rows at all still baselines (its first sweep must
