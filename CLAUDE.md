@@ -105,6 +105,62 @@ set to `true` anywhere in the file. `STAFF_TYPE` has `staff:true` but no `noAtta
 5,368–13,416 base), while the Arcanism tab text says a staff "deals no damage and never attacks". Setting the
 flag would change Summoner damage, so it needs the owner's call.
 
+## The wall/fence/curb border system (v0.0.94.0): three types, three jobs
+
+`generateEstateEdges()` has always built two edge grids (`edgesY` 20x21, `edgesX` 21x20 = **840 borders**
+on a full estate) and nothing read `cell.type` except the renderer, which drew it at line width 2 / 3.5 /
+5.5. Curb, Fence and Wall differed **only in price and line thickness**. This release gives each one a
+distinct mechanical job, and makes raising one a timed job instead of an instant click.
+
+- **Borders are now `estate_jobs` rows** (kind `border`, payload `{ orient, masonryTileId }`), migration
+  `20260807280000`. They were the ONE estate construction that finished instantly.
+  **Time: 1 min/tier x the type multiplier (Curb 1, Fence 2, Wall 3)**, so a Sand Curb is 1 minute and a Lime
+  Wall is 63. **The tier ENCODES the type** (Masonry is 7 stones x 3 types in order, so `tier % 3` is
+  0/1/2), which is why the SQL arm needs no extra payload field and can compute the identical number:
+  `(t+1) * 60000 * ((t % 3) + 1)`. The server figure is authoritative for a personal job, so **change both
+  sides or neither**; the five reference durations are asserted in `tests/selftest.js` and repeated in the
+  migration's verify block.
+- **Gate: Architecture at the tier's own level** (`buildingGateOk`'s shape), on top of the Masonry recipe
+  level that already gated the stone. Deliberately ONE skill for all three rather than three invented
+  thematic mappings. The types are separated by build TIME, not by which skill you need. This also gives
+  Architecture a second use; it was read by Workshops alone.
+- **A BORDER IS NOT A TILE, and the two coordinate spaces OVERLAP.** An edge x/y runs 0..GRID_SIZE while a
+  tile's runs 0..GRID_SIZE-1, so a border job at (5,5) would otherwise read as tile (5,5) being worked.
+  Four sites had to learn the difference: `estJobOnTile` and `estJobTileMap` skip border jobs,
+  `estateProjectedCell` refuses to match them, and **`applyEstateJobCompletion` resolves borders BEFORE its
+  `estate.grid[job.x][job.y]` lookup**: an outer-boundary border legitimately addresses `grid[20]`, so the
+  tile-missing branch would have refunded the stone and told the player their own border "is not on your
+  estate" every time one finished on the outside of the plot. `estateQueuedJobValid` takes the estate's
+  EDGE holder as a third argument for the same reason (there is no cell to validate against).
+- **THE THREE EFFECTS.** Curb: a Curb on the border SHARED by two Aqueducts makes that link **free**, so
+  `aqueductRange` becomes a budget you spend only where you did not line the channel. `computeAqueductFed`
+  is therefore a **0-1 BFS** (lined steps on the front of the deque, unlined on the back, stale entries
+  skipped) and `fed` is decided only **after every cost is final**. Deciding on first visit keeps the
+  verdict from a worse earlier path. Fence: a Field with a Fence on **all four** borders grows up to 15%
+  faster, priced off the **weakest** of the four (else three Sand Fences plus one Lime buys nearly the whole
+  bonus for a twentieth of the stone). Wall: the **Estate Appraisal**.
+- **NEW ENTRY ON THE NEVER-SCALE LIST: never pay per BORDER.** A full estate has 840 of them, so a
+  "+X% per Wall" line is the pinned-count trap (raw Accuracy, raw Armor, raw enchant count) wearing
+  stonework: unbounded, mandatory, and felt by nobody. Every effect here pays per **completed ring**, per
+  **tile**, or as a **share that self-caps at 1.0**. The Appraisal is the walled fraction of the owned
+  region's OUTER perimeter, which cannot exceed 1 however much stone anyone owns, and which **dilutes when
+  you expand** (new ground lengthens the perimeter), so the estate reading 100% is the one that is finished.
+- **THE APPRAISAL CANNOT BUY ESTATE JOB SPEED, and the reason generalises.** Personal job durations are
+  stamped by `estate_job_duration_ms` on the server, which cannot see the grid. A client-side cut would
+  show the player a timer that is not the one gating their reward, and passing the score in the payload
+  would just let a client claim 1.0. It buys **peon speed** instead, which is entirely client-side. Any
+  future grid-derived bonus faces the same fork: client-side channel, or a server that can see the grid.
+- **DISPLAY-VS-PRODUCTION SPLIT (the bug this nearly shipped as).** `processPeonScope` calls
+  `peonActionTime` DIRECTLY while the whole UI reads `peonEffTime`. Applying the Appraisal in the wrapper
+  would have raised every displayed rate and changed nothing a peon actually produced. It goes in
+  `peonActionTime`, which now takes `scope` (omitting it is safe and yields the pre-v0.0.94.0 figure).
+  **Check which of a display helper and a production loop is the real chokepoint before hooking a bonus.**
+- A 4th border type would break the `tier % 3` encoding, so **a Gate must be a boolean flag on a Wall
+  edge**, never a new Masonry family.
+- Guild estates DO carry edges (`guildEstateHydrate` back-fills them for old rows and `guildEstatePersist`
+  writes them), so every effect above resolves its OWN estate's edge holder explicitly rather than reading
+  whichever estate is on screen, the same rule `gridHasBuilding` follows for grids.
+
 ## Conventions
 
 - **NO EM DASHES, EVER (owner rule, 2026-08-05).** Not in game copy, not in patch notes or
@@ -208,6 +264,15 @@ of the build. `scripts/typecheck.mjs` covers `index.html` ONLY.
 reported clean because it was not really checking, and once a guard matched ITS OWN COMMENT
 (the one naming `authRender`) and failed the build on correct code. Always reintroduce the bug,
 confirm exit 1, then restore.
+
+**AND VERIFY THE BASELINE BEFORE TRUSTING A PLANT RUN (v0.0.94.0).** A bug-planting script rewrites
+`index.html` in a loop, so a run KILLED partway through (a 2-minute tool timeout) leaves the last plant
+applied. The next run then read that file as its `orig`, so **every** plant "was caught" by two failures
+that were really in the baseline, and the plant matching the corrupted line reported "target appears 0
+times". Spot-checking two markers afterwards was not enough. The plant script now refuses to start unless
+`index.html` is byte-identical to a verified-clean snapshot, and a run that reports a failure in a suite
+the plant could not possibly reach means **the baseline is dirty, not that the guard is broad**. Check
+that before debugging the test.
 
 ## The item ledger (v0.0.74.x, AndJustice4All ticket)
 

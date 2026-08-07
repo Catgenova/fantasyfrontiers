@@ -12371,7 +12371,38 @@
       var cut = sunTerraceCutAt(grid, px, py);
       if(cut > 0) m = 1 + (m - 1) * (1 - cut);
     }
+    // FENCE SHELTER (v0.0.94.0): unlike the Sun Terrace this is NOT penalty-only. A fenced Field grows
+    // faster wherever it stands, which is deliberately the first thing in the game that can take a Field
+    // below the altitude band's 0.5 floor -- the band above is 0.5..1.5 and a fully sheltered Field
+    // reaches 0.425. That widening is the reward for enclosing all four sides, and it is stated here
+    // because the floor is otherwise load-bearing (see the waterline-exploit note above).
+    var shelter = fenceShelterCutAt(scope, px, py);
+    if(shelter > 0) m = m * (1 - shelter);
     return m;
+  }
+  // ---- FENCE SHELTER: a Field with a Fence on ALL FOUR of its borders grows faster ------------------
+  // ALL FOUR is the whole rule. Three fences and a gap does nothing, so this is a completed enclosure
+  // rather than a per-border bonus -- which matters because a full estate has 840 borders, and anything
+  // that paid per border would be the pinned-count trap (raw Accuracy, raw Armor, raw enchant count) in
+  // a new dimension: mandatory, unbounded, and felt by nobody.
+  //
+  // THE CUT SCALES OFF THE WEAKEST OF THE FOUR, not the best and not the sum. A Sand Fence on three
+  // sides and one Lime Fence would otherwise buy nearly the full bonus for a twentieth of the stone.
+  // Curbs and Walls do NOT count: a Curb is ankle-height and a Wall is the Appraisal's business. Giving
+  // each of the three types one job is the point of the whole batch.
+  var FENCE_SHELTER_MAX_CUT = 0.15;   // a fully Lime-fenced Field grows 15% faster
+  function fenceShelterCutAt(scope, px, py){
+    var edges = scope === 'guild' ? (guildEstate.status === 'ready' ? guildEstate : null) : (state.estate || null);
+    if(!edges) return 0;
+    var quad = borderEdgesOfTile(px, py), worst = -1;
+    for(var i=0;i<quad.length;i++){
+      var c = edgeCellIn(edges, quad[i]);
+      if(!c || c.type !== 'fence') return 0;                       // any gap, curb or wall -> no shelter
+      var t = itemTierFromId(c.masonryTileId);
+      if(worst < 0 || t < worst) worst = t;
+    }
+    if(worst < 0) return 0;
+    return FENCE_SHELTER_MAX_CUT * ((Math.max(0, Math.min(TIER_COUNT-1, worst)) + 1) / TIER_COUNT);
   }
   function plantSeed(scope, key, seedId, batch){
     var fieldTier = fieldTierAt(scope, key);
@@ -29857,12 +29888,21 @@
   function estPersist(){ if(estIsGuild) guildEstatePersist(); }                       // personal autosaves; guild pushes to server
   function estRecomputeWorkshops(){ if(estIsGuild){ recomputeGuildWorkshops(); recomputeGuildAqueducts(); } else { recomputePlacedWorkshops(); recomputeAqueducts(); } }
   function estAllJobs(){ if(!estActive) return []; return estIsGuild ? (estActive.jobs||[]) : (estActive.job ? [estActive.job] : []); }
-  function estJobOnTile(x, y){ return estAllJobs().some(function(j){ return j.x===x && j.y===y; }); }
+  // BORDER JOBS ARE NOT TILE JOBS. Their x/y address an EDGE, and the two coordinate spaces overlap (an
+  // edge x runs 0..GRID_SIZE), so a border job at (5,5) would otherwise read as the tile (5,5) being
+  // worked and block every action on a tile nobody is touching. Both directions matter: estJobOnBorder
+  // is the border's own busy check.
+  function estJobOnTile(x, y){ return estAllJobs().some(function(j){ return j.kind!=='border' && j.x===x && j.y===y; }); }
+  function estJobOnBorder(orient, x, y){
+    return estAllJobs().some(function(j){ return j.kind==='border' && j.orient===orient && j.x===x && j.y===y; })
+        || (!estIsGuild && estateQueue().some(function(q){ return q.kind==='border' && q.orient===orient && q.x===x && q.y===y; }))
+        || (estIsGuild && guildQueueArr().some(function(q){ return q.kind==='border' && q.orient===orient && q.x===x && q.y===y; }));
+  }
   // Map "x_y" -> the job on that tile, used to paint occupied guild-estate tiles red so
   // members can see a tile is being worked and can't be claimed. Empty off the guild estate.
   function estJobTileMap(){
     var m = {};
-    if(estIsGuild) (estActive && estActive.jobs || []).forEach(function(j){ m[j.x+'_'+j.y] = j; });
+    if(estIsGuild) (estActive && estActive.jobs || []).forEach(function(j){ if(j.kind!=='border') m[j.x+'_'+j.y] = j; });
     return m;
   }
 
@@ -29915,6 +29955,10 @@
     // Same lesson as totemId above, applied ahead of the bug this time: a 'build' job resynced from the
     // server row must carry buildingId back, or estateJobShapeOk drops it as malformed on the next load.
     if(p.buildingId != null) job.buildingId = p.buildingId;
+    // A 'border' job carries BOTH halves or it is malformed: masonryTileId says which stone, orient says
+    // which of the two edge grids its x/y index. Same lesson as totemId and buildingId above.
+    if(p.masonryTileId != null) job.masonryTileId = p.masonryTileId;
+    if(p.orient != null) job.orient = p.orient;
     if(p.upgrade) job.upgrade = true;
     return job;
   }
@@ -30061,6 +30105,10 @@
       // The generic building kind. buildingId must name a REAL building item, not merely be a string: a
       // typo'd or retired id would otherwise survive the reload and then apply nothing on completion.
       case 'build':    return typeof j.buildingId === 'string' && !!buildingItem(j.buildingId);
+      // A border needs a REAL Masonry recipe and one of exactly two orientations. A bad orient would
+      // index the wrong edge grid on completion and silently build the border somewhere else.
+      case 'border':   return typeof j.masonryTileId === 'string' && !!getMasonryRecipe(j.masonryTileId)
+                              && (j.orient === 'x' || j.orient === 'y');
       default:         return false;
     }
   }
@@ -30076,6 +30124,11 @@
       case 'cottage':  return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]]; // cottages joined the built-building price in v0.0.86.31 (same matVer migration as workshops)
       case 'totem':    return [[job.totemId, 1]];
       case 'build':    return [[job.buildingId, 1]];   // fresh AND upgrade both pay the built target itself
+      // A border is BUILT IN PLACE from its Masonry recipe's own inputs (bricks, pillars, fill) rather
+      // than from a crafted item, so this is the one arm that returns several pairs. Refund and consume
+      // both run off this list, so a cancel returns every input.
+      case 'border':   var br = getMasonryRecipe(job.masonryTileId);
+                       return br ? Object.keys(br.inputs).map(function(k){ return [k, br.inputs[k]]; }) : [];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
       default:         return []; // lower, clear
@@ -30105,8 +30158,11 @@
     var p = { height:cell.height, type:cell.type, obstacle:cell.obstacle, paveTileId:cell.paveTileId,
               workshopId:cell.workshopId, cottageId:cell.cottageId, totemId:cell.totemId, buildingId:cell.buildingId,
               fieldTier:cell.fieldTier, owned:cell.owned };
-    if(state.estate.job && state.estate.job.x === x && state.estate.job.y === y) estateApplyProjection(p, state.estate.job);
-    estateQueue().forEach(function(q){ if(q.x === x && q.y === y) estateApplyProjection(p, q); });
+    // Border jobs are addressed in EDGE space, so their x/y must never be matched against a tile here --
+    // estateApplyProjection has no 'border' arm today, but an unguarded match would silently start
+    // projecting onto the wrong tile the moment one were added.
+    if(state.estate.job && state.estate.job.kind !== 'border' && state.estate.job.x === x && state.estate.job.y === y) estateApplyProjection(p, state.estate.job);
+    estateQueue().forEach(function(q){ if(q.kind !== 'border' && q.x === x && q.y === y) estateApplyProjection(p, q); });
     return p;
   }
   // ONE definition of "this tile is occupied", used by every placement path and every queue precondition.
@@ -30117,7 +30173,19 @@
   // Grid-state precondition for a queued job, checked against a cell (projected at enqueue, REAL at
   // dispatch). Deliberately lighter than the full starter validation: level and materials don't need
   // re-checking (levels never drop, materials are already reserved), only that the tile still allows it.
-  function estateQueuedJobValid(job, c){
+  // `edges` is the EDGE holder of the estate this job belongs to (state.estate or guildEstate) and is
+  // required only by the 'border' kind, which is addressed in edge space and has no tile cell at all.
+  // Passed explicitly rather than read off estActive because a queue is validated for its OWN estate, not
+  // for whichever one is on screen -- the bug the view-independent queue advances already exist to avoid.
+  function estateQueuedJobValid(job, c, edges){
+    // Checked BEFORE the cell guard: a border's x can be GRID_SIZE (the outer boundary), where there is
+    // legitimately no tile, so the tile-missing check below would reject every outer-edge border.
+    if(job.kind === 'border'){
+      var ec = edgeCellIn(edges, { orient:job.orient, x:job.x, y:job.y });
+      if(!ec) return { ok:false, msg:'that border is not on this estate' };
+      if(ec.type) return { ok:false, msg:'something is already built on that border' };
+      return { ok:true };
+    }
     if(!c) return { ok:false, msg:'That tile is gone.' };
     switch(job.kind){
       case 'clear':    return c.obstacle ? { ok:true } : { ok:false, msg:'nothing left to clear there' };
@@ -30240,7 +30308,7 @@
             addLog('Your guild queue is full (' + ESTATE_QUEUE_MAX + ' actions).', 'danger');
             needsRender = true; return;
           }
-          var gv = estateQueuedJobValid(jobBase, estActive.grid[x] && estActive.grid[x][y]);
+          var gv = estateQueuedJobValid(jobBase, estActive.grid[x] && estActive.grid[x][y], guildEstate);
           if(!gv.ok){ addLog('Can\'t queue that: ' + gv.msg + '.', 'danger'); needsRender = true; return; }
           estateJobConsume(jobBase);                   // reserved now, refunded on cancel/skip
           guildQueueArr().push(Object.assign({ kind:kind, x:x, y:y, localMs:localMs, payload:payload || {} }, jobFields));
@@ -30261,7 +30329,7 @@
       needsRender = true; return;
     }
     // Validate against where the tile will BE once everything ahead of this finishes.
-    var v = estateQueuedJobValid(jobBase, estateProjectedCell(x, y));
+    var v = estateQueuedJobValid(jobBase, estateProjectedCell(x, y), state.estate);
     if(!v.ok){ addLog('Can\'t queue that: ' + v.msg + '.', 'danger'); needsRender = true; return; }
     estateJobConsume(jobBase);                        // reserve materials now (refunded on cancel/skip)
     var entry = Object.assign({ kind:kind, x:x, y:y, localMs:localMs, payload:payload || {} }, jobFields);
@@ -30282,6 +30350,8 @@
     if(src.cottageId != null) f.cottageId = src.cottageId;
     if(src.totemId != null) f.totemId = src.totemId;
     if(src.buildingId != null) f.buildingId = src.buildingId;
+    if(src.masonryTileId != null) f.masonryTileId = src.masonryTileId;
+    if(src.orient != null) f.orient = src.orient;
     if(src.fieldTier != null) f.fieldTier = src.fieldTier;
     if(src.upgrade) f.upgrade = true;
     return f;
@@ -30353,7 +30423,7 @@
     while(guildQueueArr().length){
       var head = guildQueueArr()[0];
       var cell = guildEstate.grid[head.x] && guildEstate.grid[head.x][head.y];
-      var v = estateQueuedJobValid(head, cell);
+      var v = estateQueuedJobValid(head, cell, guildEstate);
       if(v.ok && estJobOnTile(head.x, head.y)) v = { ok:false, msg:'another member is working on that tile' };
       if(v.ok) break;
       estateJobRefund(head);
@@ -30401,7 +30471,7 @@
     // Drop any now-invalid heads up front (refunding each), so we dispatch the first one that still fits.
     while(estateQueue().length){
       var head = state.estate.queue[0];
-      var v = estateQueuedJobValid(head, state.estate.grid[head.x] && state.estate.grid[head.x][head.y]);
+      var v = estateQueuedJobValid(head, state.estate.grid[head.x] && state.estate.grid[head.x][head.y], state.estate);
       if(v.ok) break;
       estateJobRefund(head);
       state.estate.queue.shift();
@@ -30467,6 +30537,7 @@
       case 'totem':    return (job.upgrade ? 'Upgrade to ' : 'Raise ') + ((totemItem(job.totemId)||{}).name || 'Totem');
       case 'build':    return (job.upgrade ? 'Upgrade to ' : 'Build ') + buildingName(job.buildingId);
       case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
+      case 'border':   return 'Build ' + ((getMasonryRecipe(job.masonryTileId)||{}).name || 'border');
     }
     return job.kind;
   }
@@ -30672,6 +30743,36 @@
   // the job (personal jobs are always yours). `isGuild` picks which workshop-bonus cache to
   // refresh when a Workshop finishes. Returns true if it touched the grid.
   function applyEstateJobCompletion(estate, job, giveRewards, isGuild){
+    // BORDERS RESOLVE FIRST, BEFORE THE TILE LOOKUP. An edge's x/y runs 0..GRID_SIZE inclusive, so an
+    // outer-boundary border legitimately addresses grid[20], which does not exist -- the tile-missing
+    // branch below would have refunded the stone and told the player their own border "is not on your
+    // estate" every single time one finished on the outside of the plot.
+    if(job.kind === 'border'){
+      var ec = edgeCellIn(estate, { orient:job.orient, x:job.x, y:job.y });
+      if(!ec){
+        if(giveRewards){
+          estateJobRefund(job);
+          addLog('An estate task could not be applied. That border is not on your estate. Materials returned.', 'danger');
+        }
+        return false;
+      }
+      var brec = getMasonryRecipe(job.masonryTileId);
+      ec.type = borderTypeOf(job.masonryTileId);
+      ec.masonryTileId = job.masonryTileId;
+      // The borders feed three effects (fence shelter, curb-lined aqueducts, the walled appraisal), and
+      // the aqueduct chain is a CACHE -- a new curb has to invalidate it or the water it just carried
+      // would not arrive until some unrelated action happened to recompute.
+      if(isGuild) recomputeGuildAqueducts(); else recomputeAqueducts();
+      if(giveRewards){
+        var masXp = estateBuildXp(itemTierFromId(job.masonryTileId));
+        addXp('masonry', masXp);
+        bumpStat('borders_built');                                    // Estate quests: borders raised
+        estNote('borders', isGuild);
+        addLog('Finished building a ' + ((brec||{}).name || 'border') + '. +' + masXp + ' Masonry XP.', 'important');
+        if(isGuild) guildLogPush('estate', 'built a ' + ((brec||{}).name || 'border') + ' on a tile border');
+      }
+      return true;
+    }
     var cell = estate.grid[job.x] && estate.grid[job.x][job.y];
     if(!cell){
       // The tile does not exist (out-of-range coordinates, or a grid that failed to load). Materials are
@@ -30851,7 +30952,7 @@
     while(estateQueue().length){
       var head = state.estate.queue[0];
       var cell = state.estate.grid[head.x] && state.estate.grid[head.x][head.y];
-      var v = estateQueuedJobValid(head, cell);
+      var v = estateQueuedJobValid(head, cell, state.estate);
       if(!v.ok){                                    // a queued build voided in the meantime -> refund + skip
         estateJobRefund(head);
         state.estate.queue.shift();
@@ -31368,34 +31469,70 @@
   // hundreds of times a session. Invalidated by placement, removal and terraforming -- raise/lower is what
   // makes or unmakes the water tile a whole chain hangs off.
   var aqueductFed = {}, guildAqueductFed = {};
-  function computeAqueductFed(grid){
+  // CURB-LINED LINKS RUN FREE (v0.0.94.0). A Curb on the border SHARED by two Aqueducts lines that link
+  // like a channel, and a lined step costs nothing against the tier's range; an unlined step still costs 1.
+  // So aqueductRange stops being a hard leash and becomes a budget you spend only where you did not line
+  // the channel, which is what lets an inland farm on a 20x20 plot reach the waterline at all instead of
+  // being permanently worse than a lucky riverside one.
+  //
+  // Zero-cost edges break plain BFS (first-seen is no longer nearest), so lined steps go on the FRONT of
+  // the deque and unlined on the back, and a popped cell whose recorded cost has since improved is skipped.
+  //
+  // WHAT CARRIES CORRECTNESS HERE IS THE RE-RELAXATION, NOT THE DEQUE ORDER, and that is worth stating
+  // because a guard-proof plant proved it: swapping the unshift for a plain push failed NOTHING. A cell is
+  // re-enqueued whenever a cheaper path is found and `fed` is decided only once every cost is final, so
+  // FIFO order converges on the same distances (it just does more relaxations getting there). The deque is
+  // a performance choice. The two things that ARE load-bearing are the re-relaxation and the deferred fed
+  // decision, and plants on either of those DO fail, which is how the difference is known rather than
+  // assumed.
+  //
+  // DELIBERATELY NOT CAPPED IN LENGTH, and here is why that is safe: a fully lined chain is fed at any
+  // distance, but every link costs one Aqueduct (a build job, one per tile) plus one Curb (a Masonry
+  // recipe plus its own timer), and the only thing being fed BUYS is the flat one-per-Field waterside
+  // bonus. The payoff is bounded by the Field cap, not by the chain, so length cannot run away.
+  function computeAqueductFed(grid, edges){
     var fed = {};
     if(!grid) return fed;
-    var dist = {}, queue = [];
+    var cost = {}, dq = [];
     var w = grid.length, h = (grid[0] && grid[0].length) || 0;
     for(var x=0; x<w; x++){
       for(var y=0; y<h; y++){
         var c = grid[x] && grid[x][y];
-        if(c && estateIsWater(c)){ dist[x+','+y] = 0; queue.push([x,y]); }
+        if(c && estateIsWater(c)){ cost[x+','+y] = 0; dq.push([x,y]); }
       }
     }
     var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-    for(var qi=0; qi<queue.length; qi++){
-      var cx = queue[qi][0], cy = queue[qi][1], d = dist[cx+','+cy];
+    while(dq.length){
+      var cur = dq.shift(), cx = cur[0], cy = cur[1], ck = cx+','+cy;
+      var d = cost[ck];
+      if(cur[2] !== undefined && cur[2] > d) continue;      // stale deque entry: a cheaper path already won
       for(var i=0; i<dirs.length; i++){
         var nx = cx+dirs[i][0], ny = cy+dirs[i][1], nk = nx+','+ny;
-        if(dist[nk] !== undefined) continue;
         var nc = grid[nx] && grid[nx][ny];
         if(!nc || buildingKeyOf(nc.buildingId) !== 'aqueduct') continue;   // the chain runs through Aqueducts only
-        dist[nk] = d + 1;
-        queue.push([nx,ny]);
-        if(d + 1 <= aqueductRange(itemTierFromId(nc.buildingId))) fed[nk] = true;
+        // A lined link is free. Only a CURB lines a channel: a Fence shelters a Field and a Wall is the
+        // Appraisal's business, so neither carries water.
+        var step = edgeTypeIn(edges, borderEdgeBetween(cx, cy, nx, ny)) === 'curb' ? 0 : 1;
+        var nd = d + step;
+        if(cost[nk] !== undefined && cost[nk] <= nd) continue;
+        cost[nk] = nd;
+        if(step === 0) dq.unshift([nx,ny,nd]); else dq.push([nx,ny,nd]);
       }
     }
+    // fed is decided only once every cost is final -- a cell relaxed twice would otherwise keep the
+    // verdict from its first, worse visit.
+    Object.keys(cost).forEach(function(k){
+      var p = k.split(','), c2 = grid[p[0]|0] && grid[p[0]|0][p[1]|0];
+      if(!c2 || buildingKeyOf(c2.buildingId) !== 'aqueduct') return;       // the source water cells themselves
+      if(cost[k] <= aqueductRange(itemTierFromId(c2.buildingId))) fed[k] = true;
+    });
     return fed;
   }
-  function recomputeAqueducts(){ aqueductFed = computeAqueductFed(state.estate && state.estate.grid); }
-  function recomputeGuildAqueducts(){ guildAqueductFed = computeAqueductFed((typeof guildEstate !== 'undefined' && guildEstate.status === 'ready') ? guildEstate.grid : null); }
+  function recomputeAqueducts(){ aqueductFed = computeAqueductFed(state.estate && state.estate.grid, state.estate); }
+  function recomputeGuildAqueducts(){
+    var ready = (typeof guildEstate !== 'undefined' && guildEstate.status === 'ready');
+    guildAqueductFed = computeAqueductFed(ready ? guildEstate.grid : null, ready ? guildEstate : null);
+  }
   // Does this cell act as water for a neighbouring Field? True water, or an Aqueduct that is fed.
   function estateCellWatersFields(scope, x, y, cell){
     if(!cell) return false;
@@ -31894,11 +32031,55 @@
   // Single source for a peon action's duration -- processPeonScope and peonEffTime BOTH call this. They
   // used to carry the same expression written out twice; if they drift the progress bar fills at a
   // different rate than the work actually completes.
-  function peonActionTime(baseTime, tierCap, skillId, lit){
+  // `scope` is here for the ESTATE APPRAISAL only, and it has to be here rather than one level up in
+  // peonEffTime: processPeonScope calls THIS directly while the whole UI reads peonEffTime, so a bonus
+  // applied in the wrapper would raise every displayed rate and change nothing a peon actually produced.
+  // Omitting scope is safe (no appraisal, the pre-v0.0.94.0 figure) so no caller can silently break.
+  function peonActionTime(baseTime, tierCap, skillId, lit, scope){
     var t = (baseTime*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, skillId));
     if(lit) t /= (1 + CANDLE_LIT_SPEED_BONUS);
+    if(scope) t *= (1 - estateAppraisalCut(scope));
     return Math.max(200, t);
   }
+  // ---- THE ESTATE APPRAISAL: the share of your own perimeter that is WALLED -------------------------
+  // A Wall's job. The score is the fraction of the OUTER perimeter of your owned tiles carrying a Wall:
+  // every border where an owned tile meets an unowned one or the edge of the plot. It lives in 0..1 BY
+  // CONSTRUCTION, which is the entire reason it is shaped this way -- a full estate has 840 borders, and
+  // a "+X% per Wall" line would be the pinned-count trap (raw Accuracy, raw Armor, raw enchant count)
+  // wearing stonework: unbounded, mandatory, and invisible to the player who pays for it. A share cannot
+  // exceed 1 no matter how much stone anyone owns.
+  //
+  // It also self-balances against expansion: buying new ground lengthens your perimeter and DILUTES the
+  // score until you wall the new edge, so the estate that reads 100% is the one that is actually finished.
+  //
+  // WHAT IT BUYS is peon speed, capped, and the choice is deliberate. It cannot buy estate job speed:
+  // personal job durations are stamped by the server, which cannot see the grid, so a client-side cut
+  // would show the player a timer that is not the one gating their reward (and passing the score in the
+  // payload would just let a client claim 1.0). Peons run entirely client-side, so there is nothing to
+  // disagree with.
+  var ESTATE_APPRAISAL_MAX_CUT = 0.20;   // a fully walled perimeter: peons work 20% faster
+  function estateAppraisal(scope){
+    var grid = peonGridFor(scope);
+    var edges = scope === 'guild' ? (guildEstate.status === 'ready' ? guildEstate : null) : (state.estate || null);
+    if(!grid || !edges) return { share:0, walled:0, total:0 };
+    var walled = 0, total = 0;
+    for(var x=0; x<grid.length; x++){
+      var col = grid[x]; if(!col) continue;
+      for(var y=0; y<col.length; y++){
+        var c = col[y];
+        if(!c || !c.owned) continue;
+        var quad = borderEdgesOfTile(x, y), nb = [[x,y-1],[x,y+1],[x-1,y],[x+1,y]];
+        for(var i=0;i<4;i++){
+          var n = grid[nb[i][0]] && grid[nb[i][0]][nb[i][1]];
+          if(n && n.owned) continue;                       // interior border: not part of the perimeter
+          total++;
+          if(edgeTypeIn(edges, quad[i]) === 'wall') walled++;
+        }
+      }
+    }
+    return { share: total > 0 ? walled/total : 0, walled:walled, total:total };
+  }
+  function estateAppraisalCut(scope){ return ESTATE_APPRAISAL_MAX_CUT * estateAppraisal(scope).share; }
   // Light the candle a task is holding, if it isn't already burning. Returns whether it ended up lit.
   function peonCandleLight(task){
     if(!task || !task.candleId) return false;
@@ -32139,7 +32320,7 @@
       else if(task.kind==='special'){ act = peonSpecialAct(task.craftKind, task.params, task.tierIndex); var std = getSpecialTierData(act); if(!std || !std.inputs){ changed = true; continue; } baseTime = std.time; }
       else { conf = ALL_CRAFT_RECIPES[task.itemId]; if(!conf){ changed = true; continue; } baseTime = conf.time; }
       var tierCap = Math.min(cot.tierIndex, w.tierIndex);
-      var effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task));
+      var effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task), scope);
       var burnRate = peonBurnRate(task); // constant per task -- hoisted out of a loop that runs 300k times on offline catch-up
       var succ = (task.skillId==='jewelrycrafting') ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
       // Past-cap overflow pass: an UNPROVISIONED peon sits it out entirely (no progress accrues); a
@@ -32170,7 +32351,7 @@
         if(peonCandleBurn(task, effTime * burnRate)){
           changed = true;
           if(!peonIsLit(task)) addLog('A Peon\'s cottage went dark. Out of ' + ((ALL_SELLABLE[task.candleId]||{}).name || 'candles') + '.', '');
-          effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task));
+          effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task), scope);
         }
       }
       // Provisions ran out mid-window: the peon can't work the rest of the overflow, so discard the
@@ -32191,7 +32372,7 @@
     if(task.kind==='gather'){ var gi = ALL_GATHER_ITEMS[task.itemId]; if(!gi) return 0; baseTime = gi.time; }
     else if(task.kind==='special'){ var td = getSpecialTierData(peonSpecialAct(task.craftKind, task.params, task.tierIndex)); if(!td) return 0; baseTime = td.time; }
     else { var rc = ALL_CRAFT_RECIPES[task.itemId]; if(!rc) return 0; baseTime = rc.time; }
-    return peonActionTime(baseTime, Math.min(cot.tierIndex, w.tierIndex), task.skillId, peonIsLit(task));
+    return peonActionTime(baseTime, Math.min(cot.tierIndex, w.tierIndex), task.skillId, peonIsLit(task), scope);
   }
 
   // ---- Peons UI (a category tab: PEON_MAX_SLOTS personal + PEON_MAX_SLOTS guild slots) ----
@@ -32311,6 +32492,17 @@
     var tasks = peonTasksFor(scope);
     var occupied = {}; tasks.forEach(function(t){ occupied[t.x+'_'+t.y] = 1; });
     var freeCount = sources.filter(function(s){ return !occupied[s.x+'_'+s.y]; }).length;
+    // THE ESTATE APPRAISAL, shown where it is actually felt: it speeds up every peon below, so the score
+    // belongs beside them rather than buried on a tile panel. Always shown, including at 0%, because a
+    // bonus nobody can see is a bonus nobody builds for.
+    var ap = estateAppraisal(scope);
+    if(ap.total > 0){
+      var apPct = Math.round(estateAppraisalCut(scope)*1000)/10;
+      html += '<div class="item-meta" style="margin:2px 0 8px;">Estate Appraisal <b style="color:var(--gold);">'+Math.round(ap.share*100)+'%</b>'
+           +  ' <span style="color:var(--text-faint);">('+fmt(ap.walled)+' of '+fmt(ap.total)+' perimeter borders walled)</span>'
+           +  ' &bull; these Peons work <b style="color:'+(apPct>0?'#7fbf5a':'var(--text-faint)')+';">'+apPct+'% faster</b>'
+           +  '<br><span style="color:var(--text-faint);">Raise Walls on the outer edge of your owned ground to lift it. Buying new tiles lengthens the perimeter, so it dilutes until you wall the new edge.</span></div>';
+    }
     html += '<div class="card-grid">';
     for(var i=0, _slotMax=peonSlotCap(scope); i<_slotMax; i++){
       html += '<div class="item-card">';
@@ -32569,6 +32761,103 @@
   var ESTATE_BORDER_TYPE_MOD = { curb:0, fence:1, wall:2 };
   var ESTATE_BORDER_TYPE_LABEL = { curb:'Curb', fence:'Fence', wall:'Wall' };
   var ESTATE_DESTROY_BORDER_LEVEL = 20;
+  // ---- BUILD TIMERS AND THE SKILL GATE (v0.0.94.0) -------------------------------------------------
+  // Borders were the ONE estate construction that finished instantly: estateBuildBorder consumed the
+  // recipe and wrote cell.type in the same click, with no job, no clock and no server round trip, while
+  // paving / workshops / cottages / fields / totems / buildings all queue behind the single
+  // server-owned estate job. They are jobs now too, on their own 'border' kind carrying
+  // { orient, masonryTileId }.
+  //
+  // TIME: 1 minute per tier, times the type's own multiplier, so a Wall is three times the work of a
+  // Curb cut from the same stone (a Sand Curb is 1 minute, a Lime Wall is 63). The three types cost
+  // exactly the same to craft -- they are just three Masonry recipes -- and until now they differed
+  // only in price and line thickness. The timer is what makes "which of the three" a real decision.
+  //
+  // THE SERVER FIGURE IS AUTHORITATIVE for a personal job, so estate_job_duration_ms has to compute the
+  // same number or the timer the player watches is not the timer that gates their reward. It can with no
+  // extra payload, because the TIER ENCODES THE TYPE (tier % 3): the whole formula is
+  // (t+1) * 60000 * ((t % 3) + 1) on both sides. Never change one side without the other.
+  var ESTATE_BORDER_MS_PER_TIER = 60 * 1000;
+  var ESTATE_BORDER_TYPE_TIME_MULT = { curb:1, fence:2, wall:3 };
+  // ONE definition of "which of the three is this stone". It lived inline inside estateBuildBorder and
+  // nowhere else; six sites read it now (job label, timer, shelter, appraisal, the lined aqueduct link).
+  function borderTypeOf(masonryTileId){
+    var v = itemTierFromId(masonryTileId);
+    return v%3===0 ? 'curb' : (v%3===1 ? 'fence' : 'wall');
+  }
+  function borderBuildMs(masonryTileId){
+    var v = Math.max(0, Math.min(TIER_COUNT-1, itemTierFromId(masonryTileId)));
+    return (v + 1) * ESTATE_BORDER_MS_PER_TIER * (ESTATE_BORDER_TYPE_TIME_MULT[borderTypeOf(masonryTileId)] || 1);
+  }
+  // THE SKILL GATE. Masonry already gated the RECIPE (you cannot raise a stone you cannot cut); this is
+  // the separate ESTATE gate, in exactly the shape buildingGateOk uses -- the tier's own level
+  // requirement, read off Architecture, which is the estate's structure skill and until now was read by
+  // Workshops alone. Deliberately ONE skill for all three types rather than three invented mappings:
+  // the types are separated by build TIME, not by which skill you need.
+  var ESTATE_BORDER_GATE_SKILL = 'architecture';
+  function borderGateLevel(masonryTileId){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, itemTierFromId(masonryTileId)))]; }
+  function borderGateOk(masonryTileId){ return getLevel((state.xp && state.xp[ESTATE_BORDER_GATE_SKILL]) || 0) >= borderGateLevel(masonryTileId); }
+  function borderGateLabel(masonryTileId){ return skillDisplayLabel(ESTATE_BORDER_GATE_SKILL) + ' Lv ' + borderGateLevel(masonryTileId); }
+  // The four borders of tile (x,y), as edge descriptors. Derived from the storage layout stated at
+  // generateEstateEdges: edgesY[x][y] separates (x,y-1) from (x,y), and edgesX[x][y] separates
+  // (x-1,y) from (x,y). Getting this backwards is a silent wrong-answer bug, so it is written once.
+  function borderEdgesOfTile(x, y){
+    return [{ orient:'y', x:x, y:y },      // north
+            { orient:'y', x:x, y:y+1 },    // south
+            { orient:'x', x:x, y:y },      // west
+            { orient:'x', x:x+1, y:y }];   // east
+  }
+  // The edge shared by two ORTHOGONALLY adjacent tiles, or null if they are not neighbours.
+  function borderEdgeBetween(ax, ay, bx, by){
+    if(ay === by && bx === ax+1) return { orient:'x', x:ax+1, y:ay };
+    if(ay === by && bx === ax-1) return { orient:'x', x:ax,   y:ay };
+    if(ax === bx && by === ay+1) return { orient:'y', x:ax,   y:ay+1 };
+    if(ax === bx && by === ay-1) return { orient:'y', x:ax,   y:ay };
+    return null;
+  }
+  // Reads an edge out of an explicit edges holder (state.estate or guildEstate), rather than whichever
+  // estate happens to be on screen. Every effect below needs the OWNING estate's borders -- the same
+  // reason gridHasBuilding takes a grid.
+  function edgeCellIn(edges, edge){
+    if(!edges || !edge) return null;
+    var g = edge.orient === 'y' ? edges.edgesY : edges.edgesX;
+    return (g && g[edge.x] && g[edge.x][edge.y]) || null;
+  }
+  function edgeTypeIn(edges, edge){ var c = edgeCellIn(edges, edge); return (c && c.type) || null; }
+  // The two tiles an edge separates. One of them can be off the plot (an outer boundary), so both are
+  // returned as plain coordinate pairs and every caller has to tolerate a missing cell.
+  function borderTilesOf(edge){
+    if(!edge) return [];
+    return edge.orient === 'y' ? [[edge.x, edge.y-1], [edge.x, edge.y]]
+                               : [[edge.x-1, edge.y], [edge.x, edge.y]];
+  }
+  // What this specific built border is doing RIGHT NOW, for the border panel. Live rather than generic:
+  // a Curb between two Aqueducts is carrying water, a Curb in open ground is not, and saying which is the
+  // difference between a rule the player can act on and flavour text.
+  function borderEffectBlurb(edge, cell){
+    var t = cell && cell.type;
+    if(!t) return '';
+    var grid = estActive && estActive.grid, pair = borderTilesOf(edge);
+    var a = grid && grid[pair[0][0]] && grid[pair[0][0]][pair[0][1]];
+    var b = grid && grid[pair[1][0]] && grid[pair[1][0]][pair[1][1]];
+    var scope = estIsGuild ? 'guild' : 'personal';
+    if(t === 'curb'){
+      var both = a && b && buildingKeyOf(a.buildingId) === 'aqueduct' && buildingKeyOf(b.buildingId) === 'aqueduct';
+      return both ? 'Lining a channel: water crosses this border free, spending none of the Aqueduct range.'
+                  : 'A Curb lines an Aqueduct channel. Put Aqueducts on both sides of it and water will cross free.';
+    }
+    if(t === 'fence'){
+      var sheltering = [a, b].some(function(c, i){
+        return c && c.fieldTier != null && fenceShelterCutAt(scope, pair[i][0], pair[i][1]) > 0;
+      });
+      return sheltering ? 'Sheltering a Field: it is fenced on all four borders and grows faster.'
+                        : 'A Fence shelters a Field fenced on all FOUR of its borders. This one is not completing a ring yet.';
+    }
+    var perimeter = (a && a.owned) !== (b && b.owned) || !a || !b;
+    var ap = estateAppraisal(scope);
+    return perimeter ? ('On your outer perimeter, so it counts: ' + ap.walled + ' of ' + ap.total + ' perimeter borders walled (' + Math.round(ap.share*100) + '%).')
+                     : 'Inside the estate rather than on its outer perimeter, so it does not count toward the Appraisal.';
+  }
   function getMasonryRecipe(masonryTileId){
     return CRAFTING_SKILLS.masonry.recipes.filter(function(r){ return r.id===masonryTileId; })[0] || null;
   }
@@ -32582,25 +32871,29 @@
     if(!cell || cell.type) return;
     var recipe = getMasonryRecipe(masonryTileId);
     if(!recipe) return;
-    var v = parseInt(masonryTileId.split('_t')[1], 10);
-    var borderType = v%3===0 ? 'curb' : (v%3===1 ? 'fence' : 'wall');
+    // A border is not a tile, so the tile-busy check does not cover it -- two jobs on ONE edge would
+    // both complete and the second would pay nothing for the stone it consumed.
+    if(estJobOnBorder(orient, x, y)){ addLog('That border is already being built.', 'danger'); return; }
     if(getLevel(state.xp.masonry) < recipe.levelReq){
       addLog('Building a ' + recipe.name + ' requires Masonry level ' + recipe.levelReq + '.', 'danger');
+      return;
+    }
+    if(!borderGateOk(masonryTileId)){
+      addLog('Raising a ' + recipe.name + ' on the estate requires ' + borderGateLabel(masonryTileId) + '.', 'danger');
       return;
     }
     if(!hasInputs(recipe.inputs)){
       addLog('You don\'t have the materials to build a ' + recipe.name + '.', 'danger');
       return;
     }
-    consumeInputs(recipe.inputs);
-    cell.type = borderType;
-    cell.masonryTileId = masonryTileId;
-    estateBorderMenuOpen = null;
-    var masXp = estateBuildXp(v);
-    addXp('masonry', masXp);
-    addLog('You built a ' + recipe.name + ' at this border. +' + masXp + ' Masonry XP.', 'important');
-    estPersist();
-    needsRender = true;
+    var ms = borderBuildMs(masonryTileId);
+    estateEnqueueOrStart('border', x, y, { orient:orient, masonryTileId:masonryTileId }, ms, {
+      jobFields: { orient:orient, masonryTileId:masonryTileId },
+      closeMenu: function(){ estateBorderMenuOpen = null; },
+      startedMsg: 'You began building a ' + recipe.name + ' at this border. It will finish in ' + formatHoursCompact(ms) + '.',
+      startedFt: 'Building…',
+      queuedMsg: 'Queued building a ' + recipe.name + ' at this border.'
+    });
   }
   function estateDestroyBorder(orient, x, y){
     if(guildDestroyBlocked()) return;
@@ -32615,6 +32908,7 @@
     addLog('You destroyed the ' + label + ' at this border.', 'important');
     cell.type = null;
     cell.masonryTileId = null;
+    estRecomputeWorkshops();   // a removed Curb can break an Aqueduct chain that was riding it
     estPersist();
     needsRender = true;
   }
@@ -33798,13 +34092,19 @@
       var material = recipe.name.substring(0, spaceIdx);
       return 'rgb('+(ESTATE_PAVING_MATERIAL_COLORS[material]||[170,170,170]).join(',')+')';
     }
-    function drawEdge(e, cell, isH, isS){
+    function drawEdge(e, cell, isH, isS, pending){
       var hasBuilt = cell && cell.type;
       ctx.beginPath();
       ctx.moveTo(e.p1.x, e.p1.y);
       ctx.lineTo(e.p2.x, e.p2.y);
       if(isS){ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; }
       else if(isH){ ctx.strokeStyle = '#e8c15a'; ctx.lineWidth = 5; }
+      // A border being raised reads as a dashed amber line, so a player can see where their estate task
+      // is actually pointing -- an edge is a thin thing to lose track of among 840 of them.
+      else if(!hasBuilt && pending){
+        ctx.setLineDash([6, 4]); ctx.strokeStyle = '#e8c15a'; ctx.lineWidth = 3;
+        ctx.stroke(); ctx.setLineDash([]); return;
+      }
       else if(hasBuilt){
         ctx.strokeStyle = cell.masonryTileId ? estateBorderColor(cell.masonryTileId) : 'rgb(170,170,170)';
         ctx.lineWidth = cell.type==='curb' ? 2 : (cell.type==='fence' ? 3.5 : 5.5);
@@ -33819,7 +34119,7 @@
         if(!estateEdgeYActive(ex,ey)) continue;
         var isHe = estateHoveredEdge && estateHoveredEdge.orient==='y' && estateHoveredEdge.x===ex && estateHoveredEdge.y===ey;
         var isSe = estateSelectedEdge && estateSelectedEdge.orient==='y' && estateSelectedEdge.x===ex && estateSelectedEdge.y===ey;
-        drawEdge(estateEdgeYEndpoints(ex, ey, originX, originY), estActive.edgesY[ex][ey], isHe, isSe);
+        drawEdge(estateEdgeYEndpoints(ex, ey, originX, originY), estActive.edgesY[ex][ey], isHe, isSe, estJobOnBorder('y', ex, ey));
       }
     }
     for(var ex2=0; ex2<=ESTATE_GRID_SIZE; ex2++){
@@ -33827,7 +34127,7 @@
         if(!estateEdgeXActive(ex2,ey2)) continue;
         var isHe2 = estateHoveredEdge && estateHoveredEdge.orient==='x' && estateHoveredEdge.x===ex2 && estateHoveredEdge.y===ey2;
         var isSe2 = estateSelectedEdge && estateSelectedEdge.orient==='x' && estateSelectedEdge.x===ex2 && estateSelectedEdge.y===ey2;
-        drawEdge(estateEdgeXEndpoints(ex2, ey2, originX, originY), estActive.edgesX[ex2][ey2], isHe2, isSe2);
+        drawEdge(estateEdgeXEndpoints(ex2, ey2, originX, originY), estActive.edgesX[ex2][ey2], isHe2, isSe2, estJobOnBorder('x', ex2, ey2));
       }
     }
     } // end iso draw branch
@@ -33986,24 +34286,41 @@
     var html = '<div class="estate-options-panel">';
     html += '<h3 style="margin-top:0">Border &bull; '+estateEdgeDescription(edge)+'</h3>';
     if(!cell.type){
+      // A border already being built is not a free border: say so instead of offering the three types,
+      // which would let the player spend a second recipe on an edge that is about to be occupied.
+      var pending = estJobOnBorder(edge.orient, edge.x, edge.y);
+      if(pending){
+        html += '<div class="estate-action-row"><div class="estate-action-info"><b>Under construction.</b><br>'
+             +  'A border is already being raised here. Watch the estate task above it.</div></div></div>';
+        return html;
+      }
       var masonryLvl = getLevel(state.xp.masonry);
+      // What each of the three actually DOES, because until v0.0.94.0 they differed only in price.
+      html += '<div class="estate-action-row"><div class="estate-action-info">'
+           +  '<b>Curb</b> lines an Aqueduct channel: a Curb on the border between two Aqueducts carries water across it for free.<br>'
+           +  '<b>Fence</b> shelters a crop: a Field with a Fence on all four borders grows up to '+Math.round(FENCE_SHELTER_MAX_CUT*100)+'% faster.<br>'
+           +  '<b>Wall</b> appraises the estate: the walled share of your outer perimeter works your Peons up to '+Math.round(ESTATE_APPRAISAL_MAX_CUT*100)+'% faster.'
+           +  '</div></div>';
       ['curb','fence','wall'].forEach(function(borderType){
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Build '+ESTATE_BORDER_TYPE_LABEL[borderType]+'</b><br>Choose a stone -- cost and Masonry level match that stone\'s normal recipe.</div>';
+        html += '<div class="estate-action-info"><b>Build '+ESTATE_BORDER_TYPE_LABEL[borderType]+'</b><br>Choose a stone -- cost and Masonry level match that stone\'s normal recipe. '
+             +  'A '+ESTATE_BORDER_TYPE_LABEL[borderType]+' takes '+ESTATE_BORDER_TYPE_TIME_MULT[borderType]+' minute'+(ESTATE_BORDER_TYPE_TIME_MULT[borderType]===1?'':'s')+' per tier to raise.</div>';
         html += '<button class="action-btn" data-action="estateToggleBorderMenu" data-type="'+borderType+'">'+(estateBorderMenuOpen===borderType?'Close List':'Choose Stone')+'</button>';
         html += '</div>';
         if(estateBorderMenuOpen===borderType){
           html += '<div class="estate-paving-library">';
           getMasonryRecipesByType(borderType).forEach(function(r){
             var levelOk = masonryLvl >= r.levelReq;
+            var gateOk = borderGateOk(r.id);
             var matsOk = hasInputs(r.inputs);
+            var ok = levelOk && gateOk && matsOk;
             var matsSummary = Object.keys(r.inputs).map(function(k){
               var itemName = (ALL_SELLABLE[k]||{}).name || k;
               var owned = state.inventory[k]||0;
               return itemName+' x'+fmt(r.inputs[k])+' (have '+fmt(owned)+')';
             }).join(', ');
-            html += '<button class="estate-paving-option'+((levelOk&&matsOk)?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+((levelOk&&matsOk)?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+matsSummary+'</span>';
+            html += '<button class="estate-paving-option'+(ok?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+(ok?'':'disabled')+'>';
+            html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+borderGateLabel(r.id)+' &bull; '+formatHoursCompact(borderBuildMs(r.id))+' &bull; '+matsSummary+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -34013,7 +34330,8 @@
       var builtRecipe = getMasonryRecipe(cell.masonryTileId);
       var destroyLevelOk = getLevel(state.xp.mining) >= ESTATE_DESTROY_BORDER_LEVEL;
       html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Currently Built:</b> '+(builtRecipe?builtRecipe.icon+' '+builtRecipe.name:ESTATE_BORDER_TYPE_LABEL[cell.type])+'</div>';
+      html += '<div class="estate-action-info"><b>Currently Built:</b> '+(builtRecipe?builtRecipe.icon+' '+builtRecipe.name:ESTATE_BORDER_TYPE_LABEL[cell.type])
+           +  '<br><span style="color:var(--text-dim)">'+escapeHtml(borderEffectBlurb(edge, cell))+'</span></div>';
       html += '</div>';
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Destroy '+ESTATE_BORDER_TYPE_LABEL[cell.type]+'</b><br>Requires Mining '+ESTATE_DESTROY_BORDER_LEVEL+' &bull; No materials returned</div>';
@@ -34064,7 +34382,7 @@
         h += '<div class="estate-action-row">';
         h += '<div class="estate-action-info"><b>'+escapeHtml(bLabel)+':</b> '+(bIt?bIt.icon+' '+escapeHtml(bIt.name):'Unknown')+'<br>'+escapeHtml(bDefHere?bDefHere.blurb(bTierHere):'')+
                 (buildingKeyOf(cell.buildingId)==='aqueduct' ? ('<br><span style="color:'+(aqueductFed[x+','+y] || guildAqueductFed[x+','+y] ? 'var(--gold)' : 'var(--hp-bad)')+'">'+
-                  ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles')+'</span>') : '')+'</div>';
+                  ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles. A Curb on the border between two Aqueducts crosses free and costs none of that range')+'</span>') : '')+'</div>';
         h += '<button class="action-btn stop" data-action="estateRemoveBuilding" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         h += '</div>';
         var bbCur = bTierHere|0, bbPaveT = pavementTierOf(cell), bbArchCap = estateArchitectureTierCap();
@@ -34829,11 +35147,12 @@
         var key = fc.x+','+fc.y, domId = scope+'-'+fc.x+'_'+fc.y, plot = map[key];
         var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
         var totemB = totemYieldBonusAt(scope, key), waterB = waterYieldBonusAt(scope, key);
+        var shelterB = fenceShelterCutAt(scope, fc.x, fc.y);   // the fence ring's grow-time cut, already inside growM
         // Altitude: growth-time modifier from the tile's height (z10 = baseline, z19 +50%, z1 -50%).
         var growM = fieldGrowthMult(scope, key), growPct = Math.round((growM - 1) * 100);
         var growTag = growPct === 0 ? '' : ' &bull; <span style="color:'+(growPct<0?'#7fbf5a':'#d08a3f')+';font-weight:700">'+(growPct>0?'+':'')+growPct+'% grow time (z'+(fieldGridFor(scope)[fc.x][fc.y].height|0)+')</span>';
         out += '<div class="item-card">';
-        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+(waterB>0?' &bull; <span style="color:#5aa0d0;font-weight:700">+'+waterB+' waterside</span>':'')+'</div></div></div>';
+        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+(waterB>0?' &bull; <span style="color:#5aa0d0;font-weight:700">+'+waterB+' waterside</span>':'')+(shelterB>0?' &bull; <span style="color:#7fbf5a;font-weight:700">-'+Math.round(shelterB*100)+'% fenced</span>':'')+'</div></div></div>';
         // Per-plot state used to enable/disable the four action buttons below (Sow / Fertilize / Harvest / Cancel).
         var empty = isPlotEmpty(plot);
         var cd = null, remaining = 0, ready = false, canFert = false, hasCrop = false;
@@ -43627,7 +43946,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.93.2';
+  var GAME_VERSION = '0.0.94.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -43838,6 +44157,15 @@
       craftBuilding:craftBuilding, estatePlaceBuilding:estatePlaceBuilding, estateUpgradeBuilding:estateUpgradeBuilding, estateRemoveBuilding:estateRemoveBuilding,
       placeableBuildingsFor:placeableBuildingsFor, cellHasBuilding:cellHasBuilding, aqueductRange:aqueductRange, sunTerracePenaltyCut:sunTerracePenaltyCut,
       apiaryIntervalMs:apiaryIntervalMs, apiaryYieldBonusAt:apiaryYieldBonusAt, sunTerraceCutAt:sunTerraceCutAt, estateCellWatersFields:estateCellWatersFields,
+      getMasonryRecipe:getMasonryRecipe, getMasonryRecipesByType:getMasonryRecipesByType, ESTATE_BORDER_TYPE_LABEL:ESTATE_BORDER_TYPE_LABEL,
+      borderTypeOf:borderTypeOf, borderBuildMs:borderBuildMs, borderGateOk:borderGateOk, borderGateLevel:borderGateLevel, borderGateLabel:borderGateLabel,
+      ESTATE_BORDER_MS_PER_TIER:ESTATE_BORDER_MS_PER_TIER, ESTATE_BORDER_TYPE_TIME_MULT:ESTATE_BORDER_TYPE_TIME_MULT, ESTATE_BORDER_GATE_SKILL:ESTATE_BORDER_GATE_SKILL,
+      borderEdgesOfTile:borderEdgesOfTile, borderEdgeBetween:borderEdgeBetween, edgeCellIn:edgeCellIn, edgeTypeIn:edgeTypeIn,
+      estateBuildBorder:estateBuildBorder, estateDestroyBorder:estateDestroyBorder, estJobOnBorder:estJobOnBorder, estJobOnTile:estJobOnTile,
+      estateQueuedJobValid:estateQueuedJobValid, estateJobLabel:estateJobLabel,
+      fenceShelterCutAt:fenceShelterCutAt, FENCE_SHELTER_MAX_CUT:FENCE_SHELTER_MAX_CUT,
+      estateAppraisal:estateAppraisal, estateAppraisalCut:estateAppraisalCut, ESTATE_APPRAISAL_MAX_CUT:ESTATE_APPRAISAL_MAX_CUT,
+      computeAqueductFed:computeAqueductFed,
       recomputeAqueducts:recomputeAqueducts, recomputeGuildAqueducts:recomputeGuildAqueducts, processProducers:processProducers, processSalvageYards:processSalvageYards,
       estateBreakPavement:estateBreakPavement, getInventoryCategory:getInventoryCategory,
       renderSalvageTab:renderSalvageTab, salvageSlots:salvageSlots, salvageTasks:salvageTasks, salvageAssign:salvageAssign,

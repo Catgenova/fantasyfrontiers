@@ -21367,6 +21367,303 @@
     }
   });
 
+  // ---- Borders become timed jobs, and the three types get three jobs (v0.0.94.0) -------------------
+  // Curbs/Fences/Walls were the one estate construction that finished instantly, and the three differed
+  // only in price and line thickness. These suites lock the build timer (which the SQL must match
+  // EXACTLY, since the server figure is authoritative for a personal job), the Architecture placement
+  // gate, and one mechanical effect per type.
+  suite('borders: the build timer matches the server formula, and Architecture gates the raise', function(){
+    var S = FF._state;
+    var svArch = S.xp.architecture, svMas = S.xp.masonry, svLog = S.log.slice();
+    try {
+      // The tier ENCODES the type on Masonry's 7-stone x 3-type list. If this ever stops holding, the SQL
+      // arm (which derives the multiplier from tier % 3 and has no payload field for the type) is wrong.
+      eq(FF.borderTypeOf('masonry_t0'),  'curb',  't0 is a Curb');
+      eq(FF.borderTypeOf('masonry_t1'),  'fence', 't1 is a Fence');
+      eq(FF.borderTypeOf('masonry_t2'),  'wall',  't2 is a Wall');
+      eq(FF.borderTypeOf('masonry_t19'), 'fence', 'the tier still encodes the type at the top of the list');
+      eq(FF.borderTypeOf('masonry_t20'), 'wall',  'the last stone is a Wall');
+      // THESE FIVE NUMBERS ARE COPIED INTO migration 20260807280000's verification block. The server
+      // stamps the personal job's ready_at, so a disagreement shows the player a timer that is not the
+      // one gating their reward.
+      eq(FF.borderBuildMs('masonry_t0'),  60000,   'a Sand Curb is 1 minute (server: (0+1)*60000*1)');
+      eq(FF.borderBuildMs('masonry_t1'),  240000,  'a Sand Fence is 4 minutes (server: (1+1)*60000*2)');
+      eq(FF.borderBuildMs('masonry_t2'),  540000,  'a Sand Wall is 9 minutes (server: (2+1)*60000*3)');
+      eq(FF.borderBuildMs('masonry_t20'), 3780000, 'a Lime Wall is 63 minutes (server: (20+1)*60000*3)');
+      // The TYPE multiplier is a separate factor from the per-tier one, and both are in the number. Note
+      // it cannot be checked by comparing two real ids: the tier encodes the type, so no two ids share a
+      // tier index, and t18 (Lime Curb) vs t20 (Lime Wall) differ by 3x the type AND 21/19 the tier.
+      eq(FF.borderBuildMs('masonry_t20') / ((20 + 1) * FF.ESTATE_BORDER_MS_PER_TIER), 3, 'a Wall carries the 3x type multiplier on top of its per-tier time');
+      eq(FF.borderBuildMs('masonry_t19') / ((19 + 1) * FF.ESTATE_BORDER_MS_PER_TIER), 2, 'a Fence carries 2x');
+      eq(FF.borderBuildMs('masonry_t18') / ((18 + 1) * FF.ESTATE_BORDER_MS_PER_TIER), 1, 'and a Curb 1x');
+      eq(FF.ESTATE_BORDER_MS_PER_TIER, 60000, 'the per-tier minute the server arm also hardcodes');
+      eq(FF.ESTATE_BORDER_TYPE_TIME_MULT.curb + FF.ESTATE_BORDER_TYPE_TIME_MULT.fence + FF.ESTATE_BORDER_TYPE_TIME_MULT.wall, 6, 'the three multipliers are 1/2/3');
+      // The gate: the tier's own level, on Architecture, in the shape buildingGateOk uses.
+      eq(FF.ESTATE_BORDER_GATE_SKILL, 'architecture', 'borders gate on the estate structure skill');
+      eq(FF.borderGateLevel('masonry_t20'), FF.TIER_LEVELS[20], 'a top-tier border wants the top-tier level');
+      S.xp.architecture = 0;
+      ok(FF.borderGateOk('masonry_t0'), 'the first stone needs nothing');
+      ok(!FF.borderGateOk('masonry_t20'), 'the last stone is refused at Architecture 1');
+      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]);
+      ok(FF.borderGateOk('masonry_t20'), 'and allowed at the level');
+    } finally { S.xp.architecture = svArch; S.xp.masonry = svMas; S.log = svLog; }
+  });
+
+  suite('borders: a raise is a real job, on the edge grid rather than a tile', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var svJob = S.estate.job, svQueue = S.estate.queue, svInv = S.inventory;
+    var svArch = S.xp.architecture, svMas = S.xp.masonry, svLog = S.log.slice();
+    var E = S.estate.edgesX[20][7], EY = S.estate.edgesY[3][3];
+    var svE = { t:E.type, m:E.masonryTileId }, svEY = { t:EY.type, m:EY.masonryTileId };
+    try {
+      S.estate.job = null; S.estate.queue = []; S.inventory = {};
+      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]); S.xp.masonry = FF.xpFloorForLevel(100);
+      E.type = null; E.masonryTileId = null;
+      var rec = FF.getMasonryRecipe('masonry_t2');
+      // No materials -> nothing starts, and nothing is charged.
+      FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
+      ok(!S.estate.job, 'a raise with no stone does not start');
+      // THE GATE IS CONSULTED BY THE REAL PATH, not merely computable. borderGateOk is asserted as a
+      // predicate in the suite above, and a predicate nothing calls is a gate that does not exist: with
+      // materials in hand and Masonry maxed, Architecture alone must refuse this.
+      Object.keys(rec.inputs).forEach(function(k){ S.inventory[k] = rec.inputs[k]; });
+      S.xp.architecture = 0;
+      FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
+      ok(!S.estate.job, 'no border raise below the Architecture bar');
+      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k], rec.inputs[k], 'and a refused raise does not spend ' + k); });
+      ok(/Architecture/.test((S.log[S.log.length-1] || {}).msg || ''), 'the refusal names the missing skill');
+      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]);
+      // THE OUTER BOUNDARY. An edge x runs 0..GRID_SIZE, so this addresses grid[20], which does not
+      // exist. applyEstateJobCompletion's tile lookup would have refunded the stone and told the player
+      // their own border was "not on your estate" -- every time one finished on the outside of the plot.
+      FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
+      var j = S.estate.job;
+      ok(!!j && j.kind === 'border', 'the raise starts as a border job');
+      eq(j.orient, 'x', 'and remembers WHICH edge grid its x/y index');
+      eq(Math.round(j.readyAt - j.startAt), 540000, 'clocked at the t2 Wall duration');
+      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k] || 0, 0, 'the recipe input ' + k + ' is consumed at start'); });
+      ok(E.type === null, 'the edge stays empty while it builds');
+      // The two coordinate spaces must not be confused for each other.
+      ok(FF.estJobOnBorder('x', 20, 7), 'the border knows it is busy');
+      ok(!FF.estJobOnBorder('y', 20, 7), 'the OTHER edge grid at the same x/y is not busy');
+      ok(!FF.estJobOnTile(20, 7), 'and no TILE reads as busy because of it');
+      // A second raise on the same edge is refused rather than charged, AND refused for the right reason.
+      // Asserting only "charges nothing" was vacuous: logged out, the generic one-job-at-a-time rule
+      // refuses it anyway and spends nothing either, so the border-specific check could be deleted with
+      // the test still passing. The MESSAGE is what distinguishes the two.
+      Object.keys(rec.inputs).forEach(function(k){ S.inventory[k] = rec.inputs[k]; });
+      FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
+      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k], rec.inputs[k], 'a second raise on a busy border charges nothing for ' + k); });
+      ok(/border is already being built/.test((S.log[S.log.length-1] || {}).msg || ''), 'and is refused as a busy BORDER, not by the generic one-task-at-a-time rule');
+      // estJobOnBorder must also see a QUEUED border, which is the case the check really exists for: two
+      // queued raises on one edge would each spend their stone and the second would land on an occupied
+      // edge. (The queue itself only runs logged in, so this exercises the predicate directly.)
+      var svQ2 = S.estate.queue;
+      S.estate.queue = [{ kind:'border', orient:'y', x:4, y:4, masonryTileId:'masonry_t2', localMs:1 }];
+      ok(FF.estJobOnBorder('y', 4, 4), 'a QUEUED border marks its edge busy');
+      ok(!FF.estJobOnBorder('y', 4, 5), 'and only its own edge');
+      S.estate.queue = svQ2;
+      // Completion writes the edge.
+      ok(FF.applyEstateJobCompletion(S.estate, j, true, false), 'the completion applies at the outer boundary');
+      eq(E.type, 'wall', 'and the edge is a Wall');
+      eq(E.masonryTileId, 'masonry_t2', 'built from the stone that was paid for');
+      S.estate.job = null;
+      // The shape validator: both halves are required, and both must be real.
+      ok(FF.estateJobShapeOk({ kind:'border', orient:'y', masonryTileId:'masonry_t5' }), 'a good border job survives a reload');
+      ok(!FF.estateJobShapeOk({ kind:'border', orient:'z', masonryTileId:'masonry_t5' }), 'a bad orient is malformed');
+      ok(!FF.estateJobShapeOk({ kind:'border', orient:'y', masonryTileId:'masonry_t99' }), 'a stone that is not a recipe is malformed');
+      ok(!FF.estateJobShapeOk({ kind:'border', orient:'y' }), 'no stone at all is malformed');
+      // Materials: a border is the one kind billed from a recipe's whole input MAP, so refunds must
+      // return every line of it.
+      var mats = FF.estateJobMaterials({ kind:'border', masonryTileId:'masonry_t2' });
+      eq(mats.length, Object.keys(rec.inputs).length, 'the bill covers every input of the recipe');
+      mats.forEach(function(m){ eq(m[1], rec.inputs[m[0]], 'and bills ' + m[0] + ' at the recipe quantity'); });
+      // The queue validator reads the EDGE, not a tile, and refuses an occupied one.
+      var vFree = FF.estateQueuedJobValid({ kind:'border', orient:'y', x:3, y:3, masonryTileId:'masonry_t2' }, null, S.estate);
+      ok(vFree.ok, 'a free edge validates even with no tile cell passed');
+      EY.type = 'curb'; EY.masonryTileId = 'masonry_t0';
+      ok(!FF.estateQueuedJobValid({ kind:'border', orient:'y', x:3, y:3, masonryTileId:'masonry_t2' }, null, S.estate).ok, 'an occupied edge is refused');
+      ok(!FF.estateQueuedJobValid({ kind:'border', orient:'y', x:99, y:99, masonryTileId:'masonry_t2' }, null, S.estate).ok, 'an edge off the estate is refused');
+      ok(/Wall/.test(FF.estateJobLabel({ kind:'border', masonryTileId:'masonry_t2' })), 'the active-job card names what is being raised');
+      // estateJobFieldsFrom is the ONE list of fields a job carries from a queue entry onto the live job,
+      // and it is exercised only by the queue dispatch (which needs auth) -- a fresh start passes its
+      // jobFields straight through. So it is asserted directly: dropping either half here would write the
+      // border into the wrong edge grid, or forget which stone was paid for, and nothing else would notice.
+      var ff = FF.estateJobFieldsFrom({ kind:'border', orient:'x', masonryTileId:'masonry_t7' });
+      eq(ff.orient, 'x', 'a queued border carries its orient through the field list');
+      eq(ff.masonryTileId, 'masonry_t7', 'and the stone it was billed for');
+      eq(FF.estateJobFieldsFrom({ kind:'border', orient:'y', masonryTileId:'masonry_t7' }).orient, 'y', 'both orientations survive');
+    } finally {
+      S.estate.job = svJob; S.estate.queue = svQueue; S.inventory = svInv;
+      S.xp.architecture = svArch; S.xp.masonry = svMas; S.log = svLog;
+      E.type = svE.t; E.masonryTileId = svE.m; EY.type = svEY.t; EY.masonryTileId = svEY.m;
+      FF.estRecomputeWorkshops();
+    }
+  });
+
+  suite('borders: a Fence ring shelters a Field, and only a complete ring of Fences', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var g = S.estate.grid, svCell = JSON.stringify(g[6][6]);
+    var touched = FF.borderEdgesOfTile(6, 6).map(function(e){
+      var c = FF.edgeCellIn(S.estate, e);
+      return { e:e, c:c, t:c.type, m:c.masonryTileId };
+    });
+    function set(i, id){ touched[i].c.type = FF.borderTypeOf(id); touched[i].c.masonryTileId = id; }
+    try {
+      touched.forEach(function(x){ x.c.type = null; x.c.masonryTileId = null; });
+      g[6][6].type = 'dirt'; g[6][6].obstacle = null; g[6][6].owned = true; g[6][6].fieldTier = 5; g[6][6].height = 8;
+      g[6][6].buildingId = null; g[6][6].totemId = null; g[6][6].workshopId = null; g[6][6].cottageId = null;
+      eq(FF.fenceShelterCutAt('personal', 6, 6), 0, 'a bare Field is not sheltered');
+      var bare = FF.fieldGrowthMult('personal', '6,6');
+      // Three sides is nothing. ALL FOUR is the rule, which is what stops this being a per-border bonus
+      // on a grid with 840 of them.
+      set(0, 'masonry_t19'); set(1, 'masonry_t19'); set(2, 'masonry_t19');
+      eq(FF.fenceShelterCutAt('personal', 6, 6), 0, 'three Fences and a gap shelter nothing');
+      set(3, 'masonry_t19');
+      var full = FF.fenceShelterCutAt('personal', 6, 6);
+      ok(full > 0, 'the fourth Fence completes the ring');
+      eq(Math.round(full * 1e6) / 1e6, Math.round(FF.FENCE_SHELTER_MAX_CUT * (20 / FF.TIER_COUNT) * 1e6) / 1e6, 'a t19 ring pays 20/21 of the cap');
+      ok(FF.fieldGrowthMult('personal', '6,6') < bare, 'and the Field really grows faster');
+      // THE WEAKEST OF THE FOUR sets it. Otherwise three Sand Fences plus one Lime Fence would buy
+      // nearly the whole bonus for a twentieth of the stone.
+      set(3, 'masonry_t1');
+      var mixed = FF.fenceShelterCutAt('personal', 6, 6);
+      ok(mixed < full, 'one cheap side drags the whole ring down');
+      eq(Math.round(mixed * 1e6) / 1e6, Math.round(FF.FENCE_SHELTER_MAX_CUT * (2 / FF.TIER_COUNT) * 1e6) / 1e6, 'the cut is priced off the WEAKEST side, not the best and not the sum');
+      // The other two types do not shelter. Each of the three has one job.
+      set(3, 'masonry_t20');
+      eq(FF.fenceShelterCutAt('personal', 6, 6), 0, 'a Wall in the ring does not shelter');
+      set(3, 'masonry_t18');
+      eq(FF.fenceShelterCutAt('personal', 6, 6), 0, 'a Curb in the ring does not shelter');
+      // A sheltered lowland Field is the first thing that can beat the altitude band's 0.5 floor.
+      set(3, 'masonry_t19');
+      g[6][6].height = 1;
+      var low = FF.fieldGrowthMult('personal', '6,6');
+      ok(low < 0.5, 'a fully fenced lowland Field goes below the old 0.5 floor (that widening is the reward)');
+      ok(low > 0.4, 'but not below the stated 0.425 bottom of the widened band');
+    } finally {
+      var restored = JSON.parse(svCell);
+      Object.keys(restored).forEach(function(k){ g[6][6][k] = restored[k]; });
+      touched.forEach(function(x){ x.c.type = x.t; x.c.masonryTileId = x.m; });
+      FF.estRecomputeWorkshops();
+    }
+  });
+
+  suite('borders: a Curb lines an Aqueduct channel and that link costs no range', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    // A private grid + edge holder, so nothing here touches the player's estate.
+    var g = [], edges = { edgesX:[], edgesY:[] };
+    for(var x=0; x<20; x++){ g[x] = []; for(var y=0; y<20; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    for(var ex=0; ex<=20; ex++){ edges.edgesX[ex] = []; for(var ey=0; ey<20; ey++) edges.edgesX[ex][ey] = { type:null, masonryTileId:null }; }
+    for(var ex2=0; ex2<20; ex2++){ edges.edgesY[ex2] = []; for(var ey2=0; ey2<=20; ey2++) edges.edgesY[ex2][ey2] = { type:null, masonryTileId:null }; }
+    function line(o, x, y, id){ var t = o === 'y' ? edges.edgesY : edges.edgesX; t[x][y].type = id ? FF.borderTypeOf(id) : null; t[x][y].masonryTileId = id || null; }
+    function fedRow(fed, row){ var out = []; for(var i=1; i<=8; i++) if(fed[i + ',' + row]) out.push(i); return out.join(','); }
+    // The edge mapping is the load-bearing part: get it backwards and every effect reads the wrong border.
+    var between = FF.borderEdgeBetween(4, 4, 5, 4);
+    eq(between.orient + ':' + between.x + ',' + between.y, 'x:5,4', 'the border between (4,4) and (5,4) is edgesX[5][4]');
+    var betweenY = FF.borderEdgeBetween(4, 4, 4, 5);
+    eq(betweenY.orient + ':' + betweenY.x + ',' + betweenY.y, 'y:4,5', 'the border between (4,4) and (4,5) is edgesY[4][5]');
+    ok(!FF.borderEdgeBetween(4, 4, 6, 4), 'tiles two apart share no border');
+    ok(!FF.borderEdgeBetween(4, 4, 5, 5), 'and neither do diagonal ones');
+    // A river down column 0, then a chain of t0 Aqueducts (range 2) running east.
+    for(var ry=0; ry<20; ry++){ g[0][ry].height = 0; g[0][ry].type = 'dirt'; }
+    for(var ax=1; ax<=8; ax++) g[ax][10].buildingId = 'aqueduct_t0';
+    eq(FF.aqueductRange(0), 2, 'a t0 Aqueduct reaches 2 tiles from water');
+    eq(fedRow(FF.computeAqueductFed(g, edges), 10), '1,2', 'unlined, the chain dies at the tier range');
+    // Line every link: each step costs 0, so the whole chain carries.
+    for(var lx=1; lx<=8; lx++) line('x', lx, 10, 'masonry_t0');
+    eq(fedRow(FF.computeAqueductFed(g, edges), 10), '1,2,3,4,5,6,7,8', 'a fully Curb-lined chain carries the whole way');
+    // Only a Curb lines a channel. This is the discriminating case: if the code merely checked "a border
+    // exists" both of these would read the same.
+    for(var fx=1; fx<=8; fx++) line('x', fx, 10, 'masonry_t1');
+    eq(fedRow(FF.computeAqueductFed(g, edges), 10), '1,2', 'the same links as Fences carry nothing');
+    for(var wx=1; wx<=8; wx++) line('x', wx, 10, 'masonry_t2');
+    eq(fedRow(FF.computeAqueductFed(g, edges), 10), '1,2', 'nor as Walls');
+    // THE COST ARITHMETIC, not merely "lined is better": gaps at links 3, 5 and 7 leave costs
+    // 0,0,1,1,2,2,3,3 along the row, so the chain must die exactly where cost passes 2.
+    for(var cx=1; cx<=8; cx++) line('x', cx, 10, 'masonry_t0');
+    [3, 5, 7].forEach(function(k){ line('x', k, 10, null); });
+    eq(fedRow(FF.computeAqueductFed(g, edges), 10), '1,2,3,4,5,6', 'three unlined gaps spend exactly three of the range budget');
+    // A CHEAPER DETOUR MUST WIN even though the direct route is reached first. Zero-cost links break
+    // plain BFS (first-seen stops being nearest), so this is what the 0-1 deque is for.
+    for(var ux=1; ux<=8; ux++) line('x', ux, 10, null);                       // fully unlined trunk
+    for(var dx2=1; dx2<=8; dx2++){ g[dx2][12].buildingId = 'aqueduct_t0'; line('x', dx2, 12, 'masonry_t0'); }
+    g[8][11].buildingId = 'aqueduct_t0';
+    line('y', 8, 12, 'masonry_t0');                                           // (8,12) -> (8,11)
+    line('y', 8, 11, 'masonry_t0');                                           // (8,11) -> (8,10)
+    var fedD = FF.computeAqueductFed(g, edges);
+    eq(fedRow(fedD, 12), '1,2,3,4,5,6,7,8', 'the lined detour row carries throughout');
+    eq(fedRow(fedD, 10), '1,2,6,7,8', 'the far end of the unlined trunk is fed at cost 0 through the detour, and 3/4/5 stay dry');
+    // And a fed Aqueduct waters a Field beside it, which is the only thing being fed actually buys.
+    var savedFed = FF._aqueductFed();
+    ok(!!fedD['8,10'], 'the detour-fed Aqueduct is carrying water');
+    ok(savedFed !== undefined, 'the live cache is still readable');
+  });
+
+  suite('borders: the Estate Appraisal is a share of the walled perimeter, so it cannot run away', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var g = S.estate.grid;
+    var svOwned = [], svEdges = [];
+    for(var x=0; x<20; x++){ svOwned[x] = []; for(var y=0; y<20; y++) svOwned[x][y] = g[x][y].owned; }
+    for(var ex=0; ex<=20; ex++){ svEdges[ex] = []; for(var ey=0; ey<20; ey++) svEdges[ex][ey] = { t:S.estate.edgesX[ex][ey].type, m:S.estate.edgesX[ex][ey].masonryTileId }; }
+    var svEdgesY = [];
+    for(var ey2=0; ey2<20; ey2++){ svEdgesY[ey2] = []; for(var ex2=0; ex2<=20; ex2++) svEdgesY[ey2][ex2] = { t:S.estate.edgesY[ey2][ex2].type, m:S.estate.edgesY[ey2][ex2].masonryTileId }; }
+    function set(e, id){ var c = FF.edgeCellIn(S.estate, e); c.type = id ? FF.borderTypeOf(id) : null; c.masonryTileId = id || null; }
+    try {
+      for(var cx=0; cx<20; cx++) for(var cy=0; cy<20; cy++) g[cx][cy].owned = false;
+      for(var zx=0; zx<20; zx++) for(var zy=0; zy<=20; zy++) S.estate.edgesY[zx][zy].type = null;
+      for(var zx2=0; zx2<=20; zx2++) for(var zy2=0; zy2<20; zy2++) S.estate.edgesX[zx2][zy2].type = null;
+      // One owned tile: a perimeter of exactly four.
+      g[5][5].owned = true;
+      var ap = FF.estateAppraisal('personal');
+      eq(ap.total, 4, 'a lone owned tile has a four-border perimeter');
+      eq(ap.walled, 0, 'none of it walled');
+      eq(ap.share, 0, 'so the share is zero');
+      eq(FF.estateAppraisalCut('personal'), 0, 'and it buys nothing');
+      var quad = FF.borderEdgesOfTile(5, 5);
+      quad.forEach(function(e){ set(e, 'masonry_t20'); });
+      ap = FF.estateAppraisal('personal');
+      eq(ap.walled, 4, 'all four walled');
+      eq(ap.share, 1, 'the share is exactly 1 -- it CANNOT exceed it, which is the whole point of the shape');
+      eq(Math.round(FF.estateAppraisalCut('personal') * 1e6) / 1e6, FF.ESTATE_APPRAISAL_MAX_CUT, 'a fully walled perimeter pays the cap');
+      // Only a Wall appraises. Each of the three types has one job.
+      set(quad[0], 'masonry_t19');
+      eq(FF.estateAppraisal('personal').share, 0.75, 'a Fence on the perimeter does not appraise');
+      set(quad[0], 'masonry_t18');
+      eq(FF.estateAppraisal('personal').share, 0.75, 'nor does a Curb');
+      set(quad[0], 'masonry_t20');
+      // Tier does not matter to the Appraisal: a Wall is a Wall. The tier already bought the build time.
+      set(quad[0], 'masonry_t2');
+      eq(FF.estateAppraisal('personal').share, 1, 'a cheap Wall counts the same as a grand one');
+      set(quad[0], 'masonry_t20');
+      // EXPANSION DILUTES. Buying ground lengthens the perimeter, and the border that just became
+      // interior stops counting at all.
+      g[6][5].owned = true;
+      ap = FF.estateAppraisal('personal');
+      eq(ap.total, 6, 'two tiles side by side have a six-border perimeter, not eight');
+      eq(ap.walled, 3, 'the wall that is now INTERIOR stops counting');
+      eq(ap.share, 0.5, 'so expanding halves the score until the new edge is walled');
+      // THE CUT IS REAL IN THE PRODUCTION PATH. processPeonScope calls peonActionTime directly while the
+      // whole UI reads peonEffTime, so a bonus applied in the wrapper would raise every displayed rate
+      // and change nothing a peon actually produced.
+      var plain = FF.peonActionTime(10, 20, 'mining', false);
+      var scoped = FF.peonActionTime(10, 20, 'mining', false, 'personal');
+      ok(scoped < plain, 'a scoped action time is faster than an unscoped one');
+      eq(Math.round((1 - scoped / plain) * 1e6) / 1e6, Math.round(FF.ESTATE_APPRAISAL_MAX_CUT * 0.5 * 1e6) / 1e6, 'and faster by exactly the appraised share of the cap');
+      // A guild scope with no guild estate loaded must read zero rather than throw.
+      eq(FF.estateAppraisal('guild').share, 0, 'an unloaded guild estate appraises at zero');
+    } finally {
+      for(var rx=0; rx<20; rx++) for(var ry=0; ry<20; ry++) g[rx][ry].owned = svOwned[rx][ry];
+      for(var qx=0; qx<=20; qx++) for(var qy=0; qy<20; qy++){ S.estate.edgesX[qx][qy].type = svEdges[qx][qy].t; S.estate.edgesX[qx][qy].masonryTileId = svEdges[qx][qy].m; }
+      for(var wy=0; wy<20; wy++) for(var wx=0; wx<=20; wx++){ S.estate.edgesY[wy][wx].type = svEdgesY[wy][wx].t; S.estate.edgesY[wy][wx].masonryTileId = svEdgesY[wy][wx].m; }
+      FF.estRecomputeWorkshops();
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
