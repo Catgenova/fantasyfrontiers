@@ -165,7 +165,7 @@ function deriveProgress(d: Record<string, unknown>): number {
 // WHAT THIS DELIBERATELY DOES NOT CLOSE, stated plainly:
 //   * a CATALOGUE-VALID item that was never earned. That is the provenance gap player_items closes for
 //     stackables, and the durable answer is the same batch-validated server-side crafting project.
-//     The shadow sweep drafted in migration 20260807120000 is the interim detector for it.
+//     The shadow sweep drafted in migration 20260807140000 is the interim detector for it.
 //   * per-enchant ROLL bounds. Those need the ENCHANT_MODS min/max table server-side, and the raw
 //     damage lines are tier-scaled rather than fixed, so it is a generated-seed job like item_catalog
 //     rather than a constant. Phase 2, and called out so it is not mistaken for covered.
