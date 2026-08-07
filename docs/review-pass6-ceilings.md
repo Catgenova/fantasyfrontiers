@@ -74,3 +74,42 @@ class), then the seven over-band classes before any knob is derived for them.
 Do not leave a shell whose command line contains the string `dpssim` alive while a driver waits
 on `pgrep -f dpssim`. That deadlocked this sweep at launch and it measured nothing until the
 stale process was killed. Match on the node invocation, or use a pidfile.
+
+## Post-fix re-measurement of the Herald and Knight (2026-08-07, v0.0.86.49)
+
+Two packs each, after finding 14's crit double-dip was fixed.
+
+| Class | Pass 6 (pre-fix, 1 pack) | Post-fix (2 packs) | Change | vs recorded |
+| --- | --- | --- | --- | --- |
+| Herald (45s) | 79.0B | **78.6B** | -0.5% | 58B, still **+36%** |
+| Knight (90s) | 110.8B | **103.0B** | -7% | 83B, still **+24%** |
+
+Per-legendary means. Herald: Wallbreaker 88.9B, Bastionbreaker 86.7B, Shieldbash 76.3B,
+Tombshatter 62.5B. Knight: Drakelance 121.9B, Relentless Assault 112.0B, Gravewarden 91.3B,
+Breachblade 86.6B.
+
+### Two corrections to what this review previously claimed
+
+**1. Finding 14's impact was overstated here.** The write-up said the double-dip was worth
+"roughly 1.5x to 2.5x on the signature mechanic". That is the gap against applying NO multiplier.
+The fix, matching the Grave Strike precedent, is a flat x2, and `CRIT_DAMAGE_MULT` is 1.5 rising
+toward a 2.5 cap with gear bonuses. So it replaces a gear-scaled ~2 to 2.5 with a flat 2: it
+removes the GEAR SCALING, not a doubling. Measured worth: 7% on the Knight, nothing detectable on
+the Herald. The bug was real and the fix is right on consistency grounds, but it is a single-digit
+balance change.
+
+**2. Finding 14 does NOT explain the Herald and Knight drift.** This document previously said it
+gave a mechanism for two of the seven over-band classes. It accounts for about 7 points of the
+Knight's 33% and none of the Herald's 36%. Both remain well over band after the fix, so the drift
+is the tier change and the DoT chassis after all, as the original Pass 6 reading said. The
+alignment between the bug and the drift was a hypothesis that looked like an explanation; the
+measurement rejected it.
+
+### Where these two now stand
+
+These are the honest post-fix baselines and the numbers a band knob should be derived from.
+Herald 78.6B against a 60B tank target; Knight 103.0B against roughly 83B. Both still need
+banding, and neither should be banded off the pre-fix figures.
+
+One caveat: Herald's Bastionbreaker read 76.8B and 96.5B across the two packs, a 23% spread
+against 2-5% for every other cell. Do not read anything into that legendary without a third pack.
