@@ -11490,6 +11490,30 @@
     return 1 - Math.min(0.9, red);
   }
   function famRegenHps(){ return isFamiliarBuffActive('regen') ? (state.familiarBuffs.regenHps||0) : 0; }
+  // THE BUFF RE-APPLICATION RULE (owner order, Thausale's report). When a buff is cast and an instance is
+  // already live, take the GREATER magnitude and refresh to a FULL timer. Three behaviours it rules out,
+  // two of which were live bugs measured before this shipped:
+  //   - NEVER add the new duration to the end. A fast caster would hold a buff permanently, and the owner
+  //     was explicit: "take the greater of the two buffs and refresh to full duration, but not to just
+  //     add 8.0s to the end".
+  //   - NEVER let a weaker cast downgrade what is live. Measured: a 0.10 re-cast over a 0.50 buff dropped
+  //     it to 0.10 (potency-scaled 3.0048 -> 0.6010), because every site simply ASSIGNED.
+  //   - NEVER let a shorter cast cut the window. Measured: a 2s spell cut an 8s buff to 2s. Hence the
+  //     later-expiry rule rather than a bare `now + durMs`: "a new full timer either way" must mean the
+  //     player is never worse off for a re-cast, and same-kind spells from different familiars carry
+  //     different durations.
+  // valField is null for buffs that are pure windows with no magnitude (the Bubble).
+  function famBuffApply(valField, untilField, newVal, durMs){
+    var fb = state.familiarBuffs, now = Date.now();
+    if(valField){
+      // An EXPIRED field still holds its old number (nothing clears it), so a lapsed buff must not be
+      // treated as competition -- read it as absent, and the new cast simply wins.
+      var liveVal = ((fb[untilField] || 0) > now) ? (fb[valField] || 0) : 0;
+      fb[valField] = Math.max(liveVal, newVal);
+    }
+    fb[untilField] = Math.max(fb[untilField] || 0, now + durMs);
+    return valField ? fb[valField] : fb[untilField];
+  }
   function castFamiliarSpell(spell, level, casterId){
     var now = Date.now();
     if(casterId === undefined) casterId = (state.activeCompanions && state.activeCompanions[0]) || null;
@@ -11502,20 +11526,16 @@
       state.playerHp += healed;
       spawnCombatFloat('+' + healed + ' HP (' + spell.name + ')', 'ft-success', false);
     } else if(spell.type==='armorBuff'){
-      state.familiarBuffs.armorMult = 1 + (spell.mult-1)*potency;
-      state.familiarBuffs.armorUntil = now + spell.durationMs*durMult;
+      famBuffApply('armorMult', 'armorUntil', 1 + (spell.mult-1)*potency, spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='damageBuff'){
-      state.familiarBuffs.damageMult = 1 + (spell.mult-1)*potency;
-      state.familiarBuffs.damageUntil = now + spell.durationMs*durMult;
+      famBuffApply('damageMult', 'damageUntil', 1 + (spell.mult-1)*potency, spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='slowEnemy'){
-      state.familiarBuffs.enemySlowPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
-      state.familiarBuffs.enemySlowUntil = now + spell.durationMs*durMult;
+      famBuffApply('enemySlowPct', 'enemySlowUntil', Math.min(STATUS_DEBUFF_CAP, spell.pct*potency), spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='weakenEnemy'){
-      state.familiarBuffs.enemyWeakenPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
-      state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs*durMult;
+      famBuffApply('enemyWeakenPct', 'enemyWeakenUntil', Math.min(STATUS_DEBUFF_CAP, spell.pct*potency), spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='poison'){
       // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
@@ -11525,19 +11545,16 @@
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
       var _pdur = (spell.durationMs/1000) || 6;
       var _ptotal = familiarHitDamageResting(level, spell.dps * _pdur) * (1 + catalystFamiliarBonus()) * familiarTranscendDamageMult(casterId);
-      state.familiarBuffs.poisonDps = (_ptotal/_pdur)*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element);
-      state.familiarBuffs.poisonUntil = now + spell.durationMs*durMult;
+      famBuffApply('poisonDps', 'poisonUntil', (_ptotal/_pdur)*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element), spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='regen'){
-      state.familiarBuffs.regenHps = spell.hps*potency;
-      state.familiarBuffs.regenUntil = now + spell.durationMs*durMult;
+      famBuffApply('regenHps', 'regenUntil', spell.hps*potency, spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-success', false);
     } else if(spell.type==='bubble'){
-      state.familiarBuffs.bubbleUntil = now + Math.round(spell.durSec*potency*1000*durMult);
+      famBuffApply(null, 'bubbleUntil', 0, Math.round(spell.durSec*potency*1000*durMult));
       spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='timedBuff'){
-      state.familiarBuffs[spell.kind+'Val'] = spell.val*potency;
-      state.familiarBuffs[spell.kind+'Until'] = now + spell.durationMs*durMult;
+      famBuffApply(spell.kind+'Val', spell.kind+'Until', spell.val*potency, spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='hit' || spell.type==='siphon'){
       // Direct damage to the enemy (only in combat). Typed hits are mitigated by the monster's armour
@@ -25043,6 +25060,8 @@
     return out;
   }
   var _arenaFxPeak = {}, _arenaFxSig = '';
+  // Which panel last listed each key, so one panel's cleanup cannot drop the other's peaks.
+  var _arenaFxOwned = {};
   function combatFxSignature(){ return combatPlayerBuffs().map(function(b){return b.key;}).join(',')+'|'+combatEnemyDebuffs().map(function(b){return b.key;}).join(','); }
   // Monster attack-speed readout tints. Dark enough to read on the tan parchment panel (ticket-0100:
   // the old Chill teal #7fd9d4 vanished into the paper).
@@ -25050,11 +25069,20 @@
   function renderFxBars(list, title){
     if(!list.length) return '';
     var now=Date.now(), h='<div class="arena-fx"><div class="arena-fx-title">'+title+'</div>';
+    // The bar's denominator is the buff's PEAK remaining, which the live updater raises on a refresh. This
+    // used to be RESET to the current remaining on every render, and #content rebuilds up to 10x/sec, so
+    // the bar snapped back to full continuously while the seconds label told the truth. That is exactly
+    // what the report described: "it just makes the progress bar full again with a time of like 1.8
+    // seconds". Carry the peak instead, and drop the peaks of buffs that are no longer listed so a lapsed
+    // 8s buff cannot make a fresh 2s one open at 25%.
+    var _fxLive = {};
     list.forEach(function(b){
       var stackOnly = !b.until;                        // class stacks / Everburning have no countdown
       var rem = b.until ? Math.max(0, b.until-now) : 0;
-      _arenaFxPeak[b.key] = rem;                        // reset the timer bar to full at render time
-      var pct = stackOnly ? clamp((b.stacks/(b.cap||b.stacks||1))*100, 0, 100) : 100; // stack bars fill toward the cap
+      _fxLive[b.key] = 1;
+      if(!stackOnly) _arenaFxPeak[b.key] = Math.max(_arenaFxPeak[b.key]||0, rem);
+      var pct = stackOnly ? clamp((b.stacks/(b.cap||b.stacks||1))*100, 0, 100)
+                          : clamp(rem/Math.max(1, _arenaFxPeak[b.key])*100, 0, 100); // stack bars fill toward the cap
       var badge = (b.stacks != null) ? '<span class="arena-fx-n" id="arenaFxN-'+b.key+'" style="color:'+b.color+'">&times;'+b.stacks+'</span>' : '';
       var timeLab = stackOnly ? '' : '<span class="arena-fx-t" id="arenaFxT-'+b.key+'">'+(rem/1000).toFixed(rem<10000?1:0)+'s</span>';
       h += '<div class="arena-fx-row">'
@@ -25064,6 +25092,12 @@
         + '<span class="arena-fx-bar"><span class="arena-fx-fill" id="arenaFx-'+b.key+'" style="width:'+pct+'%;background:'+b.color+'"></span></span>'
         + timeLab + '</div>';
     });
+    // Forget the peaks of buffs that have lapsed, so their next application starts a fresh bar. Only keys
+    // this panel owns are dropped: the two panels (yours, the foe's) render separately into one peak map.
+    Object.keys(_arenaFxPeak).forEach(function(k){
+      if(!_fxLive[k] && _arenaFxOwned[k] === title) delete _arenaFxPeak[k];
+    });
+    list.forEach(function(b){ _arenaFxOwned[b.key] = title; });
     return h+'</div>';
   }
   // Compact in-card combat consumables: the active potion (with charges) + owned consumable chips.
@@ -40886,7 +40920,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.53';
+  var GAME_VERSION = '0.0.86.54';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41101,7 +41135,7 @@
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
-      craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
+      craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, famBuffApply:famBuffApply, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,

@@ -6075,6 +6075,91 @@
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
   });
 
+  // ---- Buff re-application: greater magnitude, full timer (owner order, Thausale's report) -----------
+  // Every familiar buff site simply ASSIGNED, so a re-cast overwrote whatever was live. Measured before the
+  // fix: a weak re-cast dropped a potency-scaled 3.0048 to 0.6010, and a 2s spell cut an 8s window to 2s.
+  // The owner's rule: "take the greater of the two buffs and refresh to full duration, but not to just add
+  // 8.0s to the end". Non-additive is the half that needs a test with an ALREADY-RUNNING clock, so these
+  // set `until` by hand to stand for a buff part way through rather than trying to control Date.now().
+  suite('buffs: a re-cast keeps the greater magnitude and refreshes to a full timer', function(){
+    ok(typeof FF.famBuffApply === 'function', 'the buff chokepoint is exported');
+    var S = FF._state;
+    var sv = S.familiarBuffs;
+    try {
+      S.familiarBuffs = {};
+      var now = Date.now();
+      // GREATER MAGNITUDE WINS, in both directions.
+      FF.famBuffApply('tVal', 'tUntil', 0.50, 8000);
+      near(S.familiarBuffs.tVal, 0.50, 'the first cast sets its value');
+      FF.famBuffApply('tVal', 'tUntil', 0.10, 8000);
+      near(S.familiarBuffs.tVal, 0.50, 'a WEAKER re-cast does not downgrade the live buff');
+      FF.famBuffApply('tVal', 'tUntil', 0.90, 8000);
+      near(S.familiarBuffs.tVal, 0.90, 'a STRONGER re-cast takes over');
+
+      // FULL TIMER, NOT ADDITIVE. Stand in for a buff with 4s of an 8s window left, then re-cast 8s: the
+      // result must be ~8s, never ~12s. This is the exact behaviour the owner ruled out.
+      S.familiarBuffs.tUntil = Date.now() + 4000;
+      FF.famBuffApply('tVal', 'tUntil', 0.90, 8000);
+      var rem = S.familiarBuffs.tUntil - Date.now();
+      ok(rem > 7500 && rem <= 8100, 'a re-cast refreshes to a FULL timer (' + Math.round(rem) + 'ms, not ~12000)');
+
+      // A SHORTER cast must not cut the window either.
+      S.familiarBuffs.tUntil = Date.now() + 8000;
+      FF.famBuffApply('tVal', 'tUntil', 0.90, 2000);
+      var rem2 = S.familiarBuffs.tUntil - Date.now();
+      ok(rem2 > 7500, 'a SHORTER re-cast leaves the longer window alone (' + Math.round(rem2) + 'ms)');
+
+      // An EXPIRED buff is not competition: the fields keep their old numbers because nothing clears them,
+      // so a lapsed strong buff must not block a fresh weak one.
+      S.familiarBuffs.tVal = 9.0; S.familiarBuffs.tUntil = Date.now() - 1;
+      FF.famBuffApply('tVal', 'tUntil', 0.25, 8000);
+      near(S.familiarBuffs.tVal, 0.25, 'a lapsed buff does not block a new weaker one');
+
+      // A pure window with no magnitude (the Bubble) takes the later expiry and touches no value field.
+      S.familiarBuffs.bubbleUntil = Date.now() + 6000;
+      FF.famBuffApply(null, 'bubbleUntil', 0, 2000);
+      ok(S.familiarBuffs.bubbleUntil - Date.now() > 5500, 'a window-only buff keeps its later expiry');
+
+      // END TO END through the real cast path, for a typed buff and for the generic timedBuff shape.
+      S.familiarBuffs = { damageMult:1, damageUntil:0 };
+      FF.castFamiliarSpell({ name:'Big', type:'damageBuff', mult:2.0, durationMs:8000 }, 100, null);
+      var big = S.familiarBuffs.damageMult;
+      ok(big > 1, 'the damage buff applied (' + big.toFixed(3) + ')');
+      FF.castFamiliarSpell({ name:'Small', type:'damageBuff', mult:1.1, durationMs:8000 }, 100, null);
+      near(S.familiarBuffs.damageMult, big, 'a weaker damageBuff re-cast keeps the stronger multiplier');
+      S.familiarBuffs = {};
+      FF.castFamiliarSpell({ name:'Strong Crit', type:'timedBuff', kind:'critDmg', val:0.50, durationMs:8000 }, 100, null);
+      var strong = S.familiarBuffs.critDmgVal;
+      FF.castFamiliarSpell({ name:'Weak Crit', type:'timedBuff', kind:'critDmg', val:0.10, durationMs:8000 }, 100, null);
+      near(S.familiarBuffs.critDmgVal, strong, 'a weaker timedBuff re-cast keeps the stronger value');
+      ok(S.familiarBuffs.critDmgUntil - Date.now() > 7500, '...and still refreshes to a full timer');
+    } finally { S.familiarBuffs = sv; }
+  });
+
+  // The other half of the same report: the effects bar SNAPPED BACK TO FULL on every render (#content
+  // rebuilds up to 10x/sec) because the peak denominator was reset each time, while the seconds label read
+  // the real remaining. The bar must track the buff draining, and must not carry a lapsed buff's peak into
+  // the next application.
+  suite('buffs: the effects bar tracks the real remaining, not the render', function(){
+    ok(typeof FF.renderFxBars === 'function', 'the fx bar renderer is exported');
+    function widthOf(html){ var m = /arenaFx-testfx[^>]*width:([\d.]+)%/.exec(String(html)); return m ? parseFloat(m[1]) : null; }
+    var now = Date.now();
+    // A fresh 8s buff opens full.
+    var full = widthOf(FF.renderFxBars([{ key:'testfx', until:now + 8000, name:'Test', color:'#fff' }], 'Your Effects'));
+    ok(full !== null && full > 95, 'a fresh buff opens at a full bar (' + full + '%)');
+    // Rendering AGAIN with 2s left must read ~25%, not 100%. This is the reported bug.
+    var quarter = widthOf(FF.renderFxBars([{ key:'testfx', until:Date.now() + 2000, name:'Test', color:'#fff' }], 'Your Effects'));
+    ok(quarter !== null && quarter < 40, 'a re-render part way through shows the buff DRAINING (' + quarter + '%)');
+    // A re-cast raises the peak again, so the bar returns to full honestly.
+    var again = widthOf(FF.renderFxBars([{ key:'testfx', until:Date.now() + 8000, name:'Test', color:'#fff' }], 'Your Effects'));
+    ok(again !== null && again > 95, 'a refresh returns the bar to full (' + again + '%)');
+    // Once it lapses (absent from the list) its peak is dropped, so a shorter buff later opens full rather
+    // than at a fraction of the old 8s window.
+    FF.renderFxBars([{ key:'other', until:Date.now() + 1000, name:'Other', color:'#fff' }], 'Your Effects');
+    var fresh = widthOf(FF.renderFxBars([{ key:'testfx', until:Date.now() + 2000, name:'Test', color:'#fff' }], 'Your Effects'));
+    ok(fresh !== null && fresh > 95, 'a lapsed buff does not carry its old peak into a new, shorter one (' + fresh + '%)');
+  });
+
   // ---- Mastercrafting: D1 Ring Blueprint -> one of 5 Legendary Signets (effect scaled 2x/4x/8x) --------
   suite('mastercraft: D1 legendary rings', function(){
     var s = FF._state;
