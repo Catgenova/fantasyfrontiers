@@ -876,8 +876,23 @@
     g[1][1].totemId = 'totem_t20';   // diagonal neighbour -> counts
     g[3][2].totemId = 'totem_t5';    // orthogonal neighbour -> counts
     g[4][4].totemId = 'totem_t20';   // 2 tiles away -> out of range
-    eq(FF.totemYieldBonusAt('personal','2,2'), 25, 'adjacent totems stack: +20 (t20) +5 (t5), the out-of-range one ignored');
+    // TOTEMS DO NOT STACK (owner order, v0.0.94.0): the BEST one in range wins. They summed until then,
+    // which made a ring of eight t20 Totems around one plot worth +160 a harvest.
+    eq(FF.totemYieldBonusAt('personal','2,2'), 20, 'overlapping totems do NOT stack: the best in range wins (t20 over t5)');
     eq(FF.totemYieldBonusAt('personal','0,4'), 0, 'a plot with no totem in range gets nothing');
+    // Two of the SAME tier must also not double: 'best wins' is not 'the highest is counted twice'.
+    g[2][1].totemId = 'totem_t5';
+    g[2][3].totemId = 'totem_t5';
+    var savedT20 = g[1][1].totemId; g[1][1].totemId = null;
+    eq(FF.totemYieldBonusAt('personal','2,2'), 5, 'three t5 Totems in range still yield only +5');
+    g[1][1].totemId = savedT20;
+    eq(FF.totemYieldBonusAt('personal','2,2'), 20, 'and adding the t20 back lifts it to 20, not 35');
+    g[2][1].totemId = null; g[2][3].totemId = null;
+    // The surviving Totem still covers its whole 3x3 aura -- spreading Totems is still how you cover ground,
+    // and only doubling up on ONE plot stopped paying.
+    g[0][0].fieldTier = 5;
+    eq(FF.totemYieldBonusAt('personal','0,0'), 20, 'the t20 at (1,1) still reaches its diagonal neighbour at (0,0)');
+    g[0][0].fieldTier = null;
     // Guild estates take totems too since v0.0.79.0 (SteakHouse ticket, owner order -- reverses the
     // personal-only design). Each estate's aura reads ITS OWN grid, so the two never leak.
     var savedGE = { grid: FF.guildEstate.grid, status: FF.guildEstate.status, log: FF.guildEstate.log };
@@ -888,9 +903,9 @@
       FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.log = [];
       FF.guildState.guild = FF.guildState.guild || { id:'g-totem-test', tag:'TT', name:'Totem Testers' };
       eq(FF.totemYieldBonusAt('guild','2,2'), 7, 'a guild field beside a guild totem gets its bonus (was hard 0)');
-      eq(FF.totemYieldBonusAt('guild','2,2') === 25, false, "and it reads the GUILD grid, not the personal one's t20+t5");
+      ok(FF.totemYieldBonusAt('guild','2,2') !== FF.totemYieldBonusAt('personal','2,2'), "and it reads the GUILD grid, not the personal one's stronger totem");
       eq(FF.totemYieldBonusAt('guild','0,4'), 0, 'range still applies on the guild grid');
-      eq(FF.totemYieldBonusAt('personal','2,2'), 25, "the guild totem never leaks onto personal plots");
+      eq(FF.totemYieldBonusAt('personal','2,2'), 20, "the guild totem never leaks onto personal plots");
       // Completion raises the totem on the GUILD grid and records it in the guild activity log.
       var savedXpG = s.xp.totems;
       gg[0][0].type = 'paved'; gg[0][0].paveTileId = 'paving_t9';
@@ -902,7 +917,8 @@
       FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.log = savedGE.log;
       FF.guildState.guild = savedGuild;
     }
-    // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +25.
+    // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +20 (the
+    // best totem in range, not the sum of the two).
     var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
     s.inventory = {}; s.itemEarnedTotal = {};
     g[0][4].fieldTier = 5;
@@ -916,7 +932,7 @@
     var boosted = (s.inventory.farming_t0 || 0) - plain;
     Math.random = savedRand;
     ok(plain > 0, 'the control harvest yields crops');
-    eq(boosted - plain, 25, 'a harvest beside the totems yields exactly +25 more crops');
+    eq(boosted - plain, 20, 'a harvest beside the totems yields exactly +20 more crops: the best one, not 25');
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
     // The 3D models exist for both estate render modes.
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');

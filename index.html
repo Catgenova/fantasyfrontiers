@@ -12392,24 +12392,35 @@
 
   // batch=true suppresses the per-plot log/toast/save (used by Harvest All). Returns the harvested
   // crop data (for a batch summary), or null if nothing was harvested.
-  // ---- Totem yield bonus: each Totem grants a flat +<tier> crops per harvest to every Field within
-  // 1 tile OF ITS OWN ESTATE (Chebyshev distance <= 1, so diagonals count). Multiple totems in range
-  // stack. Guild plots read the guild grid since v0.0.79.0 (owner order; they got nothing before) --
-  // fieldGridFor resolves the right grid per scope and returns null while the guild grid is loading,
-  // so an early harvest simply misses the bonus rather than reading a half-loaded map.
+  // ---- Totem yield bonus: a Totem grants a flat +<tier> crops per harvest to every Field within
+  // 1 tile OF ITS OWN ESTATE (Chebyshev distance <= 1, so diagonals count).
+  //
+  // TOTEMS DO NOT STACK (owner order): where several are in range of one Field, the BEST of them wins and
+  // the rest add nothing to that Field. They stacked additively until v0.0.94.0, which made a ring of eight
+  // t20 Totems around a single plot worth +160 crops a harvest and turned the aura into a tiling puzzle
+  // rather than a placement choice. Same rule as the Sun Terrace, which shipped max-not-sum for the same
+  // reason. Note the surviving Totem still covers all NINE tiles of its own aura, so blanketing a farm in
+  // Totems is still how you cover it -- what no longer pays is doubling up on one plot.
+  //
+  // Guild plots read the guild grid since v0.0.79.0 (owner order; they got nothing before) -- fieldGridFor
+  // resolves the right grid per scope and returns null while the guild grid is loading, so an early harvest
+  // simply misses the bonus rather than reading a half-loaded map.
   function totemYieldBonusAt(scope, key){
     var grid = fieldGridFor(scope);
     if(!grid || typeof key !== 'string') return 0;
     var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
     if(!isFinite(px) || !isFinite(py)) return 0;
-    var bonus = 0;
+    var best = 0;
     for(var dx=-1; dx<=1; dx++){
       for(var dy=-1; dy<=1; dy++){
         var c = grid[px+dx] && grid[px+dx][py+dy];
-        if(c && c.totemId) bonus += itemTierFromId(c.totemId);
+        if(c && c.totemId){
+          var t = itemTierFromId(c.totemId);
+          if(t > best) best = t;
+        }
       }
     }
-    return bonus;
+    return best;
   }
   // ---- Water adjacency: a Field with water directly beside it (N/S/E/W -- diagonals don't count,
   // unlike the totem aura) yields a flat +5 crops per harvest. One flat bonus however many banks the
@@ -34344,7 +34355,7 @@
         { // Totems: both estates since v0.0.79.0 (guild was deliberately totem-less before; owner reversed it)
           var placeableT = placeableTotemsFor(cell);
           html += '<div class="estate-action-row">';
-          html += '<div class="estate-action-info"><b>Raise Totem</b><br>A carved Totem (Construction &rarr; Totems) grants +1 crop yield per tier to every Field within 1 tile. Totem tier must be ≤ this pavement.</div>';
+          html += '<div class="estate-action-info"><b>Raise Totem</b><br>A carved Totem (Construction &rarr; Totems) grants +1 crop yield per tier to every Field within 1 tile. Totems do NOT stack: where several reach one Field, only the best of them counts. Totem tier must be ≤ this pavement.</div>';
           html += '<button class="action-btn" data-action="estateToggleTotemMenu" '+((placeableT.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableT.length?(estateTotemMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
           html += '</div>';
           if(estateTotemMenuOpen && placeableT.length){
@@ -39994,7 +40005,7 @@
     glassblowing: 'Melt Spelunking Minerals over Coal (found Digging or Mining) and blow them into Glass goods, from Glass Bead up to Eternal Crystal -- the tier-matched vessels Alchemy bottles its potions in.',
     cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask. These vessels will help keep your Estate\'s Peons supplied and at their tasks while their master is away.',
     fertilizer: 'Refine a Fishing catch with equal-tier Digging soil into Fertilizer. Apply it to a growing crop of the same tier to double that plot\'s harvest.',
-    totems: 'Mount five Woodcarvings on Carpentry Planks into a carved Totem. Placed on a paved Estate tile, a Totem grants +1 crop yield per tier (up to +20) to every Field within 1 tile.',
+    totems: 'Mount five Woodcarvings on Carpentry Planks into a carved Totem. Placed on a paved Estate tile, a Totem grants +1 crop yield per tier (up to +20) to every Field within 1 tile. Totems do not stack -- where several reach the same Field, only the strongest counts -- so spread them to cover ground rather than clustering them on one plot.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the subject of the Leatherworking skill as well as a component in Bookbinding and Twine for Jewelrycrafting.',
     weaving: 'Weave your various Farmed Fiber into Cloth for Tailoring lightweight Cloth Armor.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding and Inscription.',
@@ -43612,7 +43623,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.93.0';
+  var GAME_VERSION = '0.0.93.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
