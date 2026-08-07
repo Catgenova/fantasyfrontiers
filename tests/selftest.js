@@ -3110,6 +3110,28 @@
     ok(/Active Development Pre-Alpha/.test(d) && /progress wipes/.test(d) && /feedback/.test(d), 'disclaimer carries the pre-alpha wording');
     ok(/color:\s*#ff6b6b/i.test(d), 'disclaimer is styled red');
     ok(FF.TICKER_DISCLAIMER_CHANCE > (1 / T.length), 'disclaimer appears far more often than any single tip');
+
+    // ---- STALENESS. 125 tips describe mechanics, and a rework silently turns some of them into lies. Five
+    // were wrong at the same time and nothing was watching. These assertions pin the claims that went stale,
+    // so the next rework of the same system fails here instead of shipping a tip that misinforms players.
+    var all = T.join(' \n ');
+    // Apothecary crafts DRAUGHTS since v0.0.87.0; Weapon Coatings are retired (held stacks still work, but
+    // no recipe makes one), and the poison line moved wholly to Alchemy.
+    ok(!/Weapon Coating/i.test(all), 'no tip still claims Apothecary crafts Weapon Coatings');
+    ok(T.some(function(t){ return /Mycology/.test(t) && /Draught/.test(t); }), 'a tip points Mycology at Draughts');
+    // The 'enchant' POTION type was retired: Enchant Crystals are the Improvement tab's input, never a
+    // Battle-tab consumable, so no tip may tell a player to ready one for damage.
+    ok(!/Weapon Enchants/i.test(all), 'no tip still calls Enchant Crystals "Weapon Enchants"');
+    ok(T.some(function(t){ return /Enchant Crystals/.test(t) && /Improvement/.test(t); }),
+       'a tip sends Enchant Crystals to the Improvement tab');
+    // The Firebomb stopped being flat damage in v0.0.87.1 (it is the opener) and the poison stopped being
+    // described in "combat score" back in v0.0.68.0.
+    ok(!/flat fire damage/i.test(all), 'no tip still calls the Firebomb flat fire damage');
+    ok(!/combat score/i.test(all), 'no tip describes damage in the retired "combat score" unit');
+    // A Staff DOES auto-attack: noAttack is never set true anywhere, so a tip asserting otherwise is false
+    // whatever the balance decision turns out to be.
+    ok(!/Staff<\/b> deals no damage/i.test(all) && !/Staff deals no damage/i.test(all),
+       'no tip claims a Staff deals no damage (it auto-attacks; noAttack is never set)');
   });
 
   // ---- Icon shape symbols exist (previously-blank Dairy/Ranching/Tanning/Weaving/etc. icons) ---------
