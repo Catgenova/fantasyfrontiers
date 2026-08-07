@@ -15140,6 +15140,48 @@
       produces: { prefix:'fishing_t', xpSkill:'fishing', label:'fish' },
       blurb: function(t){ return 'Stands in the water and traps ' + (ALL_GATHER_ITEMS[('fishing_t'+t)] ? ALL_GATHER_ITEMS['fishing_t'+t].name : 'fish') + ' on its own. The tile still counts as water for neighbouring Fields.'; }
     },
+    leyfont: {
+      key:'leyfont', prefix:'leyfont_t', label:'Ley Font', plural:'Ley Fonts', shape:'gem',
+      nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Ley Font'; },
+      colorFor: function(t){ return PROSPECTING_COLORS[Math.min(PROSPECTING_COLORS.length-1, t|0)] || '#8a5fb0'; },
+      // Built from the very crystals it saves, which is both thematic and self-balancing: the Font pays for
+      // itself only after enough enchanting to earn back its own bill.
+      extraInputs: function(inputs, t){ inputs['enchant_t'+t] = 25; inputs['glassblowing_t'+t] = 10; },
+      gateSkill: 'enchanting',
+      maxPerEstate: function(){ return 1; },
+      refunds: 'enchant',
+      blurb: function(t){ return 'A ' + Math.round(improveRefundPct(t)*100) + '% chance an Enchant costs no Crystals. One per estate.'; }
+    },
+    bellows: {
+      key:'bellows', prefix:'bellows_t', label:'Great Bellows', plural:'Great Bellows', shape:'hammer',
+      nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Great Bellows'; },
+      colorFor: function(){ return '#b8642a'; },
+      extraInputs: function(inputs, t){ inputs['metallurgy_t'+t] = 20; inputs['tanning_t'+t] = 15; },
+      gateSkill: 'blacksmithing',
+      maxPerEstate: function(){ return 1; },
+      refunds: 'enhance',
+      // It NEVER touches enhanceSuccessChance. A +15 multiplies base AND enchant stats by six, so the odds
+      // are a balance lever and the bill is not; a building may cheapen the grind, never the gamble.
+      blurb: function(t){ return 'A ' + Math.round(improveRefundPct(t)*100) + '% chance an Enhance costs no Scrolls. It never changes the odds. One per estate.'; }
+    },
+    scriptorium: {
+      key:'scriptorium', prefix:'scriptorium_t', label:'Scriptorium', plural:'Scriptoria', shape:'scroll',
+      nameFor: function(t){ return FORESTRY_NAMES[t] + ' Scriptorium'; },
+      colorFor: function(){ return '#7a5aa8'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 15; inputs['paper_t'+t] = 40; },
+      gateSkill: 'inscription',
+      maxPerEstate: function(){ return 1; },
+      // A producer with a TEMPLATE: it copies the best Scroll you already hold at or below its own tier, so
+      // it never conjures a tier you have not reached. Its own clock is far slower than a hive's, because a
+      // Scroll is the enhance currency rather than a raw material.
+      produces: { prefix:'scroll_t', xpSkill:'inscription', label:'scrolls',
+                  intervalMs: function(t){ return Math.round((360 - (Math.max(0,Math.min(TIER_COUNT-1,t|0))/(TIER_COUNT-1))*330) * 60 * 1000); },
+                  pick: function(t){
+                    for(var i = Math.min(TIER_COUNT-1, t|0); i >= 0; i--){ if((state.inventory['scroll_t'+i]||0) > 0) return 'scroll_t'+i; }
+                    return null;   // no template held -> nothing copied, and the clock does not bank
+                  } },
+      blurb: function(t){ return 'Copies the best Inscription Scroll you hold (up to tier ' + (t+1) + ') roughly every ' + Math.round(ESTATE_BUILDING_DEFS.scriptorium.produces.intervalMs(t)/60000) + ' min. One per estate.'; }
+    },
     salvageyard: {
       key:'salvageyard', prefix:'salvageyard_t', label:'Salvage Yard', plural:'Salvage Yards', shape:'gear',
       nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Salvage Yard'; },
@@ -15163,6 +15205,54 @@
   // The SURFACE a def needs under it. Absent means 'paved', which is every building but the Weir.
   function buildingSurface(key){ var d = ESTATE_BUILDING_DEFS[key]; return (d && d.surface) || 'paved'; }
   function buildingIsProducer(key){ var d = ESTATE_BUILDING_DEFS[key]; return !!(d && d.produces); }
+  // A producer's own clock, if it overrides the default (the Scriptorium is far slower than a hive).
+  function buildingIntervalMs(key, tier){
+    var d = ESTATE_BUILDING_DEFS[key];
+    return (d && d.produces && typeof d.produces.intervalMs === 'function') ? d.produces.intervalMs(tier) : apiaryIntervalMs(tier);
+  }
+  // ---- The improvement refund: Ley Font (Crystals) and Great Bellows (Scrolls) ---------------------
+  // Both buildings do the SAME thing to different currencies, so they share one chance curve and one spend
+  // helper. 2% at t0 rising to 15% at t20.
+  //
+  // NEITHER touches the odds. The Bellows refunds the Scrolls an Enhance spent, win or lose, and never
+  // reads enhanceSuccessChance: a +15 multiplies base AND enchant stats by six, so the success curve is a
+  // balance lever while the bill is a grind gate. A building may cheapen a grind; it must not sell luck.
+  function improveRefundPct(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return 0.02 + (t/(TIER_COUNT-1))*0.13; }
+  // The BEST such building across both estates, NOT the sum. Two 15% chances stacking to 30% would double
+  // the stated ceiling the moment a player joined a guild that had built one, so the rule is max-not-add
+  // (Workshops add, deliberately; a probability does not).
+  function bestRefundBuildingTier(kind){
+    var best = -1;
+    function scan(grid){
+      if(!grid) return;
+      for(var x=0; x<grid.length; x++){
+        var col = grid[x]; if(!col) continue;
+        for(var y=0; y<col.length; y++){
+          var c = col[y], k = buildingKeyOf(c && c.buildingId);
+          if(!k) continue;
+          var d = ESTATE_BUILDING_DEFS[k];
+          if(d && d.refunds === kind){ var t = itemTierFromId(c.buildingId); if(t > best) best = t; }
+        }
+      }
+    }
+    scan(state.estate && state.estate.grid);
+    scan((typeof guildEstate !== 'undefined' && guildEstate.status === 'ready') ? guildEstate.grid : null);
+    return best;
+  }
+  function improveRefundChance(kind){ var t = bestRefundBuildingTier(kind); return t < 0 ? 0 : improveRefundPct(t); }
+  // ONE chokepoint for every Crystal/Scroll spend in the Improvement tab: the single Enchant, the single
+  // Enhance, and BOTH auto-loops. Four call sites, one rule -- the alternative was four copies of the roll,
+  // which is how a bonus comes to apply on three paths out of four. Returns true when it refunded.
+  //
+  // The refund re-adds with noEarn: a returned input is not new production, so the per-item earned anchor
+  // stays honest (the same reasoning as returning a displaced stackable on unequip).
+  function spendImprovePlan(plan, kind){
+    consumeInputs(plan);
+    if(!(Math.random() < improveRefundChance(kind))) return false;
+    Object.keys(plan).forEach(function(id){ addItem(id, plan[id], { noEarn:true }); });
+    return true;
+  }
+  function improveRefundLabel(kind){ return kind === 'enchant' ? 'The Ley Font returns your Crystals.' : 'The Great Bellows returns your Scrolls.'; }
   function getBuildingTierData(key, tier){
     var def = ESTATE_BUILDING_DEFS[key]; if(!def) return null;
     tier = Math.max(0, Math.min(TIER_COUNT-1, tier|0));
@@ -16869,7 +16959,7 @@
     if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of '+improveTierLabel(improveMatTier(u.tier))+' or higher.','danger'); return; }
     if(planned.maxTier>improveMatTier(u.tier) && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
     enhanceWarnArmed = false;
-    consumeInputs(planned.plan);
+    if(spendImprovePlan(planned.plan, 'enhance')) addLog(improveRefundLabel('enhance'), 'important');
     if(Math.random() < enhanceSuccessChance(u.enhance)){
       u.enhance += 1;
       if(!state.stats) state.stats = {}; if(u.enhance > (state.stats.enhance_best||0)) state.stats.enhance_best = u.enhance; // best +N ever reached on ANY item, powers "Steel Sharpened" (never regresses if the item later shatters)
@@ -16910,13 +17000,14 @@
       enhanceLockArmed = false; state.enhanceLockWarnAck = true;
     }
     enhanceWarnArmed = false;
-    var attempts = 0, scrollsSpent = 0, shardsSpent = 0, success = false, outOfScrolls = false;
+    var attempts = 0, scrollsSpent = 0, shardsSpent = 0, success = false, outOfScrolls = false, bellowsRefunds = 0;
     // Only attempt while a Shard is available to absorb a failure -- so the item is never at risk.
     while((state.inventory.barrier_shard||0) >= 1 && u.enhance < ENHANCE_MAX){
       var cost = u.enhance + 1;
       var planned = planInscriptions(u.tier, cost);
       if(!planned){ outOfScrolls = true; break; }
-      consumeInputs(planned.plan); scrollsSpent += cost; attempts++;
+      if(spendImprovePlan(planned.plan, 'enhance')) bellowsRefunds++;   // aggregated: one line after the loop
+      scrollsSpent += cost; attempts++;
       if(Math.random() < enhanceSuccessChance(u.enhance)){
         u.enhance += 1;
         if(!state.stats) state.stats = {}; if(u.enhance > (state.stats.enhance_best||0)) state.stats.enhance_best = u.enhance;
@@ -16927,7 +17018,10 @@
       consumeInputs({ barrier_shard:1 }); shardsSpent++;  // failure absorbed by a Barrier Shard
     }
     var shardsLeft = state.inventory.barrier_shard||0;
-    var summary = { attempts:attempts, shardsSpent:shardsSpent, scrollsSpent:scrollsSpent };
+    var summary = { attempts:attempts, shardsSpent:shardsSpent, scrollsSpent:scrollsSpent, bellowsRefunds:bellowsRefunds };
+    // Aggregated rather than logged per attempt: this loop can run dozens of times and a line each
+    // would bury the result the player is actually reading.
+    if(bellowsRefunds > 0) addLog('The Great Bellows returned the Scrolls on ' + bellowsRefunds + ' of those ' + attempts + ' attempt' + (attempts===1?'':'s') + '.', 'important');
     if(success){
       addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'! (Auto-inscribe: '+attempts+' attempt'+(attempts===1?'':'s')+', '+shardsSpent+' Barrier Shard'+(shardsSpent===1?'':'s')+' spent)','important');
       enhancePopupData = { ok:true, auto:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance, summary:summary };
@@ -17069,7 +17163,7 @@
     // Convert the source into a unique only now, as the enchant actually lands.
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
     var u = state.uniqueItems[uid];
-    consumeInputs(planned.plan);
+    if(spendImprovePlan(planned.plan, 'enchant')) addLog(improveRefundLabel('enchant'), 'important');
     bumpStat('enchants_applied'); // enchant crystals bound to gear, powers "Bind the Crystal"
     var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
     if(u.enchants.length < enchantSlotsFor(u.rarity)){ u.enchants.push(roll); addLog('Enchanted '+uniqueBaseName(u)+': '+enchantLabel(u.kind,roll)+'.','important'); }
@@ -17201,12 +17295,13 @@
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel));
     if(!uid){ return null; } improveSel = uid;
     var u = state.uniqueItems[uid];
-    var spent = 0, placed = null, iters = 0;
+    var spent = 0, placed = null, iters = 0, leyfontRefunds = 0;
     while(iters++ < 200000){
       var cost = u.enchants.length + 1;
       var planned = planEnchantCrystals(u.tier, cost);
       if(!planned) break;                               // crystals depleted
-      consumeInputs(planned.plan); spent += cost;
+      if(spendImprovePlan(planned.plan, 'enchant')) leyfontRefunds++;   // aggregated: one line after the loop
+      spent += cost;
       var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
       if(roll.mod===modId && roll.roll>=target){
         if(slotChoice === 'new'){ u.enchants.push(roll); }
@@ -17222,7 +17317,9 @@
       addLog('Auto-roll spent '+spent+' Enchant Crystal'+(spent===1?'':'s')+' without rolling +'+target+(m.pct?'%':'')+' '+m.label+'. Crystals depleted.','danger');
     }
     saveGame(); render();
-    return { placed:placed, spent:spent };
+    // Aggregated for the same reason the Bellows loop is: the auto-roll can spend hundreds of Crystals.
+    if(leyfontRefunds > 0) addLog('The Ley Font returned the Crystals on ' + leyfontRefunds + ' of those rolls.', 'important');
+    return { placed:placed, spent:spent, leyfontRefunds:leyfontRefunds };
   }
   // ---- Unique trade lifecycle (Stage 3): sell for gold or sacrifice for Faith, then drop the uid. ----
   // A unique never sits in state.inventory, so it can't be a craft input; sell/sacrifice removes it from
@@ -30749,7 +30846,12 @@
         var key = buildingKeyOf(cell && cell.buildingId);
         if(!key || !buildingIsProducer(key)) continue;
         if(!cell.apiaryAt){ cell.apiaryAt = now; continue; }
-        var def = ESTATE_BUILDING_DEFS[key], tier = itemTierFromId(cell.buildingId), per = apiaryIntervalMs(tier);
+        var def = ESTATE_BUILDING_DEFS[key], tier = itemTierFromId(cell.buildingId), per = buildingIntervalMs(key, tier);
+        // A TEMPLATE producer (the Scriptorium) copies something you already hold. With no template it
+        // produces nothing AND banks no time: otherwise a month of idling would pay out in one burst the
+        // moment a single Scroll appeared in the bag.
+        var itemId = (typeof def.produces.pick === 'function') ? def.produces.pick(tier) : (def.produces.prefix + tier);
+        if(!itemId){ cell.apiaryAt = now; continue; }
         var elapsed = Math.min(now - cell.apiaryAt, ESTATE_APIARY_CAP_MS);
         if(elapsed < per){
           // Past the cap with nothing to pay yet cannot happen (cap > interval at every tier), but keep the
@@ -30759,7 +30861,6 @@
         }
         var units = Math.floor(elapsed / per);
         cell.apiaryAt = (now - (elapsed - units * per));   // keep the remainder, never the whole overhang
-        var itemId = def.produces.prefix + tier;
         addItem(itemId, units);
         addXp(def.produces.xpSkill, units * 10 * (tier + 1));
         var b = byKey[key] || (byKey[key] = { n:0, itemId:itemId, def:def });
@@ -30770,7 +30871,7 @@
     if(!keys.length) return;
     keys.forEach(function(k){
       var b = byKey[k];
-      addLog('Your ' + b.def.plural + ' produced ' + b.n + '&times; ' + ((ALL_GATHER_ITEMS[b.itemId]||{}).name || b.def.produces.label) + '.', '');
+      addLog('Your ' + b.def.plural + ' produced ' + b.n + '&times; ' + ((ALL_GATHER_ITEMS[b.itemId] || ALL_SELLABLE[b.itemId] || {}).name || b.def.produces.label) + '.', '');
     });
     estPersist();
     needsRender = true;
@@ -31334,9 +31435,12 @@
     var def = ESTATE_BUILDING_DEFS[key];
     if(!def || typeof def.maxPerEstate !== 'function') return '';
     var cap = def.maxPerEstate();
-    return buildingCountOnEstate(key) >= cap
-      ? ('You already have ' + cap + ' ' + def.plural + ' on this estate, the most it can hold.')
-      : '';
+    if(buildingCountOnEstate(key) < cap) return '';
+    // A cap of one reads as "1 Ley Fonts" without this; the singular form is the common case for the
+    // one-per-estate buildings, so it gets its own sentence rather than an "(s)".
+    return cap === 1
+      ? ('An estate holds only one ' + def.label + '.')
+      : ('You already have ' + cap + ' ' + def.plural + ' on this estate, the most it can hold.');
   }
   function estateBuildMs(tier){ return (Math.max(0, Math.min(TIER_COUNT-1, tier|0)) + 1) * ESTATE_BUILD_MS_PER_TIER; }
   // Buildings owned in inventory that this tile's pavement can carry. Unlike Workshops there is no
@@ -32821,6 +32925,73 @@
     ctx.fillStyle = estateShadeColor('#9a8a6a',0.85);
     ctx.beginPath(); ctx.arc(cx - ts*0.06, cy + ts*0.06, ts*0.12, 0, Math.PI*2); ctx.fill();
   }
+  // LEY FONT: a stone basin on a stepped plinth with a floating crystal over it.
+  function estateDrawLeyFont(ctx, cx, cy, tier, rot){
+    var stone = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    var crystal = PROSPECTING_COLORS[Math.min(PROSPECTING_COLORS.length-1, tier)] || '#8a5fb0';
+    var base = estateRectFp(0.34, 0.34);
+    estateDrawPrism(ctx, cx, cy, base, base, 0, 0.12, rot, estateShadeColor(stone,0.55), estateShadeColor(stone,0.78));
+    var bowl = estateRectFp(0.26, 0.26);
+    estateDrawPrism(ctx, cx, cy, bowl, bowl, 0.12, 0.3, rot, estateShadeColor(stone,0.66), estateShadeColor(stone,0.95));
+    var pool = estateRectFp(0.2, 0.2);
+    estateDrawPrism(ctx, cx, cy, pool, pool, 0.3, 0.33, rot, estateShadeColor(crystal,0.6), estateShadeColor(crystal,1.05));
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.1,0.1), [0,0], 0.42 + Math.min(0.12, tier*0.006), 0.68, rot, estateShadeColor(crystal,1.15));
+    var glow = estateModelProject(cx, cy, 0, 0, 0.5, rot);
+    ctx.fillStyle = estateShadeColor(crystal,1.2); ctx.beginPath(); ctx.arc(glow.x, glow.y, 2.2, 0, Math.PI*2); ctx.fill();
+  }
+  function drawEstateLeyFontModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawLeyFont(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdLeyFont(ctx, cx, cy, tier, ts){
+    var crystal = PROSPECTING_COLORS[Math.min(PROSPECTING_COLORS.length-1, tier)] || '#8a5fb0';
+    var stone = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    ctx.fillStyle = estateShadeColor(stone,0.85); ctx.beginPath(); ctx.arc(cx, cy, ts*0.2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = estateShadeColor(crystal,1.05); ctx.beginPath(); ctx.arc(cx, cy, ts*0.1, 0, Math.PI*2); ctx.fill();
+  }
+  // GREAT BELLOWS: an anvil-and-forge block with the bellows bag beside it and a lit coal bed.
+  function estateDrawBellows(ctx, cx, cy, tier, rot){
+    var iron = '#5a5450', hide = '#b8642a';
+    var forge = estateRectFp(0.3, 0.26).map(function(p){ return [p[0]-0.1, p[1]]; });
+    estateDrawPrism(ctx, cx, cy, forge, forge, 0, 0.26, rot, estateShadeColor(iron,0.6), estateShadeColor(iron,0.85));
+    var coals = estateRectFp(0.2, 0.16).map(function(p){ return [p[0]-0.1, p[1]]; });
+    estateDrawPrism(ctx, cx, cy, coals, coals, 0.26, 0.29, rot, '#8a2a12', '#e0641e');
+    var bag = estateRectFp(0.16, 0.2).map(function(p){ return [p[0]+0.26, p[1]]; });
+    estateDrawPyramid(ctx, cx, cy, bag, [0.26, 0], 0.04, 0.34, rot, estateShadeColor(hide,0.9));
+    var stack = estateRectFp(0.07, 0.07).map(function(p){ return [p[0]-0.1, p[1]-0.16]; });
+    estateDrawPrism(ctx, cx, cy, stack, stack, 0.26, 0.52 + Math.min(0.14, tier*0.007), rot, estateShadeColor(iron,0.5), estateShadeColor(iron,0.78));
+    if(tier >= 6){
+      var em = estateModelProject(cx, cy, -0.1, -0.16, 0.62, rot);
+      ctx.fillStyle = 'rgba(224,100,30,0.9)'; ctx.beginPath(); ctx.arc(em.x, em.y, 1.9, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  function drawEstateBellowsModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawBellows(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdBellows(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#5a5450',0.8);
+    ctx.fillRect(cx - ts*0.24, cy - ts*0.14, ts*0.34, ts*0.28);
+    ctx.fillStyle = '#e0641e';
+    ctx.fillRect(cx - ts*0.18, cy - ts*0.07, ts*0.2, ts*0.14);
+  }
+  // SCRIPTORIUM: a copying hall -- a long roofed block with a lectern and a row of tall windows.
+  function estateDrawScriptorium(ctx, cx, cy, tier, rot){
+    var wood = FORESTRY_COLORS[Math.min(TIER_COUNT-1, tier)] || '#b08a54';
+    var ink = '#7a5aa8';
+    var body = estateRectFp(0.44, 0.3);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, 0.34, rot, estateShadeColor(wood,0.58), estateShadeColor(wood,0.86));
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.48,0.34), [0,0], 0.34, 0.56, rot, estateShadeColor(ink,0.72));   // slate roof
+    var wins = 3 + Math.min(2, Math.floor(tier/8));
+    for(var i=0;i<wins;i++){
+      var off = -0.3 + (i/(wins-1||1))*0.6;
+      var wf = estateRectFp(0.05, 0.02).map(function(p){ return [p[0]+off, p[1]+0.3]; });
+      estateDrawPrism(ctx, cx, cy, wf, wf, 0.1, 0.26, rot, estateShadeColor('#e8dcc0',0.7), estateShadeColor('#e8dcc0',1.0));
+    }
+    var lectern = estateRectFp(0.1, 0.08).map(function(p){ return [p[0], p[1]-0.34]; });
+    estateDrawPyramid(ctx, cx, cy, lectern, [0,-0.34], 0, 0.24, rot, estateShadeColor(wood,1.0));
+  }
+  function drawEstateScriptoriumModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawScriptorium(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdScriptorium(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#7a5aa8',0.8);
+    ctx.fillRect(cx - ts*0.26, cy - ts*0.18, ts*0.52, ts*0.36);
+    ctx.fillStyle = estateShadeColor('#e8dcc0',0.9);
+    ctx.fillRect(cx - ts*0.2, cy - ts*0.03, ts*0.4, ts*0.06);
+  }
   // The two dispatchers the canvas calls. A def with no model draws nothing rather than throwing, so a
   // half-finished building can never break the whole estate render.
   function drawEstateBuildingModel(ctx, cx, cy, buildingId, rot, fed){
@@ -32830,6 +33001,9 @@
     else if(key === 'apiary') drawEstateApiaryModel(ctx, cx, cy, tier, rot);
     else if(key === 'weir') drawEstateWeirModel(ctx, cx, cy, tier, rot);
     else if(key === 'salvageyard') drawEstateSalvageYardModel(ctx, cx, cy, tier, rot);
+    else if(key === 'leyfont') drawEstateLeyFontModel(ctx, cx, cy, tier, rot);
+    else if(key === 'bellows') drawEstateBellowsModel(ctx, cx, cy, tier, rot);
+    else if(key === 'scriptorium') drawEstateScriptoriumModel(ctx, cx, cy, tier, rot);
   }
   function estateDrawTdBuilding(ctx, cx, cy, buildingId, ts, fed){
     var key = buildingKeyOf(buildingId), tier = itemTierFromId(buildingId);
@@ -32838,6 +33012,9 @@
     else if(key === 'apiary') estateDrawTdApiary(ctx, cx, cy, tier, ts);
     else if(key === 'weir') estateDrawTdWeir(ctx, cx, cy, tier, ts);
     else if(key === 'salvageyard') estateDrawTdSalvageYard(ctx, cx, cy, tier, ts);
+    else if(key === 'leyfont') estateDrawTdLeyFont(ctx, cx, cy, tier, ts);
+    else if(key === 'bellows') estateDrawTdBellows(ctx, cx, cy, tier, ts);
+    else if(key === 'scriptorium') estateDrawTdScriptorium(ctx, cx, cy, tier, ts);
   }
   // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
   // a few green sprouts. One parametric model; tier only changes the soil hue.
@@ -43124,7 +43301,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.91.0';
+  var GAME_VERSION = '0.0.92.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -43341,6 +43518,8 @@
       salvageClear:salvageClear, salvageableItems:salvageableItems, salvageableId:salvageableId, salvageYieldFor:salvageYieldFor,
       salvageIntervalMs:salvageIntervalMs, salvageYardCap:salvageYardCap, SALVAGE_MAX_YARDS:SALVAGE_MAX_YARDS,
       buildingSurface:buildingSurface, buildingIsProducer:buildingIsProducer, buildingCapBlocked:buildingCapBlocked, buildingCountOnEstate:buildingCountOnEstate,
+      improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
+      spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,

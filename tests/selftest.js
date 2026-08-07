@@ -928,8 +928,8 @@
   // suite walks all eight for the generic kind, so the next building inherits the coverage.
   suite('estate buildings: the generic build job kind is wired everywhere', function(){
     var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
-    ok(defs && keys && keys.length === 5, 'five buildings ship across batches A and B (' + (keys||[]).join(', ') + ')');
-    ['aqueduct','sunterrace','apiary','weir','salvageyard'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+    ok(defs && keys && keys.length === 8, 'eight buildings ship across batches A, B and C (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
 
     // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
     ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
@@ -1401,6 +1401,140 @@
       FF.recomputeAqueducts();
     }
   });
+
+  // ---- BATCH C: the Ley Font and the Great Bellows (one refund, two currencies) --------------------
+  // Both buildings do the same thing to different currencies, so they share one chance curve and ONE spend
+  // helper. There are FOUR places a Crystal or Scroll is spent (single Enchant, single Enhance, and the two
+  // auto-loops); routing them all through spendImprovePlan is what stops the bonus applying on three paths
+  // out of four. The Bellows must never touch the odds: a +15 multiplies base AND enchant stats by six, so
+  // the success curve is a balance lever while the bill is only a grind gate.
+  suite('estate buildings: the Ley Font and Great Bellows refund, and never sell luck', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedUniq = s.uniqueItems,
+        savedRand = Math.random, savedAck = s.enhanceLockWarnAck, savedHi = s.enhanceWarnHiTier;
+    var TOP = FF.TIER_COUNT - 1;
+    var g = [];
+    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; FF.estUse(false);
+    try {
+      near(FF.improveRefundPct(0), 0.02, 'the refund starts at 2%');
+      near(FF.improveRefundPct(TOP), 0.15, 'and reaches 15% at the top tier');
+      eq(FF.improveRefundChance('enchant'), 0, 'with no Ley Font there is no crystal refund at all');
+      eq(FF.improveRefundChance('enhance'), 0, 'and no scroll refund');
+      g[1][1].buildingId = 'leyfont_t20';
+      near(FF.improveRefundChance('enchant'), 0.15, 'a t20 Ley Font gives the full crystal chance');
+      eq(FF.improveRefundChance('enhance'), 0, 'and pays nothing toward Scrolls (the currencies do not cross)');
+      g[1][2].buildingId = 'bellows_t10';
+      near(FF.improveRefundChance('enhance'), FF.improveRefundPct(10), 'a t10 Bellows gives its own tier chance for Scrolls');
+      // MAX, NOT SUM. Two 15% Fonts adding to 30% would double the stated ceiling the moment a player
+      // joined a guild that had built one.
+      g[1][3].buildingId = 'leyfont_t20';
+      near(FF.improveRefundChance('enchant'), 0.15, 'a second Font does not stack the chance');
+      eq(FF.bestRefundBuildingTier('enchant'), 20, 'the lookup reports the best tier');
+      eq(FF.bestRefundBuildingTier('enhance'), 10, 'per currency');
+      g[1][2].buildingId = null; g[1][3].buildingId = null;
+
+      // THE REAL ENCHANT PATH, with the roll forced. This is what proves the chokepoint is wired: the
+      // helper being correct means nothing if improveEnchant does not call it.
+      var CRYSTAL = 'enchant_t' + FF.improveMatTier(TOP);
+      function enchantSpend(roll){
+        s.inventory = {}; s.inventory[CRYSTAL] = 500;
+        s.uniqueItems = { u1:{ uid:'u1', base:'stweapon_greatsword_t'+TOP+'_fantastic', kind:'weapon', tier:TOP, rarity:'fantastic', enhance:0, enchants:[] } };
+        FF.improveSelect('u1');
+        var before = s.inventory[CRYSTAL];
+        Math.random = function(){ return roll; };
+        try { FF.improveEnchant(); } finally { Math.random = savedRand; }
+        return before - (s.inventory[CRYSTAL] || 0);
+      }
+      eq(enchantSpend(0), 0, 'a winning refund roll means the Enchant costs no Crystals');
+      ok(enchantSpend(0.999999) > 0, 'a losing roll spends them');
+      g[1][1].buildingId = null;
+      ok(enchantSpend(0) > 0, 'and with no Font at all, even a 0 roll spends (there is nothing to refund)');
+
+      // THE REAL ENHANCE PATH. Note a FAILED enhance shatters the item when no Barrier Shard is held, so
+      // the unique may be gone afterwards -- the assertion is about the SCROLLS, not the item.
+      var SCROLL = 'scroll_t' + FF.improveMatTier(TOP);
+      s.enhanceLockWarnAck = true; s.enhanceWarnHiTier = false;
+      g[1][1].buildingId = 'bellows_t20';
+      function enhanceSpend(roll){
+        s.inventory = {}; s.inventory[SCROLL] = 500;
+        s.uniqueItems = { u2:{ uid:'u2', base:'stweapon_greatsword_t'+TOP+'_fantastic', kind:'weapon', tier:TOP, rarity:'fantastic', enhance:0, enchants:[] } };
+        FF.improveSelect('u2');
+        var before = s.inventory[SCROLL];
+        Math.random = function(){ return roll; };
+        try { FF.enhanceItem('u2'); } finally { Math.random = savedRand; }
+        return before - (s.inventory[SCROLL] || 0);
+      }
+      eq(enhanceSpend(0), 0, 'a winning refund roll means the Enhance costs no Scrolls');
+      ok(enhanceSpend(0.999999) > 0, 'a losing roll spends them');
+      // THE ODDS ARE UNTOUCHED, stated as an assertion because it is the one thing these buildings must
+      // never do. If a future edit routes the Bellows into enhanceSuccessChance, this fails.
+      near(FF.enhanceSuccessChance(0), 0.95, 'the enhance curve still starts at 95%');
+      near(FF.enhanceSuccessChance(14), 0.05, 'and still bottoms at 5%');
+      // One per estate, and the refusal reads as English at a cap of one. Clear the grid first: the enhance
+      // probe above left a Bellows standing, and asserting "a first one is allowed" against an occupied
+      // estate tests nothing.
+      for(var cx=0; cx<6; cx++){ for(var cy=0; cy<6; cy++) g[cx][cy].buildingId = null; }
+      eq(FF.buildingCapBlocked('leyfont'), '', 'a first Ley Font is allowed on an empty estate');
+      eq(FF.buildingCapBlocked('bellows'), '', 'and so is a first Bellows');
+      g[2][2].buildingId = 'leyfont_t0';
+      ok(FF.buildingCapBlocked('leyfont').indexOf('only one Ley Font') !== -1, 'a second Ley Font is refused, in the singular');
+      eq(FF.buildingCapBlocked('bellows'), '', 'and the Font does not block the Bellows (caps are per kind)');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.uniqueItems = savedUniq; Math.random = savedRand;
+      s.enhanceLockWarnAck = savedAck; s.enhanceWarnHiTier = savedHi; FF.recomputeAqueducts();
+    }
+  });
+
+  // ---- BATCH C: the Scriptorium (a TEMPLATE producer) ---------------------------------------------
+  // It copies a Scroll you already hold rather than conjuring its own tier, which is what keeps it from
+  // handing a low-level player top-tier enhance currency. With no template it must bank NO time, or a month
+  // of idling would pay out in one burst the moment a single Scroll appeared in the bag.
+  suite('estate buildings: the Scriptorium copies only what you already hold', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.inscription, savedEarned = s.itemEarnedTotal;
+    var g = [];
+    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; s.itemEarnedTotal = {}; FF.estUse(false);
+    try {
+      // Its own clock, far slower than a hive's, because a Scroll is the enhance currency.
+      ok(FF.buildingIntervalMs('scriptorium', 0) > FF.buildingIntervalMs('apiary', 0), 'a Scriptorium is slower than an Apiary at t0');
+      ok(FF.buildingIntervalMs('scriptorium', 20) < FF.buildingIntervalMs('scriptorium', 0), 'and speeds up with tier');
+      eq(FF.buildingIntervalMs('apiary', 10), FF.apiaryIntervalMs(10), 'a def with no override falls back to the default clock');
+      g[3][3].buildingId = 'scriptorium_t10';
+      var per = FF.buildingIntervalMs('scriptorium', 10);
+      // NO TEMPLATE: nothing produced, and the clock is reset rather than banked.
+      g[3][3].apiaryAt = Date.now() - (10*per);
+      FF.processProducers();
+      eq(Object.keys(s.inventory).length, 0, 'with no Scroll held, ten elapsed intervals produce nothing');
+      ok(Date.now() - g[3][3].apiaryAt < 2000, 'and the clock is reset, so the wait cannot be banked for later');
+      // Holding a LOW-tier scroll, it copies THAT one, not its own tier.
+      s.inventory = { scroll_t4:1 };
+      g[3][3].apiaryAt = Date.now() - (3*per + 100);
+      FF.processProducers();
+      eq(s.inventory.scroll_t4, 4, 'three intervals copy the held t4 Scroll three times');
+      ok(!s.inventory.scroll_t10, 'and never conjure its own tier');
+      // It prefers the BEST template at or below its tier.
+      s.inventory = { scroll_t4:1, scroll_t9:1 };
+      g[3][3].apiaryAt = Date.now() - (2*per + 100);
+      FF.processProducers();
+      eq(s.inventory.scroll_t9, 3, 'with two templates it copies the better one');
+      eq(s.inventory.scroll_t4, 1, 'leaving the lesser one alone');
+      // A template ABOVE its tier is not a template at all.
+      s.inventory = { scroll_t20:1 };
+      g[3][3].apiaryAt = Date.now() - (5*per + 100);
+      FF.processProducers();
+      eq(s.inventory.scroll_t20, 1, 'a Scroll above its tier is never copied');
+      // One per estate. The Scriptorium under test is still standing at (3,3), so it is ALREADY at its cap.
+      ok(FF.buildingCapBlocked('scriptorium').indexOf('only one Scriptorium') !== -1, 'with one standing, a second is refused');
+      g[3][3].buildingId = null;
+      eq(FF.buildingCapBlocked('scriptorium'), '', 'and removing it frees the slot again');
+      // All three batch C buildings have models for both render modes.
+      ['leyfont','bellows','scriptorium'].forEach(function(k){
+        ok(!!FF.ESTATE_BUILDING_DEFS[k], k + ' is registered');
+        ok(FF.ESTATE_BUILDING_DEFS[k].maxPerEstate() === 1, k + ' is one per estate');
+      });
+    } finally { s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.inscription = savedXp; s.itemEarnedTotal = savedEarned; FF.recomputeAqueducts(); }
+  });
+
 
 
   // ---- Tool forges: only the NORMAL previous tool is craft fodder + unique tool names (ticket-0093) --
