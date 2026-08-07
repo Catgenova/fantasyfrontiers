@@ -18998,6 +18998,70 @@
     }
   });
 
+  // ---- Gate audit: the RETALIATION family survives the closed gate (owner order) -------------------
+  // Sweeping all 47 applyEffectDamage/applyEffectDot sites after ticket-0160 found a whole family with the
+  // Herald's defect: damage that answers the ENEMY'S action, funded by the hit just taken. It was being
+  // confiscated for the whole of every foe's life in a farming chain, because with a one-shot foe the
+  // stamp is set and cleared inside a single playerAttackTick and nothing outside that call ever sees the
+  // gate open (measured: 100% shut over a 30s loop, versus 20% when the foe survives its swings).
+  // Drives the REAL monsterAttackTick, so it covers the wiring and not just the flag.
+  suite('gate audit: retaliation (Thorn Lash, Thorns enchant) lands on a foe not yet swung at', function(){
+    var S = FF._state;
+    var sv = { xp:S.xp, phys:S.physique, mh:S.equippedMainhand, mhT:S.equippedMainhandTier,
+               mhR:S.equippedMainhandRarity, oh:S.equippedOffhand, ohT:S.equippedOffhandTier,
+               ohR:S.equippedOffhandRarity, armor:S.bodyArmor, act:S.activity, uniq:S.uniqueItems,
+               hp:S.playerHp, growth:S.snGrowth, chestUid:S.bodyArmorUids };
+    try {
+      var TOP = FF.TIER_COUNT - 1;
+      S.xp = Object.assign({}, S.xp); Object.keys(S.xp).forEach(function(k){ S.xp[k] = FF.SKILL_XP_FLOOR[100]; });
+      S.physique = Object.assign({}, S.physique); Object.keys(S.physique).forEach(function(k){ S.physique[k] = FF.SKILL_XP_FLOOR[100]; });
+      // Sentinel: Maul + Medium Shield + full Chain. Its Thorn Lash is the headline case -- the class's
+      // whole identity is retaliation, so a gated lash means the class does nothing while farming.
+      S.equippedMainhand = 'maul'; S.equippedMainhandTier = TOP; S.equippedMainhandRarity = 'fantastic';
+      S.equippedOffhand = 'shieldMedium'; S.equippedOffhandTier = TOP; S.equippedOffhandRarity = 'fantastic';
+      S.bodyArmor = { helmet:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      chest:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      gauntlets:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      boots:{material:'chain', tier:TOP, rarity:'fantastic'},
+                      back:{tier:0, rarity:'normal', material:null} };
+      S.uniqueItems = {};
+      eq(FF.activeClassId(S), 'sentinel', 'the fixture really is a Sentinel (gear-derived)');
+      // sentinelBonus is not on the seam; the class level is, and Lv20 is what Thorn Lash needs.
+      ok(FF.classLevel(S, 'sentinel') >= 20, 'and the class is at least Lv20, so Thorn Lash is live');
+      // A grown hedge and a banked recent hit, both of which survive the kill that closed the gate.
+      S.activity = { type:'combat', monsterId:'wildlife_rat', monsterHp:1e15, tickAccum:0, monsterTickAccum:0,
+                     specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false, dotHitAvg:1e9 };
+      S.snGrowth = FF.snGrowCap(S);
+      ok(!FF.combatEffectsArmed(), 'the gate is CLOSED on the fresh foe');
+      ok(FF.snLashDamage(false, S) > 0, 'the lash has a damage value (' + FF.snLashDamage(false, S) + ')');
+      // Drive real enemy swings. Dodge and block are rolls, so take many attempts and keep the player
+      // alive; the assertion is that SOME retaliation landed, which cannot happen if the gate eats it.
+      var mon = FF.MONSTERS[0];
+      var hp0 = S.activity.monsterHp;
+      FF._clReset && FF._clReset();
+      for(var i = 0; i < 60; i++){
+        S.playerHp = FF.maxHp(S);
+        S.activity.playerSwungOnce = false;   // the farming-chain state, re-asserted every attempt
+        try { FF.monsterAttackTick(mon); } catch(e){ break; }
+        if(!S.activity || S.activity.type !== 'combat') break;
+      }
+      var dealt = hp0 - ((S.activity && S.activity.monsterHp) || hp0);
+      ok(dealt > 0, 'retaliation LANDED on a foe not yet swung at (dealt ' + dealt + ' over 60 enemy swings)');
+      var rows = (FF._combatLog ? FF._combatLog() : []).map(function(e){ return e.spName || ''; });
+      ok(rows.indexOf('Thorn Lash') !== -1, 'and the Thorn Lash reached the combat log');
+      // VACUITY GUARD: the same closed gate must still hold a carried engine, or this is a blanket removal.
+      S.activity.playerSwungOnce = false;
+      var hp2 = S.activity.monsterHp;
+      FF.applyEffectDot(5e8, 'Bramble');
+      eq(S.activity.monsterHp, hp2, 'a carried per-second engine is STILL gated before the first swing');
+    } finally {
+      S.xp = sv.xp; S.physique = sv.phys; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
+      S.equippedMainhandRarity = sv.mhR; S.equippedOffhand = sv.oh; S.equippedOffhandTier = sv.ohT;
+      S.equippedOffhandRarity = sv.ohR; S.bodyArmor = sv.armor; S.activity = sv.act; S.uniqueItems = sv.uniq;
+      S.playerHp = sv.hp; S.snGrowth = sv.growth;
+    }
+  });
+
   // ---- ticket-0158: re-task a peon without stopping it (Mr Cookie) --------------------------------
   // The request: "make Peons switch the tier of task they are doing instead of fully cancelling". Stop
   // DELETES the task, and the candle and the Provision Barrel live on that task object, so changing tier
