@@ -4389,21 +4389,27 @@
     ok(FF.GATHERING_SKILLS.mycology, 'mycology is a gathering skill');
     ok(FF.CRAFTING_SKILLS.apothecary, 'apothecary is a crafting skill');
     eq(FF.GATHERING_SKILLS.mycology.items.length, FF.TIER_COUNT, 'mycology has 21 mushroom tiers');
-    eq(FF.CRAFTING_SKILLS.apothecary.recipes.length, FF.TIER_COUNT, 'apothecary has 21 coating tiers');
+    eq(FF.CRAFTING_SKILLS.apothecary.recipes.length, FF.TIER_COUNT, 'apothecary has 21 draught tiers');
     eq(FF.ALL_GATHER_ITEMS['mycology_t0'].name, 'Button Mushroom', 'mycology forages mushrooms');
-    // Apothecary distils toxic mushroom + herb (and, unlike Alchemy, needs no glass bottle).
-    var coat5 = FF.ALL_CRAFT_RECIPES['coating_t5'];
-    ok(coat5.inputs['mycology_t5'] && coat5.inputs['herbalism_t5'], 'coating uses toxic mushroom + herb');
-    ok(!coat5.inputs['metallurgy_glass'], 'coatings need no glass bottle (distinct from Alchemy)');
-    // Coating is a 6th combat-consumable line that poisons over time.
-    ok(FF.POTION_TYPE_IDS.indexOf('coating') !== -1, 'coating is a combat consumable line');
-    eq(coat5.potionType, 'coating', 'coating recipe carries potionType');
+    // Apothecary distils toxic mushroom + herb (and, unlike Alchemy, needs no glass bottle). The line is
+    // DRAUGHTS now, not Weapon Coatings: coatings wrote the same poison field as Alchemy's Toxin, so the two
+    // skills were one system with a duplicate. Apothecary took the defensive slot instead.
+    var dr5 = FF.ALL_CRAFT_RECIPES['draught_t5'];
+    ok(dr5.inputs['mycology_t5'] && dr5.inputs['herbalism_t5'], 'draught uses toxic mushroom + herb');
+    ok(!dr5.inputs['metallurgy_glass'], 'draughts need no glass bottle (distinct from Alchemy)');
+    ok(FF.POTION_TYPE_IDS.indexOf('draught') !== -1, 'draught is a combat consumable line');
+    eq(dr5.potionType, 'draught', 'draught recipe carries potionType');
+    // COATINGS ARE RETIRED, NOT CONFISCATED. No recipe makes one, but every held stack must keep working:
+    // still parseable, still readied, still named, still on the server's item allowlist.
+    ok(!FF.ALL_CRAFT_RECIPES['coating_t5'], 'no recipe crafts a coating any more');
+    ok(FF.POTION_TYPE_IDS.indexOf('coating') !== -1, 'a held coating still readies as a consumable');
     var c0 = FF.potionEffect('coating_t0'), c20 = FF.potionEffect('coating_t20');
-    ok(c0 && c0.type==='coating' && c20 && c20.type==='coating', 'coating potionEffect resolves');
-    ok(c20.pct > c0.pct, 'coating poison scales with tier');
-    // Distinct from Alchemy Toxin: a longer poison window.
-    ok(c20.durationMs > 3000, 'coating poisons longer than a Toxin (>3s burst)');
-    ok(/Poison .* combat score\/s/.test(FF.potionEffectDesc('coating_t10')), 'coating describes its poison DoT');
+    ok(c0 && c0.type==='coating' && c20 && c20.type==='coating', 'coating potionEffect still resolves');
+    ok(c20.pct > c0.pct, 'coating poison still scales with tier');
+    ok(c20.durationMs > 3000, 'coating still poisons longer than a Toxin burst');
+    ok(!!(FF.ALL_SELLABLE['coating_t5'] && FF.ALL_SELLABLE['coating_t5'].name), 'a held coating keeps its name and vendor price');
+    ok(FF.buildItemCatalog()['coating_t5'] === 1, 'and stays tradeable on the server item allowlist');
+    ok(/Poison .* of your recent hit\/s/.test(FF.potionEffectDesc('coating_t10')), 'coating describes its poison DoT');
     ok(FF.GATHER_PHYSIQUE.mycology && FF.CRAFT_PHYSIQUE.apothecary, 'physique tables include the new skills');
   });
 
@@ -18571,7 +18577,9 @@
       S.inventory = { toxin_t0: 145 }; S.activePotion = null;
       var strip = FF.renderCombatConsumables();
       ok(/arena-chip-grid/.test(strip), 'chips sit on the grid');
-      ok(/data-tip="Poison 0.3% combat score\/s for 3s"/.test(strip), 'the effect text rides the tooltip, with the sub-1% rate no longer rounding to a lying 0%');
+      // "combat score" retired from the copy: the maths has read dotBase (your recent average landed hit)
+      // since v0.0.68.0, so the label named a unit the game no longer used. The sub-1% guard still holds.
+      ok(/data-tip="Poison 0.3% of your recent hit\/s, applied every 3s"/.test(strip), 'the effect text rides the tooltip, with the sub-1% rate no longer rounding to a lying 0%');
       ok(/<span class="qty">x145<\/span>/.test(strip), 'the count is the only inline metadata');
       ok(strip.indexOf('combat score/s &bull;') === -1, 'the inline description is gone');
       eq(FF.potionPctLabel(0.003), '0.3%', 'sub-1% keeps a decimal');
@@ -19902,6 +19910,115 @@
     var p80 = fwPass.filter(function(p){ return p.level===80; })[0];
     ok(/full meter/i.test(p60.desc), 'the Lv60 text says Deep Freeze raises the threshold');
     ok(/whole/i.test(p80.desc) && /full/i.test(p80.desc), 'the Lv80 text describes the whole meter at full');
+  });
+
+  // ---- Alchemy's clocked venom + Apothecary's draughts (owner direction) ---------------------------
+  // The two skills were one system with a duplicate: Alchemy's Toxin and Apothecary's Coating both wrote
+  // act.potionPoisonDps through the same guarded MAX, differing only in duration. Alchemy now owns offensive
+  // poison and runs it on its OWN CLOCK, and Apothecary owns the defensive slot no crafting skill occupied.
+  //
+  // Why the clock matters, and it is not a flavour change: every other potion fires from
+  // firePotionOnAttack, so ten charges lasted 20 seconds on a 2s wand and 90 seconds on a 9s sledge for the
+  // identical crafted flask. A self-driven cadence is the Herald-Brace / Samurai-stance pattern and makes a
+  // flask worth the same to every class.
+  //
+  // The venom ticks for a share of dotBase, the recent average LANDED hit. The literal reading of "a percent
+  // of weapon damage" is the raw weapon stat, which is tens of thousands at best-in-slot against hits of
+  // ~1e11 -- the mistake that left Firebomb at 210 damage and the Reaver's Bleed at 120 a second.
+  suite('alchemy venom clock + apothecary draughts', function(){
+    var S = FF._state;
+    var svAct = S.activity, svPot = S.activePotion, svCh = S.potionCharges, svInv = S.inventory;
+    try {
+      // A fight with a KNOWN recent-hit average, so the venom's dps is arithmetic rather than a guess.
+      function fight(){
+        S.activity = { type:'combat', monsterHp:1e12, monsterId:'rabbit', duelStartedAt:Date.now(), dotHitAvg:1e6 };
+        return S.activity;
+      }
+      function ready(id, charges){
+        S.inventory = {};
+        S.activePotion = id;
+        S.potionCharges = (charges == null) ? FF.POTION_MAX_CHARGES : charges;
+      }
+
+      // ---- the clock ----------------------------------------------------------------------------
+      var act = fight(); ready('toxin_t20');
+      var e20 = FF.potionEffect('toxin_t20');
+      FF.toxinClockTick(FF.POTION_TOXIN_CLOCK_MS - 1);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES, 'just under the cadence: nothing spent yet');
+      eq(act.potionPoisonDps || 0, 0, 'and no venom applied yet');
+      FF.toxinClockTick(1);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 1, 'reaching the cadence spends exactly one charge');
+      near(act.potionPoisonDps, 1e6 * e20.pct, 'the venom ticks for its share of the recent average hit');
+      eq(act.potionPoisonName, 'Venom', 'and the log names it Venom, not Plague');
+      ok((act.potionPoisonUntil || 0) > Date.now() + FF.POTION_TOXIN_CLOCK_MS, 'the poison outlasts the cadence, so a clocked flask leaves no gap');
+
+      // A long frame must not silently drop the applications it earned.
+      act = fight(); ready('toxin_t20');
+      FF.toxinClockTick(FF.POTION_TOXIN_CLOCK_MS * 3);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 3, 'a 3-cadence frame applies three times, not once');
+
+      // THE POINT OF THE CLOCK: attacking does not drive it, so weapon speed cannot change a flask's value.
+      act = fight(); ready('toxin_t20');
+      FF.firePotionOnAttack(act, { hp:100 });
+      FF.firePotionOnAttack(act, { hp:100 });
+      FF.firePotionOnAttack(act, { hp:100 });
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES, 'three attacks spend NO toxin charges (the clock owns them)');
+      eq(act.potionPoisonDps || 0, 0, 'and attacking alone applies no venom');
+
+      // Tier is the magnitude knob, which is what makes it scale into endgame.
+      var t0 = FF.potionEffect('toxin_t0');
+      ok(e20.pct > t0.pct, 'the venom share rises with tier');
+      act = fight(); ready('toxin_t0');
+      FF.toxinClockTick(FF.POTION_TOXIN_CLOCK_MS);
+      near(act.potionPoisonDps, 1e6 * t0.pct, 'a t0 flask ticks for the t0 share of the same hit');
+
+      // Scales off the HIT, not a flat number: double the hit average, double the venom.
+      act = fight(); act.dotHitAvg = 2e6; ready('toxin_t20');
+      FF.toxinClockTick(FF.POTION_TOXIN_CLOCK_MS);
+      near(act.potionPoisonDps, 2e6 * e20.pct, 'twice the recent hit is twice the venom (never a flat number)');
+
+      // Running dry stows the flask rather than applying for free.
+      act = fight(); ready('toxin_t20', 1);
+      FF.toxinClockTick(FF.POTION_TOXIN_CLOCK_MS * 4);
+      eq(S.activePotion, null, 'an empty flask with no refill in the bag unreadies itself');
+
+      // The Plaguebearer channel is untouched: with nothing else applying, the log still says Plague.
+      act = fight();
+      act.potionPoisonDps = 5; act.potionPoisonUntil = Date.now() + 5000;
+      eq(act.potionPoisonName || 'Plague', 'Plague', "an unnamed poison still logs as the Plaguebearer's own");
+
+      // ---- the draught -------------------------------------------------------------------------
+      S.activity = null; S.activePotion = null; S.potionCharges = 0;
+      eq(FF.draughtDamageReduction(), 0, 'no draught readied means no reduction');
+      var d0 = FF.potionEffect('draught_t0'), d20 = FF.potionEffect('draught_t20');
+      ok(d0 && d0.type === 'draught' && d20 && d20.type === 'draught', 'draught potionEffect resolves');
+      ok(d20.dr > d0.dr, 'draught efficacy rises with tier');
+      ok(d20.dr > 0 && d20.dr < 1, 'and stays a FRACTION of incoming damage, so it never goes the way of Firebomb');
+      ready('draught_t20');
+      near(FF.draughtDamageReduction(), d20.dr, 'a readied draught reports its reduction');
+      ok(/Take \d+% less damage/.test(FF.potionEffectDesc('draught_t20')), 'the draught describes itself as mitigation');
+
+      // It must actually reach the ONE incoming chain, not just exist as a helper.
+      var mon = { hp:100, attackTypes:{ blunt:1 }, element:null };
+      S.activePotion = null; S.potionCharges = 0;
+      var bare = FF.incomingDamageMult(S, mon);
+      ready('draught_t20');
+      var withDraught = FF.incomingDamageMult(S, mon);
+      ok(bare > 0, 'the incoming chain returns a live multiplier');
+      near(withDraught / bare, 1 - d20.dr, 'a readied draught multiplies straight into incomingDamageMult');
+
+      // A draught is a passive buff like the Elixir, so an attack spends a charge (unlike the Toxin).
+      S.activity = fight(); ready('draught_t20');
+      FF.firePotionOnAttack(S.activity, mon);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 1, 'a draught spends per attack, as the Elixir does');
+
+      // No copy anywhere still claims the retired "combat score" unit.
+      ['toxin_t10','coating_t10','draught_t10','firebomb_t10','elixir_t10','catalyst_t10'].forEach(function(id){
+        ok(!/combat score/i.test(FF.potionEffectDesc(id)), id + ' does not describe itself in combat score');
+      });
+    } finally {
+      S.activity = svAct; S.activePotion = svPot; S.potionCharges = svCh; S.inventory = svInv;
+    }
   });
 
   // ---- Report ---------------------------------------------------------------------------

@@ -3084,7 +3084,29 @@
   var MYCOLOGY_NAMES = ['Button Mushroom','Chanterelle','Porcini','Morel','Shiitake','Oyster Mushroom','Enoki','Portobello','Truffle Cap','Chicken of the Woods','Fly Agaric','Death Cap','Destroying Angel','Deadly Webcap','Panther Cap','Autumn Skullcap','Ghost Fungus','Bleeding Tooth','Devil\'s Tooth','Witch\'s Cauldron','Fairy Ring'];
   var MYCOLOGY_COLORS = ['#c8a878','#e8b04a','#a86a3a','#7a5a3a','#8a6a4a','#d8c8b0','#e8e0d0','#9a7a5a','#5a4030','#e88a2a','#e83a2a','#d8e0c8','#e8e8e0','#b06a3a','#c8a060','#8a6a3a','#c8e8d8','#e86a5a','#7a4a2a','#5a2a6a','#c89ad8'];
   var MYCOLOGY_ICONS = MYCOLOGY_COLORS.map(function(c){ return svgIcon('spice', c); });
+  // Apothecary's DRAUGHT ladder: the defensive consumable. Same reagents as the coatings it replaces
+  // (Mycology's toxic caps distilled with Herbalism), which is the thematically right home for them -- the
+  // poison IS the cure at the right dose.
+  var DRAUGHT_NAMES = ['Thin Tonic','Bitter Tonic','Nettle Draught','Salve Draught','Antivenom Draught','Viper Antivenom','Marrow Tonic','Blightward Draught','Ironhide Tonic','Wraithward Draught','Basilisk Antivenom','Plagueward Draught','Death Cap Tincture','Doomward Draught','Voidward Tonic','Soulward Draught','Hydra Tincture','Wyvern Antivenom','Dragonhide Tonic','Elder Draught','God-Ward Draught'];
   var COATING_NAMES = ['Weak Venom','Irritant Coating','Nettle Venom','Toxin Salve','Spider Venom','Viper Venom','Necrotic Coating','Blight Venom','Corrosive Coating','Wraith Venom','Basilisk Venom','Plague Coating','Death Cap Extract','Doom Venom','Void Toxin','Soulrot Coating','Hydra Venom','Wyvern Venom','Dragon Venom','Elder Venom','God-Slayer Toxin'];
+
+  // RETIRED ITEMS: still items, no longer craftable. Apothecary's Weapon Coatings became Draughts (owner
+  // direction), and deleting the recipes ALSO deleted the coatings from ALL_SELLABLE, which is the master
+  // item registry. That cost them their name, icon and vendor price, and dropped them out of
+  // buildItemCatalog -- the server's item-key ALLOWLIST, which gates the item ledger and the marketplace.
+  // A player's held stacks would have gone unnameable, unsellable and unlistable overnight.
+  //
+  // Retiring a recipe must never confiscate an item somebody already owns, so the DEFS stay registered while
+  // the RECIPES are gone. Anything retired in future belongs here for the same reason. `retired` marks them
+  // so a UI can say so; nothing else keys off it.
+  var RETIRED_ITEM_DEFS = (function(){
+    var m = {};
+    for(var i = 0; i < TIER_COUNT; i++){
+      m['coating_t' + i] = { id:'coating_t' + i, name: COATING_NAMES[i], sell: tierSell(15, i),
+                             icon: svgIcon('droplet', MYCOLOGY_COLORS[i]), potionType: 'coating', retired: true };
+    }
+    return m;
+  })();
 
   // ---- Papermaking (crafting) -> Bookbinding (crafting): the "knowledge" slice ----------------
   // Papermaking pulps Forestry logs into Paper; Bookbinding binds Paper + Cured Leather (from
@@ -3967,22 +3989,28 @@
         return list;
       })() },
     apothecary: { label:'Apothecary', icon:svgIcon('droplet','#6a8a3a'),
-      // Weapon Coatings: toxic Mushrooms distilled with Herbs into a venom you ready like a potion.
-      // Every hit poisons the enemy -- a longer-lasting, premium sibling to Alchemy's burst Toxins,
-      // and (unlike Alchemy) it needs no Glass Bottle. Gives Mycology's toxic caps a real consumer.
+      // DRAUGHTS: toxic Mushrooms distilled with Herbs into a medicine you ready like a potion. A readied
+      // draught blunts every incoming hit by a share that rises with tier.
+      //
+      // This line REPLACED the Weapon Coatings (owner direction). Coatings were a longer, slightly stronger
+      // Alchemy Toxin writing the very same potionPoisonDps field, so the two skills were one system with a
+      // duplicate. Alchemy now owns offensive poison outright and Apothecary owns the defensive slot, which
+      // no crafting skill occupied at all. The coating ITEMS are untouched: coating_t* still parses, still
+      // readies, and still poisons, so held stacks and live market listings keep working. They simply cannot
+      // be crafted any more.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
           list.push({
-            id:'coating_t'+i,
-            name: COATING_NAMES[i],
+            id:'draught_t'+i,
+            name: DRAUGHT_NAMES[i],
             levelReq: TIER_LEVELS[i],
             xp: tierXp(14,i),
             time: tierTime(7,0.3,i),
             sell: tierSell(15,i),
             icon: svgIcon('droplet',MYCOLOGY_COLORS[i]),
             inputs: tierInput2('mycology',2,'herbalism',1)(i),
-            potionType: 'coating'
+            potionType: 'draught'
           });
         }
         return list;
@@ -6647,6 +6675,9 @@
   // untradeable (they're minted as uniques with per-item enchants/enhances, not stackable keys).
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS,
     BLUEPRINT_ITEMS, LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS);
+  // Retired-but-held keys join the registry so they keep a name, an icon, a vendor price and a place on the
+  // server's item allowlist. See RETIRED_ITEM_DEFS.
+  Object.assign(ALL_SELLABLE, RETIRED_ITEM_DEFS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
   var CRAFT_SKILL_IDS = Object.keys(CRAFTING_SKILLS);
@@ -17994,15 +18025,30 @@
     enchant:  { label:'Weapon Enchant', shape:'starburst', color:'#a06ad8' },
     coating:  { label:'Weapon Coating', shape:'droplet', color:'#6a8a3a' },
     bomb:     { label:'Bomb',          shape:'flame',   color:'#c8853a' },
-    flash:    { label:'Flash Bomb',    shape:'sun',     color:'#e8a02a' }
+    flash:    { label:'Flash Bomb',    shape:'sun',     color:'#e8a02a' },
+    draught:  { label:'Draught',       shape:'droplet', color:'#5a9a7a' }
   };
-  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','coating','bomb','flash']; // 'enchant' retired -> Enchant Crystals are now the Improvement-tab enchant input, not a combat consumable
+  // 'coating' STAYS here even though Apothecary no longer crafts it: coating_t* stacks exist in inventories
+  // and in market listings, so they must keep parsing and keep working. Retiring the recipe does not entitle
+  // us to break property somebody already owns.
+  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','coating','bomb','flash','draught']; // 'enchant' retired -> Enchant Crystals are now the Improvement-tab enchant input, not a combat consumable
   var POTION_MAX_CHARGES = 10;
   var POTION_POISON_DURATION_MS = 3000;
+  // THE TOXIN RUNS ON ITS OWN CLOCK, not on your attacks (owner direction). Every other potion fires from
+  // firePotionOnAttack, which made the whole line weapon-speed dependent in a way nobody chose: ten charges
+  // last 20 seconds on a 2s wand and 90 seconds on a 9s sledge, for the same crafted flask. A self-driven
+  // cadence is the same fix the Herald's Brace, the Duelist's Sidestep and the Samurai's stance clock use,
+  // and it makes a flask worth the same to every class.
+  //
+  // The venom ticks for a share of YOUR RECENT LANDED HIT (dotBase), and tier moves that share. The literal
+  // reading of "a percent of weapon damage" would have been the raw weapon stat, which is tens of thousands
+  // at best-in-slot against hits of ~1e11 -- the mistake that left Firebomb at 210 damage and the Reaver's
+  // Bleed at 120 a second. Same channel and same reason as the Ranger's Feral Bond.
+  var POTION_TOXIN_CLOCK_MS = 3000;   // one application every 3s while a Toxin is readied
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
   // 'enchant' is NOT here: Enchant Crystals (enchant_t<n>) are the Improvement-tab enchant INPUT now, not a
   // combat consumable -- so they must never parse as a potion (that's what showed the stale "In combat" card).
-  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|coating|bomb|flash)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
+  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|coating|bomb|flash|draught)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
     if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.003, 0.03, p.tier) };    // share of the recent average hit / sec for 3s
@@ -18012,11 +18058,18 @@
     if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.004, 0.045, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
     if(p.type==='bomb')     return { type:'bomb',     tier:p.tier, dmg: Math.round(potionLerp(10, 350, p.tier)) };        // heavy raw burst per hit (bigger than a Firebomb)
     if(p.type==='flash')    return { type:'flash',    tier:p.tier, stun: potionLerp(0.08, 0.20, p.tier) };                // chance per hit to stun the enemy
+    // Apothecary's Draught: the DEFENSIVE consumable, the one slot no crafting skill occupied. A fraction of
+    // incoming damage, so it keeps its worth at any tier of foe -- unlike a flat mitigation number, which
+    // would go the way of Firebomb. Efficacy rises with tier, which is the whole progression curve here.
+    if(p.type==='draught')  return { type:'draught',  tier:p.tier, dr: potionLerp(0.02, 0.25, p.tier) };
     return null;
   }
   function activePotionEffect(){ return (state.activePotion && (state.potionCharges||0) > 0) ? potionEffect(state.activePotion) : null; }
   function elixirCritBonus(){ var e = activePotionEffect(); return (e && e.type==='elixir') ? e.crit : 0; }
   function catalystFamiliarBonus(){ var e = activePotionEffect(); return (e && e.type==='catalyst') ? e.fam : 0; }
+  // Draughts are a passive buff while charges remain, like the Elixir and the Catalyst, and they spend a
+  // charge per attack through the same tail in firePotionOnAttack.
+  function draughtDamageReduction(){ var e = activePotionEffect(); return (e && e.type==='draught') ? e.dr : 0; }
   // Sub-1% shares keep one decimal instead of rounding to a lying "0%": a t0 Weak Venom is 0.3%/s,
   // and Math.round showed it as "Poison 0% combat score/s" (owner batch v0.0.86.24, pick 8).
   function potionPctLabel(p){
@@ -18025,11 +18078,15 @@
   }
   function potionEffectDesc(id){
     var e = potionEffect(id); if(!e) return '';
-    if(e.type==='toxin')    return 'Poison '+potionPctLabel(e.pct)+' combat score/s for 3s';
+    // "combat score" was left over from before v0.0.68.0, when every DoT ticked for a share of a sum of
+    // proficiency levels. The maths has read dotBase -- your recent average landed hit -- ever since, so the
+    // label described a unit the game had stopped using.
+    if(e.type==='toxin')    return 'Poison '+potionPctLabel(e.pct)+' of your recent hit/s, applied every '+Math.round(POTION_TOXIN_CLOCK_MS/1000)+'s';
     if(e.type==='firebomb') return '~'+e.dmg+' fire damage per hit';
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
-    if(e.type==='coating')  return 'Poison '+potionPctLabel(e.pct)+' combat score/s for '+Math.round(e.durationMs/1000)+'s';
+    if(e.type==='coating')  return 'Poison '+potionPctLabel(e.pct)+' of your recent hit/s for '+Math.round(e.durationMs/1000)+'s';
+    if(e.type==='draught')  return 'Take '+Math.round(e.dr*100)+'% less damage';
     if(e.type==='bomb')     return '~'+e.dmg+' burst damage per hit';
     if(e.type==='flash')    return Math.round(e.stun*100)+'% chance to stun per hit';
     return '';
@@ -18039,17 +18096,14 @@
   // (read via elixirCritBonus / catalystFamiliarBonus while charges remain) so only spend here.
   function firePotionOnAttack(act, monster){
     var e = activePotionEffect(); if(!e) return;
+    // The TOXIN is not here any more: it runs on toxinClockTick, its own cadence, and spends its charges
+    // there. Returning early also keeps it out of the per-attack charge spend at the bottom of this
+    // function, which would otherwise drain a clocked flask twice.
+    if(e.type==='toxin') return;
     if(e.type==='firebomb'){
       var fb = Math.round(randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)) * (1 + getFamBuff('firebomb'))); // wide range, + familiar firebomb buff
       act.monsterHp -= fb;
       spawnCombatFloat(svgIcon('flame','#e8641e')+' '+fb, 'ft-rare', true);
-    } else if(e.type==='toxin'){
-      legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
-      // Guarded like every other poison writer: a weak Toxin must not OVERWRITE a stronger poison already
-      // on the foe (it used to, which is how a Toxin could stomp a Plaguebearer's own affliction).
-      var _txDps = dotBase(state) * e.pct * (1 + getFamBuff('potionPoison'));
-      if(_txDps > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = _txDps;
-      act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS;
     } else if(e.type==='coating'){
       // Weapon Coating: same poison DoT channel as Toxin, but a longer-lasting venom (its own duration).
       // Plaguebearer Lv1 (Venomous) makes the coating hit +50% harder and last +50% longer.
@@ -18057,7 +18111,7 @@
       // (Venomous retired: the class no longer routes its identity through a crafted coating.)
       legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
       var _coDps = dotBase(state) * _cpct * (1 + getFamBuff('potionPoison'));
-      if(_coDps > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = _coDps;
+      if(_coDps > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()){ act.potionPoisonDps = _coDps; act.potionPoisonName = 'Venom'; }
       act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
       // Tinkering Bomb: a heavy raw burst on each hit.
@@ -18068,10 +18122,49 @@
       // Pyrotechnics Flash Bomb: a chance to stun the enemy, freezing its action bar for 1.5s.
       if(!offlineCapture && Math.random() < e.stun * demolitionistMult()){ act.enemyStunUntil = Date.now() + 1500; spawnCombatFloat('Flashed!', 'ft-rare', true); } // Demolitionist: better stun odds
     }
+    // A locked stack is protected on reload, so it stows instead of being drawn down automatically.
+    potionSpendCharge();
+  }
+  // THE TOXIN CLOCK. Applies the venom on a fixed cadence while a Toxin is readied, spending one charge per
+  // application and auto-reloading from the bag exactly as firePotionOnAttack does. Driven from the same two
+  // callers as applyPotionPoisonTick, so it accrues real elapsed time whether the sub-loop or the main loop
+  // is running. A while-loop rather than a single check, so a long frame (or an offline chunk) applies every
+  // application it earned instead of silently dropping the extras.
+  function toxinClockTick(dtMs){
+    var act = state.activity;
+    if(!act || act.type !== 'combat' || !(dtMs > 0)) return;
+    var e = activePotionEffect();
+    if(!e || e.type !== 'toxin'){ act.toxinClockAccum = 0; return; }
+    act.toxinClockAccum = (act.toxinClockAccum || 0) + dtMs;
+    var guard = 0;
+    while(act.toxinClockAccum >= POTION_TOXIN_CLOCK_MS && guard++ < 64){
+      act.toxinClockAccum -= POTION_TOXIN_CLOCK_MS;
+      if(!activePotionEffect()) break;   // ran dry mid-catch-up
+      toxinApply(act);
+      potionSpendCharge();
+    }
+  }
+  // One application of the venom. Guarded like every other poison writer: a weak Toxin must not OVERWRITE a
+  // stronger poison already on the foe (it used to, which is how a Toxin could stomp a Plaguebearer's own
+  // affliction). The NAME rides along so the combat log says what actually poisoned the foe -- every poison
+  // used to log as 'Plague' regardless of source, so a player with no Plaguebearer gear read Plague ticks.
+  function toxinApply(act){
+    var e = activePotionEffect(); if(!e || e.type !== 'toxin') return 0;
+    legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
+    var dps = dotBase(state) * e.pct * (1 + getFamBuff('potionPoison'));
+    if(dps > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()){
+      act.potionPoisonDps = dps;
+      act.potionPoisonName = 'Venom';
+    }
+    // The poison outlasts the clock slightly so a clocked flask never leaves a gap between applications.
+    act.potionPoisonUntil = Date.now() + Math.max(POTION_POISON_DURATION_MS, POTION_TOXIN_CLOCK_MS + 250);
+    return dps;
+  }
+  // Charge spend + auto-reload, shared by the attack hook and the Toxin clock so the reload rules (locked
+  // stacks stow instead of being drawn down) cannot drift apart between the two.
+  function potionSpendCharge(){
     state.potionCharges = (state.potionCharges||0) - 1;
     if(state.potionCharges <= 0){
-      // Auto-reload the next unit from the bag -- but a locked stack is protected, so it stows instead of
-      // being drawn down automatically. Unlock it to keep the auto-reload going.
       if((state.inventory[state.activePotion]||0) > 0 && !state.lockedItems[state.activePotion]){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES + apothecaryExtraCharges(); }
       else { state.activePotion = null; state.potionCharges = 0; }
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
@@ -18092,7 +18185,7 @@
     // Toxic Flames (Plaguebearer D4 2pc): your poison also deals Fire — an added component scaled by Fire Attunement.
     var _toxFire = set2D4('plaguebearer', state) ? dmg * 0.25 * elementDmgMult(state, 'fire') : 0;
     dmg += _toxFire;
-    applyEffectDot(dmg, 'Plague');
+    applyEffectDot(dmg, act.potionPoisonName || 'Plague');
     if(_toxFire > 0) awardElementXp('fire', _toxFire);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal a share of the Plague's damage
       var heal = Math.min(Math.round(dmg * PB_HEAL_PCT), healRoom(state));
@@ -18943,6 +19036,7 @@
     act.pyFuel = 0;     // a fresh foe is a cold Blaze (Ember Burst re-seeds it below)
     act.rgQuarry = 0; act.rgQuarryUntil = 0; // a fresh foe has not been run down yet
     act.pbSev = 0; act.pbUntil = 0; act.pbErupt = 0; // a fresh foe is uninfected (Pestilence re-seeds it below)
+    act.toxinClockAccum = 0; act.potionPoisonName = null; // a fresh foe starts unvenomed; the clock re-arms
     act.fwRime = 0; act.fwFrozenUntil = 0; act.fwRimewyrm = 0; // a fresh foe is unfrozen
     if(_rvCarry){ act.rvCuts = _rvCarry.cuts; act.rvBank = _rvCarry.bank; act.rvBleedHitAvg = _rvCarry.hitAvg; }
     if(_arterialCarry > 0){ // Bonereaver: the next foe inherits the slain foe's Bleed
@@ -19574,6 +19668,7 @@
       * templarIncomingDmgMult()
       * knightDamageTakenMult(st)
       * (1 - scrollDamageReduction())
+      * (1 - draughtDamageReduction())     // Apothecary Draught: a readied draught blunts every incoming hit
       * elementResistMult(st, monster && monster.element)
       * (1 - getWardResistanceBonus(st))
       * legWastingCurseIncomingMult(st)
@@ -20515,7 +20610,7 @@
           if(state.activity.type!=='combat') break;
           // Familiar poison + toxin-potion poison chip the enemy; familiar regen heals.
           var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
-          applyPotionPoisonTick(_chunk);
+          toxinClockTick(_chunk); applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
           applySamuraiFocusTick(_chunk);
           applyFrostwardenFrostbiteTick(_chunk);
@@ -40393,7 +40488,7 @@
           applyEffectDot(poisonDps*dt/1000, 'Familiar Poison');
         }
         // Toxin/Coating poison: ticks the enemy for its remaining duration.
-        applyPotionPoisonTick(dt);
+        toxinClockTick(dt); applyPotionPoisonTick(dt);
         applyReaverBleedTick(dt);
         // The Ronin's stance clock: Focus builds every second of the duel as well as on every landed hit,
         // which is what makes the Draw-Cut cycle at a 5-second katana's swing rate.
@@ -41068,7 +41163,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.66';
+  var GAME_VERSION = '0.0.87.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41327,7 +41422,7 @@
       PY_FUEL_CRIT_MULT:PY_FUEL_CRIT_MULT, PY_BURN_RATE:PY_BURN_RATE, PY_BURN_RATE_L40:PY_BURN_RATE_L40, PY_TICK_PCT:PY_TICK_PCT,
       PY_BLAZE_DMG_PCT:PY_BLAZE_DMG_PCT, PY_COMBUST_FRAC:PY_COMBUST_FRAC, PY_COMBUST_PCT:PY_COMBUST_PCT,
       PY_FLASHOVER_PCT:PY_FLASHOVER_PCT, PY_FLASHOVER_FLOOR:PY_FLASHOVER_FLOOR, PY_FUEL_PER_STACK:PY_FUEL_PER_STACK,
-      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, legTombwallIncomingMult:legTombwallIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, executionerReapThreshold:executionerReapThreshold, enemyHpFrac:enemyHpFrac, EX_THRESH_FLOOR:EX_THRESH_FLOOR, EX_THRESH_FLOOR_D4:EX_THRESH_FLOOR_D4, EX_THRESH_CAP:EX_THRESH_CAP, EX_THRESH_PER_SEC:EX_THRESH_PER_SEC, EX_THRESH_PER_HIT:EX_THRESH_PER_HIT, EX_FALL_PCT:EX_FALL_PCT, EX_CULL_CARRY:EX_CULL_CARRY, EX_TALLY_PER:EX_TALLY_PER, EX_TALLY_MAX:EX_TALLY_MAX, EX_CULL_EXEC_FRAC:EX_CULL_EXEC_FRAC, EX_D1_RATE_MULT:EX_D1_RATE_MULT, EX_D1_FIRSTFALL_MULT:EX_D1_FIRSTFALL_MULT, EX_D3_FALL_MULT:EX_D3_FALL_MULT, EX_D3_RETAIN:EX_D3_RETAIN, EX_D4_AMP_MULT:EX_D4_AMP_MULT, LEG_SOULHARVESTER_PER:LEG_SOULHARVESTER_PER, LEG_SOULHARVESTER_MAX:LEG_SOULHARVESTER_MAX, LEG_EMBERWYRM_FALL_MULT:LEG_EMBERWYRM_FALL_MULT, EX_SWING_MULT:EX_SWING_MULT, _setExSwingMult:function(v){ EX_SWING_MULT = v; }, exThreshFloor:exThreshFloor, exThreshCap:exThreshCap, exClimbRateMult:exClimbRateMult, exThreshSeed:exThreshSeed, exFallFire:exFallFire, exFallCheck:exFallCheck, exFallOnHit:exFallOnHit, applyExFallTick:applyExFallTick, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LM_RAD_CAP:LM_RAD_CAP, LM_RAD_CAP_D4:LM_RAD_CAP_D4, LM_RAD_PER_HIT:LM_RAD_PER_HIT, LM_RAD_PER_SEC:LM_RAD_PER_SEC, LM_SPILL_PCT:LM_SPILL_PCT, LM_BRIM_MS:LM_BRIM_MS, LM_BRIM_MS_D3:LM_BRIM_MS_D3, LM_BRIM_PCT:LM_BRIM_PCT, LM_SUN_MULT:LM_SUN_MULT, LM_SUN_AT_FRAC_D4:LM_SUN_AT_FRAC_D4, LM_D1_RATE_MULT:LM_D1_RATE_MULT, LM_D2_SPILL_MULT:LM_D2_SPILL_MULT, LM_D2_WASH_PCT:LM_D2_WASH_PCT, LM_D3_BRIM_STRIKES:LM_D3_BRIM_STRIKES, LEG_GLOOMPIERCER_BRIM:LEG_GLOOMPIERCER_BRIM, LEG_DAWNBRAND_HIT_MULT:LEG_DAWNBRAND_HIT_MULT, LEG_GRAVELIGHT_SPILL:LEG_GRAVELIGHT_SPILL, LEG_DAWNWYRM_SWING:LEG_DAWNWYRM_SWING, LEG_GLIMMERWARD_MEND:LEG_GLIMMERWARD_MEND, LEG_LUMENVEIL_CAP:LEG_LUMENVEIL_CAP, LEG_GLEAMVEIL_BRIM:LEG_GLEAMVEIL_BRIM, LEG_DAWNSCALE_SUN:LEG_DAWNSCALE_SUN, LM_SWING_MULT:LM_SWING_MULT, _setLmSwingMult:function(v){ LM_SWING_MULT = v; }, lmRadCap:lmRadCap, lmRadiance:lmRadiance, lmRateMult:lmRateMult, lmRadianceAdd:lmRadianceAdd, lmOnHit:lmOnHit, lmSunAt:lmSunAt, lmSunBurning:lmSunBurning, lmPourMult:lmPourMult, lmSpillDps:lmSpillDps, lmBrimFire:lmBrimFire, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, legTombwallIncomingMult:legTombwallIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, executionerReapThreshold:executionerReapThreshold, enemyHpFrac:enemyHpFrac, EX_THRESH_FLOOR:EX_THRESH_FLOOR, EX_THRESH_FLOOR_D4:EX_THRESH_FLOOR_D4, EX_THRESH_CAP:EX_THRESH_CAP, EX_THRESH_PER_SEC:EX_THRESH_PER_SEC, EX_THRESH_PER_HIT:EX_THRESH_PER_HIT, EX_FALL_PCT:EX_FALL_PCT, EX_CULL_CARRY:EX_CULL_CARRY, EX_TALLY_PER:EX_TALLY_PER, EX_TALLY_MAX:EX_TALLY_MAX, EX_CULL_EXEC_FRAC:EX_CULL_EXEC_FRAC, EX_D1_RATE_MULT:EX_D1_RATE_MULT, EX_D1_FIRSTFALL_MULT:EX_D1_FIRSTFALL_MULT, EX_D3_FALL_MULT:EX_D3_FALL_MULT, EX_D3_RETAIN:EX_D3_RETAIN, EX_D4_AMP_MULT:EX_D4_AMP_MULT, LEG_SOULHARVESTER_PER:LEG_SOULHARVESTER_PER, LEG_SOULHARVESTER_MAX:LEG_SOULHARVESTER_MAX, LEG_EMBERWYRM_FALL_MULT:LEG_EMBERWYRM_FALL_MULT, EX_SWING_MULT:EX_SWING_MULT, _setExSwingMult:function(v){ EX_SWING_MULT = v; }, exThreshFloor:exThreshFloor, exThreshCap:exThreshCap, exClimbRateMult:exClimbRateMult, exThreshSeed:exThreshSeed, exFallFire:exFallFire, exFallCheck:exFallCheck, exFallOnHit:exFallOnHit, applyExFallTick:applyExFallTick, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LM_RAD_CAP:LM_RAD_CAP, LM_RAD_CAP_D4:LM_RAD_CAP_D4, LM_RAD_PER_HIT:LM_RAD_PER_HIT, LM_RAD_PER_SEC:LM_RAD_PER_SEC, LM_SPILL_PCT:LM_SPILL_PCT, LM_BRIM_MS:LM_BRIM_MS, LM_BRIM_MS_D3:LM_BRIM_MS_D3, LM_BRIM_PCT:LM_BRIM_PCT, LM_SUN_MULT:LM_SUN_MULT, LM_SUN_AT_FRAC_D4:LM_SUN_AT_FRAC_D4, LM_D1_RATE_MULT:LM_D1_RATE_MULT, LM_D2_SPILL_MULT:LM_D2_SPILL_MULT, LM_D2_WASH_PCT:LM_D2_WASH_PCT, LM_D3_BRIM_STRIKES:LM_D3_BRIM_STRIKES, LEG_GLOOMPIERCER_BRIM:LEG_GLOOMPIERCER_BRIM, LEG_DAWNBRAND_HIT_MULT:LEG_DAWNBRAND_HIT_MULT, LEG_GRAVELIGHT_SPILL:LEG_GRAVELIGHT_SPILL, LEG_DAWNWYRM_SWING:LEG_DAWNWYRM_SWING, LEG_GLIMMERWARD_MEND:LEG_GLIMMERWARD_MEND, LEG_LUMENVEIL_CAP:LEG_LUMENVEIL_CAP, LEG_GLEAMVEIL_BRIM:LEG_GLEAMVEIL_BRIM, LEG_DAWNSCALE_SUN:LEG_DAWNSCALE_SUN, LM_SWING_MULT:LM_SWING_MULT, _setLmSwingMult:function(v){ LM_SWING_MULT = v; }, lmRadCap:lmRadCap, lmRadiance:lmRadiance, lmRateMult:lmRateMult, lmRadianceAdd:lmRadianceAdd, lmOnHit:lmOnHit, lmSunAt:lmSunAt, lmSunBurning:lmSunBurning, lmPourMult:lmPourMult, lmSpillDps:lmSpillDps, lmBrimFire:lmBrimFire, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, toxinClockTick:toxinClockTick, toxinApply:toxinApply, potionSpendCharge:potionSpendCharge, draughtDamageReduction:draughtDamageReduction, POTION_TOXIN_CLOCK_MS:POTION_TOXIN_CLOCK_MS, POTION_MAX_CHARGES:POTION_MAX_CHARGES, RETIRED_ITEM_DEFS:RETIRED_ITEM_DEFS, parsePotionId:parsePotionId, firePotionOnAttack:firePotionOnAttack, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
