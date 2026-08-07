@@ -6943,8 +6943,8 @@
         { level:1,  name:'Permafrost',     desc:'Every hit builds <b>Rime</b> on the foe. Rime slows its action bar and makes it <b>brittle</b>. It takes more from you as the cold deepens. Your wand’s own swings land for less: the cold does the killing.' },
         { level:20, name:'Time Dilation',  desc:'As the foe slows, <b>you quicken</b>. Up to <b>+30% attack speed</b>, scaling with how deep the rime runs.' },
         { level:40, name:'Frostbite',      desc:'The rime <b>bites</b>: a Water damage-over-time scaling with the rime on the foe, ticking off your <b>recent average hit</b>.' },
-        { level:60, name:'Shatter',        desc:'Striking a deeply-rimed foe <b>shatters</b> half the meter for burst Water damage scaling with the rime spent.' },
-        { level:80, name:'Deep Freeze',    desc:'At a <b>full</b> rime meter the foe <b>freezes solid</b> and cannot act, and the whole meter Shatters at once.' }
+        { level:60, name:'Shatter',        desc:'Striking a deeply-rimed foe <b>shatters</b> half the meter for burst Water damage scaling with the rime spent. Deep Freeze raises the threshold to a full meter.' },
+        { level:80, name:'Deep Freeze',    desc:'Your Shatter now waits for a <b>full</b> rime meter and takes the <b>whole</b> thing at once, and the foe <b>freezes solid</b> and cannot act.' }
       ]
     },
     {
@@ -7418,7 +7418,7 @@
     pyromancer:    { name:'Cinderwyrm Scales',     b2:{ key:'d4_emberheart',    name:'Emberheart',    desc:'+30% Fire damage.' },
                                                    bf:{ key:'d4_everflame',     name:'Everflame',     desc:'Your Fire damage can no longer be resisted by the foe.' } },
     frostwarden:   { name:'Rimewyrm Scales',       b2:{ key:'d4_frostheart',    name:'Frostheart',    desc:'Rime’s brittleness is 50% stronger.' },
-                                                   bf:{ key:'d4_absolutezero',  name:'Absolute Zero', desc:'At a full rime meter the foe takes +25% from all your damage.' } },
+                                                   bf:{ key:'d4_absolutezero',  name:'Absolute Zero', desc:'At a full rime meter, and while the foe is frozen, it takes +25% from all your damage.' } },
     thunderfury:   { name:'Stormwyrm Scales',      b2:{ key:'d4_galvanicheart', name:'Galvanic Heart',desc:'+30% Earth damage.' },
                                                    bf:{ key:'d4_stormwyrmeye',  name:"Stormwyrm's Eye",desc:'Your Storm Bolts strike as Earth, scaling with your Earth Attunement.' } },
     lumen:         { name:'Dawnwyrm Vestments',    b2:{ key:'d4_blindingradiance',name:'Blinding Radiance',desc:'The Radiance cap rises to 130.' },
@@ -9282,9 +9282,29 @@
     var per = FW_BRITTLE_PER_RIME * (set2D4('frostwarden', st) ? FW_BRITTLE_D4_MULT : 1);
     var m = 1 + per * fwRime(st);
     if(legActive('rimewyrm', st) && a) m *= (1 + Math.min(FW_RIMEWYRM_CAP, a.fwRimewyrm || 0));
-    if(setFullD4('frostwarden', st) && fwRime(st) >= FW_RIME_MAX - 1e-9) m *= (1 + FW_ABSOLUTE_ZERO); // Absolute Zero
+    if(setFullD4('frostwarden', st) && fwAtPeak(st)) m *= (1 + FW_ABSOLUTE_ZERO); // Absolute Zero (full meter, or frozen)
     return m; }
-  function fwShatterArmed(st){ st = st || state; return frostwardenBonus(60, st) && fwRime(st) >= FW_SHATTER_AT; }
+  // THE SHATTER THRESHOLD RISES AT LV80, and this is the fix for a capstone that could never fire
+  // (ticket, Mr Cookie: "Does Lvl 60 not prevent a full meter? So Lvl 80 would never activate?" -- yes).
+  // Shatter armed at 60 and was checked after EVERY landed hit, spending half the meter, so the meter
+  // oscillated in a band around 60 and could not reach 100. The largest per-hit build in the game is 16
+  // (8 base x1.5 Deep Chill, +2 Rimefang, +2 Rimeshell), so from 59 the best single hit reaches 75 -- and
+  // Deep Freeze needs 100. Measured over 400 hits at every build rate: peak rime 64-80, ZERO freezes.
+  // There is no level range where the meter fills AND Lv80 is unlocked, so nobody had ever seen it.
+  // Deep Freeze IS the Lv80 Shatter: whole meter instead of half, plus the lock. So the threshold moves to
+  // the full meter and fwRimeAdd's freeze fires there, rather than two perks fighting over one meter.
+  // Rime spent per second is unchanged (everything built is still spent), so this is not a burst-rate buff:
+  // what it adds is the lock, and the at-peak window below.
+  function fwShatterThreshold(st){ st = st || state; return frostwardenBonus(80, st) ? FW_RIME_MAX : FW_SHATTER_AT; }
+  function fwShatterArmed(st){ st = st || state; return frostwardenBonus(60, st) && fwRime(st) >= fwShatterThreshold(st); }
+  // "At a full meter" is a ZERO-WIDTH state once the meter cycles: reaching full triggers the freeze, which
+  // spends the whole meter in the same call, so a per-hit check for `rime >= MAX` can never be true on a
+  // later hit. The FROZEN window is what a full meter actually buys you, so that is what the full-meter
+  // riders read. Below Lv80 nothing freezes and the meter genuinely sits at full, so `rime >= MAX` still
+  // carries them -- both halves are kept for that reason.
+  function fwAtPeak(st){ st = st || state; var a = st.activity;
+    if(fwRime(st) >= FW_RIME_MAX - 1e-9) return true;
+    return !!(a && a.type === 'combat' && (a.fwFrozenUntil || 0) > Date.now()); }
   // Shatter (Lv60): spend part of the meter for a burst. Also the payoff half of the Deep Freeze.
   function fwShatterFire(act, st, all){ st = st || state;
     if(!act || act.type !== 'combat' || (act.monsterHp || 0) <= 0) return 0;
@@ -41048,7 +41068,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.64';
+  var GAME_VERSION = '0.0.86.65';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41339,6 +41359,7 @@
       thGoldFindMult:thGoldFindMult, thMarkStacks:thMarkStacks, thMarkAdd:thMarkAdd, thMarkMult:thMarkMult, thCofferMult:thCofferMult,
       frostwardenBonus:frostwardenBonus, fwRime:fwRime, fwRimeFrac:fwRimeFrac, fwRimePerHit:fwRimePerHit, fwRimeSync:fwRimeSync,
       fwRimeAdd:fwRimeAdd, fwBrittleMult:fwBrittleMult, fwShatterArmed:fwShatterArmed, fwShatterFire:fwShatterFire,
+      fwShatterThreshold:fwShatterThreshold, fwAtPeak:fwAtPeak,
       fwFreezeMs:fwFreezeMs, fwFreezeFire:fwFreezeFire,
       FW_RIME_MAX:FW_RIME_MAX, FW_RIME_PER_HIT:FW_RIME_PER_HIT, FW_RIME_D1_MULT:FW_RIME_D1_MULT, FW_RIME_FLAT_BONUS:FW_RIME_FLAT_BONUS,
       FW_BRITTLE_PER_RIME:FW_BRITTLE_PER_RIME, FW_BRITTLE_D4_MULT:FW_BRITTLE_D4_MULT, FW_ABSOLUTE_ZERO:FW_ABSOLUTE_ZERO,

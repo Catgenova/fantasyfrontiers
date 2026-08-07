@@ -19824,6 +19824,86 @@
     });
   });
 
+  // ---- ticket-0166: the Deep Freeze could never fire, because Shatter drained the meter first --------
+  // Mr Cookie: "Does Lvl 60 not prevent a full meter? So Lvl 80 would never activate?" It did, and it never
+  // did. Shatter armed at 60 rime and was checked after EVERY landed hit, spending half, so the meter
+  // oscillated in a band around 60. Measured before the fix over 400 hits at every build rate in the game:
+  // peak rime 64-80 out of 100, and ZERO Deep Freezes. Deep Freeze needs a FULL meter, and the largest
+  // per-hit build is 16, so from 59 the best single hit reaches 75 -- the gap is unbridgeable by arithmetic,
+  // not by luck, which is why no player had ever seen the capstone.
+  //
+  // These tests are written so they FAIL against the old code: the threshold assertions pin the Lv80 value
+  // to the meter's ceiling, and the meter test drives the real per-hit sequence from the attack tick
+  // (build, then Shatter if armed) and requires the meter to actually arrive at full.
+  suite('ticket-0166: Frostwarden Deep Freeze is reachable', function(){
+    function armor(mat){ return { material:mat, tier:5 }; }
+    function fwState(level){
+      var st = { xp:{}, physique:{}, activity:{ type:'combat', playerSwungOnce:true, monsterHp:1e9, dotHitAvg:1000, fwRime:0 },
+                 playerHp:55, equippedMainhand:'wandWater', equippedOffhand:'shieldMedium',
+                 bodyArmor:{ helmet:armor('chain'), chest:armor('chain'), gauntlets:armor('tailoring'), boots:armor('tailoring') } };
+      st.xp.frostwarden = FF.xpFloorForLevel(level);
+      return st;
+    }
+    eq(FF.activeClassId(fwState(80)), 'frostwarden', 'the fixture activates Frostwarden');
+
+    // The threshold is the fix. Below Lv80 it is the Shatter line; at Lv80 it is the meter's ceiling, so
+    // Deep Freeze is what spends the meter and the two perks no longer compete for it.
+    eq(FF.fwShatterThreshold(fwState(60)), FF.FW_SHATTER_AT, 'Lv60-79: Shatter still arms at the 60 line');
+    eq(FF.fwShatterThreshold(fwState(79)), FF.FW_SHATTER_AT, 'Lv79 is still the 60 line');
+    eq(FF.fwShatterThreshold(fwState(80)), FF.FW_RIME_MAX, 'Lv80: the threshold rises to a FULL meter');
+
+    // Armed-ness follows the threshold: a Lv80 sitting at 60 rime must NOT shatter, or the meter bleeds out
+    // below full again and the capstone stays dead. This is the assertion the old code fails.
+    var at60 = fwState(80); at60.activity.fwRime = FF.FW_SHATTER_AT;
+    ok(!FF.fwShatterArmed(at60), 'Lv80 at 60 rime is NOT armed (this is what used to drain the meter)');
+    var at60low = fwState(60); at60low.activity.fwRime = FF.FW_SHATTER_AT;
+    ok(FF.fwShatterArmed(at60low), 'Lv60 at 60 rime IS armed, unchanged');
+    var atFull = fwState(80); atFull.activity.fwRime = FF.FW_RIME_MAX;
+    ok(FF.fwShatterArmed(atFull), 'Lv80 at a full meter is armed');
+
+    // The ticket itself, end to end: run the attack tick's own sequence and require a full meter plus a
+    // freeze. Uses the smallest build in the game (no D1, no legendaries), i.e. the least favourable case.
+    function driveHits(st, perHit, hits){
+      var act = st.activity, peak = 0, freezes = 0;
+      for(var i = 0; i < hits; i++){
+        var before = act.fwRime || 0;
+        FF.fwRimeAdd(perHit, st);
+        peak = Math.max(peak, Math.min(FF.FW_RIME_MAX, before + perHit));
+        if(before + perHit >= FF.FW_RIME_MAX - 1e-9 && (act.fwFrozenUntil || 0) > 0) freezes++;
+        if(FF.fwShatterArmed(st)) FF.fwShatterFire(act, st, false);
+      }
+      return { peak:peak, freezes:freezes };
+    }
+    var r80 = driveHits(fwState(80), FF.FW_RIME_PER_HIT, 60);
+    near(r80.peak, FF.FW_RIME_MAX, 'Lv80: 60 hits at the base build DO fill the meter');
+    ok(r80.freezes > 0, 'Lv80: Deep Freeze fires (it never did -- 0 freezes in 400 hits at every build)');
+
+    // And the reason it could not: at Lv60-79 the meter is held down, which is correct for those levels
+    // (they have no capstone to reach) but was applying to Lv80 too.
+    var r60 = driveHits(fwState(60), FF.FW_RIME_PER_HIT, 60);
+    ok(r60.peak < FF.FW_RIME_MAX, 'Lv60-79: the meter is still held below full by its own Shatter');
+    eq(r60.freezes, 0, 'Lv60-79: no Deep Freeze, since the perk is not unlocked');
+
+    // "At a full meter" is ZERO-WIDTH once the meter cycles: reaching full triggers the freeze, which spends
+    // the whole meter in the same call. So the full-meter riders read the FROZEN window instead, or they
+    // would still multiply nothing after the fix.
+    var frozen = fwState(80);
+    frozen.activity.fwRime = 0;
+    frozen.activity.fwFrozenUntil = Date.now() + 3000;
+    ok(FF.fwAtPeak(frozen), 'at-peak holds while the foe is FROZEN, with the meter already spent');
+    var full = fwState(80); full.activity.fwRime = FF.FW_RIME_MAX;
+    ok(FF.fwAtPeak(full), 'at-peak also holds at a literal full meter (how it reads below Lv80)');
+    var neither = fwState(80); neither.activity.fwRime = 10; neither.activity.fwFrozenUntil = 0;
+    ok(!FF.fwAtPeak(neither), 'at-peak is false on a partly-rimed, unfrozen foe');
+
+    // The perk copy must not promise the Lv60 behaviour to a Lv80, since the threshold moved.
+    var fwPass = FF.CLASS_DEFS_BY_ID.frostwarden.passives;
+    var p60 = fwPass.filter(function(p){ return p.level===60; })[0];
+    var p80 = fwPass.filter(function(p){ return p.level===80; })[0];
+    ok(/full meter/i.test(p60.desc), 'the Lv60 text says Deep Freeze raises the threshold');
+    ok(/whole/i.test(p80.desc) && /full/i.test(p80.desc), 'the Lv80 text describes the whole meter at full');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
