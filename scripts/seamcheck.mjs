@@ -262,5 +262,30 @@ console.log("seamcheck: every damage source reaches the combat log.");
   console.log(`seamcheck: ${read.size} estate quest counter(s), all written.`);
 }
 
+// ---- CHECK 7: the peon LOAD clamp must use the CEILING, never the live cap ------------------------------
+// This one exists because the browser suite cannot reach it. state.peons is truncated inside loadGame, which
+// runs BEFORE the estate grid is validated, so a clamp computed from the live per-scope cap reads a
+// half-loaded grid, comes back as the base five, and SILENTLY DELETES the sixth through tenth tasks of any
+// player who built Bunkhouses. There is no assertion that can catch that from inside a running game (the
+// tasks are already gone by the time the seam exists), so it is checked as source structure instead.
+{
+  const clampLines = L
+    .map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => /state\.(peons|guildPeons)\s*=\s*state\.(peons|guildPeons)\.slice\(/.test(line));
+  if (clampLines.length !== 2) {
+    fail(`expected exactly 2 peon load clamps, found ${clampLines.length}.\n`
+       + "       state.peons and state.guildPeons are each truncated once at load. If that changed, re-check\n"
+       + "       that the new shape still cannot delete tasks a Bunkhouse legitimately allows.");
+  }
+  const bad = clampLines.filter(({ line }) => !/PEON_SLOT_CEILING/.test(line));
+  if (bad.length) {
+    fail(`${bad.length} peon load clamp(s) do not use PEON_SLOT_CEILING (line(s) ${bad.map((b) => b.n).join(", ")}).\n`
+       + "       The clamp runs before the estate grid is validated, so a live cap reads as the base 5 and\n"
+       + "       deletes the extra Peon tasks of anyone who built Bunkhouses. Clamp to the ceiling.");
+  } else if (clampLines.length === 2) {
+    console.log("seamcheck: both peon load clamps use the slot ceiling.");
+  }
+}
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

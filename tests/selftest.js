@@ -928,8 +928,8 @@
   // suite walks all eight for the generic kind, so the next building inherits the coverage.
   suite('estate buildings: the generic build job kind is wired everywhere', function(){
     var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
-    ok(defs && keys && keys.length === 8, 'eight buildings ship across batches A, B and C (' + (keys||[]).join(', ') + ')');
-    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+    ok(defs && keys && keys.length === 11, 'eleven buildings ship across batches A to E (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium','bunkhouse','foreman','longhouse'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
 
     // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
     ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
@@ -976,17 +976,31 @@
     // Items, bills and the server allowlist.
     var cat = FF.buildItemCatalog();
     keys.forEach(function(k){
-      var def = defs[k];
-      ok(!!FF.ALL_SELLABLE[def.prefix+'0'] && !!FF.ALL_SELLABLE[def.prefix+'20'], k + ' registers all 21 tiers in ALL_SELLABLE');
-      eq(cat[def.prefix+'20'], 1, k + ' is on the server item allowlist as tradeable');
-      var d = FF.getBuildingTierData(k, 7);
-      eq(d.levelReq, FF.TIER_LEVELS[7], k + ' t7 gates on the Architecture level of its tier');
-      eq(d.inputs[def.prefix+'6'], 1, k + ' t7 consumes the previous tier');
-      ok(Object.keys(d.inputs).length >= 3, k + ' t7 bills stone plus its own materials');
-      eq(FF.getInventoryCategory(def.prefix+'3'), 'estate', k + ' files under the Estate inventory bucket');
+      var def = defs[k], tiers = FF.buildingTiersFor(k);
+      // A def is either a full 21-tier ladder or a SINGLE grand build (Bunkhouse, Foreman's Office,
+      // Longhouse), whose gate is its bill rather than a ladder. Asserting 21 tiers of everything asked
+      // about items that do not exist, which is what this loop originally did.
+      ok(tiers.length === FF.TIER_COUNT || tiers.length === 1, k + ' is either a full ladder or a single build (' + tiers.length + ' tier(s))');
+      tiers.forEach(function(t){ ok(!!FF.ALL_SELLABLE[def.prefix+t], k + ' registers t' + t + ' in ALL_SELLABLE'); });
+      var topT = tiers[tiers.length-1];
+      eq(cat[def.prefix+topT], 1, k + ' is on the server item allowlist as tradeable');
+      eq(FF.getInventoryCategory(def.prefix+topT), 'estate', k + ' files under the Estate inventory bucket');
+      var probeT = tiers.length === 1 ? topT : 7;
+      var d = FF.getBuildingTierData(k, probeT);
+      eq(d.levelReq, FF.TIER_LEVELS[probeT], k + ' gates on the Architecture level of its tier');
+      ok(Object.keys(d.inputs).length >= 3, k + ' bills stone plus its own materials');
+      if(tiers.length > 1) eq(d.inputs[def.prefix+(probeT-1)], 1, k + ' consumes the previous tier');
+      else ok(d.inputs[def.prefix+(probeT-1)] === undefined, k + ' has no previous tier to consume');
     });
     // A t0 building must NOT ask for a previous tier that cannot exist.
     ok(FF.getBuildingTierData('apiary', 0).inputs.apiary_t0 === undefined, 'a t0 building never bills a t-1 of itself');
+    // The single-tier defs exist at exactly the top tier, and NOT below it.
+    ['bunkhouse','foreman','longhouse'].forEach(function(k){
+      var def = defs[k];
+      ok(!FF.ALL_SELLABLE[def.prefix+'0'], k + ' has no t0 item at all');
+      ok(!!FF.ALL_SELLABLE[def.prefix+(FF.TIER_COUNT-1)], k + ' exists only at the top tier');
+      eq(FF.buildingTiersFor(k).length, 1, k + ' offers exactly one tier');
+    });
     // The craft family is registered (this is what makes the Architecture card startable AND stoppable).
     ok(!!FF.CRAFT_FAMILIES.building, 'the building craft family is in the registry');
     eq(FF.getSpecialTierData({ craftKind:'building', buildingKey:'apiary', tierIndex:4 }).name, defs.apiary.nameFor(4), 'the craft resolves its tier data through the registry');
@@ -1534,6 +1548,143 @@
       });
     } finally { s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.inscription = savedXp; s.itemEarnedTotal = savedEarned; FF.recomputeAqueducts(); }
   });
+
+  // ---- BATCH D: the Bunkhouse (slots) and the Foreman's Office (linking) --------------------------
+  suite('estate buildings: the Bunkhouse raises both caps, the Foreman links a crowded Cottage', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory;
+    var TOP = FF.TIER_COUNT - 1;
+    var g = [];
+    for(var x=0; x<12; x++){ g[x] = []; for(var y=0; y<12; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; FF.estUse(false);
+    try {
+      eq(FF.BUNKHOUSE_MAX, 5, 'five Bunkhouses, per the owner decision');
+      eq(FF.PEON_SLOT_CEILING, FF.PEON_MAX_SLOTS + FF.BUNKHOUSE_MAX, 'the ceiling is base plus the Bunkhouse maximum');
+      eq(FF.PEON_SLOT_CEILING, 10, 'which is ten');
+      eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'an estate with no Bunkhouse runs the base five');
+      eq(FF.salvageYardCap(), FF.SALVAGE_MAX_YARDS, 'and the base five Salvage Yards');
+      // Each Bunkhouse adds one to BOTH caps (the owner rule), and the count is clamped.
+      g[1][0].buildingId = 'bunkhouse_t' + TOP;
+      g[1][1].buildingId = 'bunkhouse_t' + TOP;
+      g[1][2].buildingId = 'bunkhouse_t' + TOP;
+      eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS + 3, 'three Bunkhouses give three more Peon slots');
+      eq(FF.salvageYardCap(), FF.SALVAGE_MAX_YARDS + 3, 'and three more Salvage Yards');
+      for(var i=3; i<8; i++) g[1][i].buildingId = 'bunkhouse_t' + TOP;   // eight, past the cap
+      eq(FF.peonSlotCap('personal'), FF.PEON_SLOT_CEILING, 'more than five cannot push the Peon cap past the ceiling');
+      eq(FF.salvageYardCap(), FF.SALVAGE_MAX_YARDS + FF.BUNKHOUSE_MAX, 'nor the Yard cap');
+      // THE CEILING IS THE INVARIANT THAT PROTECTS THE LOAD PATH. The peon arrays are clamped at load
+      // BEFORE the estate grid is validated, so the clamp cannot use the live cap; if the ceiling were ever
+      // lower than a reachable cap, a player's sixth-to-tenth tasks would be deleted on reload.
+      ok(FF.PEON_SLOT_CEILING >= FF.peonSlotCap('personal'), 'the ceiling is never below a reachable cap');
+      ok(FF.buildingCapBlocked('bunkhouse').indexOf('5 Bunkhouses') !== -1, 'a sixth Bunkhouse is refused');
+      // A GUILD Bunkhouse must not widen the personal cap: the caps are read per scope.
+      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
+        var gg = [];
+        for(var gx=0; gx<4; gx++){ gg[gx] = []; for(var gy=0; gy<4; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+        gg[0][0].buildingId = 'bunkhouse_t' + TOP;
+        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
+        for(var c=0; c<12; c++){ for(var d=0; d<12; d++) g[c][d].buildingId = null; }
+        eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'a guild Bunkhouse does not widen the personal estate');
+        eq(FF.peonSlotCap('guild'), FF.PEON_MAX_SLOTS + 1, 'it widens the guild estate');
+      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
+
+      // THE FOREMAN'S OFFICE. Without one, a Cottage beside more than one Workshop is unlinked entirely,
+      // which quietly punishes dense layouts; with one it takes the best neighbour.
+      for(var e=0; e<12; e++){ for(var f=0; f<12; f++){ g[e][f].buildingId = null; g[e][f].workshopId = null; g[e][f].cottageId = null; } }
+      g[5][5].cottageId = 'cottage_t10';
+      g[4][5].workshopId = 'workshop_mining_t5';
+      g[6][5].workshopId = 'workshop_forestry_t12';
+      ok(!FF.estateAdjacentWorkshop(g, 5, 5), 'two adjacent Workshops leave the Cottage unlinked');
+      eq(FF.estatePeonSources(g).length, 0, 'so it is not a Peon source');
+      g[9][9].buildingId = 'foreman_t' + TOP;
+      var link = FF.estateAdjacentWorkshop(g, 5, 5);
+      ok(!!link, 'with a Foreman on the estate it links');
+      eq(link.workshopId, 'workshop_forestry_t12', 'to the HIGHER-tier neighbour');
+      eq(FF.estatePeonSources(g).length, 1, 'and becomes a Peon source');
+      eq(FF.estatePeonSources(g)[0].skillId, 'forestry', 'for that workshop\'s skill');
+      // One adjacent Workshop is unchanged, and zero is still nothing.
+      g[6][5].workshopId = null;
+      eq((FF.estateAdjacentWorkshop(g, 5, 5)||{}).workshopId, 'workshop_mining_t5', 'a single neighbour links as it always did');
+      g[4][5].workshopId = null;
+      ok(!FF.estateAdjacentWorkshop(g, 5, 5), 'and no neighbour links to nothing, Foreman or not');
+      // SCOPE: the Office affects the grid it stands on. A personal Foreman must not link a guild Cottage.
+      var savedGE2 = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
+        var gh = [];
+        for(var hx=0; hx<4; hx++){ gh[hx] = []; for(var hy=0; hy<4; hy++) gh[hx][hy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+        gh[1][1].cottageId = 'cottage_t5';
+        gh[0][1].workshopId = 'workshop_mining_t5';
+        gh[2][1].workshopId = 'workshop_forestry_t5';
+        FF.guildEstate.grid = gh; FF.guildEstate.status = 'ready';
+        ok(!FF.estateAdjacentWorkshop(gh, 1, 1), 'a PERSONAL Foreman does not reach the guild grid');
+        gh[3][3].buildingId = 'foreman_t' + TOP;
+        ok(!!FF.estateAdjacentWorkshop(gh, 1, 1), 'the guild estate needs its own');
+      } finally { FF.guildEstate.grid = savedGE2.grid; FF.guildEstate.status = savedGE2.status; }
+    } finally { s.estate.grid = savedGrid; s.inventory = savedInv; FF.estUse(false); FF.recomputeAqueducts(); }
+  });
+
+  // ---- BATCH E: the Guild Longhouse (the guild estate's first queue) ------------------------------
+  // Guild members have always run strictly one job at a time. The Longhouse opens a queue, stored in the
+  // MEMBER's own save rather than the shared guild blob (which is overwritten wholesale by whoever persists
+  // last, so a queue in there would be two members fighting over one array).
+  suite('estate buildings: the Guild Longhouse opens a guild queue', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedQ = s.guildEstateQueue;
+    var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status, job:FF.guildEstate.job };
+    var TOP = FF.TIER_COUNT - 1;
+    var g = [];
+    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    var gg = [];
+    for(var gx=0; gx<6; gx++){ gg[gx] = []; for(var gy=0; gy<6; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; s.guildEstateQueue = [];
+    try {
+      ok(FF.buildingIsGuildOnly('longhouse'), 'the Longhouse is guild-only');
+      ok(!FF.buildingIsGuildOnly('bunkhouse'), 'the Bunkhouse is not');
+      eq(FF.buildingTiersFor('longhouse').length, 1, 'and it is a single grand build');
+      // It is never OFFERED on a personal tile, so no button exists whose only outcome is a refusal.
+      s.inventory = {}; s.inventory['longhouse_t'+TOP] = 1; s.inventory['bunkhouse_t'+TOP] = 1;
+      FF.estUse(false);
+      var onPersonal = FF.placeableBuildingsFor(g[3][3]).map(function(i){ return i.id; });
+      ok(onPersonal.indexOf('longhouse_t'+TOP) === -1, 'a Longhouse is not offered on a personal tile');
+      ok(onPersonal.indexOf('bunkhouse_t'+TOP) !== -1, 'while a Bunkhouse is');
+      // ...and the placement path refuses it outright even if the button were reached.
+      s.estate.job = null; s.estate.queue = [];
+      FF.estatePlaceBuilding(3, 3, 'longhouse_t'+TOP);
+      ok(!s.estate.job, 'estatePlaceBuilding refuses a Longhouse on a personal estate');
+      eq(s.inventory['longhouse_t'+TOP], 1, 'and spends nothing');
+      // On the guild estate it IS offered.
+      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.job = null;
+      FF.estUse(true);
+      var onGuild = FF.placeableBuildingsFor(gg[3][3]).map(function(i){ return i.id; });
+      ok(onGuild.indexOf('longhouse_t'+TOP) !== -1, 'a Longhouse is offered on a guild tile');
+      // THE QUEUE only exists once one stands.
+      ok(!FF.guildQueueUnlocked(), 'with no Longhouse the guild estate has no queue');
+      gg[0][0].buildingId = 'longhouse_t' + TOP;
+      ok(FF.guildQueueUnlocked(), 'and gains one the moment a Longhouse stands');
+      ok(Array.isArray(FF.guildQueueArr()) && FF.guildQueueArr().length === 0, 'the queue starts empty');
+      // The queue lives in the MEMBER's own save, not the shared guild blob.
+      ok(s.guildEstateQueue === FF.guildQueueArr(), "the queue is the member's own state.guildEstateQueue");
+      ok(!FF.guildEstate.queue, 'and is NOT stored on the shared guild object');
+      // Cancelling a queued entry refunds its materials, exactly as the personal queue does.
+      s.inventory = {};
+      FF.guildQueueArr().push({ kind:'build', x:2, y:2, localMs:600000, payload:{ buildingId:'apiary_t3' }, buildingId:'apiary_t3' });
+      eq(FF.guildQueueArr().length, 1, 'an entry is queued');
+      FF.guildCancelQueued(0);
+      eq(FF.guildQueueArr().length, 0, 'cancelling removes it');
+      eq(s.inventory.apiary_t3 || 0, 1, 'and returns the building it had reserved');
+      // A bad index is a no-op rather than a crash or a mint.
+      s.inventory = {};
+      FF.guildCancelQueued(7);
+      eq(Object.keys(s.inventory).length, 0, 'cancelling a nonexistent entry refunds nothing');
+      // The queue shares the personal validator, so a job whose payload its kind needs is dropped on load.
+      ok(!FF.estateJobShapeOk({ kind:'build' }), 'the shared shape check still rejects a payload-less build');
+      ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'and accepts a real one');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.guildEstateQueue = savedQ;
+      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.job = savedGE.job;
+      FF.estUse(false); FF.recomputeAqueducts();
+    }
+  });
+
 
 
 

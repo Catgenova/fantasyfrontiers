@@ -15182,6 +15182,40 @@
                   } },
       blurb: function(t){ return 'Copies the best Inscription Scroll you hold (up to tier ' + (t+1) + ') roughly every ' + Math.round(ESTATE_BUILDING_DEFS.scriptorium.produces.intervalMs(t)/60000) + ' min. One per estate.'; }
     },
+    bunkhouse: {
+      key:'bunkhouse', prefix:'bunkhouse_t', label:'Bunkhouse', plural:'Bunkhouses', shape:'chestarmor',
+      onlyTier: TIER_COUNT - 1,                        // OWNER RULE: t20 only, at a very high material cost
+      nameFor: function(){ return 'Bunkhouse'; },
+      colorFor: function(){ return '#c8b088'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 2500; inputs['tailoring_t'+t] = 500; },
+      bigStone: 250,                                   // 250 Bricks + 100 Pillars, not the usual 10 + 4
+      gateSkill: 'architecture',
+      maxPerEstate: function(){ return BUNKHOUSE_MAX; },
+      blurb: function(){ return 'Houses another worker: +1 Peon slot and +1 Salvage Yard on this estate. Up to ' + BUNKHOUSE_MAX + '.'; }
+    },
+    foreman: {
+      key:'foreman', prefix:'foreman_t', label:"Foreman's Office", plural:"Foreman's Offices", shape:'crest',
+      onlyTier: TIER_COUNT - 1,
+      nameFor: function(){ return "Foreman's Office"; },
+      colorFor: function(){ return '#8a6a4a'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 1500; inputs['paper_t'+t] = 800; },
+      bigStone: 250,
+      gateSkill: 'architecture',
+      maxPerEstate: function(){ return 1; },
+      blurb: function(){ return 'A Cottage beside SEVERAL Workshops links to the best of them instead of none. One per estate.'; }
+    },
+    longhouse: {
+      key:'longhouse', prefix:'longhouse_t', label:'Guild Longhouse', plural:'Guild Longhouses', shape:'castle',
+      onlyTier: TIER_COUNT - 1,
+      guildOnly: true,                                 // the only building that cannot stand on a personal estate
+      nameFor: function(){ return 'Guild Longhouse'; },
+      colorFor: function(){ return '#7a9a3a'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 3000; inputs['metallurgy_t'+t] = 600; },
+      bigStone: 400,
+      gateSkill: 'architecture',
+      maxPerEstate: function(){ return 1; },
+      blurb: function(){ return 'The guild estate gains a work QUEUE, ' + ESTATE_QUEUE_MAX + ' deep, for every member. One per guild estate.'; }
+    },
     salvageyard: {
       key:'salvageyard', prefix:'salvageyard_t', label:'Salvage Yard', plural:'Salvage Yards', shape:'gear',
       nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Salvage Yard'; },
@@ -15193,6 +15227,17 @@
     }
   };
   var ESTATE_BUILDING_KEYS = Object.keys(ESTATE_BUILDING_DEFS);
+  var BUNKHOUSE_MAX = 5;   // OWNER DECISION: five Bunkhouses, taking Peon slots from 5 to 10
+  // A def may exist at ONE tier only (the three "grand build" buildings: Bunkhouse, Foreman's Office,
+  // Longhouse). Their gate is their material bill rather than a ladder, so there is no t0..t19 to craft,
+  // place or upgrade -- buildingTiersFor is the single list every generator and menu reads.
+  function buildingTiersFor(key){
+    var d = ESTATE_BUILDING_DEFS[key];
+    if(d && typeof d.onlyTier === 'number') return [d.onlyTier];
+    var out = []; for(var t=0; t<TIER_COUNT; t++) out.push(t);
+    return out;
+  }
+  function buildingIsGuildOnly(key){ var d = ESTATE_BUILDING_DEFS[key]; return !!(d && d.guildOnly); }
   // Aqueduct reach: how far along a chain of Aqueducts water still counts, measured from a real water tile.
   // Tier buys DISTANCE, which is the only tier axis on this building -- the bonus it carries is the flat
   // WATER_YIELD_BONUS a natural waterline tile gives, not a scaled one.
@@ -15257,19 +15302,27 @@
     var def = ESTATE_BUILDING_DEFS[key]; if(!def) return null;
     tier = Math.max(0, Math.min(TIER_COUNT-1, tier|0));
     var inputs = def.noStone ? {} : buildingStoneInputs(tier);
+    if(def.bigStone){
+      // A grand build pays REAL stonework rather than the shared 10 bricks + 4 pillars, which is the whole
+      // gate on these three: there is no tier ladder to climb, only a bill to afford.
+      var k = Math.min(6, Math.floor(tier/3));
+      inputs['stonecutting_t'+(k*3)] = def.bigStone;
+      inputs['stonecutting_t'+(k*3+2)] = Math.round(def.bigStone * 0.4);
+    }
     def.extraInputs(inputs, tier);
-    if(tier > 0) inputs[def.prefix+(tier-1)] = 1;   // upgrades consume the previous tier, like every building
+    // A single-tier def never bills a previous tier of itself (there is none to craft).
+    if(tier > 0 && buildingTiersFor(key).length > 1) inputs[def.prefix+(tier-1)] = 1;
     return { tierIndex:tier, buildingKey:key, name:def.nameFor(tier), levelReq:TIER_LEVELS[tier],
              xp:tierXp(35, tier), time:tierTime(18, 0.55, tier), inputs:inputs };
   }
   var ESTATE_BUILDING_ITEMS = {};
   ESTATE_BUILDING_KEYS.forEach(function(k){
     var def = ESTATE_BUILDING_DEFS[k];
-    for(var t=0; t<TIER_COUNT; t++){
+    buildingTiersFor(k).forEach(function(t){
       var id = def.prefix + t;
       ESTATE_BUILDING_ITEMS[id] = { id:id, name:def.nameFor(t), icon:svgIcon(def.shape, def.colorFor(t)),
                                     sell:tierSell(45, t), tierIndex:t, buildingKey:k };
-    }
+    });
   });
   // Into ALL_SELLABLE HERE, before buildItemCatalog reads it. The set-tier armour false positive (v0.0.89.1)
   // was exactly this ordering going wrong: a family generated after the merge is absent from the server
@@ -15763,6 +15816,7 @@
       peons: [],
       guildPeons: [],
       salvageTasks: {},          // Salvage Yard work orders, keyed 'scope:x,y' (v0.0.90.1)
+      guildEstateQueue: [],      // the member's OWN queue for the guild estate (the Longhouse, v0.0.93.0)
       estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
@@ -21303,9 +21357,17 @@
           if(state.accuracyPhysiques) delete state.accuracyPhysiques; // accuracy physiques are now a fixed set, no longer player-chosen
           if(!Array.isArray(state.peons)) state.peons = [];
           if(!Array.isArray(state.guildPeons)) state.guildPeons = [];
-          state.peons = state.peons.slice(0, PEON_MAX_SLOTS);
+          // Clamped to the CEILING, not the live cap -- see PEON_SLOT_CEILING. This runs before the estate
+          // grid is validated, so it cannot know how many Bunkhouses stand, and the live cap would delete
+          // the extra tasks of anyone who had built them.
+          state.peons = state.peons.slice(0, PEON_SLOT_CEILING);
           if(!state.salvageTasks || typeof state.salvageTasks !== 'object' || Array.isArray(state.salvageTasks)) state.salvageTasks = {};
-          state.guildPeons = state.guildPeons.slice(0, PEON_MAX_SLOTS);
+          if(!Array.isArray(state.guildEstateQueue)) state.guildEstateQueue = [];
+          // Same shape rules as the personal queue: anything whose payload its kind needs is missing gets
+          // dropped, and the length is capped. Materials were spent at enqueue, so this is deliberately
+          // the SAME validator rather than a second copy of the list (that split is how 'totem' was lost).
+          state.guildEstateQueue = state.guildEstateQueue.filter(estateJobShapeOk).slice(0, ESTATE_QUEUE_MAX);
+          state.guildPeons = state.guildPeons.slice(0, PEON_SLOT_CEILING);
           try {
             var gridOk = state.estate && state.estate.grid && state.estate.grid.length === ESTATE_GRID_SIZE &&
               state.estate.grid.every(function(col){ return Array.isArray(col) && col.length === ESTATE_GRID_SIZE &&
@@ -22472,9 +22534,14 @@
     html += '<div class="card-grid">';
     ESTATE_BUILDING_KEYS.forEach(function(key){
       var def = ESTATE_BUILDING_DEFS[key];
-      if(selectedBuildingTier[key] === undefined) selectedBuildingTier[key] = maxUnlocked;
-      var sel = Math.min(selectedBuildingTier[key], maxUnlocked);
-      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBuildingTierData(key, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:t}); });
+      var tiersFor = buildingTiersFor(key);
+      // A single-tier def (Bunkhouse, Foreman's Office, Longhouse) offers exactly its own tier: there is no
+      // ladder to step through, and a stepper spanning t0..t20 would show 20 tiers that do not exist.
+      var onlyOne = tiersFor.length === 1;
+      if(selectedBuildingTier[key] === undefined) selectedBuildingTier[key] = onlyOne ? tiersFor[0] : maxUnlocked;
+      var sel = onlyOne ? tiersFor[0] : Math.min(selectedBuildingTier[key], maxUnlocked);
+      if(onlyOne && maxUnlocked < tiersFor[0]) return;   // Architecture too low to see it at all yet
+      if(!onlyOne) sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBuildingTierData(key, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:t}); });
       var data = getBuildingTierData(key, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -22487,7 +22554,9 @@
       html += '<div class="item-top"><div class="item-icon">'+svgIcon(def.shape, def.colorFor(sel))+'</div><div><div class="item-name">'+escapeHtml(def.nameFor(sel))+'</div><div class="item-meta">Owned this tier: '+fmt(owned)+'</div></div></div>';
       html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">'+escapeHtml(def.blurb(sel))+'</div>';
       if(def.gateSkill) html += '<div style="font-size:11px;color:var(--text-faint);margin:0 0 3px;">Placing it needs '+escapeHtml(buildingGateLabel(key, sel))+'.</div>';
-      html += '<div class="inputs-line">Tier: '+tierStepper('building',key,tierRange(maxUnlocked),sel,def.nameFor(sel)+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      if(buildingIsGuildOnly(key)) html += '<div style="font-size:11px;color:var(--gold);margin:0 0 3px;">Raised on the GUILD estate only.</div>';
+      if(!onlyOne) html += '<div class="inputs-line">Tier: '+tierStepper('building',key,tierRange(maxUnlocked),sel,def.nameFor(sel)+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      else html += '<div class="inputs-line" style="color:var(--text-faint);">A single grand build. No tiers, only the bill.</div>';
       html += '<div class="item-stats">'+xpStat('architecture', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-building-'+key)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -30149,6 +30218,22 @@
     // for a guild action would wrongly conflate a personal job with a guild one.
     if(!estateQueueGuard()){
       if(estateJobActive()){
+        // THE LONGHOUSE (v0.0.93.0): on the guild estate a busy member now QUEUES instead of being refused.
+        // Validated against the REAL cell, since the guild path has no projection (see guildQueueArr).
+        if(estIsGuild && guildQueueReady()){
+          if(guildQueueArr().length >= ESTATE_QUEUE_MAX){
+            addLog('Your guild queue is full (' + ESTATE_QUEUE_MAX + ' actions).', 'danger');
+            needsRender = true; return;
+          }
+          var gv = estateQueuedJobValid(jobBase, estActive.grid[x] && estActive.grid[x][y]);
+          if(!gv.ok){ addLog('Can\'t queue that: ' + gv.msg + '.', 'danger'); needsRender = true; return; }
+          estateJobConsume(jobBase);                   // reserved now, refunded on cancel/skip
+          guildQueueArr().push(Object.assign({ kind:kind, x:x, y:y, localMs:localMs, payload:payload || {} }, jobFields));
+          if(spec.closeMenu) spec.closeMenu();
+          addLog(spec.queuedMsg + ' Queued as #' + guildQueueArr().length + ' on the guild estate.', 'important');
+          saveGame();
+          needsRender = true; return;
+        }
         addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger');
         needsRender = true; return;
       }
@@ -30200,6 +30285,96 @@
   // `force` = true right after a completion/cancel (dispatch at once); the throttled path is the tick loop
   // retrying a head that couldn't be claimed last time (RPC lock held by a manual action, transient error).
   // Without the tick retry, a single busy moment would strand the whole queue until the next manual action.
+  // ======== The GUILD queue (the Guild Longhouse, v0.0.93.0) =======================================
+  // Guild members have always run strictly ONE estate job at a time with no queue at all, which is the
+  // largest quality-of-life gap between the two estates. A Longhouse on the guild estate opens a queue.
+  //
+  // A DELIBERATELY PARALLEL PATH, not a refactor of the personal queue. Every one of the ~17 readers of
+  // estateQueue() keeps its exact current meaning (personal), because this is the most bug-prone code in
+  // the file: materials are spent at ENQUEUE, so a mistake here destroys them. The two paths share the
+  // validator, the materials table and the refund, and nothing else.
+  //
+  // THE QUEUE LIVES IN THE MEMBER'S OWN SAVE (state.guildEstateQueue), never in the shared guild blob:
+  // the blob is overwritten wholesale by whichever member persists last, so a queue in there would be two
+  // members fighting over one array. Each member queues their own work against the shared grid.
+  //
+  // NO PROJECTION, unlike the personal queue. A queued guild job validates against the REAL cell at
+  // dispatch, so a pave-then-build chain on ONE tile cannot be queued ahead of time there. That is a stated
+  // limitation rather than an oversight: the guild grid is mutated by other members between dispatches, so a
+  // projection built from my own queue would be a guess about a grid I do not control.
+  function guildQueueArr(){
+    if(!Array.isArray(state.guildEstateQueue)) state.guildEstateQueue = [];
+    return state.guildEstateQueue;
+  }
+  // The Longhouse must stand on the GUILD estate (it is guildOnly, so it cannot be anywhere else), and the
+  // member must be logged in, since a guild job is a server row.
+  function guildQueueUnlocked(){
+    return guildEstate && guildEstate.status === 'ready' && gridHasBuilding(guildEstate.grid, 'longhouse');
+  }
+  function guildQueueReady(){ return guildQueueUnlocked() && !!chatClient && !!authUser && !!authUser.id; }
+  function guildCancelQueued(idx){
+    var q = guildQueueArr();
+    if(idx < 0 || idx >= q.length) return;
+    var entry = q[idx];
+    estateJobRefund(entry);
+    q.splice(idx, 1);
+    addLog('Cancelled a queued guild estate action (materials returned).', '');
+    saveGame();
+    needsRender = true;
+  }
+  // Dispatch the head once my guild job clears. Called after a guild completion and from the tick, and it is
+  // VIEW-INDEPENDENT for the same reason the personal one is: an earlier version of the personal advance
+  // read estIsGuild and the queue silently froze whenever the other estate was open.
+  var _gQueueAdvancing = false, _gQueueAdvanceAt = 0;
+  function guildQueueAdvance(force){
+    if(!guildQueueReady()) return;
+    if(guildEstate.job) return;                       // my guild job is still running -> wait
+    if(!guildQueueArr().length) return;
+    if(_gQueueAdvancing) return;
+    if(!force && (Date.now() - _gQueueAdvanceAt) < 4000) return;
+    _gQueueAdvanceAt = Date.now();
+    // Drop invalid heads first, refunding each. The grid is shared, so "another member built there" is a
+    // completely ordinary outcome rather than an error.
+    while(guildQueueArr().length){
+      var head = guildQueueArr()[0];
+      var cell = guildEstate.grid[head.x] && guildEstate.grid[head.x][head.y];
+      var v = estateQueuedJobValid(head, cell);
+      if(v.ok && estJobOnTile(head.x, head.y)) v = { ok:false, msg:'another member is working on that tile' };
+      if(v.ok) break;
+      estateJobRefund(head);
+      guildQueueArr().shift();
+      addLog('Skipped a queued guild action: ' + v.msg + ' (materials returned).', 'danger');
+      needsRender = true;
+    }
+    if(!guildQueueArr().length){ saveGame(); return; }
+    var next = guildQueueArr()[0];
+    if(!estJobRpcLock(true)) return;
+    _gQueueAdvancing = true;
+    var _gp;
+    try { _gp = chatClient.rpc('guild_estate_job_start', { p_kind:next.kind, p_x:next.x, p_y:next.y, p_payload:next.payload || {} }); }
+    catch(e){ estJobRpcRelease(); _gQueueAdvancing = false; return; }
+    _gp.then(function(res){
+      estJobRpcRelease(); _gQueueAdvancing = false;
+      var d = res && res.data;
+      if(d && d.ok && d.claimed){
+        guildQueueArr().shift();
+        guildEstate.job = guildJobFromServer(d.job);
+        saveGame();
+        needsRender = true;
+        return;
+      }
+      // A HARD refusal will refuse identically forever, so retrying it is the reported frozen-queue bug.
+      // Anything else (busy, transport) is left in place for the throttled retry.
+      var outcome = estateQueueClaimOutcome(d);
+      if(outcome === 'drop'){
+        estateJobRefund(next);
+        guildQueueArr().shift();
+        addLog('Skipped a queued guild action. The server refused it (' + ((d && d.error) || 'unknown') + '). Materials returned.', 'danger');
+        saveGame();
+        needsRender = true;
+      }
+    }).catch(function(){ estJobRpcRelease(); _gQueueAdvancing = false; });
+  }
   var _estQueueAdvancing = false, _estQueueAdvanceAt = 0;
   function estateQueueAdvance(force){
     if(state.estate && state.estate.job) return;      // something already running -> wait
@@ -30690,7 +30865,9 @@
   // number. Both estates provide slots (personal and guild), exactly as Peons do; inputs and outputs are
   // always the operating player's own inventory, so a guild Yard is shared machinery, never shared loot.
   var SALVAGE_MAX_YARDS = 5;                      // per estate, per OWNER RULE
-  function salvageBonusSlots(){ return 0; }       // batch D hook: +1 per Bunkhouse, both caps at once
+  // A Bunkhouse raises the Salvage Yard cap as well as the Peon cap (owner rule). Counted on the ACTIVE
+  // estate, because the Yard cap is a per-estate rule and buildingCapBlocked asks about the estate in view.
+  function salvageBonusSlots(){ return Math.min(BUNKHOUSE_MAX, gridCountBuilding(estActive && estActive.grid, 'bunkhouse')); }
   function salvageYardCap(){ return SALVAGE_MAX_YARDS + salvageBonusSlots(); }
   // 10 minutes per item at t0 down to 1 minute at t20. Tier buys THROUGHPUT on an individual Yard, and the
   // cap buys parallelism, so the two axes do not overlap.
@@ -31286,12 +31463,49 @@
   // The single Workshop cell orthogonally adjacent to (x,y), or null if there are 0 or 2+ (a cottage
   // links to exactly one workshop). Works on any estate grid (personal or guild).
   function estateAdjacentWorkshop(grid, x, y){
-    var dirs = [[1,0],[-1,0],[0,1],[0,-1]], found = null, count = 0;
+    var dirs = [[1,0],[-1,0],[0,1],[0,-1]], found = null, count = 0, best = -1;
     for(var i=0;i<dirs.length;i++){
-      var c = grid[x+dirs[i][0]] && grid[x+dirs[i][0]][y+dirs[i][1]];
-      if(c && c.workshopId){ count++; found = { x:x+dirs[i][0], y:y+dirs[i][1], workshopId:c.workshopId }; }
+      var nx = x+dirs[i][0], ny = y+dirs[i][1];
+      var c = grid[nx] && grid[nx][ny];
+      if(c && c.workshopId){
+        count++;
+        // With a FOREMAN'S OFFICE on this estate the Cottage links to the BEST adjacent Workshop instead of
+        // being unlinked for having too many neighbours (v0.0.93.0). Without one the rule is unchanged:
+        // exactly one, or nothing. Reading the grid it was handed is what scopes the Office to its own
+        // estate -- this helper is called with the personal grid and the guild grid alike.
+        var t = (WORKSHOP_ITEMS[c.workshopId] || {}).tierIndex;
+        if(!(t >= 0)) t = -1;
+        if(count === 1 || t > best){ best = t; found = { x:nx, y:ny, workshopId:c.workshopId }; }
+      }
     }
-    return count === 1 ? found : null;
+    if(count === 0) return null;
+    if(count === 1) return found;
+    return gridHasBuilding(grid, 'foreman') ? found : null;
+  }
+  // Does this specific grid carry a building of that def? Used by effects that must apply to their OWN
+  // estate rather than to whichever estate happens to be on screen.
+  function gridHasBuilding(grid, key){
+    if(!grid) return false;
+    for(var x=0; x<grid.length; x++){
+      var col = grid[x]; if(!col) continue;
+      for(var y=0; y<col.length; y++){
+        var c = col[y];
+        if(c && buildingKeyOf(c.buildingId) === key) return true;
+      }
+    }
+    return false;
+  }
+  function gridCountBuilding(grid, key){
+    var n = 0;
+    if(!grid) return 0;
+    for(var x=0; x<grid.length; x++){
+      var col = grid[x]; if(!col) continue;
+      for(var y=0; y<col.length; y++){
+        var c = col[y];
+        if(c && buildingKeyOf(c.buildingId) === key) n++;
+      }
+    }
+    return n;
   }
   function placeableCottagesFor(cell){
     var pave = pavementTierOf(cell), out = [];
@@ -31453,6 +31667,9 @@
       // A water def is offered only on water and is NOT pavement-tier-capped (there is no pavement);
       // everything else keeps the pavement rule. Offering a Weir on paved ground, or an Apiary on water,
       // would present a button whose only outcome is a refusal.
+      // A guild-only def is never offered on a personal tile, and vice versa: a button whose only outcome
+      // is a refusal is worse than no button.
+      if(buildingIsGuildOnly(it.buildingKey) && !estIsGuild) return;
       if(buildingSurface(it.buildingKey) === 'water'){ if(water) out.push(it); return; }
       if(!water && it.tierIndex <= pave) out.push(it);
     });
@@ -31478,6 +31695,7 @@
       if(pc.type!=='paved'){ addLog(it.name + ' can only be built on paved tiles.', 'danger'); return; }
       if(it.tierIndex > pavementTierOf(pc)){ addLog('That building needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
     }
+    if(buildingIsGuildOnly(it.buildingKey) && !estIsGuild){ addLog('A ' + it.name + ' can only be raised on the GUILD estate.', 'danger'); return; }
     if(!estateBuildTierLevelOk(it.tierIndex)){ addLog('Building a ' + it.name + ' needs Architecture Lv ' + TIER_LEVELS[it.tierIndex] + '.', 'danger'); return; }
     if(!buildingGateOk(it.buildingKey, it.tierIndex)){ addLog('Building a ' + it.name + ' needs ' + buildingGateLabel(it.buildingKey, it.tierIndex) + '.', 'danger'); return; }
     // A per-estate cap, counting the queue as well as the grid: the Field cap learned that lesson (queue two
@@ -31629,7 +31847,18 @@
   // deliberately weak: tier-scaled speed (5% at t0 -> 100% at t20); the placed workshop's speed +
   // double-output are the ONLY modifiers; no XP, no bonus drops, no rarity; crafts still fail at the
   // base rate. Inputs + output always use the operating player's own inventory.
-  var PEON_MAX_SLOTS = 5; // concurrent peon tasks per scope (personal + guild)
+  var PEON_MAX_SLOTS = 5; // BASE concurrent peon tasks per scope (personal + guild)
+  // A BUNKHOUSE adds one slot to the estate it stands on, up to BUNKHOUSE_MAX, so a fully built personal
+  // estate runs ten. Read per SCOPE, because a guild Bunkhouse must not widen your own estate.
+  function peonSlotCap(scope){
+    return PEON_MAX_SLOTS + Math.min(BUNKHOUSE_MAX, gridCountBuilding(peonGridFor(scope), 'bunkhouse'));
+  }
+  // The absolute ceiling any scope can reach. This is what the LOAD path clamps to, deliberately, rather
+  // than the live per-scope cap: the peon arrays are validated BEFORE the estate grid is, so a live cap
+  // computed there would read a half-loaded grid, come back as the base 5, and silently DELETE the sixth
+  // through tenth tasks of a player who had built Bunkhouses. Clamping to the hard ceiling can never
+  // destroy a legitimate task; the live cap still gates every new assignment.
+  var PEON_SLOT_CEILING = PEON_MAX_SLOTS + BUNKHOUSE_MAX;
   function peonSpeedFactor(tier){ return 0.05 + (Math.max(0, Math.min(TIER_COUNT-1, tier))/(TIER_COUNT-1)) * 0.95; }
   // ---- Candles: light a Cottage to speed its Peon (Chandlery's estate sink) ----
   // A lit Cottage works CANDLE_LIT_SPEED_BONUS faster. Unlit behaves exactly as it did before candles
@@ -32003,7 +32232,7 @@
     return html;
   }
   function renderPeonsTab(){
-    var html = '<div class="section-intro">Peons are idle workers. Build a <b>Cottage</b> on paved estate ground next to a <b>Workshop</b> (both crafted in Carpentry), then assign a Peon here to gather or craft that skill automatically. Peons are slow (5%→100% of normal by tier), take no bonuses beyond the workshop’s own speed &amp; double-output, give <b>no XP</b>, and roll <b>no rarity or bonus drops</b> (crafts still fail at the base rate). Up to '+PEON_MAX_SLOTS+' on your estate and '+PEON_MAX_SLOTS+' on your guild’s.</div>';
+    var html = '<div class="section-intro">Peons are idle workers. Build a <b>Cottage</b> on paved estate ground next to a <b>Workshop</b> (both crafted in Carpentry), then assign a Peon here to gather or craft that skill automatically. Peons are slow (5%→100% of normal by tier), take no bonuses beyond the workshop’s own speed &amp; double-output, give <b>no XP</b>, and roll <b>no rarity or bonus drops</b> (crafts still fail at the base rate). Up to '+peonSlotCap('personal')+' on your estate and '+peonSlotCap('guild')+' on your guild’s (a <b>Bunkhouse</b> adds one each, up to '+BUNKHOUSE_MAX+').</div>';
     html += renderCandleStores();
     html += renderPeonSection('personal', 'My Estate');
     guildEnsureLoaded(); // populate guildState.guild even if the Guild tab hasn't been opened this session
@@ -32068,7 +32297,7 @@
     var occupied = {}; tasks.forEach(function(t){ occupied[t.x+'_'+t.y] = 1; });
     var freeCount = sources.filter(function(s){ return !occupied[s.x+'_'+s.y]; }).length;
     html += '<div class="card-grid">';
-    for(var i=0;i<PEON_MAX_SLOTS;i++){
+    for(var i=0, _slotMax=peonSlotCap(scope); i<_slotMax; i++){
       html += '<div class="item-card">';
       if(i < tasks.length){
         var t = tasks[i];
@@ -32142,7 +32371,8 @@
     if(peonPicker.change){
       if(!existing){ addLog('That cottage no longer has a peon to re-task.', 'danger'); peonPicker.open = false; render(); return null; }
     } else {
-      if(tasks.length >= PEON_MAX_SLOTS){ addLog('All '+PEON_MAX_SLOTS+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return null; }
+      var _cap = peonSlotCap(scope);
+      if(tasks.length >= _cap){ addLog('All '+_cap+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return null; }
       if(existing){ addLog('That cottage already has a peon.', 'danger'); peonPicker.open = false; render(); return null; }
     }
     return { tasks:tasks, skillId:WORKSHOP_ITEMS[adj.workshopId].skillId, existing:existing };
@@ -32992,6 +33222,69 @@
     ctx.fillStyle = estateShadeColor('#e8dcc0',0.9);
     ctx.fillRect(cx - ts*0.2, cy - ts*0.03, ts*0.4, ts*0.06);
   }
+  // BUNKHOUSE: a long low dormitory, its length growing with nothing (it is single-tier) but its bunk
+  // windows reading as beds.
+  function estateDrawBunkhouse(ctx, cx, cy, tier, rot){
+    var wood = '#c8b088', roof = '#7a5e40';
+    var body = estateRectFp(0.5, 0.26);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, 0.3, rot, estateShadeColor(wood,0.6), estateShadeColor(wood,0.88));
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.54,0.3), [0,0], 0.3, 0.46, rot, estateShadeColor(roof,0.9));
+    for(var i=0;i<4;i++){
+      var off = -0.34 + i*0.226;
+      var wf = estateRectFp(0.06, 0.02).map(function(p){ return [p[0]+off, p[1]+0.26]; });
+      estateDrawPrism(ctx, cx, cy, wf, wf, 0.1, 0.22, rot, estateShadeColor('#e8dcc0',0.7), estateShadeColor('#e8dcc0',1.0));
+    }
+    var chim = estateRectFp(0.06, 0.06).map(function(p){ return [p[0]+0.36, p[1]-0.06]; });
+    estateDrawPrism(ctx, cx, cy, chim, chim, 0.3, 0.56, rot, estateShadeColor(roof,0.6), estateShadeColor(roof,0.85));
+  }
+  function drawEstateBunkhouseModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawBunkhouse(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdBunkhouse(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#7a5e40',0.85);
+    ctx.fillRect(cx - ts*0.3, cy - ts*0.16, ts*0.6, ts*0.32);
+    ctx.fillStyle = estateShadeColor('#e8dcc0',0.9);
+    for(var i=0;i<4;i++) ctx.fillRect(cx - ts*0.26 + i*ts*0.15, cy + ts*0.08, ts*0.08, ts*0.05);
+  }
+  // FOREMAN'S OFFICE: a small gable with a tall shuttered window and a posted board out front.
+  function estateDrawForeman(ctx, cx, cy, tier, rot){
+    var wood = '#8a6a4a';
+    var body = estateRectFp(0.3, 0.26);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, 0.36, rot, estateShadeColor(wood,0.62), estateShadeColor(wood,0.9));
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.34,0.3), [0,0], 0.36, 0.56, rot, estateShadeColor('#5a4030',0.95));
+    var board = estateRectFp(0.16, 0.02).map(function(p){ return [p[0], p[1]+0.32]; });
+    estateDrawPrism(ctx, cx, cy, board, board, 0.06, 0.26, rot, estateShadeColor('#e8dcc0',0.8), estateShadeColor('#e8dcc0',1.05));
+    var post = estateRectFp(0.03, 0.03).map(function(p){ return [p[0]-0.14, p[1]+0.32]; });
+    estateDrawPrism(ctx, cx, cy, post, post, 0, 0.3, rot, estateShadeColor(wood,0.5), estateShadeColor(wood,0.75));
+    var flag = estateModelProject(cx, cy, 0, -0.2, 0.62, rot);
+    ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(flag.x, flag.y, 1.8, 0, Math.PI*2); ctx.fill();
+  }
+  function drawEstateForemanModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawForeman(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdForeman(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#5a4030',0.85);
+    ctx.fillRect(cx - ts*0.18, cy - ts*0.16, ts*0.36, ts*0.32);
+    ctx.fillStyle = '#e8c15a'; ctx.fillRect(cx - ts*0.09, cy + ts*0.18, ts*0.18, ts*0.05);
+  }
+  // GUILD LONGHOUSE: the biggest footprint on the estate -- a long hall with a ridge beam and banners.
+  function estateDrawLonghouse(ctx, cx, cy, tier, rot){
+    var wood = '#7a5e40', banner = '#7a9a3a';
+    var body = estateRectFp(0.6, 0.32);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, 0.34, rot, estateShadeColor(wood,0.58), estateShadeColor(wood,0.86));
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.66,0.38), [0,0], 0.34, 0.62, rot, estateShadeColor(wood,1.0));
+    var ridge = estateRectFp(0.5, 0.03);
+    estateDrawPrism(ctx, cx, cy, ridge, ridge, 0.62, 0.66, rot, estateShadeColor(wood,0.5), estateShadeColor(wood,0.8));
+    [-0.4, 0, 0.4].forEach(function(dx){
+      var bf = estateRectFp(0.04, 0.02).map(function(p){ return [p[0]+dx, p[1]+0.36]; });
+      estateDrawPrism(ctx, cx, cy, bf, bf, 0.16, 0.4, rot, estateShadeColor(banner,0.7), estateShadeColor(banner,1.05));
+    });
+    var doorF = estateRectFp(0.1, 0.02).map(function(p){ return [p[0], p[1]+0.34]; });
+    estateDrawPrism(ctx, cx, cy, doorF, doorF, 0, 0.22, rot, estateShadeColor('#2a2422',0.9), estateShadeColor('#2a2422',1.1));
+  }
+  function drawEstateLonghouseModel(ctx, cx, cy, tier, rot){ estateModelScale = 1.7; estateDrawLonghouse(ctx, cx, cy, tier, rot); estateModelScale = 1; }
+  function estateDrawTdLonghouse(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#7a5e40',0.9);
+    ctx.fillRect(cx - ts*0.34, cy - ts*0.2, ts*0.68, ts*0.4);
+    ctx.strokeStyle = estateShadeColor('#7a9a3a',0.9); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - ts*0.3, cy); ctx.lineTo(cx + ts*0.3, cy); ctx.stroke();
+  }
   // The two dispatchers the canvas calls. A def with no model draws nothing rather than throwing, so a
   // half-finished building can never break the whole estate render.
   function drawEstateBuildingModel(ctx, cx, cy, buildingId, rot, fed){
@@ -33004,6 +33297,9 @@
     else if(key === 'leyfont') drawEstateLeyFontModel(ctx, cx, cy, tier, rot);
     else if(key === 'bellows') drawEstateBellowsModel(ctx, cx, cy, tier, rot);
     else if(key === 'scriptorium') drawEstateScriptoriumModel(ctx, cx, cy, tier, rot);
+    else if(key === 'bunkhouse') drawEstateBunkhouseModel(ctx, cx, cy, tier, rot);
+    else if(key === 'foreman') drawEstateForemanModel(ctx, cx, cy, tier, rot);
+    else if(key === 'longhouse') drawEstateLonghouseModel(ctx, cx, cy, tier, rot);
   }
   function estateDrawTdBuilding(ctx, cx, cy, buildingId, ts, fed){
     var key = buildingKeyOf(buildingId), tier = itemTierFromId(buildingId);
@@ -33015,6 +33311,9 @@
     else if(key === 'leyfont') estateDrawTdLeyFont(ctx, cx, cy, tier, ts);
     else if(key === 'bellows') estateDrawTdBellows(ctx, cx, cy, tier, ts);
     else if(key === 'scriptorium') estateDrawTdScriptorium(ctx, cx, cy, tier, ts);
+    else if(key === 'bunkhouse') estateDrawTdBunkhouse(ctx, cx, cy, tier, ts);
+    else if(key === 'foreman') estateDrawTdForeman(ctx, cx, cy, tier, ts);
+    else if(key === 'longhouse') estateDrawTdLonghouse(ctx, cx, cy, tier, ts);
   }
   // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
   // a few green sprouts. One parametric model; tier only changes the soil hue.
@@ -33723,9 +34022,14 @@
     function estQBtn(precondsOk, precondLabel, actLabel){
       if(estIsGuild && estJobOnTile(x, y)) return { off:true, label:'In use' };   // another guild member here
       if(!precondsOk) return { off:true, label:precondLabel };
-      var busy = !!(estActive && estActive.job) || (!estIsGuild && estateQueue().length > 0);
+      var busy = !!(estActive && estActive.job) || (!estIsGuild && estateQueue().length > 0) || (estIsGuild && guildQueueArr().length > 0);
       if(!busy) return { off:false, label:actLabel };
-      if(estIsGuild || !estatePersonalQueueReady()) return { off:true, label:'Busy' };
+      if(estIsGuild){
+        // A Longhouse turns the guild estate's flat "Busy" into the same Queue button the personal estate has.
+        if(!guildQueueReady()) return { off:true, label:'Busy' };
+        return guildQueueArr().length >= ESTATE_QUEUE_MAX ? { off:true, label:'Queue full' } : { off:false, label:'Queue' };
+      }
+      if(!estatePersonalQueueReady()) return { off:true, label:'Busy' };
       if(estateQueue().length >= ESTATE_QUEUE_MAX) return { off:true, label:'Queue full' };
       return { off:false, label:'Queue' };
     }
@@ -34287,22 +34591,26 @@
   // Remove button that refunds its reserved materials. No live timer -- queued items don't start counting
   // down until they reach the head, so a static "~Nm" estimate is the honest thing to show.
   function renderEstateQueue(){
-    var q = estateQueue();
+    // Scope-aware: the personal queue on My Estate, the Longhouse queue on the guild estate. Cancelling
+    // routes to the matching handler, so a Remove can never refund out of the wrong queue.
+    var isG = !!estIsGuild;
+    var q = isG ? guildQueueArr() : estateQueue();
     if(!q.length) return '';
+    var cancelAction = isG ? 'guildCancelQueued' : 'estateCancelQueued';
     var html = '<div class="estate-action-row" style="align-items:stretch;flex-direction:column;gap:6px;border-top:1px dashed var(--border-light);padding-top:12px;">';
     html += '<div class="estate-action-info"><b>Action Queue</b> &bull; '+q.length+'/'+ESTATE_QUEUE_MAX+'. Each starts automatically when the one before it finishes</div>';
     q.forEach(function(entry, i){
       var mins = Math.round((entry.localMs||0)/60000);
       html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 9px;">';
       html += '<div class="estate-action-info"><span style="color:var(--text-faint);">#'+(i+1)+'</span> '+escapeHtml(estateJobLabel(entry))+' <span style="color:var(--text-faint);">('+entry.x+', '+entry.y+')'+(mins?' &bull; ~'+mins+'m':'')+'</span></div>';
-      html += '<button class="mini-btn" data-action="estateCancelQueued" data-idx="'+i+'">Remove</button>';
+      html += '<button class="mini-btn" data-action="'+cancelAction+'" data-idx="'+i+'">Remove</button>';
       html += '</div>';
     });
     return html + '</div>';
   }
   function renderEstateJobStatus(){
     var job = estActive && estActive.job;
-    if(!job) return estIsGuild ? renderGuildOtherJobs() : renderEstateQueue();
+    if(!job) return estIsGuild ? (renderEstateQueue() + renderGuildOtherJobs()) : renderEstateQueue();
     var now = Date.now();
     var total = job.readyAt - job.startAt;
     var pct = clamp((now - job.startAt) / total * 100, 0, 100);
@@ -38928,6 +39236,7 @@
     }
     if(Date.now() < mine.readyAt) return;
     guildCompleteMyJob();   // server releases the row, then applies rewards + grid (owner-only) and refreshes
+    guildQueueAdvance(true);  // ...then the Longhouse queue rolls on, if one is built
   }
   // The guild estate subtab IS the My Estate UI, pointed at the shared object.
   function renderGuildEstate(){
@@ -42010,6 +42319,7 @@
       estatePlaceTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-totem'));
     },
     estateRemoveTotem: function(btn, e){ estateRemoveTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    guildCancelQueued: function(btn, e){ guildCancelQueued(parseInt(btn.getAttribute('data-idx'),10)); },
     estateToggleBuildingMenu: function(btn, e){ estateBuildingMenuOpen = !estateBuildingMenuOpen; },
     estateToggleBuildingUpgradeMenu: function(btn, e){ estateBuildingUpgradeMenuOpen = !estateBuildingUpgradeMenuOpen; },
     estatePlaceBuilding: function(btn, e){
@@ -42513,6 +42823,7 @@
     processProducers();       // Apiaries and Weirs bank their output on their own clocks, background like the estate job
     processSalvageYards();    // ...and the Salvage Yards grind through their assigned stacks
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
+    if(!guildEstate.job) guildQueueAdvance(false); // throttled retry, so a busy moment cannot strand the guild queue
     if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
     if(guildFarmOfflineMs) maybeGuildFarmCatchup(); // apply deferred guild-field auto-farm once the estate loads
     processPeons(dt);         // cottage peons work in the background, independent of the player
@@ -43301,7 +43612,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.92.0';
+  var GAME_VERSION = '0.0.93.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -43519,6 +43830,10 @@
       salvageIntervalMs:salvageIntervalMs, salvageYardCap:salvageYardCap, SALVAGE_MAX_YARDS:SALVAGE_MAX_YARDS,
       buildingSurface:buildingSurface, buildingIsProducer:buildingIsProducer, buildingCapBlocked:buildingCapBlocked, buildingCountOnEstate:buildingCountOnEstate,
       improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
+      peonSlotCap:peonSlotCap, PEON_SLOT_CEILING:PEON_SLOT_CEILING, BUNKHOUSE_MAX:BUNKHOUSE_MAX,
+      buildingTiersFor:buildingTiersFor, buildingIsGuildOnly:buildingIsGuildOnly, gridHasBuilding:gridHasBuilding, gridCountBuilding:gridCountBuilding,
+      guildQueueArr:guildQueueArr, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
+      salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
