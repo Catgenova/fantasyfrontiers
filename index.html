@@ -15084,7 +15084,16 @@
   // All three are crafted in Architecture (the buildings skill, like Workshops and Cottages) and placed on
   // paved ground of at least their own tier, which is the rule every other building already obeys.
   var ESTATE_BUILD_MS_PER_TIER = 10*60*1000;   // 10 min per tier, matching Cottages (server mirrors this)
-  var ESTATE_APIARY_CAP_MS = 12*60*60*1000;    // an Apiary banks at most 12h of honey, the offline window
+  // A producer building banks at most this much elapsed time. MANDATORY on anything with a `produces` spec:
+  // these accrue from a TIMESTAMP, so applyOfflineProgress's own 12h cap does not cover them, and without
+  // the clamp a month away would pay a month of output.
+  var ESTATE_APIARY_CAP_MS = 12*60*60*1000;
+  // Two SURFACES exist from v0.0.90.1. Everything defaults to 'paved' (the rule every other building obeys),
+  // and the Fishing Weir is 'water': height 0, unpaved, no building. The distinction is load-bearing rather
+  // than cosmetic, because every existing placement gate reads pavementTierOf and a water tile has no
+  // pavement tier at all. Critically the Weir must NOT pave its tile: estateIsWater reads
+  // `height <= 0 && type !== 'paved'`, so paving it would strip the waterside crop bonus from every
+  // neighbouring Field, which is the opposite of what a fishery should do to a farm.
   var ESTATE_BUILDING_DEFS = {
     aqueduct: {
       key:'aqueduct', prefix:'aqueduct_t', label:'Aqueduct', plural:'Aqueducts', shape:'tile',
@@ -15113,7 +15122,32 @@
       // tradeable, so owning one does not imply the level -- the same reason Totems gate on Totems and
       // tools gate on the skill they serve.
       gateSkill: 'beekeeping',
+      // A PRODUCER: it banks its own item on a clock. One shared engine (processProducers) drives every def
+      // carrying this, so the Weir below needed no second copy of the accrual, the cap or the offline rules.
+      produces: { prefix:'beekeeping_t', xpSkill:'beekeeping', label:'honey' },
       blurb: function(t){ return 'Yields ' + (ALL_GATHER_ITEMS[('beekeeping_t'+t)] ? ALL_GATHER_ITEMS['beekeeping_t'+t].name : 'honey') + ' on its own, and +1 crop per harvest to Fields within 1 tile.'; }
+    },
+    weir: {
+      key:'weir', prefix:'weir_t', label:'Fishing Weir', plural:'Fishing Weirs', shape:'fish',
+      surface:'water',                                  // the only water building; see the note above
+      nameFor: function(t){ return FORESTRY_NAMES[t] + ' Fishing Weir'; },
+      colorFor: function(){ return '#4aa3c4'; },
+      // Stakes and woven traps: planks and twine, no stonework at all -- it stands in the water, not on a
+      // foundation, so buildingStoneInputs is skipped for this def (see getBuildingTierData).
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 20; inputs['twine_t'+t] = 15; },
+      noStone: true,
+      gateSkill: 'fishing',
+      produces: { prefix:'fishing_t', xpSkill:'fishing', label:'fish' },
+      blurb: function(t){ return 'Stands in the water and traps ' + (ALL_GATHER_ITEMS[('fishing_t'+t)] ? ALL_GATHER_ITEMS['fishing_t'+t].name : 'fish') + ' on its own. The tile still counts as water for neighbouring Fields.'; }
+    },
+    salvageyard: {
+      key:'salvageyard', prefix:'salvageyard_t', label:'Salvage Yard', plural:'Salvage Yards', shape:'gear',
+      nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Salvage Yard'; },
+      colorFor: function(){ return '#9a8a6a'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 15; inputs['metallurgy_t'+t] = 10; },
+      gateSkill: 'salvaging',
+      maxPerEstate: function(){ return salvageYardCap(); },   // OWNER RULE: up to 5, raised by Bunkhouses
+      blurb: function(t){ return 'Breaks equipment of tier ' + (t+1) + ' or lower down into scrap, in the Salvage tab. Up to ' + salvageYardCap() + ' per estate.'; }
     }
   };
   var ESTATE_BUILDING_KEYS = Object.keys(ESTATE_BUILDING_DEFS);
@@ -15123,12 +15157,16 @@
   function aqueductRange(tier){ return 2 + Math.max(0, Math.min(TIER_COUNT-1, tier|0)); }
   // Sun Terrace strength: the share of the altitude PENALTY it removes, 5% at t0 up to 100% at t20.
   function sunTerracePenaltyCut(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return 0.05 + (t/(TIER_COUNT-1))*0.95; }
-  // How often one Apiary banks a unit of honey: 60 min at t0 down to 20 min at t20.
+  // How often a PRODUCER banks a unit: 60 min at t0 down to 20 min at t20. Shared by the Apiary and the
+  // Weir (the name is historical -- it was the Apiary's alone before the Weir joined the same engine).
   function apiaryIntervalMs(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return Math.round((60 - (t/(TIER_COUNT-1))*40) * 60 * 1000); }
+  // The SURFACE a def needs under it. Absent means 'paved', which is every building but the Weir.
+  function buildingSurface(key){ var d = ESTATE_BUILDING_DEFS[key]; return (d && d.surface) || 'paved'; }
+  function buildingIsProducer(key){ var d = ESTATE_BUILDING_DEFS[key]; return !!(d && d.produces); }
   function getBuildingTierData(key, tier){
     var def = ESTATE_BUILDING_DEFS[key]; if(!def) return null;
     tier = Math.max(0, Math.min(TIER_COUNT-1, tier|0));
-    var inputs = buildingStoneInputs(tier);
+    var inputs = def.noStone ? {} : buildingStoneInputs(tier);
     def.extraInputs(inputs, tier);
     if(tier > 0) inputs[def.prefix+(tier-1)] = 1;   // upgrades consume the previous tier, like every building
     return { tierIndex:tier, buildingKey:key, name:def.nameFor(tier), levelReq:TIER_LEVELS[tier],
@@ -15634,6 +15672,7 @@
 
       peons: [],
       guildPeons: [],
+      salvageTasks: {},          // Salvage Yard work orders, keyed 'scope:x,y' (v0.0.90.1)
       estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
@@ -15664,7 +15703,7 @@
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
-    { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
+    { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['salvage','Salvage'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
     { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
   ];
@@ -21168,6 +21207,7 @@
           if(!Array.isArray(state.peons)) state.peons = [];
           if(!Array.isArray(state.guildPeons)) state.guildPeons = [];
           state.peons = state.peons.slice(0, PEON_MAX_SLOTS);
+          if(!state.salvageTasks || typeof state.salvageTasks !== 'object' || Array.isArray(state.salvageTasks)) state.salvageTasks = {};
           state.guildPeons = state.guildPeons.slice(0, PEON_MAX_SLOTS);
           try {
             var gridOk = state.estate && state.estate.grid && state.estate.grid.length === ESTATE_GRID_SIZE &&
@@ -29901,6 +29941,9 @@
     switch(job.kind){
       case 'clear':    return c.obstacle ? { ok:true } : { ok:false, msg:'nothing left to clear there' };
       case 'raise':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be raised' };
+                       // Re-checked here, not just at the button: a raise can be queued BEFORE a water
+                       // building is placed on the same tile, and raising it would strand the building.
+                       if(c.buildingId && buildingSurface(buildingKeyOf(c.buildingId)) === 'water') return { ok:false, msg:'a Fishing Weir stands in that water' };
                        return (c.height < ESTATE_MAX_HEIGHT-1) ? { ok:true } : { ok:false, msg:'that tile is already at max height' };
       case 'lower':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be dug down' };
                        if(c.fieldTier != null && c.height <= 1) return { ok:false, msg:'lowering further would flood the Field' };
@@ -29960,14 +30003,22 @@
                        return { ok:true };
       case 'build':    var _bT = itemTierFromId(job.buildingId);
                        if(job.upgrade){
-                         if(c.type!=='paved' || !c.buildingId) return { ok:false, msg:'that tile no longer has a building' };
+                         if(!c.buildingId) return { ok:false, msg:'that tile no longer has a building' };
                          if(buildingKeyOf(c.buildingId) !== buildingKeyOf(job.buildingId)) return { ok:false, msg:'a different building stands there now' };
                          if(itemTierFromId(c.buildingId) >= _bT) return { ok:false, msg:'that building is already at or above the target tier' };
+                         // A water building has no pavement to satisfy; only a paved one is tier-capped by it.
+                         if(buildingSurface(buildingKeyOf(job.buildingId)) === 'water') return estateIsWater(c) ? { ok:true } : { ok:false, msg:'that tile is no longer water' };
+                         if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                          if(pavementTierOf(c) < _bT) return { ok:false, msg:'the pavement no longer supports that tier' };
                          return { ok:true };
                        }
-                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(cellHasBuilding(c)) return { ok:false, msg:'that tile already has a building' };
+                       if(buildingSurface(buildingKeyOf(job.buildingId)) === 'water'){
+                         if(!estateIsWater(c)) return { ok:false, msg:'that tile is no longer water' };
+                         if(c.fieldTier != null) return { ok:false, msg:'that tile has a Field on it' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(pavementTierOf(c) < _bT) return { ok:false, msg:'the pavement no longer supports that tier' };
                        return { ok:true };
     }
@@ -30153,6 +30204,12 @@
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
+    // A water building stands IN the water. Raising the tile out of the waterline would strand it (and
+    // silently kill its output), so the raise is refused while one stands there -- the mirror of the
+    // existing rule that refuses to lower a Field into the water.
+    if(cell.buildingId && buildingSurface(buildingKeyOf(cell.buildingId)) === 'water'){
+      addLog('Remove the ' + buildingName(cell.buildingId) + ' before raising this tile out of the water.', 'danger'); return;
+    }
     if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     // Validate the CAP against where the tile will be once anything already queued for it lands, so a
     // stack of raises stops at the ceiling instead of over-queueing.
@@ -30445,7 +30502,7 @@
       cell.buildingId = job.buildingId;
       // An Apiary starts its honey clock the moment it stands, never earlier: a fresh hive must not pay out
       // for the hours before it existed.
-      if(buildingKeyOf(job.buildingId) === 'apiary' && !cell.apiaryAt) cell.apiaryAt = Date.now();
+      if(buildingIsProducer(buildingKeyOf(job.buildingId)) && !cell.apiaryAt) cell.apiaryAt = Date.now();
       if(isGuild) recomputeGuildAqueducts(); else recomputeAqueducts();
       if(giveRewards){
         if(!job.upgrade){
@@ -30526,31 +30583,173 @@
   // Completes the personal estate job once its timer elapses. Runs every loop tick (and
   // therefore also on load), so a job started before the tab was closed finishes offline.
   var _estJobCompleteBusy = false;
-  // ---- Apiaries: honey on a per-hive clock ---------------------------------------------------------
-  // PERSONAL ESTATE ONLY, deliberately. A guild Apiary still gives its neighbouring Fields the crop bonus,
-  // but it does not pay honey, because a shared hive on a shared grid would pay EVERY member the same units
-  // off one clock -- the honey would be multiplied by the size of the guild.
+  // ======== Salvage Yards: break equipment down into scrap, in the Salvage tab ======================
+  // OWNER RULES, all four: Salvaging of its own tier is needed to PLACE one; a Yard only accepts items of
+  // its own tier or lower; it has its own tab under Lands; and an estate holds up to five, raised later by
+  // Bunkhouses (batch D).
   //
-  // The clock lives on the CELL (cell.apiaryAt), not in one state field: hives of different tiers bank at
-  // different intervals, so a single shared timestamp could not carry each one's remainder and would round
-  // honey away. Elapsed time is capped at ESTATE_APIARY_CAP_MS, which is what bounds the offline case --
-  // this accrues from a timestamp, so it is NOT covered by applyOfflineProgress's own 12h cap, and without
-  // the clamp a month away would pay a month of honey.
+  // SHAPE: each placed Yard is a SLOT that grinds one assigned stack on a clock, which is the Peon model
+  // players already know, and it is why the cap matters -- more Yards is more throughput, not a bigger
+  // number. Both estates provide slots (personal and guild), exactly as Peons do; inputs and outputs are
+  // always the operating player's own inventory, so a guild Yard is shared machinery, never shared loot.
+  var SALVAGE_MAX_YARDS = 5;                      // per estate, per OWNER RULE
+  function salvageBonusSlots(){ return 0; }       // batch D hook: +1 per Bunkhouse, both caps at once
+  function salvageYardCap(){ return SALVAGE_MAX_YARDS + salvageBonusSlots(); }
+  // 10 minutes per item at t0 down to 1 minute at t20. Tier buys THROUGHPUT on an individual Yard, and the
+  // cap buys parallelism, so the two axes do not overlap.
+  function salvageIntervalMs(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return Math.round((10 - (t/(TIER_COUNT-1))*9) * 60 * 1000); }
+  // Scrap per item, by rarity. A fantastic item is worth more as scrap than a normal one, but salvaging one
+  // is still a player's own call against its vendor price -- nothing here is forced.
+  var SALVAGE_YIELD_BY_RANK = [1, 2, 3, 5];       // normal, rare, supreme, fantastic
+  function salvageYieldFor(itemId){
+    var p = parseImprovable(itemId);
+    var rank = Math.max(0, Math.min(3, rarityRank((p && p.rarity) || itemRarityId(itemId) || 'normal')));
+    return SALVAGE_YIELD_BY_RANK[rank];
+  }
+  // WHAT MAY BE BROKEN DOWN. parseImprovable is the existing definition of "rarity-carrying equipment
+  // stack" (weapons, shields, body armour, rings, amulets, belts, relics); wards, quivers and tools are
+  // equipment too but sit outside it, so they are named. Two hard exclusions:
+  //   * sell:0 items -- Blueprints, Formulas and legendary accessories. The vendor guard already refuses
+  //     these and a Yard must too, or the tab becomes a way to destroy something irreplaceable.
+  //   * UNIQUES, entirely. An enchanted or enhanced item exists ONLY in state.uniqueItems and cannot be
+  //     recovered, so v1 takes stackable inventory equipment and nothing else.
+  function salvageableId(itemId){
+    if(typeof itemId !== 'string') return false;
+    if(isUniqueId(itemId)) return false;
+    var def = ALL_SELLABLE[itemId];
+    if(!def || !(def.sell > 0)) return false;
+    return !!parseImprovable(itemId) || itemId.indexOf('stward_') === 0 || itemId.indexOf('stquiver_') === 0 || itemId.indexOf('tool_') === 0;
+  }
+  function salvageableItems(maxTier){
+    var out = [];
+    Object.keys(state.inventory || {}).forEach(function(id){
+      if((state.inventory[id]||0) <= 0) return;
+      if(!salvageableId(id)) return;
+      var tier = itemTierFromId(id);
+      if(tier > maxTier) return;                  // OWNER RULE: equal or lower tier only
+      out.push({ id:id, tier:tier, qty:state.inventory[id], name:(ALL_SELLABLE[id]||{}).name || id, scrap:salvageYieldFor(id) });
+    });
+    out.sort(function(a,b){ return (b.tier - a.tier) || a.name.localeCompare(b.name); });
+    return out;
+  }
+  // Every Yard slot on both estates, capped per estate. Keyed 'scope:x,y' so a task survives unrelated
+  // grid edits and an orphaned task (its Yard removed) simply stops being a slot.
+  function salvageSlots(){
+    var out = [];
+    function scan(scope, grid){
+      if(!grid) return;
+      var found = [];
+      for(var x=0; x<grid.length; x++){
+        var col = grid[x]; if(!col) continue;
+        for(var y=0; y<col.length; y++){
+          var c = col[y];
+          if(c && buildingKeyOf(c.buildingId) === 'salvageyard') found.push({ scope:scope, x:x, y:y, tier:itemTierFromId(c.buildingId) });
+        }
+      }
+      // Over the cap (a Bunkhouse removed, or an older save): keep the BEST Yards rather than a random
+      // subset, so losing a slot never silently downgrades throughput more than it has to.
+      found.sort(function(a,b){ return b.tier - a.tier; });
+      out = out.concat(found.slice(0, salvageYardCap()));
+    }
+    scan('personal', state.estate && state.estate.grid);
+    scan('guild', (typeof guildEstate !== 'undefined' && guildEstate.status === 'ready') ? guildEstate.grid : null);
+    out.forEach(function(s){ s.key = s.scope + ':' + s.x + ',' + s.y; });
+    return out;
+  }
+  function salvageTasks(){ if(!state.salvageTasks || typeof state.salvageTasks !== 'object') state.salvageTasks = {}; return state.salvageTasks; }
+  function salvageAssign(slotKey, itemId, qty){
+    var slot = salvageSlots().filter(function(s){ return s.key === slotKey; })[0];
+    if(!slot){ addLog('That Salvage Yard is gone.', 'danger'); return; }
+    if(!salvageableId(itemId)){ addLog('That item cannot be broken down.', 'danger'); return; }
+    var tier = itemTierFromId(itemId);
+    if(tier > slot.tier){ addLog('That Yard only breaks down tier ' + (slot.tier+1) + ' or lower.', 'danger'); return; }
+    var have = state.inventory[itemId] || 0;
+    qty = Math.max(1, Math.min(have, Math.floor(qty || 1)));
+    if(have <= 0){ addLog('You do not hold any of those.', 'danger'); return; }
+    salvageTasks()[slotKey] = { itemId:itemId, qty:qty, at:Date.now() };
+    addLog('The Salvage Yard at (' + slot.x + ', ' + slot.y + ') began breaking down ' + qty + '&times; ' + ((ALL_SELLABLE[itemId]||{}).name||itemId) + '.', 'important');
+    saveGame();
+    needsRender = true;
+  }
+  function salvageClear(slotKey){
+    var t = salvageTasks();
+    if(!t[slotKey]) return;
+    delete t[slotKey];
+    addLog('Cleared the Salvage Yard\'s work order.', '');
+    saveGame();
+    needsRender = true;
+  }
+  // The grind. Items are consumed from inventory AS THEY ARE PROCESSED, never reserved up front: a task is
+  // a standing order, so selling the stack out from under it simply stops the order rather than destroying
+  // items it no longer has. Elapsed time shares the producer cap for the same offline reason.
+  function processSalvageYards(){
+    var tasks = salvageTasks(), keys = Object.keys(tasks);
+    if(!keys.length) return;
+    var slots = {}, now = Date.now(), any = false;
+    salvageSlots().forEach(function(s){ slots[s.key] = s; });
+    keys.forEach(function(k){
+      var task = tasks[k], slot = slots[k];
+      if(!task) return;
+      if(!slot){ delete tasks[k]; any = true; return; }        // the Yard was removed -> the order lapses
+      var per = salvageIntervalMs(slot.tier);
+      var elapsed = Math.min(now - (task.at || now), ESTATE_APIARY_CAP_MS);
+      var units = Math.floor(elapsed / per);
+      if(units <= 0){
+        if(now - (task.at || now) > ESTATE_APIARY_CAP_MS) task.at = now - ESTATE_APIARY_CAP_MS;
+        return;
+      }
+      var held = state.inventory[task.itemId] || 0;
+      var done = Math.min(units, task.qty, held);
+      task.at = (now - (elapsed - units * per));               // the clock advances by what it processed
+      if(done <= 0){                                           // nothing left to eat -> the order is finished
+        delete tasks[k]; any = true;
+        addLog('A Salvage Yard ran out of ' + ((ALL_SELLABLE[task.itemId]||{}).name||task.itemId) + ' and stopped.', '');
+        return;
+      }
+      var tier = itemTierFromId(task.itemId), scrap = salvageYieldFor(task.itemId) * done;
+      state.inventory[task.itemId] = held - done;
+      if(state.inventory[task.itemId] <= 0) delete state.inventory[task.itemId];
+      addItem('salvaging_t' + tier, scrap);
+      addXp('salvaging', done * 20 * (tier + 1));
+      bumpStat('salvaged_items', done);                        // Estate quests: how much you have broken down
+      estNote('salvaged', slot.scope === 'guild', done);
+      task.qty -= done;
+      if(task.qty <= 0) delete tasks[k];
+      any = true;
+      addLog('A Salvage Yard broke down ' + done + '&times; ' + ((ALL_SELLABLE[task.itemId]||{}).name||task.itemId) + ' into ' + scrap + '&times; ' + ((ALL_SELLABLE['salvaging_t'+tier]||{}).name||'scrap') + '.', '');
+    });
+    if(any){ saveGame(); needsRender = true; }
+  }
+  // ---- Producer buildings: output on a per-cell clock (Apiary honey, Fishing Weir fish) --------------
+  // ONE engine for every def carrying a `produces` spec. The Apiary shipped its own copy in v0.0.90.0 and the
+  // Weir would have been a second; the two differ only in which item they bank and which skill they train, so
+  // the def table carries that and the loop below carries everything that is easy to get wrong.
   //
-  // A hive with no timestamp (an older save, or a grid loaded from the server) starts its clock NOW rather
-  // than paying retroactively: honey is never minted for hours the player cannot prove the hive stood.
-  function processApiaries(){
+  // PERSONAL ESTATE ONLY, deliberately. A guild Apiary still gives its neighbouring Fields the crop bonus and
+  // a guild Weir still reads as water, but neither pays out, because one shared building on a shared grid
+  // would pay EVERY member the same units off one clock -- the output would be multiplied by guild size.
+  //
+  // The clock lives on the CELL (cell.apiaryAt, kept as the field name for save compatibility), not in one
+  // state field: buildings of different tiers bank at different intervals, so a single shared timestamp
+  // could not carry each one's remainder and would round output away. Elapsed time is capped at
+  // ESTATE_APIARY_CAP_MS, which is what bounds the offline case -- this accrues from a timestamp, so it is
+  // NOT covered by applyOfflineProgress's own 12h cap, and without the clamp a month away pays a month.
+  //
+  // A building with no timestamp (an older save, or a grid loaded from the server) starts its clock NOW
+  // rather than paying retroactively: output is never minted for hours the player cannot prove it stood.
+  function processProducers(){
     var grid = state.estate && state.estate.grid;
     if(!grid) return;
-    var now = Date.now(), gained = 0, gainedId = null;
+    var now = Date.now(), byKey = {};
     for(var x=0; x<grid.length; x++){
       var col = grid[x];
       if(!col) continue;
       for(var y=0; y<col.length; y++){
         var cell = col[y];
-        if(!cell || buildingKeyOf(cell.buildingId) !== 'apiary') continue;
+        var key = buildingKeyOf(cell && cell.buildingId);
+        if(!key || !buildingIsProducer(key)) continue;
         if(!cell.apiaryAt){ cell.apiaryAt = now; continue; }
-        var tier = itemTierFromId(cell.buildingId), per = apiaryIntervalMs(tier);
+        var def = ESTATE_BUILDING_DEFS[key], tier = itemTierFromId(cell.buildingId), per = apiaryIntervalMs(tier);
         var elapsed = Math.min(now - cell.apiaryAt, ESTATE_APIARY_CAP_MS);
         if(elapsed < per){
           // Past the cap with nothing to pay yet cannot happen (cap > interval at every tier), but keep the
@@ -30560,17 +30759,21 @@
         }
         var units = Math.floor(elapsed / per);
         cell.apiaryAt = (now - (elapsed - units * per));   // keep the remainder, never the whole overhang
-        var honeyId = 'beekeeping_t' + tier;
-        addItem(honeyId, units);
-        addXp('beekeeping', units * 10 * (tier + 1));
-        gained += units; gainedId = honeyId;
+        var itemId = def.produces.prefix + tier;
+        addItem(itemId, units);
+        addXp(def.produces.xpSkill, units * 10 * (tier + 1));
+        var b = byKey[key] || (byKey[key] = { n:0, itemId:itemId, def:def });
+        b.n += units; b.itemId = itemId;
       }
     }
-    if(gained > 0){
-      addLog('Your Apiaries produced ' + gained + '&times; ' + ((ALL_GATHER_ITEMS[gainedId]||{}).name || 'honey') + '.', '');
-      estPersist();
-      needsRender = true;
-    }
+    var keys = Object.keys(byKey);
+    if(!keys.length) return;
+    keys.forEach(function(k){
+      var b = byKey[k];
+      addLog('Your ' + b.def.plural + ' produced ' + b.n + '&times; ' + ((ALL_GATHER_ITEMS[b.itemId]||{}).name || b.def.produces.label) + '.', '');
+    });
+    estPersist();
+    needsRender = true;
   }
   function processEstateJob(){
     var job = state.estate && state.estate.job;
@@ -31109,14 +31312,45 @@
   // three functions, and the drift between those copies is where the occupancy bug (a missing cottageId) and
   // the totem's missing pavement-break ejection came from. A new building adds a def, not a fourth copy.
   var estateBuildingMenuOpen = false, estateBuildingUpgradeMenuOpen = false;
+  // How many of a capped building already stand on THIS estate, counting anything queued for it. Returns a
+  // player-facing refusal string, or '' when there is room. Uncapped defs always return ''.
+  function buildingCountOnEstate(key){
+    var n = 0, grid = estActive && estActive.grid;
+    if(grid){
+      for(var x=0; x<grid.length; x++){
+        var col = grid[x]; if(!col) continue;
+        for(var y=0; y<col.length; y++){
+          var c = col[y];
+          if(c && buildingKeyOf(c.buildingId) === key) n++;
+        }
+      }
+    }
+    // The personal queue holds jobs whose buildings do not exist yet. Counting them is what stops the
+    // "queue two and exceed the cap by one" hole the Field cap had to close.
+    if(!estIsGuild) estateQueue().forEach(function(q){ if(q.kind === 'build' && !q.upgrade && buildingKeyOf(q.buildingId) === key) n++; });
+    return n;
+  }
+  function buildingCapBlocked(key){
+    var def = ESTATE_BUILDING_DEFS[key];
+    if(!def || typeof def.maxPerEstate !== 'function') return '';
+    var cap = def.maxPerEstate();
+    return buildingCountOnEstate(key) >= cap
+      ? ('You already have ' + cap + ' ' + def.plural + ' on this estate, the most it can hold.')
+      : '';
+  }
   function estateBuildMs(tier){ return (Math.max(0, Math.min(TIER_COUNT-1, tier|0)) + 1) * ESTATE_BUILD_MS_PER_TIER; }
   // Buildings owned in inventory that this tile's pavement can carry. Unlike Workshops there is no
   // one-per-estate rule, so this is purely "do you own it and does the pavement reach".
   function placeableBuildingsFor(cell){
-    var pave = pavementTierOf(cell), out = [];
+    var pave = pavementTierOf(cell), water = estateIsWater(cell), out = [];
     Object.keys(ESTATE_BUILDING_ITEMS).forEach(function(id){
       var it = ESTATE_BUILDING_ITEMS[id];
-      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave) out.push(it);
+      if((state.inventory[id]||0) <= 0) return;
+      // A water def is offered only on water and is NOT pavement-tier-capped (there is no pavement);
+      // everything else keeps the pavement rule. Offering a Weir on paved ground, or an Apiary on water,
+      // would present a button whose only outcome is a refusal.
+      if(buildingSurface(it.buildingKey) === 'water'){ if(water) out.push(it); return; }
+      if(!water && it.tierIndex <= pave) out.push(it);
     });
     out.sort(function(a,b){ return a.buildingKey === b.buildingKey ? (a.tierIndex - b.tierIndex) : a.buildingKey.localeCompare(b.buildingKey); });
     return out;
@@ -31130,11 +31364,22 @@
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
     var it = buildingItem(buildingId);
     if(!it || (state.inventory[buildingId]||0) <= 0){ addLog('You don\'t own that building.', 'danger'); return; }
-    if(pc.type!=='paved'){ addLog(it.name + ' can only be built on paved tiles.', 'danger'); return; }
     if(cellHasBuilding(pc)){ addLog('That tile already has a building.', 'danger'); return; }
-    if(it.tierIndex > pavementTierOf(pc)){ addLog('That building needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(buildingSurface(it.buildingKey) === 'water'){
+      // A water building has no pavement to read, so it gets its own gate: the tile must actually be water
+      // (height 0 and unpaved), and it must stay that way -- see the def table's note on estateIsWater.
+      if(!estateIsWater(pc)){ addLog(it.name + ' can only be built on water. Dig a tile down to the waterline first.', 'danger'); return; }
+      if(pc.fieldTier != null){ addLog('That tile has a Field on it.', 'danger'); return; }
+    } else {
+      if(pc.type!=='paved'){ addLog(it.name + ' can only be built on paved tiles.', 'danger'); return; }
+      if(it.tierIndex > pavementTierOf(pc)){ addLog('That building needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    }
     if(!estateBuildTierLevelOk(it.tierIndex)){ addLog('Building a ' + it.name + ' needs Architecture Lv ' + TIER_LEVELS[it.tierIndex] + '.', 'danger'); return; }
     if(!buildingGateOk(it.buildingKey, it.tierIndex)){ addLog('Building a ' + it.name + ' needs ' + buildingGateLabel(it.buildingKey, it.tierIndex) + '.', 'danger'); return; }
+    // A per-estate cap, counting the queue as well as the grid: the Field cap learned that lesson (queue two
+    // and you get one more than the cap allows).
+    var capMsg = buildingCapBlocked(it.buildingKey);
+    if(capMsg){ addLog(capMsg, 'danger'); return; }
     var ms = estateBuildMs(it.tierIndex);
     estateEnqueueOrStart('build', x, y, { buildingId:buildingId }, ms, {
       jobFields: { buildingId:buildingId },
@@ -31160,7 +31405,8 @@
     if(!(tgt > cur)){ addLog('Choose a higher ' + def.label + ' tier to upgrade to.', 'danger'); return; }
     var newId = def.prefix + tgt, nIt = buildingItem(newId);
     if(!nIt){ addLog('This ' + def.label + ' is already the top tier.', 'danger'); return; }
-    if(paveT < tgt){ addLog('The pavement under this ' + def.label + ' only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
+    // A water building stands in water and has no pavement tier to satisfy.
+    if(buildingSurface(key) !== 'water' && paveT < tgt){ addLog('The pavement under this ' + def.label + ' only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
     if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to upgrade to a ' + nIt.name + '.', 'danger'); return; }
     if(!buildingGateOk(key, tgt)){ addLog('Upgrading to a ' + nIt.name + ' needs ' + buildingGateLabel(key, tgt) + '.', 'danger'); return; }
     if((state.inventory[newId]||0) < 1){ addLog('Upgrading to a ' + nIt.name + ' needs that built ' + def.label + ' itself. Craft it in Architecture.', 'danger'); return; }
@@ -31604,6 +31850,54 @@
   var peonPicker = { open:false, scope:null, x:null, y:null, producer:null, candle:false, barrel:false, change:false };
   var peonPickerProducers = []; // equipment producers for the current cottage's skill, indexed for dispatch
   function peonSkillIcon(skillId){ return (GATHERING_SKILLS[skillId] && GATHERING_SKILLS[skillId].icon) || (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].icon) || svgIcon('person','var(--text-faint)'); }
+  // ---- The Salvage tab (Lands -> Salvage) ----------------------------------------------------------
+  // One card per Yard slot. Empty slots offer a picker of everything in your bag that this Yard's tier
+  // accepts; a working slot shows what it is grinding, the scrap it pays, and a live progress bar.
+  var salvagePickerOpen = null;   // slot key whose picker is open, or null
+  function renderSalvageTab(){
+    var slots = salvageSlots(), tasks = salvageTasks();
+    var html = '<div class="section-intro">A <b>Salvage Yard</b> (built in Architecture, placed on paved estate ground) breaks equipment down into <b>Scrap</b>. Each Yard is one work slot: it only accepts items of <b>its own tier or lower</b>, and it grinds faster at higher tiers. Up to ' + salvageYardCap() + ' per estate. Placing one needs the matching <b>Salvaging</b> level.</div>';
+    if(!slots.length){
+      html += '<div class="empty-note">No Salvage Yards yet. Craft one in <b>Architecture</b>, then place it on a paved tile in <b>My Estate</b>.</div>';
+      return html;
+    }
+    html += '<div class="card-grid">';
+    slots.forEach(function(slot){
+      var task = tasks[slot.key], per = salvageIntervalMs(slot.tier);
+      html += '<div class="item-card' + (task ? ' active-item' : '') + '">';
+      html += '<div class="item-top"><div class="item-icon">' + svgIcon('gear','#9a8a6a') + '</div><div>';
+      html += '<div class="item-name">' + escapeHtml(ESTATE_BUILDING_DEFS.salvageyard.nameFor(slot.tier)) + '</div>';
+      html += '<div class="item-meta">' + (slot.scope === 'guild' ? 'Guild Estate' : 'My Estate') + ' (' + slot.x + ', ' + slot.y + ') &bull; accepts tier ' + (slot.tier+1) + ' and lower</div>';
+      html += '</div></div>';
+      html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">One item every ' + Math.round(per/60000) + ' min</div>';
+      if(task){
+        var itemName = (ALL_SELLABLE[task.itemId]||{}).name || task.itemId;
+        var scrapId = 'salvaging_t' + itemTierFromId(task.itemId);
+        var pct = clamp(((Date.now() - (task.at||Date.now())) / per) * 100, 0, 100);
+        html += '<div class="inputs-line">Breaking down: <b>' + escapeHtml(itemName) + '</b> &bull; ' + fmt(task.qty) + ' left</div>';
+        html += '<div class="inputs-line">Pays ' + salvageYieldFor(task.itemId) + '&times; ' + escapeHtml((ALL_SELLABLE[scrapId]||{}).name || 'Scrap') + ' each</div>';
+        html += '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+        html += '<button class="action-btn stop" data-action="salvageClear" data-slot="' + escapeHtml(slot.key) + '">Stop</button>';
+      } else {
+        var opts = salvageableItems(slot.tier);
+        html += '<div class="inputs-line">' + (opts.length ? fmt(opts.length) + ' item type' + (opts.length===1?'':'s') + ' in your bag fit this Yard' : 'Nothing in your bag fits this Yard') + '</div>';
+        html += '<button class="action-btn" data-action="salvageTogglePicker" data-slot="' + escapeHtml(slot.key) + '" ' + (opts.length?'':'disabled') + '>' + (salvagePickerOpen === slot.key ? 'Close List' : 'Choose Item') + '</button>';
+        if(salvagePickerOpen === slot.key && opts.length){
+          html += '<div class="estate-paving-library">';
+          opts.slice(0, 60).forEach(function(o){
+            html += '<button class="estate-paving-option" data-action="salvageAssign" data-slot="' + escapeHtml(slot.key) + '" data-item="' + escapeHtml(o.id) + '">';
+            html += '<span>' + tierChipHtml(o.tier) + ' ' + escapeHtml(o.name) + '</span><span class="style-lvl">x' + fmt(o.qty) + ' &bull; ' + o.scrap + ' scrap each</span>';
+            html += '</button>';
+          });
+          if(opts.length > 60) html += '<div class="empty-note">Showing the top 60 by tier.</div>';
+          html += '</div>';
+        }
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
   function renderPeonsTab(){
     var html = '<div class="section-intro">Peons are idle workers. Build a <b>Cottage</b> on paved estate ground next to a <b>Workshop</b> (both crafted in Carpentry), then assign a Peon here to gather or craft that skill automatically. Peons are slow (5%→100% of normal by tier), take no bonuses beyond the workshop’s own speed &amp; double-output, give <b>no XP</b>, and roll <b>no rarity or bonus drops</b> (crafts still fail at the base rate). Up to '+PEON_MAX_SLOTS+' on your estate and '+PEON_MAX_SLOTS+' on your guild’s.</div>';
     html += renderCandleStores();
@@ -32463,6 +32757,70 @@
     ctx.strokeStyle = estateShadeColor('#b08a54',0.6); ctx.lineWidth = 1.2;
     ctx.strokeRect(cx - ts*0.16, cy - ts*0.14, ts*0.32, ts*0.28);
   }
+  // FISHING WEIR: a line of stakes in the water with a woven trap basket, sitting low so the water reads
+  // through it. It draws ON TOP of drawEstateWaterModel rather than replacing it, because the tile is still
+  // water for every other purpose (Field adjacency included).
+  function estateDrawWeir(ctx, cx, cy, tier, rot){
+    var wood = FORESTRY_COLORS[Math.min(TIER_COUNT-1, tier)] || '#b08a54';
+    var stakes = 3 + Math.min(3, Math.floor(tier/7));
+    for(var i=0;i<stakes;i++){
+      var off = -0.34 + (i/(stakes-1||1))*0.68;
+      var sf = estateRectFp(0.035, 0.035).map(function(p){ return [p[0]+off, p[1]-0.1]; });
+      estateDrawPrism(ctx, cx, cy, sf, sf, 0.02, 0.3 + (i%2)*0.05, rot, estateShadeColor(wood,0.5), estateShadeColor(wood,0.8));
+    }
+    var basket = estateRectFp(0.22, 0.18).map(function(p){ return [p[0], p[1]+0.22]; });
+    estateDrawPrism(ctx, cx, cy, basket, basket, 0.02, 0.2, rot, estateShadeColor(wood,0.58), estateShadeColor(wood,0.92));
+    var rail = estateRectFp(0.36, 0.02).map(function(p){ return [p[0], p[1]-0.1]; });
+    estateDrawPrism(ctx, cx, cy, rail, rail, 0.22, 0.26, rot, estateShadeColor(wood,0.62), estateShadeColor(wood,0.95));
+    if(tier >= 8){                                             // a catch flashing in the trap
+      var fishPt = estateModelProject(cx, cy, 0, 0.22, 0.16, rot);
+      ctx.fillStyle = '#8fd0e8'; ctx.beginPath(); ctx.arc(fishPt.x, fishPt.y, 1.8, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  function drawEstateWeirModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.7;
+    estateDrawWeir(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdWeir(ctx, cx, cy, tier, ts){
+    var wood = FORESTRY_COLORS[Math.min(TIER_COUNT-1, tier)] || '#b08a54';
+    ctx.strokeStyle = estateShadeColor(wood,0.75); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - ts*0.3, cy - ts*0.08); ctx.lineTo(cx + ts*0.3, cy - ts*0.08); ctx.stroke();
+    ctx.fillStyle = estateShadeColor(wood,0.6);
+    ctx.fillRect(cx - ts*0.1, cy + ts*0.04, ts*0.2, ts*0.16);
+  }
+  // SALVAGE YARD: a low walled compound with a scrap heap and a breaking-down frame.
+  function estateDrawSalvageYard(ctx, cx, cy, tier, rot){
+    var stone = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    var iron = '#9a8a6a';
+    [[-0.5,0],[0.5,0],[0,-0.5],[0,0.5]].forEach(function(d){        // the compound wall
+      var horiz = d[1] !== 0;
+      var wf = estateRectFp(horiz?0.5:0.05, horiz?0.05:0.5).map(function(p){ return [p[0]+d[0], p[1]+d[1]]; });
+      estateDrawPrism(ctx, cx, cy, wf, wf, 0, 0.14, rot, estateShadeColor(stone,0.55), estateShadeColor(stone,0.8));
+    });
+    var heap = estateRectFp(0.26, 0.22).map(function(p){ return [p[0]-0.14, p[1]+0.1]; });
+    estateDrawPyramid(ctx, cx, cy, heap, [-0.14, 0.1], 0.02, 0.3, rot, estateShadeColor(iron,0.85));  // scrap pile
+    var frame = estateRectFp(0.08, 0.08).map(function(p){ return [p[0]+0.2, p[1]-0.12]; });           // breaking frame
+    estateDrawPrism(ctx, cx, cy, frame, frame, 0, 0.42, rot, estateShadeColor(iron,0.55), estateShadeColor(iron,0.8));
+    var beam = estateRectFp(0.24, 0.04).map(function(p){ return [p[0]+0.12, p[1]-0.12]; });
+    estateDrawPrism(ctx, cx, cy, beam, beam, 0.38, 0.44, rot, estateShadeColor(iron,0.6), estateShadeColor(iron,0.95));
+    if(tier >= 10){
+      var spark = estateModelProject(cx, cy, 0.12, -0.12, 0.5, rot);
+      ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(spark.x, spark.y, 1.6, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  function drawEstateSalvageYardModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.7;
+    estateDrawSalvageYard(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdSalvageYard(ctx, cx, cy, tier, ts){
+    var stone = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    ctx.strokeStyle = estateShadeColor(stone,0.6); ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - ts*0.28, cy - ts*0.28, ts*0.56, ts*0.56);
+    ctx.fillStyle = estateShadeColor('#9a8a6a',0.85);
+    ctx.beginPath(); ctx.arc(cx - ts*0.06, cy + ts*0.06, ts*0.12, 0, Math.PI*2); ctx.fill();
+  }
   // The two dispatchers the canvas calls. A def with no model draws nothing rather than throwing, so a
   // half-finished building can never break the whole estate render.
   function drawEstateBuildingModel(ctx, cx, cy, buildingId, rot, fed){
@@ -32470,12 +32828,16 @@
     if(key === 'aqueduct') drawEstateAqueductModel(ctx, cx, cy, tier, rot, fed);
     else if(key === 'sunterrace') drawEstateSunTerraceModel(ctx, cx, cy, tier, rot);
     else if(key === 'apiary') drawEstateApiaryModel(ctx, cx, cy, tier, rot);
+    else if(key === 'weir') drawEstateWeirModel(ctx, cx, cy, tier, rot);
+    else if(key === 'salvageyard') drawEstateSalvageYardModel(ctx, cx, cy, tier, rot);
   }
   function estateDrawTdBuilding(ctx, cx, cy, buildingId, ts, fed){
     var key = buildingKeyOf(buildingId), tier = itemTierFromId(buildingId);
     if(key === 'aqueduct') estateDrawTdAqueduct(ctx, cx, cy, tier, ts, fed);
     else if(key === 'sunterrace') estateDrawTdSunTerrace(ctx, cx, cy, tier, ts);
     else if(key === 'apiary') estateDrawTdApiary(ctx, cx, cy, tier, ts);
+    else if(key === 'weir') estateDrawTdWeir(ctx, cx, cy, tier, ts);
+    else if(key === 'salvageyard') estateDrawTdSalvageYard(ctx, cx, cy, tier, ts);
   }
   // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
   // a few green sprouts. One parametric model; tier only changes the soil hue.
@@ -33194,6 +33556,62 @@
     // and the option you pick inside it routes through the queue. So it's blocked only by "no options" or
     // another guild member on the tile -- never merely because a job is running.
     function estToggleBlockedByOther(){ return estIsGuild && estJobOnTile(x, y); }
+    // The building arms, extracted so the PAVED branch and the WATER branch share them rather than
+    // carrying two copies (the Workshop/Cottage/Totem arms above are three copies of one idea, and the
+    // drift between them is where the occupancy bug lived). Both close over x, y and the busy helpers.
+    function buildingArm(cell){
+      var h = '';
+        // ONE arm for every def in ESTATE_BUILDING_DEFS. The Workshop/Cottage/Totem arms above are three
+        // near-identical copies; this one is written once and a new building inherits it.
+        var bIt = buildingItem(cell.buildingId), bDefHere = buildingDefOf(cell.buildingId), bTierHere = itemTierFromId(cell.buildingId);
+        var bLabel = bDefHere ? bDefHere.label : 'Building';
+        h += '<div class="estate-action-row">';
+        h += '<div class="estate-action-info"><b>'+escapeHtml(bLabel)+':</b> '+(bIt?bIt.icon+' '+escapeHtml(bIt.name):'Unknown')+'<br>'+escapeHtml(bDefHere?bDefHere.blurb(bTierHere):'')+
+                (buildingKeyOf(cell.buildingId)==='aqueduct' ? ('<br><span style="color:'+(aqueductFed[x+','+y] || guildAqueductFed[x+','+y] ? 'var(--gold)' : 'var(--hp-bad)')+'">'+
+                  ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles')+'</span>') : '')+'</div>';
+        h += '<button class="action-btn stop" data-action="estateRemoveBuilding" data-x="'+x+'" data-y="'+y+'">Remove</button>';
+        h += '</div>';
+        var bbCur = bTierHere|0, bbPaveT = pavementTierOf(cell), bbArchCap = estateArchitectureTierCap();
+        var bbMax = Math.min(bbPaveT, bbArchCap, TIER_COUNT-1);
+        if(bbCur < TIER_COUNT-1 && bDefHere){
+          var bbCanAny = bbMax > bbCur;
+          h += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade '+escapeHtml(bLabel)+'</b><br>Jump to any tier your pavement <i>and</i> Architecture support'+(bbMax>=0?' (up to '+escapeHtml(FORESTRY_NAMES[bbMax])+')':'')+' &bull; pays the built target, the old one comes back</div>';
+          h += '<button class="action-btn" data-action="estateToggleBuildingUpgradeMenu" '+((bbCanAny&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(bbCanAny?(estateBuildingUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher first'))+'</button></div>';
+          if(estateBuildingUpgradeMenuOpen && bbCanAny){
+            h += '<div class="estate-paving-library">';
+            for(var bbt=bbCur+1; bbt<=bbMax; bbt++){
+              var bbId = bDefHere.prefix+bbt, bbDefItem = buildingItem(bbId); if(!bbDefItem) continue;
+              var bbGate = buildingGateOk(bDefHere.key, bbt), bbOwn = state.inventory[bbId]||0, bbAff = bbGate && bbOwn>=1;
+              h += '<button class="estate-paving-option'+(bbAff?'':' locked')+'" data-action="estateUpgradeBuilding" data-x="'+x+'" data-y="'+y+'" data-tier="'+bbt+'" '+(bbAff?'':'disabled')+'>';
+              h += '<span>'+tierChipHtml(bbt)+' '+bbDefItem.icon+' '+escapeHtml(bbDefItem.name)+'</span><span class="style-lvl">'+(bbGate?(bbAff?'ready':'x0/1 &bull; craft it'):escapeHtml(buildingGateLabel(bDefHere.key, bbt)))+'</span>';
+              h += '</button>';
+            }
+            h += '</div>';
+          }
+        }
+      return h;
+    }
+    function placeBuildingArm(cell){
+      var h = '';
+          var placeableB = placeableBuildingsFor(cell);
+          h += '<div class="estate-action-row">';
+          h += '<div class="estate-action-info"><b>Place Building</b><br>Aqueducts carry water to Fields, Sun Terraces undo the altitude penalty, Apiaries make honey. Built in Architecture; tier must be ≤ this pavement.</div>';
+          h += '<button class="action-btn" data-action="estateToggleBuildingMenu" '+((placeableB.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableB.length?(estateBuildingMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
+          h += '</div>';
+          if(estateBuildingMenuOpen && placeableB.length){
+            h += '<div class="estate-paving-library">';
+            placeableB.forEach(function(it){
+              var bArchOk = estateBuildTierLevelOk(it.tierIndex), bGateOk = buildingGateOk(it.buildingKey, it.tierIndex);
+              var bOk = bArchOk && bGateOk;
+              h += '<button class="estate-paving-option'+(bOk?'':' locked')+'" data-action="estatePlaceBuilding" data-x="'+x+'" data-y="'+y+'" data-building="'+it.id+'" '+(bOk?'':'disabled')+'>';
+              h += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+
+                      (!bArchOk ? 'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ' : (!bGateOk ? escapeHtml(buildingGateLabel(it.buildingKey, it.tierIndex))+' &bull; ' : ''))+'x'+fmt(state.inventory[it.id]||0)+'</span>';
+              h += '</button>';
+            });
+            h += '</div>';
+          }
+      return h;
+    }
     var html = '<div class="estate-options-panel">';
     html += '<h3 style="margin-top:0">Tile ('+x+', '+y+') &bull; Height '+cell.height+' / '+(ESTATE_MAX_HEIGHT-1)+' &bull; '+cell.type.charAt(0).toUpperCase()+cell.type.slice(1)+'</h3>';
     if(cell.type === 'dirt' && cell.obstacle){
@@ -33270,6 +33688,17 @@
         }
         html += terraformRows();   // a Field tile can still be raised/lowered (its floor is z1)
       } else {
+      // A WATER tile (height 0, unpaved) is the Fishing Weir's ground. It shares the building arms with the
+      // paved branch, so a Weir gets the same info/remove/upgrade treatment without a second copy of them.
+      if(_tileIsWater && cell.buildingId){
+        html += buildingArm(cell);
+        html += terraformRows();
+        html += '</div>';
+        return html;
+      }
+      if(_tileIsWater){
+        html += placeBuildingArm(cell);
+      }
       html += terraformRows();
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Pave Tile</b><br>'+(_tileIsWater ? 'This tile is underwater. Raise it above the waterline before paving.' : 'Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.')+'</div>';
@@ -33399,34 +33828,7 @@
           }
         }
       } else if(cell.buildingId){
-        // ONE arm for every def in ESTATE_BUILDING_DEFS. The Workshop/Cottage/Totem arms above are three
-        // near-identical copies; this one is written once and a new building inherits it.
-        var bIt = buildingItem(cell.buildingId), bDefHere = buildingDefOf(cell.buildingId), bTierHere = itemTierFromId(cell.buildingId);
-        var bLabel = bDefHere ? bDefHere.label : 'Building';
-        html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>'+escapeHtml(bLabel)+':</b> '+(bIt?bIt.icon+' '+escapeHtml(bIt.name):'Unknown')+'<br>'+escapeHtml(bDefHere?bDefHere.blurb(bTierHere):'')+
-                (buildingKeyOf(cell.buildingId)==='aqueduct' ? ('<br><span style="color:'+(aqueductFed[x+','+y] || guildAqueductFed[x+','+y] ? 'var(--gold)' : 'var(--hp-bad)')+'">'+
-                  ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles')+'</span>') : '')+'</div>';
-        html += '<button class="action-btn stop" data-action="estateRemoveBuilding" data-x="'+x+'" data-y="'+y+'">Remove</button>';
-        html += '</div>';
-        var bbCur = bTierHere|0, bbPaveT = pavementTierOf(cell), bbArchCap = estateArchitectureTierCap();
-        var bbMax = Math.min(bbPaveT, bbArchCap, TIER_COUNT-1);
-        if(bbCur < TIER_COUNT-1 && bDefHere){
-          var bbCanAny = bbMax > bbCur;
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade '+escapeHtml(bLabel)+'</b><br>Jump to any tier your pavement <i>and</i> Architecture support'+(bbMax>=0?' (up to '+escapeHtml(FORESTRY_NAMES[bbMax])+')':'')+' &bull; pays the built target, the old one comes back</div>';
-          html += '<button class="action-btn" data-action="estateToggleBuildingUpgradeMenu" '+((bbCanAny&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(bbCanAny?(estateBuildingUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher first'))+'</button></div>';
-          if(estateBuildingUpgradeMenuOpen && bbCanAny){
-            html += '<div class="estate-paving-library">';
-            for(var bbt=bbCur+1; bbt<=bbMax; bbt++){
-              var bbId = bDefHere.prefix+bbt, bbDefItem = buildingItem(bbId); if(!bbDefItem) continue;
-              var bbGate = buildingGateOk(bDefHere.key, bbt), bbOwn = state.inventory[bbId]||0, bbAff = bbGate && bbOwn>=1;
-              html += '<button class="estate-paving-option'+(bbAff?'':' locked')+'" data-action="estateUpgradeBuilding" data-x="'+x+'" data-y="'+y+'" data-tier="'+bbt+'" '+(bbAff?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(bbt)+' '+bbDefItem.icon+' '+escapeHtml(bbDefItem.name)+'</span><span class="style-lvl">'+(bbGate?(bbAff?'ready':'x0/1 &bull; craft it'):escapeHtml(buildingGateLabel(bDefHere.key, bbt)))+'</span>';
-              html += '</button>';
-            }
-            html += '</div>';
-          }
-        }
+        html += buildingArm(cell);
       } else {
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
@@ -33476,25 +33878,7 @@
             html += '</div>';
           }
         }
-        { // Estate Buildings: one menu for every def (Aqueduct, Sun Terrace, Apiary, ...)
-          var placeableB = placeableBuildingsFor(cell);
-          html += '<div class="estate-action-row">';
-          html += '<div class="estate-action-info"><b>Place Building</b><br>Aqueducts carry water to Fields, Sun Terraces undo the altitude penalty, Apiaries make honey. Built in Architecture; tier must be ≤ this pavement.</div>';
-          html += '<button class="action-btn" data-action="estateToggleBuildingMenu" '+((placeableB.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableB.length?(estateBuildingMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
-          html += '</div>';
-          if(estateBuildingMenuOpen && placeableB.length){
-            html += '<div class="estate-paving-library">';
-            placeableB.forEach(function(it){
-              var bArchOk = estateBuildTierLevelOk(it.tierIndex), bGateOk = buildingGateOk(it.buildingKey, it.tierIndex);
-              var bOk = bArchOk && bGateOk;
-              html += '<button class="estate-paving-option'+(bOk?'':' locked')+'" data-action="estatePlaceBuilding" data-x="'+x+'" data-y="'+y+'" data-building="'+it.id+'" '+(bOk?'':'disabled')+'>';
-              html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+
-                      (!bArchOk ? 'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ' : (!bGateOk ? escapeHtml(buildingGateLabel(it.buildingKey, it.tierIndex))+' &bull; ' : ''))+'x'+fmt(state.inventory[it.id]||0)+'</span>';
-              html += '</button>';
-            });
-            html += '</div>';
-          }
-        }
+        html += placeBuildingArm(cell);
       }
       // Upgrade the pavement to ANY higher tier -- works even with a building on it. Pick the target from
       // the list of higher tiers; the cost is ESTATE_PAVE_TILE_COST of that target tile.
@@ -39025,6 +39409,7 @@
     else if(currentCategory==='estate'){ estUse(false); estReadOnly=false; html = renderEstateTab(); }
     else if(currentCategory==='visitestate'){ estReadOnly = true; if(estateVisit.estate) estActive = estateVisit.estate; html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
+    else if(currentCategory==='salvage') html = renderSalvageTab();
     else if(currentCategory==='inventory') html = renderInventoryTab();
     else if(currentCategory==='masterwork') html = renderMasterworkTab();
     else if(currentCategory==='market') html = renderMarketTab();
@@ -41458,6 +41843,13 @@
       estateBuildingUpgradeMenuOpen = false;
     },
     estateRemoveBuilding: function(btn, e){ estateRemoveBuilding(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    salvageTogglePicker: function(btn, e){ var k = btn.getAttribute('data-slot'); salvagePickerOpen = (salvagePickerOpen === k) ? null : k; },
+    salvageAssign: function(btn, e){
+      var k = btn.getAttribute('data-slot'), id = btn.getAttribute('data-item');
+      salvageAssign(k, id, state.inventory[id] || 1);   // the whole held stack becomes the standing order
+      salvagePickerOpen = null;
+    },
+    salvageClear: function(btn, e){ salvageClear(btn.getAttribute('data-slot')); },
     estateToggleFieldMenu: function(btn, e){ estateFieldMenuOpen = !estateFieldMenuOpen; },
     estatePlaceField: function(btn, e){
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
@@ -41941,7 +42333,8 @@
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
     processEstateJob();
-    processApiaries();        // hives bank honey on their own clock, background like the estate job
+    processProducers();       // Apiaries and Weirs bank their output on their own clocks, background like the estate job
+    processSalvageYards();    // ...and the Salvage Yards grind through their assigned stacks
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
     if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
     if(guildFarmOfflineMs) maybeGuildFarmCatchup(); // apply deferred guild-field auto-farm once the estate loads
@@ -42731,7 +43124,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.90.0';
+  var GAME_VERSION = '0.0.91.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -42942,8 +43335,12 @@
       craftBuilding:craftBuilding, estatePlaceBuilding:estatePlaceBuilding, estateUpgradeBuilding:estateUpgradeBuilding, estateRemoveBuilding:estateRemoveBuilding,
       placeableBuildingsFor:placeableBuildingsFor, cellHasBuilding:cellHasBuilding, aqueductRange:aqueductRange, sunTerracePenaltyCut:sunTerracePenaltyCut,
       apiaryIntervalMs:apiaryIntervalMs, apiaryYieldBonusAt:apiaryYieldBonusAt, sunTerraceCutAt:sunTerraceCutAt, estateCellWatersFields:estateCellWatersFields,
-      recomputeAqueducts:recomputeAqueducts, recomputeGuildAqueducts:recomputeGuildAqueducts, processApiaries:processApiaries,
+      recomputeAqueducts:recomputeAqueducts, recomputeGuildAqueducts:recomputeGuildAqueducts, processProducers:processProducers, processSalvageYards:processSalvageYards,
       estateBreakPavement:estateBreakPavement, getInventoryCategory:getInventoryCategory,
+      renderSalvageTab:renderSalvageTab, salvageSlots:salvageSlots, salvageTasks:salvageTasks, salvageAssign:salvageAssign,
+      salvageClear:salvageClear, salvageableItems:salvageableItems, salvageableId:salvageableId, salvageYieldFor:salvageYieldFor,
+      salvageIntervalMs:salvageIntervalMs, salvageYardCap:salvageYardCap, SALVAGE_MAX_YARDS:SALVAGE_MAX_YARDS,
+      buildingSurface:buildingSurface, buildingIsProducer:buildingIsProducer, buildingCapBlocked:buildingCapBlocked, buildingCountOnEstate:buildingCountOnEstate,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,

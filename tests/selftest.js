@@ -928,8 +928,8 @@
   // suite walks all eight for the generic kind, so the next building inherits the coverage.
   suite('estate buildings: the generic build job kind is wired everywhere', function(){
     var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
-    ok(defs && keys && keys.length === 3, 'three buildings ship in batch A (' + (keys||[]).join(', ') + ')');
-    ['aqueduct','sunterrace','apiary'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+    ok(defs && keys && keys.length === 5, 'five buildings ship across batches A and B (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary','weir','salvageyard'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
 
     // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
     ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
@@ -1091,7 +1091,7 @@
       // that 3s -- not merely "less than one interval", which `apiaryAt = now` would also satisfy. That
       // weaker form was written first and the guard-proof pass caught it passing against the bug.
       g[5][5].apiaryAt = Date.now() - (5*per + 3000);
-      FF.processApiaries();
+      FF.processProducers();
       eq(s.inventory.beekeeping_t10 || 0, 5, 'five elapsed intervals pay exactly five honey');
       var rem = Date.now() - g[5][5].apiaryAt;
       ok(rem >= 2500 && rem <= 4000, 'the leftover part-interval is CARRIED (' + rem + 'ms of the 3000ms stub), not reset to zero');
@@ -1099,20 +1099,20 @@
       s.inventory = {};
       var stamp = Date.now() - Math.floor(per/2);
       g[5][5].apiaryAt = stamp;
-      FF.processApiaries();
+      FF.processProducers();
       eq(s.inventory.beekeeping_t10 || 0, 0, 'half an interval pays nothing');
       eq(g[5][5].apiaryAt, stamp, 'and does not move the clock');
       // THE BOUND: this accrues off a timestamp, so applyOfflineProgress's own 12h cap does NOT cover it.
       // Without ESTATE_APIARY_CAP_MS a year away would mint a year of honey.
       s.inventory = {};
       g[5][5].apiaryAt = Date.now() - 365*24*3600*1000;
-      FF.processApiaries();
+      FF.processProducers();
       var capUnits = Math.floor(FF.ESTATE_APIARY_CAP_MS / per);
       eq(s.inventory.beekeeping_t10 || 0, capUnits, 'a year away pays only the capped window (' + capUnits + ' honey)');
       // A hive with no stamp starts its clock now rather than paying retroactively.
       s.inventory = {};
       g[7][7].buildingId = 'apiary_t0'; g[7][7].apiaryAt = null;
-      FF.processApiaries();
+      FF.processProducers();
       eq(s.inventory.beekeeping_t0 || 0, 0, 'a hive with no clock pays nothing on its first tick');
       ok(!!g[7][7].apiaryAt, 'and starts its clock instead');
       // The crop aura: flat +1 per Apiary in range, stacking, diagonals counted.
@@ -1131,7 +1131,7 @@
         gg[1][1].buildingId = 'apiary_t10';
         gg[1][1].apiaryAt = Date.now() - (5*per + 1000);
         FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
-        FF.processApiaries();
+        FF.processProducers();
         eq(s.inventory.beekeeping_t10 || 0, 0, 'a guild Apiary pays no honey (a shared hive would pay every member)');
       } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
       // The per-KIND standing count, which is what an Estate quest has to read: every building shares one
@@ -1218,6 +1218,190 @@
       FF.recomputeAqueducts();
     }
   });
+
+  // ---- BATCH B: the Fishing Weir (the one WATER building) -----------------------------------------
+  // Every placement gate in this file reads pavementTierOf, and a water tile has no pavement tier at all,
+  // so the Weir needed its own surface rule. The load-bearing part is what it must NOT do: paving the tile
+  // would flip estateIsWater false and strip the waterside crop bonus from every neighbouring Field, so a
+  // fishery would quietly damage the farm beside it.
+  suite('estate buildings: the Fishing Weir stands in water without draining it', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.fishing;
+    var g = [];
+    for(var x=0; x<8; x++){ g[x] = []; for(var y=0; y<8; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; FF.estUse(false);
+    try {
+      eq(FF.buildingSurface('weir'), 'water', 'the Weir is a water building');
+      eq(FF.buildingSurface('apiary'), 'paved', 'and everything else defaults to paved');
+      // Make (4,4) real water: height 0 AND unpaved.
+      g[4][4].type = 'dirt'; g[4][4].paveTileId = null; g[4][4].height = 0;
+      ok(FF.estateIsWater(g[4][4]), 'the tile is water to begin with');
+      // The offer lists are surface-exclusive, so no button is ever presented that can only be refused.
+      s.inventory = { weir_t3:1, apiary_t3:1 };
+      var onWater = FF.placeableBuildingsFor(g[4][4]).map(function(i){ return i.id; });
+      var onPaved = FF.placeableBuildingsFor(g[6][6]).map(function(i){ return i.id; });
+      ok(onWater.indexOf('weir_t3') !== -1, 'a Weir is offered on water');
+      ok(onWater.indexOf('apiary_t3') === -1, 'a paved building is not offered on water');
+      ok(onPaved.indexOf('weir_t3') === -1, 'and a Weir is not offered on paved ground');
+      ok(onPaved.indexOf('apiary_t3') !== -1, 'while the paved building is');
+      // THE POINT: a Field beside the water keeps its bonus once the Weir stands there.
+      g[4][5].type = 'dirt'; g[4][5].paveTileId = null; g[4][5].fieldTier = 20;
+      eq(FF.waterYieldBonusAt('personal','4,5'), FF.WATER_YIELD_BONUS, 'the Field earns the waterside bonus');
+      g[4][4].buildingId = 'weir_t3';
+      eq(FF.waterYieldBonusAt('personal','4,5'), FF.WATER_YIELD_BONUS, 'and KEEPS it with a Weir standing in the water');
+      ok(FF.estateIsWater(g[4][4]), 'because the Weir never paves its tile');
+      // Being raised out of the water would strand it, so the raise is refused at dispatch as well as
+      // at the button (a raise can be queued before the Weir is placed).
+      var rv = FF.estateQueuedJobValid({ kind:'raise' }, g[4][4]);
+      ok(!rv.ok, 'a queued raise on the Weir tile is refused (' + rv.msg + ')');
+      ok(FF.estateQueuedJobValid({ kind:'raise' }, { type:'dirt', height:4 }).ok, 'while an empty dirt tile still raises');
+      // The surface is re-checked at dispatch in both directions.
+      ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'weir_t3' }, { type:'paved', paveTileId:'paving_t20', height:8 }).ok, 'a queued Weir is void on paved ground');
+      ok(FF.estateQueuedJobValid({ kind:'build', buildingId:'weir_t3' }, { type:'dirt', height:0 }).ok, 'and valid on water');
+      ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t0' }, { type:'dirt', height:0 }).ok, 'a paved building is void on water');
+      // A Weir bills no stonework: it stands in water, not on a foundation.
+      var wb = FF.getBuildingTierData('weir', 5).inputs;
+      ok(!Object.keys(wb).some(function(k){ return k.indexOf('stonecutting_') === 0; }), 'a Weir bills no stone');
+      ok(wb.carpentry_t5 > 0 && wb.twine_t5 > 0, 'it bills planks and twine');
+      // It produces through the SHARED engine, which is the reason it needed no accrual code of its own.
+      ok(FF.buildingIsProducer('weir') && FF.buildingIsProducer('apiary'), 'both producers are marked as such');
+      ok(!FF.buildingIsProducer('aqueduct'), 'and a non-producer is not');
+      s.inventory = {};
+      var per = FF.apiaryIntervalMs(3);
+      g[4][4].apiaryAt = Date.now() - (4*per + 500);
+      FF.processProducers();
+      eq(s.inventory.fishing_t3 || 0, 4, 'four elapsed intervals bank four fish');
+      // The offline cap is the shared one, so the Weir inherits it rather than needing its own.
+      s.inventory = {};
+      g[4][4].apiaryAt = Date.now() - 365*24*3600*1000;
+      FF.processProducers();
+      eq(s.inventory.fishing_t3 || 0, Math.floor(FF.ESTATE_APIARY_CAP_MS / per), 'and a year away pays only the capped window');
+    } finally { s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.fishing = savedXp; FF.recomputeAqueducts(); }
+  });
+
+  // ---- BATCH B: the Salvage Yard ------------------------------------------------------------------
+  // OWNER RULES: Salvaging gates placement, a Yard accepts only its own tier or lower, it has its own tab,
+  // and an estate holds five (raised by Bunkhouses in batch D). Each Yard is a work slot on a clock, which
+  // is why the cap matters: more Yards is more throughput.
+  suite('estate buildings: the Salvage Yard breaks equipment into scrap', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedTasks = s.salvageTasks,
+        savedXp = s.xp.salvaging, savedEarned = s.itemEarnedTotal, savedStats = s.stats;
+    var g = [];
+    for(var x=0; x<8; x++){ g[x] = []; for(var y=0; y<8; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; s.salvageTasks = {}; s.stats = {}; s.itemEarnedTotal = {}; FF.estUse(false);
+    try {
+      eq(FF.SALVAGE_MAX_YARDS, 5, 'five Yards per estate, per the owner rule');
+      eq(FF.salvageYardCap(), 5, 'and the cap reads five until a Bunkhouse raises it');
+      ok(FF.salvageIntervalMs(0) > FF.salvageIntervalMs(20), 'a higher-tier Yard grinds faster');
+      // The cap is enforced at PLACEMENT and again when slots are derived.
+      for(var i=0;i<6;i++) g[1][i+1].buildingId = 'salvageyard_t' + (10+i);
+      eq(FF.salvageSlots().length, 5, 'six Yards on the grid still yield only five slots');
+      ok(FF.buildingCapBlocked('salvageyard').indexOf('5') !== -1, 'and a seventh is refused by name and number');
+      eq(FF.buildingCapBlocked('apiary'), '', 'an uncapped building refuses nothing');
+      // WHAT MAY BE BROKEN DOWN. The two exclusions are the ones that would otherwise destroy something
+      // irreplaceable or nonsensical.
+      ok(FF.salvageableId('stweapon_greatsword_t5_rare'), 'equipment is salvageable');
+      ok(FF.salvageableId('tool_mining_t4_normal'), 'so are tools');
+      ok(!FF.salvageableId('farming_t3'), 'a raw crop is not');
+      ok(!FF.salvageableId('blueprint_d1_helm'), 'and neither is a Blueprint');
+      // THE sell:0 GUARD, tested honestly. Today NO real item is both equipment-shaped and sell:0 (checked:
+      // zero of them in ALL_SELLABLE), so the Blueprint above is refused by its SHAPE and exercises nothing
+      // -- which is exactly why a planted removal of the sell check passed the suite. The guard is
+      // defence-in-depth for a future sell:0 piece of equipment, e.g. an untradeable quest reward, so it is
+      // proven against a temporary registration rather than left uncovered or asserted on a fiction.
+      var probeId = 'stweapon_greatsword_t5_rare';
+      var realDef = FF.ALL_SELLABLE[probeId];
+      try {
+        FF.ALL_SELLABLE[probeId] = { id:probeId, name:'Probe', sell:0 };
+        ok(!FF.salvageableId(probeId), 'a sell:0 EQUIPMENT item is refused by the sell guard');
+      } finally { FF.ALL_SELLABLE[probeId] = realDef; }
+      ok(FF.salvageableId(probeId), 'and the same item is accepted again once its real sell price is back');
+      eq(FF.salvageYieldFor('stweapon_greatsword_t5_normal'), 1, 'a normal item pays 1 scrap');
+      eq(FF.salvageYieldFor('stweapon_greatsword_t5_rare'), 2, 'a rare 2');
+      eq(FF.salvageYieldFor('stweapon_greatsword_t5_supreme'), 3, 'a supreme 3');
+      eq(FF.salvageYieldFor('stweapon_greatsword_t5_fantastic'), 5, 'a fantastic 5');
+      // The tier rule.
+      s.estate.grid = g; g[1][1].buildingId = 'salvageyard_t10';
+      for(var j=2;j<8;j++) g[1][j].buildingId = null;
+      s.inventory = { stweapon_greatsword_t5_rare:4, bodyarmor_plate_chest_t20_fantastic:2, farming_t3:9 };
+      var fits = FF.salvageableItems(10).map(function(o){ return o.id; });
+      ok(fits.indexOf('stweapon_greatsword_t5_rare') !== -1, 'a t5 item fits a t10 Yard');
+      ok(fits.indexOf('bodyarmor_plate_chest_t20_fantastic') === -1, 'a t20 item does not');
+      ok(fits.indexOf('farming_t3') === -1, 'and a crop never appears at all');
+      // The grind: items are consumed AS PROCESSED, scrap is credited, and the order counts down.
+      var slot = FF.salvageSlots()[0];
+      FF.salvageAssign(slot.key, 'stweapon_greatsword_t5_rare', 4);
+      ok(!!FF.salvageTasks()[slot.key], 'the work order is created');
+      var per = FF.salvageIntervalMs(slot.tier);
+      FF.salvageTasks()[slot.key].at = Date.now() - (2*per + 200);
+      FF.processSalvageYards();
+      eq(s.inventory.stweapon_greatsword_t5_rare || 0, 2, 'two intervals consumed two items');
+      eq(s.inventory.salvaging_t5 || 0, 4, 'and paid 2 scrap each');
+      eq(FF.salvageTasks()[slot.key].qty, 2, 'with two left on the order');
+      ok((s.stats.salvaged_items||0) === 2, 'the quest tally counts what was broken down');
+      // An over-tier assignment is refused outright.
+      FF.salvageClear(slot.key);
+      FF.salvageAssign(slot.key, 'bodyarmor_plate_chest_t20_fantastic', 1);
+      ok(!FF.salvageTasks()[slot.key], 'a t20 item cannot be assigned to a t10 Yard');
+      // Selling the stack out from under a standing order stops it rather than destroying anything.
+      FF.salvageAssign(slot.key, 'stweapon_greatsword_t5_rare', 2);
+      delete s.inventory.stweapon_greatsword_t5_rare;
+      var scrapBefore = s.inventory.salvaging_t5 || 0;
+      FF.salvageTasks()[slot.key].at = Date.now() - (2*per + 200);
+      FF.processSalvageYards();
+      ok(!FF.salvageTasks()[slot.key], 'an order with nothing left to eat ends itself');
+      // ...and mints NOTHING. Without the `held` term in the consume amount the Yard would pay scrap for
+      // items that are no longer there and drive the stack negative; the order ending is not enough proof.
+      eq(s.inventory.salvaging_t5 || 0, scrapBefore, 'and pays no scrap for items it does not hold');
+      ok((s.inventory.stweapon_greatsword_t5_rare || 0) >= 0, 'and never drives the stack negative');
+      // Removing the Yard lapses its order instead of grinding on a phantom slot.
+      s.inventory = { tool_mining_t4_normal:3 };
+      FF.salvageAssign(slot.key, 'tool_mining_t4_normal', 3);
+      ok(!!FF.salvageTasks()[slot.key], 'a fresh order stands');
+      g[slot.x][slot.y].buildingId = null;
+      FF.processSalvageYards();
+      ok(!FF.salvageTasks()[slot.key], 'and lapses when its Yard is removed');
+      eq(s.inventory.tool_mining_t4_normal || 0, 3, 'without eating the items it had not processed');
+      // THE REAL PLACEMENT PATH, not just the helpers it consults. Asserting buildingCapBlocked() alone left
+      // estatePlaceBuilding untested, and a planted removal of its cap check passed the whole suite.
+      s.salvageTasks = {};
+      for(var c=0;c<8;c++){ for(var d=0;d<8;d++) g[c][d].buildingId = null; }
+      s.xp.architecture = FF.SKILL_XP_FLOOR[100]; s.xp.salvaging = FF.SKILL_XP_FLOOR[100];
+      s.inventory = { salvageyard_t0:9 };
+      s.estate.job = null; s.estate.queue = [];
+      for(var y2=0;y2<5;y2++) g[3][y2].buildingId = 'salvageyard_t0';   // the estate is already at its cap
+      eq(FF.buildingCountOnEstate('salvageyard'), 5, 'five Yards stand');
+      FF.estatePlaceBuilding(4, 4, 'salvageyard_t0');
+      ok(!s.estate.job, 'estatePlaceBuilding REFUSES the sixth Yard rather than starting a job');
+      eq(s.inventory.salvageyard_t0, 9, 'and spends nothing');
+      // The same for the water surface: the real path must place a Weir WITHOUT paving the tile.
+      for(var y3=0;y3<5;y3++) g[3][y3].buildingId = null;
+      s.inventory = { weir_t0:1 };
+      g[5][5].type = 'dirt'; g[5][5].paveTileId = null; g[5][5].height = 0;
+      s.xp.fishing = FF.SKILL_XP_FLOOR[100];
+      FF.estatePlaceBuilding(5, 5, 'weir_t0');
+      ok(!!s.estate.job, 'a Weir on water does start a job');
+      eq(s.estate.job.kind, 'build', 'as a build job');
+      eq(s.estate.job.buildingId, 'weir_t0', 'carrying the Weir');
+      ok(FF.estateIsWater(g[5][5]), 'and the tile is STILL water afterwards (placing it must never pave)');
+      eq(g[5][5].type, 'dirt', 'its type is untouched');
+      s.estate.job = null; s.estate.queue = [];
+      // A Weir on paved ground is refused by the same path.
+      s.inventory = { weir_t0:1 };
+      FF.estatePlaceBuilding(6, 6, 'weir_t0');
+      ok(!s.estate.job, 'and a Weir on paved ground is refused');
+
+      // The tab renders from real state rather than throwing on an empty estate.
+      ok(typeof FF.renderSalvageTab === 'function', 'the Salvage tab exists');
+      ok(FF.renderSalvageTab().indexOf('No Salvage Yards') !== -1, 'and says so when there are none');
+      g[1][1].buildingId = 'salvageyard_t10';
+      ok(FF.renderSalvageTab().indexOf('Salvage Yard') !== -1, 'and names the Yard when one stands');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.salvageTasks = savedTasks;
+      s.xp.salvaging = savedXp; s.itemEarnedTotal = savedEarned; s.stats = savedStats;
+      FF.recomputeAqueducts();
+    }
+  });
+
 
   // ---- Tool forges: only the NORMAL previous tool is craft fodder + unique tool names (ticket-0093) --
   suite('tools: forges consume only the Normal previous tool', function(){
