@@ -154,5 +154,50 @@ console.log(`seamcheck: ${assigned.size} act.* fields assigned, ${cleared.size} 
 }
 console.log("seamcheck: boot order (offline catch-up before item sync) intact.");
 
+// ---- CHECK 4: no damage source may be invisible in the combat log ----------------------------------
+// The standing rule is that every damage source shows in the Combat log. It was broken in eight places at
+// once, and the reason it stayed broken is that the breakage is SILENT: `act.monsterHp -= x` deals damage
+// perfectly and simply never writes a row. The Firebomb sat at 210 damage against best-in-slot hits of ~1e11
+// for as long as it did precisely because nobody could see what it did.
+//
+// So the rule is enforced structurally: raw damage application is allowed at exactly two sites, and every
+// other source must route through applyEffectDamage or applyEffectDot (which log), or push its own row.
+// A new mechanic that subtracts monsterHp directly now fails CI instead of shipping invisible.
+{
+  // Site 1: the main weapon hit, which writes its own dir:'out' row a few lines above.
+  // Site 2: applyChipDamage itself, the primitive both logging helpers are built on.
+  // The rule is uniform: a raw subtraction is fine ONLY if a combat-log row is pushed nearby. That covers
+  // the main hit (its dir:'out' row) and the Assassin's Fang Strike (a dir:'out' row tagged echo:'Fang
+  // Strike'), and it rejects anything that just quietly removes health.
+  const rawLines = L.map((l, i) => ({ l, i })).filter((r) => /\b[a-z]+\.monsterHp\s*-=/.test(r.l));
+  for (const { l, i } of rawLines) {
+    // applyChipDamage IS the primitive both logging helpers are built on, so its own subtraction is the
+    // one place raw damage belongs. Everything else has to explain itself.
+    if (/function applyChipDamage/.test(L.slice(Math.max(0, i - 4), i).join("\n"))) continue;
+    const window = L.slice(Math.max(0, i - 4), i + 14).join("\n");
+    if (!/combatLogPush\(/.test(window)) {
+      fail(`raw monsterHp subtraction with no combatLogPush nearby, line ${i + 1}:\n`
+         + `       ${l.trim().slice(0, 110)}\n`
+         + "       Damage applied this way lands perfectly and writes NO combat-log row, which is how the\n"
+         + "       Firebomb's dead scaling went unnoticed. Route it through applyEffectDamage(dmg, 'Name')\n"
+         + "       for a discrete hit, or applyEffectDot(dmg, 'Name') for a per-frame slice.");
+    }
+  }
+  // Raw applyChipDamage callers are allowed only where a dir:'fam' or dir:'out' row is pushed nearby, which
+  // is how the familiar spells, the Skeletal Wraith and the Assassin's Fang Strike already log. Anything
+  // else is silent damage wearing a different hat.
+  const chipLines = L.map((l, i) => ({ l, i }))
+    .filter((r) => /(?<!function )applyChipDamage\s*\(/.test(r.l) && !/var killed = applyChipDamage/.test(r.l));
+  for (const { l, i } of chipLines) {
+    const window = L.slice(Math.max(0, i - 2), i + 30).join("\n");
+    if (!/combatLogPush\(/.test(window)) {
+      fail(`applyChipDamage at line ${i + 1} has no combatLogPush within 30 lines -- silent damage.\n`
+         + `       ${l.trim().slice(0, 100)}\n`
+         + "       Use applyEffectDamage / applyEffectDot, or push a row of its own.");
+    }
+  }
+}
+console.log("seamcheck: every damage source reaches the combat log.");
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

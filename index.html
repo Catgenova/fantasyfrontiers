@@ -7759,7 +7759,7 @@
     d4BreathReset(a);
     var burst = Math.max(1, Math.round((hitDmg||0) * D4_BREATH_BURST_MULT * elementDmgMult(st, 'fire')));
     burst = Math.round(burst * (1 + legendaryRingBonus('d4_breath', st)));          // Signet of the Breath: bigger burst
-    a.monsterHp -= burst;
+    applyEffectDamage(burst, "Dragon's Breath");
     awardElementXp('fire', burst);
     if(which==='ranger' && a.monsterHp > 0) d4VenombreathApply(a);                                                        // Venombreath
     return burst; }
@@ -8017,7 +8017,7 @@
       if(w.nextAt <= now){
         w.nextAt = now + SUMMONER_WRAITH_STRIKE_MS;
         var dmg = Math.max(1, Math.round(dotBase(state) * SUMMONER_WRAITH_HIT_PCT));
-        applyChipDamage(dmg); decayApply(act, 1);
+        applyChipDamage(dmg); decayApply(act, 1);   // logs below as a dir:'fam' Necrotic Strike row
         if(!offlineCapture) spawnCombatFloat('Skeletal Wraith -'+fmt(dmg), 'ft-rare', true);
         var _wm = monsterById(act.monsterId);
         combatLogPush({ dir:'fam', fam:'Skeletal Wraith', spName:'Necrotic Strike', dmg:dmg, target:(_wm&&_wm.name)||'' });
@@ -8764,13 +8764,13 @@
     } else if(head === 'blast'){ // an instant eruption; Breathfang doubles it and lights it as Fire
       var _burst = Math.round(hit * QD_BLAST_PCT * pow * (legActive('breathfang', st) ? 1.0 * elementDmgMult(st, 'fire') : 1));
       if(_burst > 0 && (act.monsterHp||0) > 0){
-        act.monsterHp -= _burst;
+        applyEffectDamage(_burst, 'Blasthead');
         if(legActive('breathfang', st)) awardElementXp('fire', _burst);
         if(!offlineCapture) spawnCombatFloat('Blasthead -'+fmt(_burst), 'ft-crit', true);
       }
     } else if(head === 'piercer'){ // pays back the carrying hit's armour shortfall, then Shreds (shared Sunder channel)
       var _pierce = (advantage && advantage < 1) ? Math.round(hit * Math.min(1, (1 - advantage) / Math.max(0.05, advantage)) * pow) : 0; // capped at 1x the hit
-      if(_pierce > 0 && (act.monsterHp||0) > 0){ act.monsterHp -= _pierce; if(!offlineCapture) spawnCombatFloat('Piercer -'+fmt(_pierce), 'ft-rare', true); }
+      if(_pierce > 0 && (act.monsterHp||0) > 0){ applyEffectDamage(_pierce, 'Piercer'); if(!offlineCapture) spawnCombatFloat('Piercer -'+fmt(_pierce), 'ft-rare', true); }
       st.classDebuffs = st.classDebuffs || {};
       st.classDebuffs.enemyArmorUntil = Math.max(st.classDebuffs.enemyArmorUntil||0, now + dur);
     } else if(head === 'serpent'){ // venom on the toxin/poison channel (Serpent's Sting's old home)
@@ -11645,7 +11645,7 @@
           dmg = Math.round(dmg * famCritMult);
           famCrit = true;
         }
-        applyChipDamage(dmg);
+        applyChipDamage(dmg);   // logs below as a dir:'fam' row carrying the familiar and spell names
         if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
         // Familiar damage floats over the enemy on the combat card, tagged with the familiar's name.
         spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
@@ -18772,7 +18772,7 @@
     // Immolate (Pyromancer D2 full): while the foe is at max Burn, each direct hit deals +20% as bonus fire.
     if(!isOffhand && setFullD2('pyromancer') && enemyBurnStacks() >= pyroBurnCap(state)){
       var _im = Math.round(dmgToMonster * 0.20);
-      if(_im > 0){ act.monsterHp -= _im; if(!offlineCapture) spawnCombatFloat(svgIcon('flame','#e8641e')+' '+fmt(_im), 'ft-rare', true); }
+      if(_im > 0){ applyEffectDamage(_im, 'Immolate'); if(!offlineCapture) spawnCombatFloat(svgIcon('flame','#e8641e')+' '+fmt(_im), 'ft-rare', true); }
     }
     // (Final Cut, Samurai D3 full, moved into smDrawCutFire: it used to fire off ANY Critical Hit, which at a
     // best-in-slot crit rate meant "every swing" and made the Souls a per-swing rider rather than an event.
@@ -18785,7 +18785,7 @@
       if(isCrit && templarBonus(20)) state.tplVerseExt = Math.min(TPL_FERVOR_EXT_CAP, (state.tplVerseExt||0) + TPL_FERVOR_EXT_MS);
       if(isCrit && setFullD4('templar') && templarVerse(state)==='zeal' && act.monsterHp > 0){
         var _sz = Math.round(dmgToMonster * 0.30 * elementDmgMult(state, 'light'));
-        if(_sz > 0){ act.monsterHp -= _sz; awardElementXp('light', _sz); if(!offlineCapture) spawnCombatFloat('Sunburst -'+fmt(_sz), 'ft-crit', true); }
+        if(_sz > 0){ applyEffectDamage(_sz, 'Sunburst'); awardElementXp('light', _sz); if(!offlineCapture) spawnCombatFloat('Sunburst -'+fmt(_sz), 'ft-crit', true); }
       }
     }
     // Quickdraw "The Quiverlord" on-hit: the cycle commit. Fires the Trick Arrow / Fusillade the peek
@@ -18809,7 +18809,7 @@
     if(!isOffhand && set2D3('reaper') && (state.reaperShield||0) > 0 && act.monsterHp > 0){
       var _seCap = reaperShieldCap(state);
       var _se = _seCap > 0 ? Math.round(dmgToMonster * REAPER_SPECTRAL_EDGE_PCT * Math.min(1, state.reaperShield / _seCap)) : 0;
-      if(_se > 0){ act.monsterHp -= _se; if(!offlineCapture) spawnCombatFloat('Spectral Edge -'+fmt(_se), 'ft-rare', true); }
+      if(_se > 0){ applyEffectDamage(_se, 'Spectral Edge'); if(!offlineCapture) spawnCombatFloat('Spectral Edge -'+fmt(_se), 'ft-rare', true); }
     }
     // (The Executioner's on-hit instant-kills retired with the Falling Axe rework: the D1 2pc is Keen
     // Rise, the Soulharvester hones the climb, and the only execute left is The Cull inside exFallFire.)
@@ -18835,7 +18835,7 @@
     if(!isOffhand && act.type==='combat' && act.monsterHp > 0){
       // (Wyrmstalker's Scorch retired: it amplifies the companion's strikes at max Quarry now.)
       if(false) scorchApply(act, 1);                    // Wyrmstalker Bow: hits Scorch an afflicted foe
-      if(isCrit && legActive('dragoneye', state) && act.monsterHp > 0){ var _de = Math.max(1, Math.round(dmgToMonster * 0.20)); act.monsterHp -= _de; if(!offlineCapture) spawnCombatFloat('Dragoneye -'+fmt(_de), 'ft-crit', true); } // Dragoneye Bow: crits strike the weakness
+      if(isCrit && legActive('dragoneye', state) && act.monsterHp > 0){ var _de = Math.max(1, Math.round(dmgToMonster * 0.20)); applyEffectDamage(_de, 'Dragoneye'); if(!offlineCapture) spawnCombatFloat('Dragoneye -'+fmt(_de), 'ft-crit', true); } // Dragoneye Bow: crits strike the weakness
     }
     if(!isOffhand) act.lastSwingAt = Date.now(); // Momentum Swing (Juggernaut full) reads the gap since the previous swing
     // DOWNBEAT: a connecting main-hand staff swing buffs the host (stacks/Crescendo/Finale inside).
@@ -18854,7 +18854,7 @@
         var _countMult = (_vLoaded && setFullD4('assassin')) ? 2 : 1;                                  // Twin Fangs (D4 full): a Vanish-loaded detonation counts wounds twice
         var _perWound = (_vLoaded && legActive('shadowwyrm')) ? ASSASSIN_FANG_PCT_SHADOWWYRM : assassinFangPerWound(state); // Shadowwyrm's Fang: +60%/wound when Vanish-loaded
         var _deto = Math.max(1, Math.round(dmgToMonster * _perWound * _wounds * _countMult));
-        act.monsterHp -= _deto;
+        act.monsterHp -= _deto;   // logs below as a dir:'out' row tagged echo:'Fang Strike'
         act.woundStacks = 0; act.vanishLoadedDet = false;
         if(!offlineCapture){
           spawnCombatFloat(svgIcon('claw','#e3aeb2')+' Fang Strike -'+fmt(_deto), 'ft-crit', true);
@@ -20657,7 +20657,9 @@
           while(_mAcc >= _mInt && state.activity.type==='combat'){ _mAcc -= _mInt; monsterAttackTick(); autoEatCheck(); _mInt = Math.max(200, _monster.attackSpeed*1000*(1+enemyExtraSlowPct())); }
           if(state.activity.type!=='combat') break;
           // Familiar poison + toxin-potion poison chip the enemy; familiar regen heals.
-          var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
+          // A per-frame DoT slice, so applyEffectDot (which aggregates into one row per second) rather
+          // than applyEffectDamage, which would push a row every frame and bury the 200-row buffer.
+          var _pd = getFamiliarPoisonDps(); if(_pd>0) applyEffectDot(_pd*_chunk/1000, 'Familiar Poison', { earned:true });
           toxinClockTick(_chunk); applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
           applySamuraiFocusTick(_chunk);
@@ -41211,7 +41213,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.87.2';
+  var GAME_VERSION = '0.0.87.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
