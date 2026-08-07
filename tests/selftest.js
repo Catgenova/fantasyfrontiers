@@ -6017,6 +6017,42 @@
   });
 
   // ---- Status debuff cap: Weaken / Slow clamp to 99% even when familiar potency over-stacks them ------
+  // ---- Familiar spell builders: the encoding conventions (review finding 12) ---------------------
+  // FAMILIARS was the least covered system in the game (one of twelve functions had a direct test)
+  // and it is also the system carrying a known scaling shortfall. These cover the non-obvious part:
+  // two builders silently rewrite the numbers an author wrote, and a regression there is invisible.
+  suite('familiars: spell builders encode what the authors wrote', function(){
+    var h = FF.healSpell('Mend', 40);
+    eq(h.type, 'heal', 'healSpell is a heal');
+    eq(h.amount, 40, 'healSpell passes its amount through unchanged');
+
+    // The game-wide regen rework DOUBLES the authored per-5s tick and TRIPLES the duration. Authors
+    // still write the pre-rework numbers, so this transform is load-bearing and easy to lose.
+    var r = FF.regenSpell('Renew', 10, 8);
+    eq(r.hps, 20, 'regenSpell doubles the authored per-5s tick');
+    eq(r.durationMs, 24000, 'regenSpell triples the authored duration');
+    eq(r.type, 'regen', 'regenSpell is a regen');
+
+    var p = FF.poisonSpell('Spit', 7, 6);
+    eq(p.dps, 7, 'poisonSpell passes dps through');
+    eq(p.durationMs, 6000, 'poisonSpell converts seconds to ms');
+
+    var v = FF.hitSpell('Rend', 'void', 55);
+    eq(v.dmgType, 'void', 'hitSpell carries its damage type (void ignores enemy armour)');
+    eq(v.amount, 55, 'hitSpell carries its amount');
+
+    var b = FF.buffSpell('Focus', 'critChance', 0.15, 12);
+    eq(b.kind, 'critChance', 'buffSpell carries its buff kind');
+    eq(b.durationMs, 12000, 'buffSpell converts seconds to ms');
+
+    // bubbleSpell is the odd one out: durSec is the scaling x, NOT a durationMs.
+    var bb = FF.bubbleSpell('Ward', 9);
+    eq(bb.durSec, 9, 'bubbleSpell keeps durSec as the scaling value, not a durationMs');
+    eq(bb.durationMs, undefined, 'bubbleSpell deliberately has no durationMs');
+
+    eq(FF.siphonSpell('Drain', 33).type, 'siphon', 'siphonSpell is a siphon');
+  });
+
   suite('familiars: status debuffs cap at 99%', function(){
     eq(FF.STATUS_DEBUFF_CAP, 0.99, 'the status-debuff cap is 99%');
     var s = FF._state;
