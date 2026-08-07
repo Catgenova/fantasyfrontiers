@@ -9368,6 +9368,7 @@
   function fwFreezeFire(act, st){ st = st || state;
     if(!frostwardenBonus(80, st) || !act || act.type !== 'combat') return 0;
     act.fwFrozenUntil = Date.now() + fwFreezeMs(st);
+    cbClassEvent('freeze');
     act.enemyStunUntil = Math.max(act.enemyStunUntil || 0, act.fwFrozenUntil);
     if(!offlineCapture) spawnCombatFloat('\u2744 DEEP FREEZE', 'ft-rare', true);
     return fwShatterFire(act, st, true); }
@@ -9494,6 +9495,7 @@
       * (legActive('wyrmthornwall', st) ? LEG_WYRMTHORNWALL_VOLLEY : 1));
     if(dmg > 0){
       applyEffectDamage(dmg, 'Bloom', { detail: 'growth ' + Math.round(snGrowth(st)) + ' x ' + Math.round(SN_BLOOM_PCT*100) + '%' });
+      cbClassEvent('bloom');
       if(!offlineCapture) spawnCombatFloat('Bloom -'+fmt(dmg), 'ft-crit', true);
     }
     return dmg; }
@@ -9708,6 +9710,7 @@
     var before = a.ssPeel||0;
     if(before < ssPeelCap(st)){
       a.ssPeel = before + 1;
+      if(sharpshooterBonus(80, st) && a.ssPeel === ssBareAt(st)) cbClassEvent('bare');   // the crossing, not every shot at the cap
       if(!offlineCapture) spawnCombatFloat((sharpshooterBonus(80, st) && a.ssPeel === ssBareAt(st)) ? 'BARE!' : 'Peeled x'+a.ssPeel, (sharpshooterBonus(80, st) && a.ssPeel >= ssBareAt(st)) ? 'ft-crit' : 'ft-bonus', true);
     }
     return ssTear(st);
@@ -9829,6 +9832,7 @@
     if(!a || a.type!=='combat' || (a.monsterHp||0) <= 0){ return 0; }
     var bank = st.nbDoomBank||0;
     if(bank <= 0){ st.nbDoomLeftMs = 0; st.nbDoomBank = 0; return 0; }
+    cbClassEvent('doom');   // the contract comes due (bank > 0 is already established above)
     var woes = enemyDebuffCount(st), dd = nbDoomsdayMult(st);
     var mult = (1 + nbLitanyPer(st) * woes) * dd;
     var eclipse = 0;
@@ -9926,6 +9930,7 @@
       * (legActive('emberwyrm', st) ? LEG_EMBERWYRM_FALL_MULT : 1));
     if(dmg > 0 && (a.monsterHp||0) > 0){
       applyEffectDamage(dmg, 'Falling Axe', { detail: 'fell from ' + Math.round(height*100) + '% (+' + Math.round(missing*100) + '% missing)' });
+      cbClassEvent('fall');
       spawnCombatFloat('The Axe Falls!', 'ft-crit', true);
     }
     a.exFell = (a.exFell||0) + 1;
@@ -10466,7 +10471,7 @@
     var now = Date.now();
     st.jgEchoes = (st.jgEchoes||[]).filter(function(e){ return e.until > now; });
     var hadRinging = st.jgEchoes.length > 0;
-    if(juggernautBonus(80, st) && hadRinging && jgResonance(st) >= JG_RESONANCE_MAX) jgBigOne(st);
+    if(juggernautBonus(80, st) && hadRinging && jgResonance(st) >= JG_RESONANCE_MAX){ jgBigOne(st); cbClassEvent('bigone'); }
     jgRingEcho(st, dmg);
     if(juggernautBonus(20, st) && hadRinging){
       st.jgResonance = Math.min(JG_RESONANCE_MAX, (st.jgResonance||0) + (legActive('earthshaker', st) ? 2 : 1)); // Cavebreaker: impacts count double
@@ -10643,6 +10648,7 @@
       var attempt = Math.round(maxHp(st) * LUMEN_MEND_HPS_PCT * (r / LM_RAD_CAP) * lmPourMult(st)
         * (legActive('beaconward', st) ? LEG_GLIMMERWARD_MEND : 1));
       if(attempt > 0){
+        cbClassEvent('pour');   // one pour per resolved second, which is what the meter actually does
         var tgt = lumenHealTarget();
         var consumed;
         if(!tgt.isSelf){ lumenApplyHeal(attempt); consumed = attempt; } // an ally drank it all
@@ -10731,6 +10737,7 @@
     if(whole <= 0) return 0;
     a.rvCutAccum -= whole;
     a.rvCuts = Math.min(RV_CUT_MAX, (a.rvCuts || 0) + whole);
+    if(whole > 0) cbClassEvent('cuts', whole);
     a.rvBank = Math.min(RV_CUT_MAX, (a.rvBank || 0) + whole);
     // Boneshell: a Cut can bank a Soul Charge (feeding the D3 Exsanguinate line).
     if(legActive('boneshell', st)) for(var _c = 0; _c < whole; _c++) if(Math.random() < LEG_BONESHELL_CUT_SOUL) d3SoulsAdd(1);
@@ -10877,6 +10884,7 @@
     var weak = (legActive('emberdraw', st) ? LEG_EMBERDRAW_WEAKNESS : 1) * (setFullD4('samurai', st) ? 1.20 : 1);
     dmg *= weak;
     dmg *= SM_CUT_CRIT_MULT;                                                   // the draw-cut always crits (Iaijutsu)
+    cbClassEvent('drawcut');
     dmg = Math.round(dmg);
     // Spend the stance BEFORE the strike lands, so nothing re-entrant can find it still full.
     act.samuraiFocus = smCutRefund(st); act.smFocusAccum = 0;
@@ -13563,7 +13571,16 @@
   function elementDmgMult(st, element){ return 1 + elementDamageBonus(st, element) + getRingElementDamageBonus(st, element) + legendaryCloakBonus('d2_warpack', st) + d4SetElementDmg(st, element) + legendaryRingBonus('d4_wyrm', st); } // + Shroud of the Warpack (D2); D4 Attunement sets; Signet of the Wyrm (D4: +Elemental Damage)
   function elementResistMult(st, element){ return Math.max(0.05, (1 - elementResistBonus(st, element)) * (1 - d4SetElementResist(st, element))); } // Attunement resist x D4 Dragonscale resist, floored at 5% taken (never heals, never fully negates)
   // Grant attunement physique XP for dealing or taking `dmg` of `element`.
-  function awardElementXp(element, dmg){ var id = ELEMENT_ATTUNEMENT[element]; if(id && dmg > 0) addPhysiqueXp([[id, Math.max(1, Math.round(dmg * ELEMENT_ATTUNE_XP_PER_DMG * (1 + legendaryAmuletBonus('d4_dragon'))))]]); } // + Pendant of the Dragon (D4): +Attunement XP
+  function awardElementXp(element, dmg){
+    // Combat quests: the element SET and the last element dealt both ride this call, which every
+    // element-damage source already makes. No second bookkeeping path.
+    if(element && dmg > 0){
+      if(!state.cbSets) state.cbSets = { cls:{}, weapon:{}, family:{}, element:{} };
+      if(!state.cbSets.element) state.cbSets.element = {};
+      state.cbSets.element[element] = 1;
+      var _a = state.activity; if(_a && _a.type === 'combat') _a.cbLastEl = element;
+    }
+    var id = ELEMENT_ATTUNEMENT[element]; if(id && dmg > 0) addPhysiqueXp([[id, Math.max(1, Math.round(dmg * ELEMENT_ATTUNE_XP_PER_DMG * (1 + legendaryAmuletBonus('d4_dragon'))))]]); } // + Pendant of the Dragon (D4): +Attunement XP
   // Physique-driven combat bonuses -- layered on top of the equipment-driven Leather
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
   var CRIT_DAMAGE_MULT = 1.5;        // base crit damage multiplier
@@ -15506,7 +15523,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -19030,6 +19047,7 @@
     if(act && act.tower){ towerOnKill(monster); return; } // tower foe -> bank the floor + advance, don't re-engage
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
+    questNoteKill(monster);   // whole-fight Combat quest facts, read before the per-foe reset clears them
     bumpMonsterKill(monster.id); // per-monster tally powers Quest progress (e.g. "kill 10 Rabbits")
     // Enemies no longer drop a flat gold reward on kill. (Treasure Hunter's legendary/set gold-scatter
     // effects -- Goldgorge crits, Cofferguard/Cryptguard/Hoardwall blocks, Wyrm's Greed -- still pay out;
@@ -19089,6 +19107,9 @@
     act.pbSev = 0; act.pbUntil = 0; act.pbErupt = 0; // a fresh foe is uninfected (Pestilence re-seeds it below)
     act.toxinClockAccum = 0; act.potionPoisonName = null; // a fresh foe starts unvenomed; the clock re-arms
     act.fbOpened = false; // a fresh foe has not been bombed: the Firebomb's opener re-arms per kill
+    // Combat-quest per-fight marks: each new foe is a fresh fight for the untouched / hurt-win / specials
+    // / distinct-sources quests. questNoteKill reads them before this runs.
+    act.cbHitTaken = 0; act.cbSpecials = 0; act.cbWasLow = 0; act.cbWasVeryLow = 0; act.cbSrc = null; act.cbLastEl = null;
     act.fwRime = 0; act.fwFrozenUntil = 0; act.fwRimewyrm = 0; // a fresh foe is unfrozen
     if(_rvCarry){ act.rvCuts = _rvCarry.cuts; act.rvBank = _rvCarry.bank; act.rvBleedHitAvg = _rvCarry.hitAvg; }
     if(_arterialCarry > 0){ // Bonereaver: the next foe inherits the slain foe's Bleed
@@ -19273,6 +19294,7 @@
   function applyEffectDot(dmg, name, opts){
     if(!effectGateOpen(opts)) return false; // DoT slices wait for the encounter's first swing too (earned payouts excepted)
     var killed = applyChipDamage(dmg);
+    if(killed) bumpStat('cb_dot_kills');   // Combat quest: the foe ran out rather than being struck down
     if(offlineCapture || !name || !(dmg > 0)) return killed;
     var e = _clDotAccum[name];
     if(!e){ e = _clDotAccum[name] = { sum:0, since:Date.now() }; }
@@ -19592,7 +19614,7 @@
   // attack tick AND by lethal DoTs so both paths reset identically.
   function playerCombatDeath(monster, causeLog, blow){
     recordDeathReport(monster, blow); // captured FIRST, while the activity/mortal state is still intact
-    bumpStat('deaths');
+    bumpStat('deaths'); state.cbNoDeathRun = 0;
     if(causeLog) addLog(causeLog, 'danger');
     if(state.activity && state.activity.netDungeon && typeof dungeonNet !== 'undefined') dungeonNet.deathHandled = true;
     var diedInDungeon = state.activity && state.activity.dungeon;
@@ -25474,6 +25496,7 @@
     if(_block){ addLog('You can’t enter the ' + def.category + ' yet. ' + _block + '.', 'danger'); return; }
     dungeonStopAllTasks(); // starting the descent stops any lobby crafting/gathering (incl. Belt slots)
     dungeonRun = { def:def, idx:0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false };
+    state.cbDungeonHit = 0;   // a fresh run starts unscratched (Perfect Run)
     dungeonView = 'run';
     addLog('You descend into the ' + def.category + '. ' + def.enemies.length + ' ' + def.theme + ' await, one at a time.', 'important');
     dungeonEngage(0);
@@ -25490,6 +25513,11 @@
     else { dungeonEngage(dungeonRun.idx + 1); needsRender = true; }
   }
   function dungeonComplete(){
+    // Combat quests: a finished run, and whether anything landed on you during it. dgHitTaken is stamped by
+    // the incoming-damage path below via questNoteCombat; a run with none is the Perfect Run.
+    bumpStat('cb_dungeon_clears');
+    if(!state.cbDungeonHit) bumpStat('cb_untouched_dungeons');
+    state.cbDungeonHit = 0;
     var def = dungeonRun.def;
     dungeonMarkCleared(def.id); // beating the boss unlocks the next dungeon
     // Every surviving player rolls the layer's Masterwork Blueprint drops -- solo at 25% of the party rate.
@@ -25704,7 +25732,7 @@
       var _me = dungeonNetMyMember();
       if(_me && (_me.alive === false || (typeof _me.hp === 'number' && _me.hp <= 0))){
         dungeonNet.deathHandled = true;
-        bumpStat('deaths');
+        bumpStat('deaths'); state.cbNoDeathRun = 0;
         var _dcat = DUNGEON_DEFS[dungeonNet.session.layer] ? DUNGEON_DEFS[dungeonNet.session.layer].category : 'dungeon';
         addLog('You fell in the depths of the ' + _dcat + '. Your party fights on without you.', 'danger');
         if(isMortal()) mortalDeath(null); // a Mortal's death is final wherever it happens, group runs included
@@ -27051,6 +27079,7 @@
   // obtainable TITLES browser rather than a quest list (see renderTitlesTab).
   var QUEST_CATEGORIES = [
     { id:'gettingstarted', label:'First Frontier' },
+    { id:'combatquests', label:'Combat' },
     { id:'estatequests', label:'Estate' },
     { id:'towerquests', label:'Tower' },
     { id:'titles', label:'Titles' }
@@ -27406,7 +27435,316 @@
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
       target:10, progress:function(st){ return st.estateClears || 0; },
       nav:{ cat:'estate' },
-      reward:{ kind:'item', itemId:'paving_t5', qty:20, label:'20× Sandstone Ornate Tile (Tier 5 paving)' } }
+      reward:{ kind:'item', itemId:'paving_t5', qty:20, label:'20× Sandstone Ornate Tile (Tier 5 paving)' } },
+    // ---- COMBAT (51): the fighting arc. Counters come from questNoteCombat / questNoteKill, which ride the
+    // combat log rather than being scattered through the combat code, plus one counter per class capstone.
+    // Every reward item id was validated against the generated item_catalog seed before being written here.
+    { id:'first_exchange', cat:'combatquests', title:'Opening Exchange',
+      desc:'Every warrior starts the same way: swinging, connecting, learning what a landed blow feels like. A hundred of them and the motion stops being a decision.',
+      how:'Land 100 hits in combat.',
+      target:100, progress:function(st){ return cbStat('cb_hits'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'toxin_t2', qty:10 } ] } },
+    { id:'nick_of_time', cat:'combatquests', title:'Nick of Time',
+      desc:'Armour is for the blows you accept. Footwork is for the ones you refuse. Slip ten of them and the frontier learns you are hard to pin down.',
+      how:'Dodge 10 enemy attacks.',
+      target:10, progress:function(st){ return cbStat('cb_dodges'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'draught_t2', qty:5 } ] } },
+    { id:'sharp_eye', cat:'combatquests', title:'Sharp Eye',
+      desc:'A critical hit is not luck so much as attention: the gap in the guard, the moment the weight shifts. Find it twenty-five times.',
+      how:'Land 25 critical hits.',
+      target:25, progress:function(st){ return cbStat('cb_crits'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'elixir_t2', qty:5 } ] } },
+    { id:'thick_skin', cat:'combatquests', title:'Thick Skin',
+      desc:'You will be hit. The only question is whether you are still standing afterwards. Take ten thousand and answer it.',
+      how:'Take 10,000 total damage and live to tell it.',
+      target:10000, progress:function(st){ return cbStat('cb_dmg_taken'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'draught_t3', qty:10 } ] } },
+    { id:'blood_price', cat:'combatquests', title:'Blood Price',
+      desc:'There is a kind of victory that costs almost everything. Win one from a quarter health and you will know the taste.',
+      how:'Win a fight after dropping below 25% health.',
+      target:1, progress:function(st){ return cbStat('cb_low_hp_wins'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:3 } ] } },
+    { id:'clean_sheet', cat:'combatquests', title:'A Clean Sheet',
+      desc:'Untouched. Not lucky, not tanked, not healed through. Simply never hit. Do it once and do it deliberately.',
+      how:'Kill a foe without taking a single hit.',
+      target:1, progress:function(st){ return cbStat('cb_untouched_kills'); },
+      nav:{ cat:'character' },
+      reward:{ gold:2500 } },
+    { id:'sting', cat:'combatquests', title:'Sting',
+      desc:'Steel asks a question and the answer is immediate. Poison asks the same question slowly, and the answer arrives later, and worse.',
+      how:'Deal 5,000 damage with poison (a Toxin, or a class that poisons).',
+      target:5000, progress:function(st){ return cbStat('cb_src_venom') + cbStat('cb_src_plague'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'toxin_t4', qty:15 } ] } },
+    { id:'first_powder', cat:'combatquests', title:'First Powder',
+      desc:'The flask leaves your hand, the air goes orange, and something that was walking towards you is not. Alchemy at its least subtle.',
+      how:'Deal 5,000 damage with Firebombs.',
+      target:5000, progress:function(st){ return cbStat('cb_src_firebomb'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'firebomb_t4', qty:15 } ] } },
+    { id:'held_ground', cat:'combatquests', title:'Held Ground',
+      desc:'Every beast on the frontier has one trick it saves for when it is losing. Stand through five of them in a single fight.',
+      how:'Survive 5 enemy special attacks in one fight.',
+      target:5, progress:function(st){ return cbStat('cb_specials_fight'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'scroll_t4', qty:5 } ] } },
+    { id:'ten_down', cat:'combatquests', title:'Ten Down',
+      desc:'Ten kills is nothing. Ten kills without once going down is a streak, and a streak is a habit forming.',
+      how:'Kill 10 foes in a row without dying.',
+      target:10, progress:function(st){ return cbStat('cb_nodeath_run'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t4', qty:5 } ] } },
+    { id:'unbroken', cat:'combatquests', title:'Unbroken',
+      desc:'One dodge is reflex. Five in a row is reading the fight. The foe is telling you what it will do; you have started listening.',
+      how:'Dodge 5 attacks in a row.',
+      target:5, progress:function(st){ return cbStat('cb_streak_dodge'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'flash_t5', qty:5 } ] } },
+    { id:'never_miss', cat:'combatquests', title:'Never Miss',
+      desc:'Accuracy is unglamorous right up to the moment it decides a fight. Twenty consecutive landed blows, no air, no apologies.',
+      how:'Land 20 hits in a row without missing.',
+      target:20, progress:function(st){ return cbStat('cb_streak_hit'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t5', qty:5 } ] } },
+    { id:'streak_of_luck', cat:'combatquests', title:'Streak of Luck',
+      desc:'Ten critical hits with nothing ordinary in between. Call it luck if you like. Do it again and nobody will believe you.',
+      how:'Land 10 critical hits in a row.',
+      target:10, progress:function(st){ return cbStat('cb_streak_crit'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'elixir_t6', qty:10 } ] } },
+    { id:'one_good_swing', cat:'combatquests', title:'One Good Swing',
+      desc:'Not a thousand cuts. One. Everything you own, everything you have trained, arriving at a single point at once.',
+      how:'Hit a foe for 1,000,000 damage in one blow.',
+      target:1000000, progress:function(st){ return cbStat('cb_best_hit'); },
+      nav:{ cat:'character' },
+      reward:{ gold:10000 } },
+    { id:'two_trades', cat:'combatquests', title:'Two Hands, Two Trades',
+      desc:'A warrior who only knows one weapon knows one fight. Take a kill with three different families of arms.',
+      how:'Get a kill with 3 different weapon families.',
+      target:3, progress:function(st){ return cbSetSize('weapon'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'bomb_t6', qty:10 } ] } },
+    { id:'elementalist', cat:'combatquests', title:'Elementalist',
+      desc:'Fire, water, earth, light and dark. Five ways to end an argument, and you should be fluent in all of them.',
+      how:'Deal damage of all 5 elements.',
+      target:5, progress:function(st){ return cbSetSize('element'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'catalyst_t6', qty:10 } ] } },
+    { id:'rock_paper_scissors', cat:'combatquests', title:'Rock Paper Scissors',
+      desc:'Water drowns fire, fire cracks earth, earth drinks water. Light and dark simply hate each other. Exploit it ten times.',
+      how:'Win 10 fights against a foe your element beats.',
+      target:10, progress:function(st){ return cbStat('cb_advantage_kills'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'treasure_chest', qty:5 } ] } },
+    { id:'slow_burn', cat:'combatquests', title:'The Slow Burn',
+      desc:'Some foes are not killed so much as they run out. Let the poison, the bleed or the burn take the last of it.',
+      how:'Land a killing blow with a damage-over-time tick.',
+      target:1, progress:function(st){ return cbStat('cb_dot_kills'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'toxin_t8', qty:20 } ] } },
+    { id:'field_chemist', cat:'combatquests', title:'Field Chemist',
+      desc:'The bag is not decoration. Four different flasks in one fight, because a problem rarely has one shape.',
+      how:'Deal damage with 4 different named sources in one fight.',
+      target:4, progress:function(st){ return cbStat('cb_sources_fight'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'toxin_t8', qty:10 }, { itemId:'firebomb_t8', qty:10 }, { itemId:'draught_t8', qty:10 } ] } },
+    { id:'bestiary', cat:'combatquests', title:'Bestiary',
+      desc:'Wildlife, Elementals, Demonspawn, Kinsworn. Four kinds of thing that want you gone. Take one of each.',
+      how:'Kill one foe from all 4 monster families.',
+      target:4, progress:function(st){ return cbSetSize('family'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'brokenrelic_t8', qty:3 } ] } },
+    { id:'wear_the_mantle', cat:'combatquests', title:'Wear the Mantle',
+      desc:'A class is not a choice you make once. It is a kit you put on. Wear five of them well enough to finish a fight.',
+      how:'Get a kill as 5 different classes.',
+      target:5, progress:function(st){ return cbSetSize('cls'); },
+      nav:{ cat:'character' },
+      reward:{ gold:25000 } },
+    { id:'deep_freeze', cat:'combatquests', title:'Deep Freeze',
+      desc:'Rime deepens until the cold stops being weather and becomes architecture. Twenty-five foes frozen solid mid-swing.',
+      how:'Freeze 25 foes solid as the Frostwarden.',
+      target:25, progress:function(st){ return cbStat('cb_cap_freeze'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'the_draw_cut', cat:'combatquests', title:'The Draw-Cut',
+      desc:'The stance fills, the blade leaves the scabbard already committed, and the cut is finished before it looked begun.',
+      how:'Land 50 Draw-Cuts as the Samurai.',
+      target:50, progress:function(st){ return cbStat('cb_cap_drawcut'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'the_big_one', cat:'combatquests', title:'The Big One',
+      desc:'The ground has been ringing for a while now. Bring every echo home at once, twenty-five times.',
+      how:'Erupt 25 Aftershocks as the Juggernaut.',
+      target:25, progress:function(st){ return cbStat('cb_cap_bigone'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'contract_fulfilled', cat:'combatquests', title:'Contract Fulfilled',
+      desc:'The Doom was stamped, the clock wound down, and death does not void the contract. Collect on fifty of them.',
+      how:'Strike 50 Dooms as the Voidshadow.',
+      target:50, progress:function(st){ return cbStat('cb_cap_doom'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'stripped_bare', cat:'combatquests', title:'Stripped Bare',
+      desc:'Armour is layers, and layers come off. Peel twenty-five foes down to nothing at all.',
+      how:'Leave 25 foes Bare as the Sharpshooter.',
+      target:25, progress:function(st){ return cbStat('cb_cap_bare'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'the_axe_falls', cat:'combatquests', title:'The Axe Falls',
+      desc:'The blade climbs while the foe hopes. Then it does not climb any more. Fifty times.',
+      how:'Drop 50 Guillotines as the Executioner.',
+      target:50, progress:function(st){ return cbStat('cb_cap_fall'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'full_bloom', cat:'combatquests', title:'Full Bloom',
+      desc:'The hedge grows, thickens, and then flowers all at once, which for a Sentinel is a violent event.',
+      how:'Bloom the thorn field 25 times as the Sentinel.',
+      target:25, progress:function(st){ return cbStat('cb_cap_bloom'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'vessel_overflows', cat:'combatquests', title:'The Vessel Overflows',
+      desc:'Mercy first, and what mercy does not claim goes out as light. A thousand pours, and the party never noticed the difference.',
+      how:'Pour 1,000 times as the Lumen Oracle.',
+      target:1000, progress:function(st){ return cbStat('cb_cap_pour'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'butchers_count', cat:'combatquests', title:'Butcher\'s Count',
+      desc:'The axe opens the wound. The wound does the killing. Keep count: a thousand cuts banked.',
+      how:'Bank 1,000 Cuts as the Reaver.',
+      target:1000, progress:function(st){ return cbStat('cb_cap_cuts'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t10', qty:10 } ] } },
+    { id:'immovable', cat:'combatquests', title:'Immovable',
+      desc:'A shield does not win fights. It simply refuses to lose them, a hundred times in a row.',
+      how:'Block 100 attacks.',
+      target:100, progress:function(st){ return cbStat('cb_blocks'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'draught_t12', qty:15 } ] } },
+    { id:'untouchable', cat:'combatquests', title:'Untouchable',
+      desc:'Five dodges is reading the fight. Twenty-five is the fight reading you and finding nothing there.',
+      how:'Dodge 25 attacks in a row.',
+      target:25, progress:function(st){ return cbStat('cb_streak_dodge'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:5 } ] } },
+    { id:'glass_cannon', cat:'combatquests', title:'Glass Cannon',
+      desc:'Under a tenth of your health, everything sharpens. Win one from there and you will understand why some classes live in that band on purpose.',
+      how:'Win a fight after dropping below 10% health.',
+      target:1, progress:function(st){ return cbStat('cb_very_low_hp_wins'); },
+      nav:{ cat:'character' },
+      reward:{ gold:50000 } },
+    { id:'marathon', cat:'combatquests', title:'Marathon',
+      desc:'Some things do not die quickly. Five minutes of unbroken violence, and only one of you is still upright.',
+      how:'Win a single fight lasting over 5 minutes.',
+      target:300000, progress:function(st){ return cbStat('cb_fight_ms'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'draught_t12', qty:20 } ] } },
+    { id:'long_game', cat:'combatquests', title:'The Long Game',
+      desc:'A billion damage. Not in a blow, not in a fight. Across a career of them.',
+      how:'Deal 1,000,000,000 total damage.',
+      target:1000000000, progress:function(st){ return cbStat('cb_dmg'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t14', qty:20 } ] } },
+    { id:'sponge', cat:'combatquests', title:'Sponge',
+      desc:'Every point of it landed on you, and here you are reading this. A million damage absorbed and survived.',
+      how:'Take 1,000,000 total damage.',
+      target:1000000, progress:function(st){ return cbStat('cb_dmg_taken'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:8 } ] } },
+    { id:'thorncoat', cat:'combatquests', title:'Thorncoat',
+      desc:'Ten million damage you never swung for. Thorns, reflects, poison, echoes. The fight killing itself on you.',
+      how:'Deal 10,000,000 damage without swinging (effects, thorns, damage over time).',
+      target:10000000, progress:function(st){ return cbStat('cb_dmg_effect'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'draught_t14', qty:20 } ] } },
+    { id:'alchemists_war', cat:'combatquests', title:'Alchemist\'s War',
+      desc:'A hundred million damage out of glass and powder. The quartermaster deserves a share of the credit.',
+      how:'Deal 100,000,000 damage with consumables.',
+      target:100000000, progress:function(st){ return cbStat('cb_src_firebomb') + cbStat('cb_src_bomb') + cbStat('cb_src_venom'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'firebomb_t14', qty:25 }, { itemId:'bomb_t14', qty:25 }, { itemId:'toxin_t14', qty:25 } ] } },
+    { id:'summoners_chorus', cat:'combatquests', title:'Summoner\'s Chorus',
+      desc:'You did not throw a single one of these blows. That is rather the point of a menagerie.',
+      how:'Let your familiars deal 100,000,000 damage.',
+      target:100000000, progress:function(st){ return cbStat('cb_dmg_fam'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'catalyst_t14', qty:25 } ] } },
+    { id:'perfect_run', cat:'combatquests', title:'Perfect Run',
+      desc:'A whole dungeon and nothing laid a hand on you. Do it once and the story tells itself.',
+      how:'Clear a dungeon without taking damage.',
+      target:1, progress:function(st){ return cbStat('cb_untouched_dungeons'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:10 } ] } },
+    { id:'tower_climber', cat:'combatquests', title:'Tower Climber',
+      desc:'The Tower does not care how you fought yesterday. Twenty-five floors of it, and it still does not.',
+      how:'Clear 25 Tower floors.',
+      target:25, progress:function(st){ return (st.tower && Object.keys(st.tower).reduce(function(a,k){ return a + ((st.tower[k]&&st.tower[k].best)||0); }, 0)) || 0; },
+      nav:{ cat:'character' },
+      reward:{ gold:100000 } },
+    { id:'delver', cat:'combatquests', title:'Delver',
+      desc:'Ten runs into the dark and ten walks back out. The frontier keeps the ones who manage the second half.',
+      how:'Finish 10 dungeon runs.',
+      target:10, progress:function(st){ return cbStat('cb_dungeon_clears'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'brokenrelic_t16', qty:5 } ] } },
+    { id:'guild_killer', cat:'combatquests', title:'Guild Killer',
+      desc:'Someone has to land the last blow on a guild boss. It may as well be you, in front of everyone.',
+      how:'Land the killing blow on a guild boss.',
+      target:1, progress:function(st){ return cbStat('cb_guildboss_kills'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t16', qty:10 } ] } },
+    { id:'giant_slayer', cat:'combatquests', title:'Giant Slayer',
+      desc:'It out-tiered you by ten and it is dead anyway. Gear is a suggestion; execution is the argument.',
+      how:'Kill a foe 10 or more tiers above your own weapon.',
+      target:1, progress:function(st){ return cbStat('cb_tier_gap_kills'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'relic_t16_supreme', qty:1 } ] } },
+    { id:'ten_thousand', cat:'combatquests', title:'Ten Thousand',
+      desc:'Ten thousand kills. There is no clever way to describe that number. It is simply a lot of frontier, cleared.',
+      how:'Reach 10,000 lifetime kills.',
+      target:10000, progress:function(st){ return (st.stats && st.stats.kills) || 0; },
+      nav:{ cat:'character' },
+      reward:{ gold:250000 } },
+    { id:'ten_trillion', cat:'combatquests', title:'Ten Trillion',
+      desc:'Ten trillion damage. Somewhere in there was your first rabbit, and it counted the same as the rest.',
+      how:'Deal 10,000,000,000,000 lifetime damage.',
+      target:10000000000000, progress:function(st){ return cbStat('cb_dmg'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'enchant_t18', qty:30 } ] } },
+    { id:'one_hit', cat:'combatquests', title:'One Hit',
+      desc:'A hundred million in a single blow. Not a rotation, not a fight. One swing, arriving all at once.',
+      how:'Hit a foe for 100,000,000 damage in one blow.',
+      target:100000000, progress:function(st){ return cbStat('cb_best_hit'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'belt_t18_supreme', qty:1 } ] } },
+    { id:'whole_roster', cat:'combatquests', title:'The Whole Roster',
+      desc:'Twenty-four classes, twenty-four kits, twenty-four ways to end a fight. Wear every one of them to a kill.',
+      how:'Get a kill as all 24 classes.',
+      target:24, progress:function(st){ return cbSetSize('cls'); },
+      nav:{ cat:'character' },
+      reward:{ gold:500000, items:[ { itemId:'enchant_t20', qty:30 } ] } },
+    { id:'deathless', cat:'combatquests', title:'Deathless',
+      desc:'Five hundred kills and not once carried off the field. Skill comes into it, but mostly this is knowing which fights to take and when to walk away, which is the harder lesson.',
+      how:'Kill 500 foes in a row without dying.',
+      target:500, progress:function(st){ return cbStat('cb_nodeath_run'); },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'barrier_shard', qty:15 } ], gold:200000 } },
+    { id:'watership_down_ten_thousand', cat:'combatquests', title:'Watership Down',
+      desc:'Ten thousand rabbits. It began as a warren on the edge of a field and ended as a matter of historical record. Nobody asks the rabbits what they think of you.',
+      how:'Kill 10,000 Rabbits.',
+      target:10000, progress:function(st){ return (st.monsterKills && st.monsterKills['wildlife_rabbit']) || 0; },
+      nav:{ cat:'character' },
+      reward:{ familiarId:'ranching', gold:100000 } },
+    { id:'warlord_of_the_frontier', cat:'combatquests', title:'Warlord of the Frontier', capstone:true,
+      desc:'You arrived swinging at rabbits and you leave with a ledger the frontier will be reading for a long time: streaks nobody watched, blows nobody survived, every class worn to a kill, and ten thousand warrens quieter than they were. There is no enemy left on this map that constitutes news. Take the title. The fighting was the easy part.',
+      how:'Claim all 50 other Combat quests. Claiming this crowns you a Warlord of the Frontier.',
+      target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='combatquests' && q.id!=='warlord_of_the_frontier' && c[q.id]) n++; }); return n; },
+      nav:{ cat:'quests', sub:'combatquests' },
+      reward:{ titleId:'title_warlord_of_the_frontier', name:'Warlord of the Frontier', items:[ { itemId:'relic_t20_supreme', qty:1 } ], gold:1000000 } }
   ];
   // ---- Tower quests (generated): a Floor-milestone quest per entrance, each rewarding a unique TITLE.
   // Every entrance gets 25/50/75/100; the All Classes entrance climbs on to 500 (grand titles). Progress
@@ -27450,6 +27788,8 @@
     // even after claimed ones sink to the bottom. The capstone is excluded -- it gets a badge, not a number.
     QUEST_ORDINAL = {}; var _fn = 0;
     QUESTS.forEach(function(q){ if(q.cat==='gettingstarted' && !q.capstone){ _fn++; QUEST_ORDINAL[q.id] = _fn; } });
+    var _cn = 0;   // Combat numbers its own 1..50 independently of First Frontier
+    QUESTS.forEach(function(q){ if(q.cat==='combatquests' && !q.capstone){ _cn++; QUEST_ORDINAL[q.id] = _cn; } });
     TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.titleId; })
       .map(function(q){ return { id: q.reward.titleId, name: q.reward.name, how: q.how || q.desc, questId: q.id }; });
     TITLE_BY_ID = {}; TITLES.forEach(function(t){ TITLE_BY_ID[t.id] = t; });
@@ -27506,6 +27846,14 @@
   }
   // The First Frontier's ten narrative Acts, keyed by the stable 1-50 quest ordinals. In-progress quests are
   // grouped under these headers on the Quests page (claimable quests float above them, claimed sink below).
+  // Combat's five acts. Same shape as FF_ACTS, so the render path below takes either.
+  var CB_ACTS = [
+    { title:'Act I \u00b7 First Blood',            from:1,  to:10 },
+    { title:'Act II \u00b7 The Craft of Killing',  from:11, to:20 },
+    { title:'Act III \u00b7 The Classes',          from:21, to:30 },
+    { title:'Act IV \u00b7 Feats of Arms',         from:31, to:40 },
+    { title:'Act V \u00b7 The Ascent',             from:41, to:50 }
+  ];
   var FF_ACTS = [
     { title:'Act I · First Steps',         from:1,  to:4  },
     { title:'Act II · Hunter’s Craft', from:5,  to:10 },
@@ -27658,14 +28006,15 @@
       });
       return html;
     }
-    if(catId === 'gettingstarted'){
+    if(catId === 'gettingstarted' || catId === 'combatquests'){
+      var ACTS = (catId === 'combatquests') ? CB_ACTS : FF_ACTS;
       // Ready-to-claim float to the very top; in-progress quests group under their narrative Act; claimed sink.
       var claimableQs = list.filter(questClaimable), claimedQs = list.filter(questClaimed);
       if(claimableQs.length){
         html += '<div class="quest-group-head quest-group-ready">★ Ready to Claim <span style="color:var(--gold);">• ' + claimableQs.length + '</span></div>';
         claimableQs.forEach(function(q){ html += renderQuestAccordion(q); });
       }
-      FF_ACTS.forEach(function(actGrp){
+      ACTS.forEach(function(actGrp){
         var qs = list.filter(function(q){ var n = QUEST_ORDINAL[q.id]; return n >= actGrp.from && n <= actGrp.to && !questClaimed(q) && !questClaimable(q); });
         if(!qs.length) return;
         html += '<div class="quest-group-head">' + escapeHtml(actGrp.title) + '</div>';
@@ -35215,6 +35564,106 @@
     state.fsHits = (state.fsHits || 0) + 1;
     if(e.dmg > (state.fsBest || 0)) state.fsBest = e.dmg;
   }
+  // ---- COMBAT QUEST TELEMETRY -------------------------------------------------------------------------
+  // The Combat quest line needs to know things nothing counted: hits, crits, misses, dodges, blocks, damage
+  // dealt and taken, damage by SOURCE, the biggest blow of a career, and three streaks. Rather than sprinkle
+  // fifty counters through the combat code, this rides the combat log, which is already a complete event bus:
+  // every landed hit, effect, familiar cast, DoT slice, incoming hit, miss, dodge and enemy special passes
+  // through combatLogPush. fsNoteEntry above is the precedent -- this is its sibling.
+  //
+  // A consequence worth knowing: the eight damage sources that were writing act.monsterHp directly until
+  // v0.0.87.3 were invisible to the fight-stats strip as well, so they were never counted anywhere. They are
+  // counted here now because they log.
+  //
+  // Row semantics, verified rather than assumed, because counting the wrong dir would be silent:
+  //   out    the player's own landed weapon hit (carries crit, off)
+  //   skill  an effect's discrete hit, named by spName        fam  a familiar's cast
+  //   dot    a status tick the PLAYER takes (not the foe)     in   an incoming hit (carries blocked)
+  //   miss   the player missed                                dodge the player dodged
+  //   special an enemy special attack fired
+  function cbSlug(name){ return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); }
+  function cbBest(key, v){ if(v > (state.stats && state.stats[key] || 0)){ if(!state.stats) state.stats = {}; state.stats[key] = v; } }
+  function cbStreak(which, hit){
+    if(!state.cbStreaks) state.cbStreaks = { dodge:0, crit:0, hit:0 };
+    if(!hit){ state.cbStreaks[which] = 0; return 0; }
+    state.cbStreaks[which] = (state.cbStreaks[which] || 0) + 1;
+    cbBest('cb_streak_' + which, state.cbStreaks[which]);
+    return state.cbStreaks[which];
+  }
+  function questNoteCombat(e){
+    if(!e || !e.dir) return;
+    var act = state.activity, inFight = !!(act && act.type === 'combat');
+    var d = e.dmg > 0 ? e.dmg : 0;
+    if(e.dir === 'out'){
+      bumpStat('cb_hits');
+      if(d){ bumpStat('cb_dmg', d); cbBest('cb_best_hit', d); }
+      cbStreak('hit', true);
+      if(e.crit){ bumpStat('cb_crits'); cbStreak('crit', true); } else { cbStreak('crit', false); }
+    } else if(e.dir === 'skill' || e.dir === 'fam'){
+      if(d){
+        bumpStat('cb_dmg', d);
+        cbBest('cb_best_hit', d);
+        // Per-source totals drive "deal N with X". Keyed off the log's own name, so a source that logs is a
+        // source a quest can target, and one that does not is invisible here too -- which is the incentive.
+        if(e.spName) bumpStat('cb_src_' + cbSlug(e.spName), d);
+        if(e.dir === 'fam') bumpStat('cb_dmg_fam', d);
+        else bumpStat('cb_dmg_effect', d);   // damage that is not a weapon swing (thorns, procs, DoT bursts)
+        if(inFight){ act.cbSrc = act.cbSrc || {}; if(e.spName) act.cbSrc[cbSlug(e.spName)] = 1; }
+      }
+    } else if(e.dir === 'in' || e.dir === 'dot'){
+      if(d) bumpStat('cb_dmg_taken', d);
+      if(e.blocked) bumpStat('cb_blocks');
+      // Being hit ends a dodge run, and marks the fight as no longer untouched.
+      cbStreak('dodge', false);
+      if(inFight && d){ act.cbHitTaken = (act.cbHitTaken || 0) + 1; if(act.dungeon) state.cbDungeonHit = 1; }
+    } else if(e.dir === 'miss'){
+      bumpStat('cb_misses');
+      cbStreak('hit', false);
+    } else if(e.dir === 'dodge'){
+      bumpStat('cb_dodges');
+      cbStreak('dodge', true);
+    } else if(e.dir === 'special'){
+      if(inFight) act.cbSpecials = (act.cbSpecials || 0) + 1;
+    }
+    // Low-health marks, for the "win it hurt" quests. Read here rather than on a timer so they cost nothing.
+    if(inFight && state.playerHp > 0){
+      var frac = state.playerHp / Math.max(1, maxHp(state));
+      if(frac <= 0.25) act.cbWasLow = 1;
+      if(frac <= 0.10) act.cbWasVeryLow = 1;
+    }
+  }
+  // Resolved at KILL time, because these are properties of a whole fight rather than of one log row.
+  // Called from defeatMonster before the per-foe reset wipes the act fields.
+  function questNoteKill(monster){
+    var act = state.activity; if(!act || act.type !== 'combat') return;
+    if(!act.cbHitTaken) bumpStat('cb_untouched_kills');
+    if(act.cbWasLow) bumpStat('cb_low_hp_wins');
+    if(act.cbWasVeryLow) bumpStat('cb_very_low_hp_wins');
+    if(act.cbSpecials) cbBest('cb_specials_fight', act.cbSpecials);
+    if(act.cbSrc) cbBest('cb_sources_fight', Object.keys(act.cbSrc).length);
+    if(act.duelStartedAt) cbBest('cb_fight_ms', Date.now() - act.duelStartedAt);
+    // Elemental advantage: the last element you actually dealt against what the foe was.
+    if(act.cbLastEl && monster && monster.element && ELEMENT_BEATS[act.cbLastEl] === monster.element) bumpStat('cb_advantage_kills');
+    // Punching up: the foe's tier against your weapon's. equippedMainhandTier is 1-based, tierIndex is 0-based.
+    if(monster && typeof monster.tierIndex === 'number'){
+      var _mine = Math.max(0, (state.equippedMainhandTier || 0) - 1);
+      if(monster.tierIndex - _mine >= 10) bumpStat('cb_tier_gap_kills');
+    }
+    // Variety sets: which classes, weapon families and monster families you have ever killed with or killed.
+    if(!state.cbSets) state.cbSets = { cls:{}, weapon:{}, family:{} };
+    var cid = activeClassId(state); if(cid) state.cbSets.cls[cid] = 1;
+    if(state.equippedMainhand){ var ws = getWeaponStyle(state.equippedMainhand); state.cbSets.weapon[(ws && ws.id) || state.equippedMainhand] = 1; }
+    if(monster && monster.id){ var fam = String(monster.id).split('_')[0]; if(fam) state.cbSets.family[fam] = 1; }
+    // Kills without dying: a run, not a total, so it needs its own high-water mark.
+    state.cbNoDeathRun = (state.cbNoDeathRun || 0) + 1;
+    cbBest('cb_nodeath_run', state.cbNoDeathRun);
+  }
+  // Class capstones fire inside their own engines rather than through the log, so each gets one counter call.
+  // Nine sites, one helper, so the Combat quest line can ask "how many times have you done your class's
+  // signature thing" without nine bespoke stats spread through nine reworked classes.
+  function cbClassEvent(key, n){ bumpStat('cb_cap_' + key, n || 1); }
+  function cbSetSize(which){ var m = state.cbSets && state.cbSets[which]; return m ? Object.keys(m).length : 0; }
+  function cbStat(key){ return (state.stats && state.stats[key]) || 0; }
   // The strip itself: session duration, running DPS, swings landed, kills, best single hit -- the
   // numbers players screenshot. Ids are updated in place by updateDynamic; this builder only runs on
   // a full renderArena pass.
@@ -35231,6 +35680,7 @@
     if(offlineCapture || !entry) return;
     entry.t = Date.now();
     fsNoteEntry(entry);
+    questNoteCombat(entry);   // Combat quest telemetry rides the same bus
     combatLog.push(entry);
     if(combatLog.length > COMBAT_LOG_MAX) combatLog = combatLog.slice(-COMBAT_LOG_MAX);
     if(chatChannel === 'combat') combatLogRenderOnly();
@@ -37034,6 +37484,7 @@
   // Boss defeated in your client -> report the clear. First member to report wins it for the guild; the
   // shard payout (to every current member) is server-side and arrives via the pending claim.
   function guildBossOnKill(monster){
+    bumpStat('cb_guildboss_kills');   // Combat quest: you landed the last blow, in front of everyone
     var gb = state.activity && state.activity.guildBoss;
     state.activity = { type:null };
     if(!gb) return;
@@ -41247,7 +41698,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.87.6';
+  var GAME_VERSION = '0.0.88.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41450,7 +41901,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, rareCraftChance:rareCraftChance, supremeCraftChance:supremeCraftChance, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_RARE:FAITH_BASE_RARE, FAITH_BASE_SUPREME:FAITH_BASE_SUPREME, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,

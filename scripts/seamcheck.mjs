@@ -199,5 +199,35 @@ console.log("seamcheck: boot order (offline catch-up before item sync) intact.")
 }
 console.log("seamcheck: every damage source reaches the combat log.");
 
+// ---- CHECK 5: every class-capstone Combat quest must read a counter something writes -----------------
+// The nine capstone quests (Deep Freeze, Draw-Cut, the Big One, Doom, Bare, the Fall, Bloom, the pour, Cuts)
+// each read cb_cap_<key>, and each key is written by exactly one cbClassEvent call inside that class's engine.
+// Delete the call and the quest becomes quietly unachievable: no error, no failing assertion, just a bar that
+// never moves. The browser suite cannot catch it either without a full best-in-slot fixture per class, so the
+// coupling is enforced structurally instead.
+{
+  const read = new Set([...script.matchAll(/cbStat\('cb_cap_([a-z]+)'\)/g)].map((m) => m[1]));
+  // Line-based and comment-aware: a regex over the raw text matched `// cbClassEvent('drawcut');` and
+  // reported the counter as written when it had just been commented out. Same mistake the sqlcheck DO-block
+  // scan made against a commented-out `-- do $$`.
+  const written = new Set();
+  for (const line of L) {
+    if (/^\s*(\/\/|\*)/.test(line)) continue;
+    const m = /cbClassEvent\('([a-z]+)'/.exec(line);
+    if (m) written.add(m[1]);
+  }
+  const orphans = [...read].filter((k) => !written.has(k)).sort();
+  if (orphans.length) {
+    fail(`${orphans.length} capstone quest counter(s) nothing writes: ${orphans.join(", ")}\n`
+       + "       A Combat quest reads cb_cap_<key> but no cbClassEvent('<key>') call exists, so its progress\n"
+       + "       bar can never move. Restore the call inside that class's engine.");
+  }
+  const unread = [...written].filter((k) => !read.has(k)).sort();
+  if (unread.length) {
+    console.log(`seamcheck: note - capstone counters written but no quest reads them yet: ${unread.join(", ")}`);
+  }
+  console.log(`seamcheck: ${read.size} capstone quest counter(s), all written.`);
+}
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

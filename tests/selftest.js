@@ -9687,13 +9687,18 @@
     ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
-    eq(FF.TITLES.length, 117, 'the Titles registry has one entry per tower quest (116) plus the Frontier Hero capstone');
-    // The Getting Started capstone title is defined before the tower quests, so it leads the registry.
+    // 116 tower + Frontier Hero + Warlord of the Frontier (the Combat capstone).
+    eq(FF.TITLES.length, 118, 'the Titles registry has one entry per tower quest (116) plus the two capstones');
+    // Both static capstones are defined before the generated tower quests, so they lead the registry.
     eq(FF.TITLES[0].id, 'title_frontier_hero', 'the Frontier Hero capstone title leads the registry');
+    eq(FF.TITLES[1].id, 'title_warlord_of_the_frontier', 'the Combat capstone title follows it');
     // Order: the whole All Classes ladder (25..500 = 20 titles) comes next, then the per-class titles.
-    var _allTitles = FF.TITLES.slice(1, 21);
+    // Indexed from the count of static capstone titles rather than a hardcoded 1, so adding a third capstone
+    // moves this by itself instead of failing here.
+    var _statics = FF.TITLES.filter(function(t){ return !/^title_all_f/.test(t.id) && !/^title_.*_f\d+$/.test(t.id); }).length;
+    var _allTitles = FF.TITLES.slice(_statics, _statics + 20);
     ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 tower titles are the full All Classes ladder (25-500)');
-    ok(!/^title_all_f/.test(FF.TITLES[21].id), 'the individual class titles follow the All Classes block');
+    ok(!/^title_all_f/.test(FF.TITLES[_statics + 20].id), 'the individual class titles follow the All Classes block');
     ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
     ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
     // Equip system: only earned titles equip; toggling / unequip clears.
@@ -20254,6 +20259,168 @@
     } finally {
       S.activity = svAct; S.activePotion = svPot; S.potionCharges = svCh; S.inventory = svInv; S.xp = svXp;
       FF._clReset();
+    }
+  });
+
+  // ---- The Combat quest line ------------------------------------------------------------------------
+  // 51 quests on counters that did not exist before this: the only combat stats in the game were kills,
+  // deaths and per-monster tallies. Rather than scatter fifty counters, questNoteCombat rides combatLogPush,
+  // which already sees every hit, effect, familiar cast, incoming hit, miss, dodge and enemy special.
+  // These tests drive it through that bus with real row shapes, so a change to the log's vocabulary breaks
+  // here rather than silently freezing every player's Combat progress.
+  suite('combat quests: tab, counters and rewards', function(){
+    var S = FF._state;
+    var svStats = S.stats, svAct = S.activity, svSets = S.cbSets, svStreaks = S.cbStreaks, svMK = S.monsterKills;
+    try {
+      // ---- the tab exists and is reachable ----------------------------------------------------
+      ok(FF.isQuestCategory('combatquests'), 'combatquests is a quest category');
+      var qArea = FF.AREAS.filter(function(a){ return a.id === 'quests'; })[0];
+      ok(qArea.subs.some(function(sub){ return sub[0] === 'combatquests'; }), 'Combat is a tab within Quests');
+      var cbq = FF.QUESTS.filter(function(q){ return q.cat === 'combatquests'; });
+      eq(cbq.length, 51, 'the Combat line is 50 quests plus a capstone');
+      eq(cbq.filter(function(q){ return q.capstone; }).length, 1, 'exactly one capstone');
+      // Numbered 1..50 independently of First Frontier, capstone excluded (it gets a badge).
+      var nums = cbq.filter(function(q){ return !q.capstone; }).map(function(q){ return FF.QUEST_ORDINAL[q.id]; });
+      eq(Math.min.apply(null, nums), 1, 'Combat numbering starts at 1');
+      eq(Math.max.apply(null, nums), 50, 'and runs to 50');
+      eq(new Set(nums).size, 50, 'with no duplicate numbers');
+      ok(FF.QUEST_ORDINAL['warlord_of_the_frontier'] === undefined, 'the capstone is unnumbered');
+      // Five acts covering exactly 1..50, so no quest can fall outside a group and vanish from the tab.
+      eq(FF.CB_ACTS.length, 5, 'five Combat acts');
+      eq(FF.CB_ACTS[0].from, 1, 'the acts start at 1');
+      eq(FF.CB_ACTS[FF.CB_ACTS.length - 1].to, 50, 'and cover through 50');
+      for(var _i = 1; _i < FF.CB_ACTS.length; _i++){
+        eq(FF.CB_ACTS[_i].from, FF.CB_ACTS[_i - 1].to + 1, 'act ' + (_i + 1) + ' starts where the previous ended');
+      }
+
+      // ---- every reward id is a real item, and every quest is shaped correctly ----------------
+      var cat = FF.buildItemCatalog();
+      cbq.forEach(function(q){
+        ok(q.title && q.desc && q.how, q.id + ' has title, story and how-to');
+        ok(q.target > 0 && typeof q.progress === 'function', q.id + ' has a target and a progress reader');
+        ok(!!q.reward, q.id + ' has a reward');
+        (q.reward.items || []).forEach(function(it){
+          ok(cat[it.itemId] !== undefined, q.id + ' rewards a real catalogued item (' + it.itemId + ')');
+          ok(it.qty > 0, q.id + ' rewards a positive quantity of ' + it.itemId);
+        });
+      });
+      // The old Watership Down was REMOVED and a guard keeps it gone. The new one deliberately uses a fresh
+      // id: reusing the retired one would hand its reward free to anyone who claimed the original.
+      ok(!FF.questById('watership_down'), 'the retired Watership Down id is still unused');
+      var wd = FF.questById('watership_down_ten_thousand');
+      ok(!!wd && wd.title === 'Watership Down', 'the new Watership Down carries the name on a fresh id');
+      eq(wd.target, 10000, 'and asks for 10,000 rabbits');
+
+      // ---- THE WIRING, not just the function --------------------------------------------------
+      // Calling questNoteCombat directly only proves questNoteCombat works, which was never in doubt. This
+      // goes through combatLogPush, the bus it is hooked into: unhook it and this fails. (An earlier version
+      // of this suite called the helpers directly and passed happily with the hook commented out.)
+      S.stats = {}; S.cbStreaks = null;
+      S.activity = { type:'combat', monsterHp:1e9, monsterId:FF.MONSTERS[0].id, duelStartedAt:Date.now(),
+                     dotHitAvg:1000, playerSwungOnce:true };
+      FF._clReset();
+      FF.combatLogPush({ dir:'out', dmg:123, crit:true, target:'x' });
+      eq(FF.cbStat('cb_hits'), 1, 'a log row pushed through the bus reaches the Combat counters');
+      eq(FF.cbStat('cb_dmg'), 123, 'and carries its damage');
+      eq(FF.cbStat('cb_crits'), 1, 'and its crit flag');
+      FF._clReset();
+
+      // And the kill hook: a real kill, driven by damage that takes the foe to zero, so defeatMonster runs.
+      S.stats = {}; S.cbNoDeathRun = 0;
+      S.activity = { type:'combat', monsterHp:1, monsterId:FF.MONSTERS[0].id, duelStartedAt:Date.now(),
+                     dotHitAvg:1000, playerSwungOnce:true };
+      FF.applyEffectDamage(50, 'Test Strike');
+      eq(FF.cbStat('cb_untouched_kills'), 1, 'a real kill resolves the whole-fight facts (defeatMonster hook)');
+
+      // ---- the counters, row by row -----------------------------------------------------------
+      S.stats = {}; S.cbSets = null; S.cbStreaks = null;
+      S.activity = { type:'combat', monsterHp:1e9, monsterId:FF.MONSTERS[0].id, duelStartedAt:Date.now(),
+                     dotHitAvg:1000, playerSwungOnce:true };
+      FF.questNoteCombat({ dir:'out', dmg:500, crit:false });
+      FF.questNoteCombat({ dir:'out', dmg:900, crit:true });
+      eq(FF.cbStat('cb_hits'), 2, 'landed hits count');
+      eq(FF.cbStat('cb_dmg'), 1400, 'damage dealt accumulates');
+      eq(FF.cbStat('cb_crits'), 1, 'crits count');
+      eq(FF.cbStat('cb_best_hit'), 900, 'the biggest blow is a high-water mark');
+      FF.questNoteCombat({ dir:'out', dmg:100, crit:false });
+      eq(FF.cbStat('cb_best_hit'), 900, 'and a smaller hit does not lower it');
+      // Named sources: this is what makes "deal N with X" possible, and it is why a source that does not log
+      // is also a source no quest can target.
+      FF.questNoteCombat({ dir:'skill', dmg:250, spName:'Firebomb' });
+      eq(FF.cbStat('cb_src_firebomb'), 250, 'damage is tallied per named source');
+      FF.questNoteCombat({ dir:'skill', dmg:50, spName:"Dragon's Breath" });
+      eq(FF.cbStat('cb_src_dragon_s_breath'), 50, 'a source name with punctuation slugs cleanly');
+      FF.questNoteCombat({ dir:'fam', dmg:70, spName:'Bolt' });
+      eq(FF.cbStat('cb_dmg_fam'), 70, 'familiar damage has its own total');
+      // Incoming, blocks, misses, dodges.
+      FF.questNoteCombat({ dir:'in', dmg:40, blocked:true });
+      eq(FF.cbStat('cb_dmg_taken'), 40, 'damage taken accumulates');
+      eq(FF.cbStat('cb_blocks'), 1, 'a blocked hit counts as a block');
+      FF.questNoteCombat({ dir:'miss' });
+      eq(FF.cbStat('cb_misses'), 1, 'misses count');
+      FF.questNoteCombat({ dir:'dodge' });
+      eq(FF.cbStat('cb_dodges'), 1, 'dodges count');
+
+      // ---- streaks: the part a plain counter cannot express -----------------------------------
+      S.stats = {}; S.cbStreaks = null;
+      for(var _d = 0; _d < 4; _d++) FF.questNoteCombat({ dir:'dodge' });
+      eq(FF.cbStat('cb_streak_dodge'), 4, 'a dodge run is tracked at its best');
+      FF.questNoteCombat({ dir:'in', dmg:10 });          // taking a hit ends the run
+      FF.questNoteCombat({ dir:'dodge' });
+      eq(FF.cbStat('cb_streak_dodge'), 4, 'being hit ends the run, so the best stands at 4');
+      S.stats = {}; S.cbStreaks = null;
+      FF.questNoteCombat({ dir:'out', dmg:1, crit:true });
+      FF.questNoteCombat({ dir:'out', dmg:1, crit:true });
+      eq(FF.cbStat('cb_streak_crit'), 2, 'a crit run is tracked');
+      FF.questNoteCombat({ dir:'out', dmg:1, crit:false });
+      FF.questNoteCombat({ dir:'out', dmg:1, crit:true });
+      eq(FF.cbStat('cb_streak_crit'), 2, 'a non-crit breaks it');
+      S.stats = {}; S.cbStreaks = null;
+      FF.questNoteCombat({ dir:'out', dmg:1 }); FF.questNoteCombat({ dir:'out', dmg:1 });
+      eq(FF.cbStat('cb_streak_hit'), 2, 'a no-miss run is tracked');
+      FF.questNoteCombat({ dir:'miss' }); FF.questNoteCombat({ dir:'out', dmg:1 });
+      eq(FF.cbStat('cb_streak_hit'), 2, 'a miss breaks it');
+
+      // ---- whole-fight facts, resolved at kill time -------------------------------------------
+      // cbNoDeathRun lives on state, not stats, so clearing stats alone left an earlier suite's run in place
+      // and the assertion below read 182 instead of 1.
+      S.stats = {}; S.cbSets = null; S.cbNoDeathRun = 0;
+      S.activity = { type:'combat', monsterHp:1, monsterId:FF.MONSTERS[0].id, duelStartedAt:Date.now() - 1000,
+                     dotHitAvg:1000, playerSwungOnce:true };
+      FF.questNoteKill(FF.MONSTERS[0]);
+      eq(FF.cbStat('cb_untouched_kills'), 1, 'a kill with no hit taken is an untouched kill');
+      eq(FF.cbStat('cb_nodeath_run'), 1, 'the no-death run advances');
+      ok(FF.cbSetSize('family') >= 1, 'the monster family joins the variety set');
+      // Taking a hit during the fight disqualifies the untouched kill.
+      S.stats = {};
+      S.activity = { type:'combat', monsterHp:1, monsterId:FF.MONSTERS[0].id, duelStartedAt:Date.now(),
+                     dotHitAvg:1000, playerSwungOnce:true };
+      FF.questNoteCombat({ dir:'in', dmg:5 });
+      FF.questNoteKill(FF.MONSTERS[0]);
+      eq(FF.cbStat('cb_untouched_kills'), 0, 'taking a hit disqualifies it');
+
+      // ---- class capstone counters -------------------------------------------------------------
+      S.stats = {};
+      FF.cbClassEvent('freeze'); FF.cbClassEvent('cuts', 5);
+      eq(FF.cbStat('cb_cap_freeze'), 1, 'a capstone event counts once');
+      eq(FF.cbStat('cb_cap_cuts'), 5, 'and can count an amount');
+      // The read/write coupling for the nine capstone counters is enforced in seamcheck CHECK 5, NOT here.
+      // It was here first, as String(q.progress).indexOf('cb_cap_' + k), and it passed in dev and FAILED the
+      // dist smoke: the obfuscator rewrites JS string literals, so a test that inspects function source text
+      // cannot survive the build. Same trap the artcheck scanner documents. A source-level rule belongs in a
+      // source-level check.
+      ok(FF.cbStat('cb_cap_freeze') === 0 || FF.cbStat('cb_cap_freeze') >= 0, 'capstone counters are readable through the seam');
+
+      // ---- the capstone counts the other fifty ------------------------------------------------
+      var cap = FF.questById('warlord_of_the_frontier');
+      ok(!!cap && cap.reward.titleId === 'title_warlord_of_the_frontier', 'the capstone grants the Warlord title');
+      eq(cap.target, 50, 'and requires the other fifty');
+      S.quests = { claimed:{} };
+      cbq.forEach(function(q){ if(!q.capstone) S.quests.claimed[q.id] = true; });
+      eq(cap.progress(S), 50, 'claiming all fifty completes the capstone');
+    } finally {
+      S.stats = svStats; S.activity = svAct; S.cbSets = svSets; S.cbStreaks = svStreaks; S.monsterKills = svMK;
+      S.quests = { claimed:{} };
     }
   });
 
