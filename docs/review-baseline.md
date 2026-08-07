@@ -55,15 +55,18 @@ diagnostics, not of files.
 `scripts/dpssim.mjs`, 45s window, zero-offense Archdemon, Ruin cloak (it won both cloak A/Bs).
 Single pack each unless noted. Pack means are the four-legendary average.
 
-### Assassin, set A/B winner D3 (matches the recorded layer)
+### Assassin, set A/B winner D3 (matches the recorded layer), TWO packs
 
-| Legendary | This pack | Recorded in CLAUDE.md |
-| --- | --- | --- |
-| Wraithclaw | 184.5B | ~113B |
-| Throatripper | 169.7B | ~123B |
-| Gloomstalker (`phantomassault`) | 158.4B | ~111B |
-| Shadowwyrm | 156.2B | ~125B |
-| **pack mean** | **167.2B** | **~118B** |
+| Legendary | Pack 1 | Pack 2 | Mean | Spread | Recorded | Drift |
+| --- | --- | --- | --- | --- | --- | --- |
+| Wraithclaw | 184.5B | 172.4B | 178.4B | 6.8% | ~113B | +58% |
+| Throatripper | 169.7B | 186.9B | 178.3B | 9.7% | ~123B | +45% |
+| Gloomstalker (`phantomassault`) | 158.4B | 160.2B | 159.3B | 1.1% | ~111B | +44% |
+| Shadowwyrm | 156.2B | 156.9B | 156.6B | 0.4% | ~125B | +25% |
+| **pack mean** | **167.2B** | **169.1B** | **168.2B** | **1.1%** | **~118B** | **+43%** |
+
+The packs agree to 1.1%, far tighter than the ±20% recorded for this class, so this is a settled
+number and not a noisy read. At 168.2B the class sits **1.77x the 95B midpoint** of the dps band.
 
 Set A/B: D1 133.0B, D2 140.3B, **D3 157.6B**, D4 137.3B. Cloak A/B: Ruin 154.2B, Warpack 98.8B,
 crit-damage 108.9B.
@@ -83,15 +86,21 @@ crit-damage 34.1B.
 
 ### Reading these
 
-The Assassin pack sits about 42% above its recorded ceiling and its legendary ordering has
-fully inverted: Wraithclaw was recorded last of four and now leads, Shadowwyrm was recorded
-first and now trails. This is what the TIER WARNING in CLAUDE.md predicts, and the Assassin is
-the most exposed class to it: its rework (v0.0.57.11) predates the melee tier fix, so its
-ceiling was measured on a `t19` weapon where the harness now derives `t20`, and it also predates
-the v0.0.68.0 DoT chassis fix. **One pack is not a verdict.** Recorded Assassin variance is about
-±20% and the project's method rule is mean-of-packs; a confirming pack is required before any
-band knob is derived from this. What the pack does establish is that the recorded Assassin
-ceiling is stale, which is the point of Pass 6.
+The Assassin sits 43% above its recorded ceiling, confirmed across two packs. This is what the
+TIER WARNING in CLAUDE.md predicts, and the Assassin is the most exposed class to it: its rework
+(v0.0.57.11) predates the melee tier fix, so its ceiling was measured on a `t19` weapon where the
+harness now derives `t20`, and it also predates the v0.0.68.0 DoT chassis fix.
+
+**The drift is NOT uniform, and that is the finding.** A tier change alone would move every
+legendary by about the same factor. Instead Wraithclaw gained 58% while Shadowwyrm gained 25%,
+which inverted the ordering: Shadowwyrm was the recorded best and is now unambiguously the runt,
+last in both packs. Something structural favours three of the four and not the fourth. That is a
+mechanism question for the Pass 4 conformance read of this kit, not something to diagnose from
+DPS totals.
+
+**Practical consequence for Pass 6: one band knob will not fix this class.** Re-banding the pack
+mean to 90B would put Shadowwyrm near 84B and the other three near 95B, preserving an inversion
+the class was not designed around.
 
 The Lumen pack reads about 15% under its recorded band, but its set A/B picked D1 where both
 recorded packs picked D3, so this matrix measured a different config than the recorded one. That
