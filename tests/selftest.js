@@ -922,6 +922,303 @@
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
   });
 
+  // ---- ESTATE BUILDINGS: the generic 'build' job kind (v0.0.90.0) ---------------------------------
+  // A job kind must appear in EIGHT client switches, and 'totem' was missing from one of them in three
+  // separate releases -- each time silently destroying the materials, which are spent at ENQUEUE. This
+  // suite walks all eight for the generic kind, so the next building inherits the coverage.
+  suite('estate buildings: the generic build job kind is wired everywhere', function(){
+    var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
+    ok(defs && keys && keys.length === 3, 'three buildings ship in batch A (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+
+    // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
+    ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
+    ok(!FF.estateJobShapeOk({ kind:'build' }), 'a build job with no buildingId is rejected');
+    ok(!FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t99' }), 'a buildingId naming no real item is rejected (not merely any string)');
+    // 2) estateJobMaterials -- the reserve/refund table. Missing = materials vanish with no refund.
+    var mats = FF.estateJobMaterials({ kind:'build', buildingId:'aqueduct_t5' });
+    eq(mats.length, 1, 'a build job reserves exactly one item');
+    eq(mats[0][0], 'aqueduct_t5', 'and it is the built building itself');
+    eq(mats[0][1], 1, 'one of them');
+    eq(FF.estateJobMaterials({ kind:'build', buildingId:'aqueduct_t5', upgrade:true })[0][0], 'aqueduct_t5', 'an upgrade pays the target building too');
+    // 3) estateApplyProjection -- queue chaining.
+    var proj = { type:'paved', workshopId:null, cottageId:null, totemId:null, buildingId:null };
+    FF.estateApplyProjection(proj, { kind:'build', buildingId:'apiary_t2' });
+    eq(proj.buildingId, 'apiary_t2', 'projection carries a queued building onto the tile');
+    // 4) estateQueuedJobValid -- the dispatch precondition.
+    ok(FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t0' }, { type:'paved', paveTileId:'paving_t5' }).ok, 'a queued building is valid on an empty paved tile');
+    ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t0' }, { type:'dirt' }).ok, 'and void on bare dirt');
+    ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t9' }, { type:'paved', paveTileId:'paving_t1' }).ok, 'and void if the pavement no longer reaches its tier');
+    ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t0' }, { type:'paved', paveTileId:'paving_t5', cottageId:'cottage_t0' }).ok, 'and void once anything else stands there');
+    // An upgrade may only ever replace its OWN kind.
+    ok(FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t3', upgrade:true }, { type:'paved', paveTileId:'paving_t5', buildingId:'apiary_t1' }).ok, 'an upgrade is valid over a lower tier of the same building');
+    ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t3', upgrade:true }, { type:'paved', paveTileId:'paving_t5', buildingId:'aqueduct_t1' }).ok, 'but never over a DIFFERENT building');
+    ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t1', upgrade:true }, { type:'paved', paveTileId:'paving_t5', buildingId:'apiary_t3' }).ok, 'nor as a downgrade');
+    // 5) estateJobFieldsFrom -- queue entry to live job.
+    eq(FF.estateJobFieldsFrom({ buildingId:'apiary_t4' }).buildingId, 'apiary_t4', 'the queue dispatcher copies buildingId onto the claimed job');
+    // 6) estateJobFromServer -- the resync mapper (this is the arm 'totem' lost, twice).
+    eq(FF.estateJobFromServer({ kind:'build', x:1, y:2, payload:{ buildingId:'apiary_t4' } }).buildingId, 'apiary_t4', 'a server-mirrored build job carries buildingId back');
+    // 7 + 8) the labels.
+    ok(/Build .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4' })), 'the queue labels a build job "Build <name>"');
+    ok(/Upgrade to .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4', upgrade:true })), 'and an upgrade "Upgrade to <name>"');
+    ok(FF.estateActiveJobHead({ kind:'build', buildingId:'apiary_t4' }, null).head.indexOf('Apiary') !== -1, 'the active-job card names the building (not the terraforming default)');
+    ok(!!FF.GUILD_JOB_KIND_LABEL.build, 'the guild activity list labels the build kind');
+
+    // The tile-occupancy rule is SINGLE-SOURCED now. The pre-fix bug: two of the four checks read
+    // workshopId || totemId, so a Workshop validated against a tile holding a Cottage.
+    ok(!FF.cellHasBuilding({ type:'paved' }), 'an empty paved tile is unoccupied');
+    ok(FF.cellHasBuilding({ cottageId:'cottage_t0' }), 'a Cottage occupies the tile (the case two checks used to miss)');
+    ok(FF.cellHasBuilding({ buildingId:'apiary_t0' }), 'and so does a generic building');
+    ok(!FF.estateQueuedJobValid({ kind:'workshop' }, { type:'paved', buildingId:'apiary_t0' }).ok, 'a building blocks a queued Workshop');
+    ok(!FF.estateQueuedJobValid({ kind:'cottage' }, { type:'paved', buildingId:'apiary_t0' }).ok, '...and a queued Cottage');
+    ok(!FF.estateQueuedJobValid({ kind:'totem' }, { type:'paved', buildingId:'apiary_t0' }).ok, '...and a queued Totem');
+
+    // Items, bills and the server allowlist.
+    var cat = FF.buildItemCatalog();
+    keys.forEach(function(k){
+      var def = defs[k];
+      ok(!!FF.ALL_SELLABLE[def.prefix+'0'] && !!FF.ALL_SELLABLE[def.prefix+'20'], k + ' registers all 21 tiers in ALL_SELLABLE');
+      eq(cat[def.prefix+'20'], 1, k + ' is on the server item allowlist as tradeable');
+      var d = FF.getBuildingTierData(k, 7);
+      eq(d.levelReq, FF.TIER_LEVELS[7], k + ' t7 gates on the Architecture level of its tier');
+      eq(d.inputs[def.prefix+'6'], 1, k + ' t7 consumes the previous tier');
+      ok(Object.keys(d.inputs).length >= 3, k + ' t7 bills stone plus its own materials');
+      eq(FF.getInventoryCategory(def.prefix+'3'), 'estate', k + ' files under the Estate inventory bucket');
+    });
+    // A t0 building must NOT ask for a previous tier that cannot exist.
+    ok(FF.getBuildingTierData('apiary', 0).inputs.apiary_t0 === undefined, 'a t0 building never bills a t-1 of itself');
+    // The craft family is registered (this is what makes the Architecture card startable AND stoppable).
+    ok(!!FF.CRAFT_FAMILIES.building, 'the building craft family is in the registry');
+    eq(FF.getSpecialTierData({ craftKind:'building', buildingKey:'apiary', tierIndex:4 }).name, defs.apiary.nameFor(4), 'the craft resolves its tier data through the registry');
+  });
+
+  // ---- AQUEDUCT: water only if the chain reaches real water, and only within its own tier's range ---
+  suite('estate buildings: the Aqueduct carries water along a chain', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedPlots = s.farmingPlots;
+    // A clean 20x20 paved grid at a mid height, so nothing else is water by accident.
+    var g = [];
+    for(var x=0; x<20; x++){ g[x] = []; for(var y=0; y<20; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; FF.estUse(false);
+    try {
+      eq(FF.aqueductRange(0), 2, 'a t0 Aqueduct carries 2 tiles');
+      eq(FF.aqueductRange(20), 22, 'a t20 Aqueduct carries 22');
+      // Water at (2,2): height 0 AND unpaved is what estateIsWater reads.
+      g[2][2].type = 'dirt'; g[2][2].paveTileId = null; g[2][2].height = 0;
+      [3,4,5,6].forEach(function(ax){ g[ax][2].buildingId = 'aqueduct_t0'; });
+      FF.recomputeAqueducts();
+      var fed = FF._aqueductFed();
+      ok(fed['3,2'], 'the Aqueduct touching the water is fed (distance 1)');
+      ok(fed['4,2'], 'and the next one along (distance 2, exactly its range)');
+      ok(!fed['5,2'], 'but not distance 3, past a t0 range');
+      ok(!fed['6,2'], 'nor distance 4');
+      // Tier buys distance: the same tile at t20 reaches.
+      g[6][2].buildingId = 'aqueduct_t20';
+      FF.recomputeAqueducts();
+      ok(FF._aqueductFed()['6,2'], 'a t20 Aqueduct at distance 4 IS fed (tier buys reach)');
+      // A lone Aqueduct with no water in reach is never fed, however high its tier.
+      g[15][15].buildingId = 'aqueduct_t20';
+      FF.recomputeAqueducts();
+      ok(!FF._aqueductFed()['15,15'], 'an Aqueduct with no chain back to water stays dry');
+      // The payoff: a Field beside a FED aqueduct earns the waterside bonus, and loses it when the chain breaks.
+      g[3][3].type = 'dirt'; g[3][3].paveTileId = null; g[3][3].fieldTier = 20;
+      eq(FF.waterYieldBonusAt('personal','3,3'), FF.WATER_YIELD_BONUS, 'a Field beside a fed Aqueduct earns the waterside bonus');
+      g[3][2].buildingId = null; FF.recomputeAqueducts();
+      eq(FF.waterYieldBonusAt('personal','3,3'), 0, 'and loses it the moment the chain is broken at the source');
+      g[3][2].buildingId = 'aqueduct_t0'; FF.recomputeAqueducts();
+      // A DRY aqueduct beside a field grants nothing (the whole point of the chain rule).
+      g[16][15].type = 'dirt'; g[16][15].paveTileId = null; g[16][15].fieldTier = 20;
+      eq(FF.waterYieldBonusAt('personal','16,15'), 0, 'a Field beside a DRY Aqueduct earns nothing');
+      // Real water still works untouched.
+      g[2][3].type = 'dirt'; g[2][3].paveTileId = null; g[2][3].fieldTier = 20;
+      eq(FF.waterYieldBonusAt('personal','2,3'), FF.WATER_YIELD_BONUS, 'a Field beside REAL water is unaffected by any of this');
+    } finally { s.estate.grid = savedGrid; s.farmingPlots = savedPlots; FF.recomputeAqueducts(); }
+  });
+
+  // ---- SUN TERRACE: it removes a PENALTY and must never slow a fast Field -------------------------
+  suite('estate buildings: the Sun Terrace cuts only the altitude penalty', function(){
+    var s = FF._state, savedGrid = s.estate.grid;
+    var g = [];
+    for(var x=0; x<20; x++){ g[x] = []; for(var y=0; y<20; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; FF.estUse(false);
+    try {
+      near(FF.sunTerracePenaltyCut(20), 1.0, 'a t20 Sun Terrace cancels the whole penalty');
+      ok(FF.sunTerracePenaltyCut(0) > 0 && FF.sunTerracePenaltyCut(0) < 0.1, 'a t0 one barely helps');
+      // The worst altitude: z19 grows at 1.5x (50% slower).
+      g[10][10].type = 'dirt'; g[10][10].paveTileId = null; g[10][10].fieldTier = 20; g[10][10].height = 19;
+      near(FF.fieldGrowthMult('personal','10,10'), 1.5, 'a Field at z19 grows at the 1.5x penalty');
+      g[10][11].buildingId = 'sunterrace_t20';
+      near(FF.fieldGrowthMult('personal','10,10'), 1.0, 'a t20 Terrace beside it removes the penalty entirely');
+      g[10][11].buildingId = 'sunterrace_t0';
+      var t0mult = FF.fieldGrowthMult('personal','10,10');
+      ok(t0mult > 1.0 && t0mult < 1.5, 'a t0 Terrace removes only a sliver (' + t0mult.toFixed(3) + ')');
+      // THE GUARD THAT MATTERS: a lowland Field is already FASTER than 1.0, and the Terrace must not
+      // scale that toward 1.0 -- doing so would make the building punish the tiles it exists to help.
+      g[10][10].height = 1;
+      g[10][11].buildingId = null;
+      var lowPlain = FF.fieldGrowthMult('personal','10,10');
+      g[10][11].buildingId = 'sunterrace_t20';
+      var lowTerraced = FF.fieldGrowthMult('personal','10,10');
+      ok(lowPlain < 1.0, 'a Field at z1 grows FASTER than baseline (' + lowPlain.toFixed(3) + ')');
+      eq(lowTerraced, lowPlain, 'and a t20 Terrace leaves it exactly alone');
+      // Terraces do not stack: the best one in range wins.
+      g[10][10].height = 19;
+      g[10][9].buildingId = 'sunterrace_t20';
+      g[10][11].buildingId = 'sunterrace_t20';
+      near(FF.fieldGrowthMult('personal','10,10'), 1.0, 'two Terraces cannot push the multiplier below 1.0');
+      // Diagonals count (the Totem aura shape), and range is exactly 1 tile.
+      g[10][9].buildingId = null; g[10][11].buildingId = null;
+      g[11][11].buildingId = 'sunterrace_t20';
+      near(FF.fieldGrowthMult('personal','10,10'), 1.0, 'a diagonal Terrace counts');
+      g[11][11].buildingId = null;
+      g[12][10].buildingId = 'sunterrace_t20';
+      near(FF.fieldGrowthMult('personal','10,10'), 1.5, 'a Terrace two tiles away does not');
+    } finally { s.estate.grid = savedGrid; }
+  });
+
+  // ---- APIARY: honey on a per-hive clock, bounded, plus the crop aura ----------------------------
+  suite('estate buildings: the Apiary banks honey and feeds nearby Fields', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.beekeeping, savedEarned = s.itemEarnedTotal;
+    var g = [];
+    for(var x=0; x<20; x++){ g[x] = []; for(var y=0; y<20; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; s.itemEarnedTotal = {}; FF.estUse(false);
+    try {
+      ok(FF.apiaryIntervalMs(0) > FF.apiaryIntervalMs(20), 'a higher-tier Apiary banks honey faster');
+      // Five intervals of elapsed time pays exactly five units, and the remainder is KEPT (a per-cell
+      // clock is why: hives of different tiers cannot share one timestamp without rounding honey away).
+      g[5][5].buildingId = 'apiary_t10';
+      var per = FF.apiaryIntervalMs(10);
+      // The stub is 3 SECONDS past five whole intervals, and the surviving remainder is asserted to be
+      // that 3s -- not merely "less than one interval", which `apiaryAt = now` would also satisfy. That
+      // weaker form was written first and the guard-proof pass caught it passing against the bug.
+      g[5][5].apiaryAt = Date.now() - (5*per + 3000);
+      FF.processApiaries();
+      eq(s.inventory.beekeeping_t10 || 0, 5, 'five elapsed intervals pay exactly five honey');
+      var rem = Date.now() - g[5][5].apiaryAt;
+      ok(rem >= 2500 && rem <= 4000, 'the leftover part-interval is CARRIED (' + rem + 'ms of the 3000ms stub), not reset to zero');
+      // Not yet due -> nothing, and the clock is untouched.
+      s.inventory = {};
+      var stamp = Date.now() - Math.floor(per/2);
+      g[5][5].apiaryAt = stamp;
+      FF.processApiaries();
+      eq(s.inventory.beekeeping_t10 || 0, 0, 'half an interval pays nothing');
+      eq(g[5][5].apiaryAt, stamp, 'and does not move the clock');
+      // THE BOUND: this accrues off a timestamp, so applyOfflineProgress's own 12h cap does NOT cover it.
+      // Without ESTATE_APIARY_CAP_MS a year away would mint a year of honey.
+      s.inventory = {};
+      g[5][5].apiaryAt = Date.now() - 365*24*3600*1000;
+      FF.processApiaries();
+      var capUnits = Math.floor(FF.ESTATE_APIARY_CAP_MS / per);
+      eq(s.inventory.beekeeping_t10 || 0, capUnits, 'a year away pays only the capped window (' + capUnits + ' honey)');
+      // A hive with no stamp starts its clock now rather than paying retroactively.
+      s.inventory = {};
+      g[7][7].buildingId = 'apiary_t0'; g[7][7].apiaryAt = null;
+      FF.processApiaries();
+      eq(s.inventory.beekeeping_t0 || 0, 0, 'a hive with no clock pays nothing on its first tick');
+      ok(!!g[7][7].apiaryAt, 'and starts its clock instead');
+      // The crop aura: flat +1 per Apiary in range, stacking, diagonals counted.
+      g[6][6].type = 'dirt'; g[6][6].paveTileId = null; g[6][6].fieldTier = 20;
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 2, 'both Apiaries diagonally in range each add +1');
+      g[7][7].buildingId = null;
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'removing one drops the bonus to +1');
+      g[9][9].buildingId = 'apiary_t20';
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'an Apiary out of range adds nothing, whatever its tier');
+      // A GUILD Apiary must not pay honey: one shared hive on a shared grid would pay every member.
+      s.inventory = {};
+      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
+        var gg = [];
+        for(var gx=0; gx<3; gx++){ gg[gx] = []; for(var gy=0; gy<3; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+        gg[1][1].buildingId = 'apiary_t10';
+        gg[1][1].apiaryAt = Date.now() - (5*per + 1000);
+        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
+        FF.processApiaries();
+        eq(s.inventory.beekeeping_t10 || 0, 0, 'a guild Apiary pays no honey (a shared hive would pay every member)');
+      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
+      // The per-KIND standing count, which is what an Estate quest has to read: every building shares one
+      // cell field, so estStanding('buildingId') cannot tell an Apiary from an Aqueduct.
+      eq(FF.estStandingBuilding('apiary'), 2, 'estStandingBuilding counts only Apiaries');
+      eq(FF.estStandingBuilding('aqueduct'), 0, 'and reports zero for a kind that is not placed');
+      g[1][1].buildingId = 'aqueduct_t0';
+      eq(FF.estStandingBuilding('aqueduct'), 1, 'and picks up an Aqueduct without counting the hives');
+      eq(FF.estStandingBuilding('apiary'), 2, 'which leaves the Apiary count alone');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.beekeeping = savedXp; s.itemEarnedTotal = savedEarned;
+      FF.recomputeAqueducts();
+    }
+  });
+
+  // ---- Placement gates, completion, and the definition-of-done checklist -------------------------
+  suite('estate buildings: gates, completion and the four omissions', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.architecture, savedBee = s.xp.beekeeping;
+    var g = [];
+    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; FF.estUse(false);
+    try {
+      // The OWNER RULE for the Apiary: Beekeeping of its own tier is needed to place it. Buildings are
+      // tradeable, so owning one does not imply the level.
+      s.xp.beekeeping = 0;
+      ok(!FF.buildingGateOk('apiary', 10), 'a Beekeeping-less player cannot place a t10 Apiary');
+      ok(FF.buildingGateOk('apiary', 0), 'the t0 Apiary needs only Lv 1');
+      s.xp.beekeeping = FF.SKILL_XP_FLOOR[100];
+      ok(FF.buildingGateOk('apiary', 20), 'a maxed Beekeeper can place the top Apiary');
+      ok(FF.buildingGateOk('aqueduct', 20) && FF.buildingGateOk('sunterrace', 20), 'the Aqueduct and Sun Terrace carry no extra skill gate');
+
+      // placeableBuildingsFor respects the pavement tier and what you actually own.
+      s.inventory = { apiary_t0:1, aqueduct_t9:1 };
+      var lowPave = { type:'paved', paveTileId:'paving_t3' };
+      var offered = FF.placeableBuildingsFor(lowPave).map(function(it){ return it.id; });
+      ok(offered.indexOf('apiary_t0') !== -1, 'a t0 building is offered on t3 pavement');
+      ok(offered.indexOf('aqueduct_t9') === -1, 'a t9 building is not offered on t3 pavement');
+
+      // Completion writes the cell, grants Architecture XP, and starts an Apiary's clock at build time.
+      s.xp.architecture = 0;
+      var applied = FF.applyEstateJobCompletion(s.estate, { kind:'build', x:1, y:1, buildingId:'apiary_t5' }, true, false);
+      ok(applied, 'the completion applies');
+      eq(g[1][1].buildingId, 'apiary_t5', 'the building lands on the cell');
+      ok(s.xp.architecture > 0, 'and pays Architecture XP');
+      ok(!!g[1][1].apiaryAt, 'a fresh Apiary starts its honey clock at build time, not earlier');
+      // An upgrade returns the displaced building to inventory.
+      s.inventory = {};
+      FF.applyEstateJobCompletion(s.estate, { kind:'build', x:1, y:1, buildingId:'apiary_t6', upgrade:true }, true, false);
+      eq(g[1][1].buildingId, 'apiary_t6', 'an upgrade replaces the building');
+      eq(s.inventory.apiary_t5 || 0, 1, 'and the displaced one comes back to inventory');
+      // ...but NOT on a non-owner client, or a guild grid write would mint one per open window.
+      s.inventory = {};
+      FF.applyEstateJobCompletion(s.estate, { kind:'build', x:1, y:1, buildingId:'apiary_t7', upgrade:true }, false, false);
+      eq(s.inventory.apiary_t6 || 0, 0, 'a mirrored completion (giveRewards false) returns nothing');
+
+      // OMISSION 1: breaking the pavement must EJECT the building, not destroy it. A Totem was silently
+      // destroyed by this path before v0.0.90.0, so both are asserted.
+      s.inventory = {}; s.xp.digging = FF.SKILL_XP_FLOOR[100];
+      g[2][2].buildingId = 'aqueduct_t3';
+      FF.estateBreakPavement(2, 2);
+      eq(g[2][2].type, 'dirt', 'breaking the pavement returns the tile to dirt');
+      eq(g[2][2].buildingId, null, 'the building is removed from the cell');
+      eq(s.inventory.aqueduct_t3 || 0, 1, 'and returned to inventory rather than destroyed');
+      g[3][3].type = 'paved'; g[3][3].paveTileId = 'paving_t20'; g[3][3].totemId = 'totem_t3';
+      FF.estateBreakPavement(3, 3);
+      eq(s.inventory.totem_t3 || 0, 1, 'a Totem is ejected too (it used to be destroyed)');
+
+      // OMISSION 2: the public snapshot must carry both, or half the estate is invisible to visitors.
+      var snap = FF.computeEstateSnapshot();
+      ok(!!snap, 'the estate snapshot builds');
+      eq(snap.grid[1][1].buildingId, 'apiary_t7', 'the snapshot carries buildingId to visitors');
+      g[4][4].totemId = 'totem_t2';
+      eq(FF.computeEstateSnapshot().grid[4][4].totemId, 'totem_t2', 'and totemId, which it never used to');
+
+      // Removal refunds and clears the hive clock, so a later Apiary cannot resume an old one.
+      s.inventory = {};
+      g[1][1].apiaryAt = 12345;
+      FF.estateRemoveBuilding(1, 1);
+      eq(g[1][1].buildingId, null, 'removal clears the cell');
+      eq(s.inventory.apiary_t7 || 0, 1, 'and refunds the building');
+      eq(g[1][1].apiaryAt, null, 'and resets the honey clock');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.architecture = savedXp; s.xp.beekeeping = savedBee;
+      FF.recomputeAqueducts();
+    }
+  });
+
   // ---- Tool forges: only the NORMAL previous tool is craft fodder + unique tool names (ticket-0093) --
   suite('tools: forges consume only the Normal previous tool', function(){
     var s = FF._state, savedInv = s.inventory;
@@ -5252,11 +5549,11 @@
     var F = FF.CRAFT_FAMILIES;
     ok(F && typeof F === 'object', 'CRAFT_FAMILIES is exported');
     var kinds = Object.keys(F);
-    eq(kinds.length, 12, 'all 12 craft families are described');
+    eq(kinds.length, 13, 'all 13 craft families are described');   // +building (v0.0.90.0, the estate buildings)
 
     // 1) Every family is MATCHABLE, using the match keys the registry claims. This is the exact
     //    failure ward had: startable but never matchable, so its card never showed Stop.
-    var sample = { skillId:'mining', typeId:'sword', tierIndex:3, material:'plate', slot:'chest' };
+    var sample = { skillId:'mining', typeId:'sword', tierIndex:3, material:'plate', slot:'chest', buildingKey:'apiary' };
     kinds.forEach(function(kind){
       var act = { type:'craft', craftKind:kind }, params = {};
       F[kind].match.forEach(function(k){ act[k] = sample[k]; params[k] = sample[k]; });

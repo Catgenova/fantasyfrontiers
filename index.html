@@ -12361,7 +12361,17 @@
     // now, but clamping is what neutralises the ones already planted, WITHOUT deleting anyone's farm: such
     // a Field simply grows at the z1 rate. The upper end is naturally bounded by ESTATE_MAX_HEIGHT, but
     // pin it too so the band is stated in one place.
-    return clamp(1 + ((c.height|0) - 10) / 18, 0.5, 1.5);
+    var m = clamp(1 + ((c.height|0) - 10) / 18, 0.5, 1.5);
+    // SUN TERRACE (v0.0.90.0) removes a share of the altitude PENALTY, and only the penalty. A hilltop Field
+    // is currently strictly worse than a valley one, which is the downside this building exists to soften;
+    // applying the cut to a multiplier already BELOW 1.0 would instead slow down a lowland Field, i.e. the
+    // terrace would punish the tiles it is supposed to help. Hence the `m > 1` guard rather than a blanket
+    // scale. A Field at exactly height 10 reads 1.0 and is untouched either way.
+    if(m > 1){
+      var cut = sunTerraceCutAt(grid, px, py);
+      if(cut > 0) m = 1 + (m - 1) * (1 - cut);
+    }
+    return m;
   }
   function plantSeed(scope, key, seedId, batch){
     var fieldTier = fieldTierAt(scope, key);
@@ -12412,10 +12422,30 @@
     if(!isFinite(px) || !isFinite(py)) return 0;
     var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     for(var i=0;i<dirs.length;i++){
-      var c = grid[px+dirs[i][0]] && grid[px+dirs[i][0]][py+dirs[i][1]];
-      if(c && estateIsWater(c)) return WATER_YIELD_BONUS;
+      var nx = px+dirs[i][0], ny = py+dirs[i][1];
+      var c = grid[nx] && grid[nx][ny];
+      // A fed Aqueduct counts as water here (v0.0.90.0) -- same flat bonus, no stacking, so an inland farm
+      // can reach the waterline rather than being permanently worse than a lucky riverside one.
+      if(c && estateCellWatersFields(scope, nx, ny, c)) return WATER_YIELD_BONUS;
     }
     return 0;
+  }
+  // The Apiary's own contribution to a harvest: +1 crop per Apiary within 1 tile (diagonals count, like a
+  // Totem). Deliberately a flat 1 rather than tier-scaled -- the tier buys HONEY rate, and an Apiary that
+  // matched a Totem's +tier would make the Totem pointless.
+  function apiaryYieldBonusAt(scope, key){
+    var grid = fieldGridFor(scope);
+    if(!grid || typeof key !== 'string') return 0;
+    var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
+    if(!isFinite(px) || !isFinite(py)) return 0;
+    var bonus = 0;
+    for(var dx=-1; dx<=1; dx++){
+      for(var dy=-1; dy<=1; dy++){
+        var c = grid[px+dx] && grid[px+dx][py+dy];
+        if(c && buildingKeyOf(c.buildingId) === 'apiary') bonus += 1;
+      }
+    }
+    return bonus;
   }
   function harvestPlot(scope, key, batch){
     var map = farmPlotMap(scope);
@@ -12432,6 +12462,8 @@
     yieldQty += totemBonus;
     var waterBonus = waterYieldBonusAt(scope, key);
     yieldQty += waterBonus;
+    var apiaryBonus = apiaryYieldBonusAt(scope, key);
+    yieldQty += apiaryBonus;
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
     estSet('crop', cropData.id);   // Estate quests: how many DIFFERENT crops you have brought in
@@ -12445,7 +12477,7 @@
     maybeSummonFamiliar('farming');
     if(!batch){
       var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
-      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
+      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (apiaryBonus > 0 ? ' (+' + apiaryBonus + ' apiary)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
     }
     delete map[key];
     if(!batch) saveGame();
@@ -12652,6 +12684,7 @@
     var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
     yieldQty += totemYieldBonusAt(scope, key); // nearby Totems boost offline harvests too
+    yieldQty += apiaryYieldBonusAt(scope, key); // ...and so do nearby Apiaries (v0.0.90.0)
     yieldQty += waterYieldBonusAt(scope, key); // ...and so does a waterside bank
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
@@ -14555,6 +14588,7 @@
     if(act.craftKind==='amulet') return 'jewelrycrafting';
     if(act.craftKind==='workshop') return 'architecture'; // Architecture raises every Workshop
     if(act.craftKind==='cottage') return 'architecture';  // ...and every Cottage
+    if(act.craftKind==='building') return 'architecture';  // ...and every estate Building (Aqueduct, Sun Terrace, Apiary, ...)
     return null;
   }
   function getSpecialTierData(act){
@@ -14578,6 +14612,7 @@
     if(act.craftKind==='amulet') return getAmuletTierData(act.typeId||'plain', act.tierIndex);
     if(act.craftKind==='workshop') return getWorkshopTierData(act.skillId, act.tierIndex);
     if(act.craftKind==='cottage') return getCottageTierData(act.tierIndex);
+    if(act.craftKind==='building') return getBuildingTierData(act.buildingKey, act.tierIndex);
     return null;
   }
   // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
@@ -14607,11 +14642,14 @@
     workshop:    { match:['skillId','tierIndex'],          doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-workshop',  tierTarget:'workshop' }] },
     belt:        { match:['tierIndex'],                    doubleable:true,  sacrifice:'belt',        cards:[{ idPrefix:null,            tierTarget:'belt' }] },
     cottage:     { match:['tierIndex'],                    doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:'cottage' }] },
+    // Every estate building from v0.0.90.0 on (Aqueduct, Sun Terrace, Apiary, ...). buildingKey is in the
+    // match so an in-progress Apiary is never mistaken for an Aqueduct of the same tier.
+    building:    { match:['buildingKey','tierIndex'],       doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:'building' }] },
     offhand:     { match:['typeId'],                       doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:null }] }
   };
   // Families whose cards have no live inputs updater today. Listed so the test locks the CURRENT set:
   // a NEW family landing here fails, rather than silently repeating the ring/amulet lag.
-  var CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS = ['belt','cottage','offhand'];
+  var CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS = ['belt','cottage','building','offhand'];
   // DERIVED from the registry. These were two more hand-maintained lists that had to be kept in step
   // with every other one by hand; computing them means a family can no longer be doubleable in the
   // registry but absent here (or vice versa) -- the failure mode that made 'ward' and 'ring' invisible.
@@ -14655,6 +14693,10 @@
     } else if(act.craftKind==='cottage'){
       itemId = 'cottage_t'+act.tierIndex;
       rarity = 'normal';
+    } else if(act.craftKind==='building'){
+      var _bdef = ESTATE_BUILDING_DEFS[act.buildingKey];
+      itemId = _bdef ? _bdef.prefix + act.tierIndex : null;
+      rarity = 'normal';
     }
     if(itemId) addItem(itemId, 1);
     return { rarity:rarity, itemId:itemId };
@@ -14680,7 +14722,7 @@
       var _brewBonus = _canBonus && brewYieldRoll();
       var outputs = 1 + (_wsDouble?1:0) + (_brewBonus?1:0);
       for(var o=0;o<outputs;o++){
-        var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage') ? 'normal' : rollCraftRarity(state, act.tierIndex);
+        var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage' || act.craftKind==='building') ? 'normal' : rollCraftRarity(state, act.tierIndex);
         var made = produceSpecialOutput(act, rarity);
         rarity = made.rarity;
         awardMasterworkXp(rarity, act.tierIndex); // Masterwork trains only on a rare+ output
@@ -15022,6 +15064,105 @@
     COTTAGE_ITEMS[_cid] = { id:_cid, name: FORESTRY_NAMES[_ct] + ' Cottage', icon: svgIcon('log', cottageTierColor(_ct)), sell: tierSell(40, _ct), tierIndex:_ct };
   }
   Object.assign(ALL_SELLABLE, COTTAGE_ITEMS);
+
+  // ======== Estate Buildings: ONE registry, ONE job kind ('build'), many buildings ==================
+  // Workshops, Cottages, Totems and Fields each shipped as their own job kind, and the cost of that is
+  // written all over this file: a kind must be listed in EIGHT client switches plus the estate_jobs CHECK
+  // constraint, the guild_estate_jobs CHECK constraint and BOTH job_start whitelists. 'totem' was missed
+  // in one of those places in three separate releases (the vanish bug, the resync bug, then the frozen
+  // queue), and a miss spends the player's materials at enqueue and then silently drops the job.
+  //
+  // So every building from here on shares the generic 'build' kind, carrying { buildingId } exactly as
+  // 'totem' carries { totemId }, and lands in the cell's `buildingId` field -- which has been in the grid
+  // constructor since the beginning and was never used. Adding an eleventh building is then a def in this
+  // table, a draw model, and nothing else: no new job kind, no migration.
+  //
+  // Batch A ships three:
+  //   Aqueduct    -- counts as WATER for Field adjacency, if it chains back to real water.
+  //   Sun Terrace -- cancels the altitude growth PENALTY on nearby Fields (it never speeds a fast one).
+  //   Apiary      -- passive honey, plus a small yield bonus to nearby Fields. Beekeeping gates it.
+  // All three are crafted in Architecture (the buildings skill, like Workshops and Cottages) and placed on
+  // paved ground of at least their own tier, which is the rule every other building already obeys.
+  var ESTATE_BUILD_MS_PER_TIER = 10*60*1000;   // 10 min per tier, matching Cottages (server mirrors this)
+  var ESTATE_APIARY_CAP_MS = 12*60*60*1000;    // an Apiary banks at most 12h of honey, the offline window
+  var ESTATE_BUILDING_DEFS = {
+    aqueduct: {
+      key:'aqueduct', prefix:'aqueduct_t', label:'Aqueduct', plural:'Aqueducts', shape:'tile',
+      nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Aqueduct'; },
+      colorFor: function(t){ return MINING_STONE_COLORS[Math.floor(t/3)]; },
+      // The channel itself: Slabs of the tier's stone (type index 1 of each stone's three cuts, the same
+      // cut Paving buys), on top of the shared brick-and-pillar bill every building pays.
+      extraInputs: function(inputs, t){ inputs['stonecutting_t'+(Math.floor(t/3)*3+1)] = 20; },
+      gateSkill: null,
+      blurb: function(t){ return 'Carries water up to ' + aqueductRange(t) + ' tiles from a water tile. Fields beside a fed Aqueduct get the water bonus.'; }
+    },
+    sunterrace: {
+      key:'sunterrace', prefix:'sunterrace_t', label:'Sun Terrace', plural:'Sun Terraces', shape:'tile',
+      nameFor: function(t){ return MINING_STONE_NAMES[Math.floor(t/3)] + ' Sun Terrace'; },
+      colorFor: function(t){ return MINING_STONE_COLORS[Math.floor(t/3)]; },
+      extraInputs: function(inputs, t){ inputs['paving_t'+t] = 20; },
+      gateSkill: null,
+      blurb: function(t){ return 'Removes ' + Math.round(sunTerracePenaltyCut(t)*100) + '% of the altitude growth penalty on Fields within 1 tile.'; }
+    },
+    apiary: {
+      key:'apiary', prefix:'apiary_t', label:'Apiary', plural:'Apiaries', shape:'wing',
+      nameFor: function(t){ return FORESTRY_NAMES[t] + ' Apiary'; },
+      colorFor: function(){ return '#e0a92e'; },
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 10; inputs['twine_t'+t] = 10; },
+      // OWNER RULE: an Apiary needs the Beekeeping level of its own tier to place or upgrade. Buildings are
+      // tradeable, so owning one does not imply the level -- the same reason Totems gate on Totems and
+      // tools gate on the skill they serve.
+      gateSkill: 'beekeeping',
+      blurb: function(t){ return 'Yields ' + (ALL_GATHER_ITEMS[('beekeeping_t'+t)] ? ALL_GATHER_ITEMS['beekeeping_t'+t].name : 'honey') + ' on its own, and +1 crop per harvest to Fields within 1 tile.'; }
+    }
+  };
+  var ESTATE_BUILDING_KEYS = Object.keys(ESTATE_BUILDING_DEFS);
+  // Aqueduct reach: how far along a chain of Aqueducts water still counts, measured from a real water tile.
+  // Tier buys DISTANCE, which is the only tier axis on this building -- the bonus it carries is the flat
+  // WATER_YIELD_BONUS a natural waterline tile gives, not a scaled one.
+  function aqueductRange(tier){ return 2 + Math.max(0, Math.min(TIER_COUNT-1, tier|0)); }
+  // Sun Terrace strength: the share of the altitude PENALTY it removes, 5% at t0 up to 100% at t20.
+  function sunTerracePenaltyCut(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return 0.05 + (t/(TIER_COUNT-1))*0.95; }
+  // How often one Apiary banks a unit of honey: 60 min at t0 down to 20 min at t20.
+  function apiaryIntervalMs(tier){ var t = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return Math.round((60 - (t/(TIER_COUNT-1))*40) * 60 * 1000); }
+  function getBuildingTierData(key, tier){
+    var def = ESTATE_BUILDING_DEFS[key]; if(!def) return null;
+    tier = Math.max(0, Math.min(TIER_COUNT-1, tier|0));
+    var inputs = buildingStoneInputs(tier);
+    def.extraInputs(inputs, tier);
+    if(tier > 0) inputs[def.prefix+(tier-1)] = 1;   // upgrades consume the previous tier, like every building
+    return { tierIndex:tier, buildingKey:key, name:def.nameFor(tier), levelReq:TIER_LEVELS[tier],
+             xp:tierXp(35, tier), time:tierTime(18, 0.55, tier), inputs:inputs };
+  }
+  var ESTATE_BUILDING_ITEMS = {};
+  ESTATE_BUILDING_KEYS.forEach(function(k){
+    var def = ESTATE_BUILDING_DEFS[k];
+    for(var t=0; t<TIER_COUNT; t++){
+      var id = def.prefix + t;
+      ESTATE_BUILDING_ITEMS[id] = { id:id, name:def.nameFor(t), icon:svgIcon(def.shape, def.colorFor(t)),
+                                    sell:tierSell(45, t), tierIndex:t, buildingKey:k };
+    }
+  });
+  // Into ALL_SELLABLE HERE, before buildItemCatalog reads it. The set-tier armour false positive (v0.0.89.1)
+  // was exactly this ordering going wrong: a family generated after the merge is absent from the server
+  // allowlist at every rarity, and the forged-unique audit then reports honest players.
+  Object.assign(ALL_SELLABLE, ESTATE_BUILDING_ITEMS);
+  function buildingItem(id){ return (typeof id === 'string' && ESTATE_BUILDING_ITEMS[id]) || null; }
+  function buildingKeyOf(id){ var it = buildingItem(id); return it ? it.buildingKey : null; }
+  function buildingDefOf(id){ var k = buildingKeyOf(id); return k ? ESTATE_BUILDING_DEFS[k] : null; }
+  function buildingName(id){ var it = buildingItem(id); return it ? it.name : 'building'; }
+  // The extra skill a def demands to PLACE or UPGRADE it (Beekeeping for an Apiary). Architecture is checked
+  // separately by estateBuildTierLevelOk, exactly as it is for a Workshop or a Cottage.
+  function buildingGateOk(key, tier){
+    var def = ESTATE_BUILDING_DEFS[key];
+    if(!def || !def.gateSkill) return true;
+    return getLevel((state.xp && state.xp[def.gateSkill]) || 0) >= TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, tier|0))];
+  }
+  function buildingGateLabel(key, tier){
+    var def = ESTATE_BUILDING_DEFS[key];
+    if(!def || !def.gateSkill) return '';
+    return skillDisplayLabel(def.gateSkill) + ' Lv ' + TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, tier|0))];
+  }
 
   // ---- Farming Fields: built in place on an EMPTY DIRT estate tile from 100 of the equivalent-tier
   // Digging resource (built, not a crafted item). Each field provides one Farming plot capped at its
@@ -15608,6 +15749,7 @@
   var selectedToolTier = {};
   var selectedWorkshopTier = {};
   var selectedCottageTier = 0;
+  var selectedBuildingTier = {};   // per estate-building kind, session-scoped like selectedWorkshopTier
   var selectedBodyArmorTier = {};
   var selectedShaftLogTier = null;
   var selectedBeltTier = null;
@@ -20343,6 +20485,16 @@
     if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs ' + COTTAGE_PLANKS + ' planks + the tier\'s bricks and pillars' + (tierIndex>0?' + a '+FORESTRY_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
     placeNewCraftActivity('architecture', null, 'cottage', { type:'craft', craftKind:'cottage', tierIndex:tierIndex, progress:0 });
   }
+  // Every estate Building shares one craft entry. Architecture gates the CRAFT for all of them (it is the
+  // buildings skill); a def's own gateSkill -- Beekeeping for an Apiary -- gates PLACEMENT, not crafting,
+  // so the item stays tradeable and the level is demanded of whoever actually raises it.
+  function craftBuilding(buildingKey, tierIndex){
+    var data = getBuildingTierData(buildingKey, tierIndex);
+    if(!data) return;
+    if(getLevel(state.xp.architecture) < data.levelReq){ addLog('Architecture level too low to build ' + data.name + '.', 'danger'); return; }
+    if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + '.', 'danger'); return; }
+    placeNewCraftActivity('architecture', null, 'building', { type:'craft', craftKind:'building', buildingKey:buildingKey, tierIndex:data.tierIndex, progress:0 });
+  }
   // TOOLS NEED THE SKILL THEY SERVE, at the same tier ladder every other gate uses (owner order, the
   // Digging/Architecture/Totems/Fletching pattern). The hole this closes: a tool is FORGED under
   // Blacksmithing, so its craft checks Blacksmithing and nothing else, and tools are tradeable -- so a
@@ -21042,6 +21194,10 @@
                   if(cell.workshopId === undefined) cell.workshopId = null;
                   if(cell.cottageId === undefined) cell.cottageId = null;
                   if(cell.totemId === undefined) cell.totemId = null;
+                  // A buildingId naming an item that no longer exists is cleared rather than kept: it would
+                  // draw nothing, block the tile forever, and refund nothing on removal.
+                  if(cell.buildingId && !buildingItem(cell.buildingId)) cell.buildingId = null;
+                  if(cell.apiaryAt === undefined) cell.apiaryAt = null;
                   if(cell.fieldTier === undefined) cell.fieldTier = null;
                   if(typeof cell.owned !== 'boolean') cell.owned = estateIsCoreTile(gx, gy);
                   if(cell.obstacle === undefined) cell.obstacle = cell.owned ? null : generateEstateObstacle();
@@ -21115,6 +21271,7 @@
       addLog('Welcome to Fantasy Frontiers! Gather, craft, fight and grow to become a legend.');
     }
     recomputePlacedWorkshops(); // build the workshop-bonus cache from the loaded estate
+    recomputeAqueducts();       // ...and the aqueduct water-chain cache, same reason
     pruneOrphanFarmingPlots(state.farmingPlots, state.estate && state.estate.grid); // clear personal plots with no backing Field (self-heal a stuck Farming flash)
     render();
     // Persist immediately after boot/offline-catch-up so the freshly credited items + updated
@@ -22097,6 +22254,7 @@
     // it from the Gathering tab. GATHERING_TAB_SKILL_IDS is exactly GATHER_SKILL_IDS minus butchering.
     html += group('Crafting Workshops', ['butchering'].concat(CRAFT_SKILL_IDS)) + group('Gathering Workshops', GATHERING_TAB_SKILL_IDS);
     html += renderCottageForge(maxUnlocked, lvl);
+    html += renderBuildingForge(maxUnlocked, lvl);
     return html;
   }
   // "Only show items I have materials for": a tiered forge card defaults to the highest unlocked tier, so
@@ -22167,6 +22325,43 @@
       html += queueInputHtml('buildCottage:t'+sel)+'<button class="action-btn" data-action="buildCottage" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Build</button>';
     }
     html += '</div></div>';
+    return html;
+  }
+  // ONE card renderer for every estate Building. Same shape as renderCottageForge, driven off the def table,
+  // so a new building appears in Architecture without another copy of this function.
+  function renderBuildingForge(maxUnlocked, lvl){
+    var html = '<div class="guild-section-title" style="margin-top:10px;">Estate Buildings</div>';
+    html += '<div class="empty-note" style="margin-bottom:6px;">Placed on paved estate ground of equal or higher tier, one building per tile. An <b>Aqueduct</b> carries the waterside crop bonus inland, a <b>Sun Terrace</b> undoes the grow-time penalty of building high, and an <b>Apiary</b> produces honey and feeds nearby Fields.</div>';
+    html += '<div class="card-grid">';
+    ESTATE_BUILDING_KEYS.forEach(function(key){
+      var def = ESTATE_BUILDING_DEFS[key];
+      if(selectedBuildingTier[key] === undefined) selectedBuildingTier[key] = maxUnlocked;
+      var sel = Math.min(selectedBuildingTier[key], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBuildingTierData(key, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:t}); });
+      var data = getBuildingTierData(key, sel);
+      var activeSlot = findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:sel});
+      var isActive = !!activeSlot;
+      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'architecture');
+      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+      var owned = state.inventory[def.prefix+sel]||0;
+      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+svgIcon(def.shape, def.colorFor(sel))+'</div><div><div class="item-name">'+escapeHtml(def.nameFor(sel))+'</div><div class="item-meta">Owned this tier: '+fmt(owned)+'</div></div></div>';
+      html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">'+escapeHtml(def.blurb(sel))+'</div>';
+      if(def.gateSkill) html += '<div style="font-size:11px;color:var(--text-faint);margin:0 0 3px;">Placing it needs '+escapeHtml(buildingGateLabel(key, sel))+'.</div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('building',key,tierRange(maxUnlocked),sel,def.nameFor(sel)+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      html += '<div class="item-stats">'+xpStat('architecture', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-building-'+key)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+      if(isActive){
+        html += activeSlot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+      } else {
+        html += queueInputHtml('buildBuilding:'+key+':t'+sel)+'<button class="action-btn" data-action="buildBuilding" data-building="'+key+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Build</button>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
     return html;
   }
   function renderWorkshopCard(skillId, maxUnlocked, lvl){
@@ -29418,6 +29613,10 @@
       estateSelectedTile = null; estateSelectedEdge = null; estateHoveredTile = null; estateHoveredEdge = null;
       estatePavingMenuOpen = false; estateWorkshopMenuOpen = false; estateBorderMenuOpen = null;
       estatePaveUpgradeMenuOpen = false; estateBuildUpgradeMenuOpen = false;
+      // The Cottage and Totem place-menus were missing from this list, so an open one bled across the
+      // estate switch and offered to build on the other map's tile. The generic building menus join it.
+      estateCottageMenuOpen = false; estateTotemMenuOpen = false;
+      estateBuildingMenuOpen = false; estateBuildingUpgradeMenuOpen = false;
     }
     estIsGuild = guild; estActive = guild ? guildEstate : state.estate;
   }
@@ -29435,7 +29634,7 @@
     return true;
   }
   function estPersist(){ if(estIsGuild) guildEstatePersist(); }                       // personal autosaves; guild pushes to server
-  function estRecomputeWorkshops(){ if(estIsGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops(); }
+  function estRecomputeWorkshops(){ if(estIsGuild){ recomputeGuildWorkshops(); recomputeGuildAqueducts(); } else { recomputePlacedWorkshops(); recomputeAqueducts(); } }
   function estAllJobs(){ if(!estActive) return []; return estIsGuild ? (estActive.jobs||[]) : (estActive.job ? [estActive.job] : []); }
   function estJobOnTile(x, y){ return estAllJobs().some(function(j){ return j.x===x && j.y===y; }); }
   // Map "x_y" -> the job on that tile, used to paint occupied guild-estate tiles red so
@@ -29492,6 +29691,9 @@
     // totem job lost its payload on resync and the save-load shape check then dropped it as malformed --
     // the v0.0.73 totem-vanish bug reborn through the mirror.
     if(p.totemId != null) job.totemId = p.totemId;
+    // Same lesson as totemId above, applied ahead of the bug this time: a 'build' job resynced from the
+    // server row must carry buildingId back, or estateJobShapeOk drops it as malformed on the next load.
+    if(p.buildingId != null) job.buildingId = p.buildingId;
     if(p.upgrade) job.upgrade = true;
     return job;
   }
@@ -29635,6 +29837,9 @@
       case 'cottage':  return typeof j.cottageId === 'string';
       case 'totem':    return typeof j.totemId === 'string';
       case 'field':    return typeof j.fieldTier === 'number';
+      // The generic building kind. buildingId must name a REAL building item, not merely be a string: a
+      // typo'd or retired id would otherwise survive the reload and then apply nothing on completion.
+      case 'build':    return typeof j.buildingId === 'string' && !!buildingItem(j.buildingId);
       default:         return false;
     }
   }
@@ -29649,6 +29854,7 @@
       case 'workshop': return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
       case 'cottage':  return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]]; // cottages joined the built-building price in v0.0.86.31 (same matVer migration as workshops)
       case 'totem':    return [[job.totemId, 1]];
+      case 'build':    return [[job.buildingId, 1]];   // fresh AND upgrade both pay the built target itself
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
       default:         return []; // lower, clear
@@ -29667,6 +29873,7 @@
     else if(job.kind === 'workshop') p.workshopId = job.workshopId;
     else if(job.kind === 'cottage') p.cottageId = job.cottageId;
     else if(job.kind === 'totem') p.totemId = job.totemId;
+    else if(job.kind === 'build') p.buildingId = job.buildingId;
     else if(job.kind === 'field') p.fieldTier = job.fieldTier;
     else if(job.kind === 'raise') p.height = Math.min(ESTATE_MAX_HEIGHT-1, p.height + 1);
     else if(job.kind === 'lower') p.height = Math.max(0, p.height - 1);
@@ -29675,11 +29882,17 @@
     var cell = state.estate && state.estate.grid[x] && state.estate.grid[x][y];
     if(!cell) return null;
     var p = { height:cell.height, type:cell.type, obstacle:cell.obstacle, paveTileId:cell.paveTileId,
-              workshopId:cell.workshopId, cottageId:cell.cottageId, totemId:cell.totemId, fieldTier:cell.fieldTier, owned:cell.owned };
+              workshopId:cell.workshopId, cottageId:cell.cottageId, totemId:cell.totemId, buildingId:cell.buildingId,
+              fieldTier:cell.fieldTier, owned:cell.owned };
     if(state.estate.job && state.estate.job.x === x && state.estate.job.y === y) estateApplyProjection(p, state.estate.job);
     estateQueue().forEach(function(q){ if(q.x === x && q.y === y) estateApplyProjection(p, q); });
     return p;
   }
+  // ONE definition of "this tile is occupied", used by every placement path and every queue precondition.
+  // These were four hand-written lists, and two of them read `workshopId || totemId` -- the Cottage was
+  // missing, so a queued Workshop validated against a tile holding a Cottage. Single-sourcing it fixes that
+  // and means the generic buildingId is honoured everywhere at once rather than in five places minus one.
+  function cellHasBuilding(c){ return !!(c && (c.workshopId || c.cottageId || c.totemId || c.buildingId)); }
   // Grid-state precondition for a queued job, checked against a cell (projected at enqueue, REAL at
   // dispatch). Deliberately lighter than the full starter validation: level and materials don't need
   // re-checking (levels never drop, materials are already reserved), only that the tile still allows it.
@@ -29723,7 +29936,7 @@
                          return { ok:true };
                        }
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
-                       if(c.workshopId || c.totemId) return { ok:false, msg:'that tile already has a building' };
+                       if(cellHasBuilding(c)) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
       case 'cottage':  if(job.upgrade){
                          var _uc = COTTAGE_ITEMS[c.cottageId], _ucT = itemTierFromId(job.cottageId);
@@ -29733,7 +29946,7 @@
                          return { ok:true };
                        }
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
-                       if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
+                       if(cellHasBuilding(c)) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
       case 'totem':    if(job.upgrade){
                          var _utT = itemTierFromId(job.totemId);
@@ -29743,7 +29956,19 @@
                          return { ok:true };
                        }
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
-                       if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
+                       if(cellHasBuilding(c)) return { ok:false, msg:'that tile already has a building' };
+                       return { ok:true };
+      case 'build':    var _bT = itemTierFromId(job.buildingId);
+                       if(job.upgrade){
+                         if(c.type!=='paved' || !c.buildingId) return { ok:false, msg:'that tile no longer has a building' };
+                         if(buildingKeyOf(c.buildingId) !== buildingKeyOf(job.buildingId)) return { ok:false, msg:'a different building stands there now' };
+                         if(itemTierFromId(c.buildingId) >= _bT) return { ok:false, msg:'that building is already at or above the target tier' };
+                         if(pavementTierOf(c) < _bT) return { ok:false, msg:'the pavement no longer supports that tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+                       if(cellHasBuilding(c)) return { ok:false, msg:'that tile already has a building' };
+                       if(pavementTierOf(c) < _bT) return { ok:false, msg:'the pavement no longer supports that tier' };
                        return { ok:true };
     }
     return { ok:true };
@@ -29808,6 +30033,7 @@
     if(src.workshopId != null) f.workshopId = src.workshopId;
     if(src.cottageId != null) f.cottageId = src.cottageId;
     if(src.totemId != null) f.totemId = src.totemId;
+    if(src.buildingId != null) f.buildingId = src.buildingId;
     if(src.fieldTier != null) f.fieldTier = src.fieldTier;
     if(src.upgrade) f.upgrade = true;
     return f;
@@ -29901,6 +30127,7 @@
       case 'workshop': return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
       case 'cottage':  return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
       case 'totem':    return (job.upgrade ? 'Upgrade to ' : 'Raise ') + ((totemItem(job.totemId)||{}).name || 'Totem');
+      case 'build':    return (job.upgrade ? 'Upgrade to ' : 'Build ') + buildingName(job.buildingId);
       case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
     }
     return job.kind;
@@ -30158,7 +30385,7 @@
         addLog('The ' + ((WORKSHOP_ITEMS[cell.workshopId]||{}).name||'old Workshop') + ' was dismantled and returned to your inventory.', '');
       }
       cell.workshopId = job.workshopId;
-      if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
+      if(isGuild){ recomputeGuildWorkshops(); recomputeGuildAqueducts(); } else { recomputePlacedWorkshops(); recomputeAqueducts(); }
       if(giveRewards){
         if(!job.upgrade) bumpStat('workshop_built'); // workshops raised (not upgrades), powers "Raise a Workshop"
         if(!job.upgrade){ estNote('workshops', isGuild); estSet('wsSkill', job.workshopId || (cell && cell.workshop)); }
@@ -30203,6 +30430,33 @@
         addXp('totems', ttXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'raising') + ' the ' + ((totemItem(job.totemId)||{}).name||'totem') + '. Fields within 1 tile now yield +' + ttT + ' crops per harvest. +' + ttXp + ' Totems XP.', 'important');
         if(isGuild) guildLogPush('estate', 'raised the ' + ((totemItem(job.totemId)||{}).name||'Totem') + ' at (' + job.x + ', ' + job.y + ')');
+      }
+      return true;
+    }
+    if(job.kind === 'build'){
+      var bDef = buildingDefOf(job.buildingId), bTier = itemTierFromId(job.buildingId);
+      // Upgrade: the displaced building returns to the upgrader's inventory. giveRewards-gated because the
+      // grid write below is idempotent and runs on every guild client -- unguarded, it would mint one
+      // building per open window (the Workshop branch above learned this first).
+      if(giveRewards && job.upgrade && cell.buildingId && cell.buildingId !== job.buildingId){
+        addItem(cell.buildingId, 1);
+        addLog('The ' + buildingName(cell.buildingId) + ' was dismantled and returned to your inventory.', '');
+      }
+      cell.buildingId = job.buildingId;
+      // An Apiary starts its honey clock the moment it stands, never earlier: a fresh hive must not pay out
+      // for the hours before it existed.
+      if(buildingKeyOf(job.buildingId) === 'apiary' && !cell.apiaryAt) cell.apiaryAt = Date.now();
+      if(isGuild) recomputeGuildAqueducts(); else recomputeAqueducts();
+      if(giveRewards){
+        if(!job.upgrade){
+          bumpStat('building_built_' + (bDef ? bDef.key : 'unknown'));   // per-kind tally, powers "Raise an Apiary"
+          estNote(bDef ? bDef.key + 's' : 'buildings', isGuild);
+        }
+        var bXp = estateBuildXp(bTier);
+        addXp('architecture', bXp);
+        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + buildingName(job.buildingId) + ' at (' + job.x + ', ' + job.y + '). ' +
+               (bDef ? bDef.blurb(bTier) + ' ' : '') + '+' + bXp + ' Architecture XP.', 'important');
+        if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + buildingName(job.buildingId) + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
     }
@@ -30272,6 +30526,52 @@
   // Completes the personal estate job once its timer elapses. Runs every loop tick (and
   // therefore also on load), so a job started before the tab was closed finishes offline.
   var _estJobCompleteBusy = false;
+  // ---- Apiaries: honey on a per-hive clock ---------------------------------------------------------
+  // PERSONAL ESTATE ONLY, deliberately. A guild Apiary still gives its neighbouring Fields the crop bonus,
+  // but it does not pay honey, because a shared hive on a shared grid would pay EVERY member the same units
+  // off one clock -- the honey would be multiplied by the size of the guild.
+  //
+  // The clock lives on the CELL (cell.apiaryAt), not in one state field: hives of different tiers bank at
+  // different intervals, so a single shared timestamp could not carry each one's remainder and would round
+  // honey away. Elapsed time is capped at ESTATE_APIARY_CAP_MS, which is what bounds the offline case --
+  // this accrues from a timestamp, so it is NOT covered by applyOfflineProgress's own 12h cap, and without
+  // the clamp a month away would pay a month of honey.
+  //
+  // A hive with no timestamp (an older save, or a grid loaded from the server) starts its clock NOW rather
+  // than paying retroactively: honey is never minted for hours the player cannot prove the hive stood.
+  function processApiaries(){
+    var grid = state.estate && state.estate.grid;
+    if(!grid) return;
+    var now = Date.now(), gained = 0, gainedId = null;
+    for(var x=0; x<grid.length; x++){
+      var col = grid[x];
+      if(!col) continue;
+      for(var y=0; y<col.length; y++){
+        var cell = col[y];
+        if(!cell || buildingKeyOf(cell.buildingId) !== 'apiary') continue;
+        if(!cell.apiaryAt){ cell.apiaryAt = now; continue; }
+        var tier = itemTierFromId(cell.buildingId), per = apiaryIntervalMs(tier);
+        var elapsed = Math.min(now - cell.apiaryAt, ESTATE_APIARY_CAP_MS);
+        if(elapsed < per){
+          // Past the cap with nothing to pay yet cannot happen (cap > interval at every tier), but keep the
+          // clock from drifting arbitrarily far back so a long absence resumes from the capped window.
+          if(now - cell.apiaryAt > ESTATE_APIARY_CAP_MS) cell.apiaryAt = now - ESTATE_APIARY_CAP_MS;
+          continue;
+        }
+        var units = Math.floor(elapsed / per);
+        cell.apiaryAt = (now - (elapsed - units * per));   // keep the remainder, never the whole overhang
+        var honeyId = 'beekeeping_t' + tier;
+        addItem(honeyId, units);
+        addXp('beekeeping', units * 10 * (tier + 1));
+        gained += units; gainedId = honeyId;
+      }
+    }
+    if(gained > 0){
+      addLog('Your Apiaries produced ' + gained + '&times; ' + ((ALL_GATHER_ITEMS[gainedId]||{}).name || 'honey') + '.', '');
+      estPersist();
+      needsRender = true;
+    }
+  }
   function processEstateJob(){
     var job = state.estate && state.estate.job;
     if(!job){ if(estateQueue().length) estateQueueAdvance(); return; }  // idle with a queue -> (throttled) advance
@@ -30408,6 +30708,13 @@
     cell.type = 'dirt';
     if(cell.workshopId){ addItem(cell.workshopId, 1); cell.workshopId = null; estRecomputeWorkshops(); } // eject any placed workshop
     if(cell.cottageId){ addItem(cell.cottageId, 1); cell.cottageId = null; } // eject any placed cottage
+    // A TOTEM was never ejected here, so breaking the pavement under one DESTROYED it. Both it and the
+    // generic buildings come back to inventory like a Workshop does; nothing on this tile is a total loss.
+    if(cell.totemId){ addItem(cell.totemId, 1); cell.totemId = null; }
+    if(cell.buildingId){
+      addItem(cell.buildingId, 1); cell.buildingId = null; cell.apiaryAt = null;
+      if(estIsGuild) recomputeGuildAqueducts(); else recomputeAqueducts();
+    }
     cell.paveTileId = null;
     addLog('You broke the pavement at (' + x + ', ' + y + '), returning it to Dirt.', 'important');
     estPersist();
@@ -30553,6 +30860,68 @@
       }
     }); });
   }
+  // ---- Aqueduct network: which Aqueducts actually carry water ------------------------------------
+  // An Aqueduct is only wet if a chain of Aqueducts connects it back to a REAL water tile, and each one
+  // carries only as far as its own tier allows (aqueductRange: 2 tiles at t0, 22 at t20). So this is a
+  // breadth-first walk outward from every water tile across orthogonally touching Aqueducts, recording the
+  // chain distance, and an Aqueduct is fed when its distance is inside its own range. A high-tier Aqueduct
+  // can therefore sit further from the river than a low-tier one, which is the whole tier axis.
+  //
+  // CACHED, exactly like placedWorkshops, and for the same reason: waterYieldBonusAt runs per plot on every
+  // harvest (and per plot again on the offline catch-up), so a flood fill in there would walk the 20x20 grid
+  // hundreds of times a session. Invalidated by placement, removal and terraforming -- raise/lower is what
+  // makes or unmakes the water tile a whole chain hangs off.
+  var aqueductFed = {}, guildAqueductFed = {};
+  function computeAqueductFed(grid){
+    var fed = {};
+    if(!grid) return fed;
+    var dist = {}, queue = [];
+    var w = grid.length, h = (grid[0] && grid[0].length) || 0;
+    for(var x=0; x<w; x++){
+      for(var y=0; y<h; y++){
+        var c = grid[x] && grid[x][y];
+        if(c && estateIsWater(c)){ dist[x+','+y] = 0; queue.push([x,y]); }
+      }
+    }
+    var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(var qi=0; qi<queue.length; qi++){
+      var cx = queue[qi][0], cy = queue[qi][1], d = dist[cx+','+cy];
+      for(var i=0; i<dirs.length; i++){
+        var nx = cx+dirs[i][0], ny = cy+dirs[i][1], nk = nx+','+ny;
+        if(dist[nk] !== undefined) continue;
+        var nc = grid[nx] && grid[nx][ny];
+        if(!nc || buildingKeyOf(nc.buildingId) !== 'aqueduct') continue;   // the chain runs through Aqueducts only
+        dist[nk] = d + 1;
+        queue.push([nx,ny]);
+        if(d + 1 <= aqueductRange(itemTierFromId(nc.buildingId))) fed[nk] = true;
+      }
+    }
+    return fed;
+  }
+  function recomputeAqueducts(){ aqueductFed = computeAqueductFed(state.estate && state.estate.grid); }
+  function recomputeGuildAqueducts(){ guildAqueductFed = computeAqueductFed((typeof guildEstate !== 'undefined' && guildEstate.status === 'ready') ? guildEstate.grid : null); }
+  // Does this cell act as water for a neighbouring Field? True water, or an Aqueduct that is fed.
+  function estateCellWatersFields(scope, x, y, cell){
+    if(!cell) return false;
+    if(estateIsWater(cell)) return true;
+    if(buildingKeyOf(cell.buildingId) !== 'aqueduct') return false;
+    return !!(scope === 'guild' ? guildAqueductFed : aqueductFed)[x+','+y];
+  }
+  // ---- Sun Terrace: the strongest one within 1 tile (diagonals count, like a Totem's aura) ---------
+  function sunTerraceCutAt(grid, px, py){
+    if(!grid) return 0;
+    var best = 0;
+    for(var dx=-1; dx<=1; dx++){
+      for(var dy=-1; dy<=1; dy++){
+        var c = grid[px+dx] && grid[px+dx][py+dy];
+        if(c && buildingKeyOf(c.buildingId) === 'sunterrace'){
+          var cut = sunTerracePenaltyCut(itemTierFromId(c.buildingId));
+          if(cut > best) best = cut;
+        }
+      }
+    }
+    return best;   // terraces do NOT stack: the best one on the tile wins
+  }
   // Personal estate workshop + guild estate workshop STACK (added together) per skill.
   function workshopSpeedBonus(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopSpeedPct(p); if(g!==undefined) s+=workshopSpeedPct(g); return s; }
   function workshopDoubleChance(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return Math.min(0.95, s); }
@@ -30574,7 +30943,7 @@
     if(!cell) return;
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);   // lets pave-then-build chain on one tile
     if(pc.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
-    if(pc.workshopId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
+    if(cellHasBuilding(pc)){ addLog('That tile already has a building.', 'danger'); return; }
     var it = WORKSHOP_ITEMS[workshopId];
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
@@ -30640,7 +31009,7 @@
     if(!cell) return;
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
     if(pc.type!=='paved'){ addLog('Cottages can only be placed on paved tiles.', 'danger'); return; }
-    if(pc.workshopId || pc.cottageId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
+    if(cellHasBuilding(pc)){ addLog('That tile already has a building.', 'danger'); return; }
     var it = COTTAGE_ITEMS[cottageId];
     if(!it || (state.inventory[cottageId]||0) <= 0){ addLog('You don\'t own that cottage.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
@@ -30696,7 +31065,7 @@
     if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
     if(pc.type!=='paved'){ addLog('Totems can only be raised on paved tiles.', 'danger'); return; }
-    if(pc.workshopId || pc.cottageId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
+    if(cellHasBuilding(pc)){ addLog('That tile already has a building.', 'danger'); return; }
     var it = totemItem(totemId);
     if(!it || (state.inventory[totemId]||0) <= 0){ addLog('You don\'t own that totem.', 'danger'); return; }
     var tTier = itemTierFromId(totemId);
@@ -30734,6 +31103,87 @@
       startedFt: 'Upgrading\u2026',
       queuedMsg: 'Queued the totem upgrade at (' + x + ', ' + y + ') to a ' + tIt.name + '.'
     });
+  }
+  // ---- Estate Buildings: ONE place / upgrade / remove trio for every def in ESTATE_BUILDING_DEFS -----
+  // Deliberately generic. The Workshop, Cottage and Totem each have their own near-identical copies of these
+  // three functions, and the drift between those copies is where the occupancy bug (a missing cottageId) and
+  // the totem's missing pavement-break ejection came from. A new building adds a def, not a fourth copy.
+  var estateBuildingMenuOpen = false, estateBuildingUpgradeMenuOpen = false;
+  function estateBuildMs(tier){ return (Math.max(0, Math.min(TIER_COUNT-1, tier|0)) + 1) * ESTATE_BUILD_MS_PER_TIER; }
+  // Buildings owned in inventory that this tile's pavement can carry. Unlike Workshops there is no
+  // one-per-estate rule, so this is purely "do you own it and does the pavement reach".
+  function placeableBuildingsFor(cell){
+    var pave = pavementTierOf(cell), out = [];
+    Object.keys(ESTATE_BUILDING_ITEMS).forEach(function(id){
+      var it = ESTATE_BUILDING_ITEMS[id];
+      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave) out.push(it);
+    });
+    out.sort(function(a,b){ return a.buildingKey === b.buildingKey ? (a.tierIndex - b.tierIndex) : a.buildingKey.localeCompare(b.buildingKey); });
+    return out;
+  }
+  function estatePlaceBuilding(x, y, buildingId){
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    // The guild path has no queue, so the REAL cell is the truth there; the personal path projects through
+    // the queue so a pave-then-build chain on one tile still validates.
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    var it = buildingItem(buildingId);
+    if(!it || (state.inventory[buildingId]||0) <= 0){ addLog('You don\'t own that building.', 'danger'); return; }
+    if(pc.type!=='paved'){ addLog(it.name + ' can only be built on paved tiles.', 'danger'); return; }
+    if(cellHasBuilding(pc)){ addLog('That tile already has a building.', 'danger'); return; }
+    if(it.tierIndex > pavementTierOf(pc)){ addLog('That building needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(it.tierIndex)){ addLog('Building a ' + it.name + ' needs Architecture Lv ' + TIER_LEVELS[it.tierIndex] + '.', 'danger'); return; }
+    if(!buildingGateOk(it.buildingKey, it.tierIndex)){ addLog('Building a ' + it.name + ' needs ' + buildingGateLabel(it.buildingKey, it.tierIndex) + '.', 'danger'); return; }
+    var ms = estateBuildMs(it.tierIndex);
+    estateEnqueueOrStart('build', x, y, { buildingId:buildingId }, ms, {
+      jobFields: { buildingId:buildingId },
+      closeMenu: function(){ estateBuildingMenuOpen = false; },
+      startedMsg: 'You began building a ' + it.name + ' at (' + x + ', ' + y + '). Finishes in ' + Math.round(ms/60000) + ' minutes.',
+      startedFt: 'Building…',
+      queuedMsg: 'Queued building a ' + it.name + ' at (' + x + ', ' + y + ').'
+    });
+  }
+  // Upgrade in place to any higher tier the pavement supports, paying the BUILT target building; the
+  // displaced one returns on completion. A building can only upgrade into its OWN kind -- an Apiary is not
+  // an upgrade path to an Aqueduct -- which the queue validator re-checks at dispatch too.
+  function estateUpgradeBuilding(x, y, targetTier){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(!pc.buildingId) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var key = buildingKeyOf(pc.buildingId), def = ESTATE_BUILDING_DEFS[key];
+    if(!def) return;
+    var cur = itemTierFromId(pc.buildingId), paveT = pavementTierOf(pc);
+    var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
+    if(!(tgt > cur)){ addLog('Choose a higher ' + def.label + ' tier to upgrade to.', 'danger'); return; }
+    var newId = def.prefix + tgt, nIt = buildingItem(newId);
+    if(!nIt){ addLog('This ' + def.label + ' is already the top tier.', 'danger'); return; }
+    if(paveT < tgt){ addLog('The pavement under this ' + def.label + ' only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier. Upgrade the pavement first.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to upgrade to a ' + nIt.name + '.', 'danger'); return; }
+    if(!buildingGateOk(key, tgt)){ addLog('Upgrading to a ' + nIt.name + ' needs ' + buildingGateLabel(key, tgt) + '.', 'danger'); return; }
+    if((state.inventory[newId]||0) < 1){ addLog('Upgrading to a ' + nIt.name + ' needs that built ' + def.label + ' itself. Craft it in Architecture.', 'danger'); return; }
+    var ms = estateBuildMs(tgt);
+    estateEnqueueOrStart('build', x, y, { buildingId:newId, upgrade:true }, ms, {
+      jobFields: { buildingId:newId, upgrade:true },
+      startedMsg: 'You began upgrading the ' + def.label + ' at (' + x + ', ' + y + ') to a ' + nIt.name + '. Finishes in ' + Math.round(ms/60000) + ' minutes.',
+      startedFt: 'Upgrading…',
+      queuedMsg: 'Queued the ' + def.label + ' upgrade at (' + x + ', ' + y + ') to a ' + nIt.name + '.'
+    });
+  }
+  function estateRemoveBuilding(x, y){
+    if(guildDestroyBlocked()) return;
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || !cell.buildingId) return;
+    var bid = cell.buildingId;
+    addItem(bid, 1);
+    cell.buildingId = null;
+    cell.apiaryAt = null;            // a removed hive must not resume an old clock when one is placed later
+    if(estIsGuild) recomputeGuildAqueducts(); else recomputeAqueducts();
+    addLog('Removed the ' + buildingName(bid) + ' (returned to inventory).', '');
+    estPersist();
+    needsRender = true;
   }
   function estateRemoveTotem(x, y){
     if(guildDestroyBlocked()) return;
@@ -31923,6 +32373,110 @@
     ctx.strokeStyle = estateShadeColor(base,0.5); ctx.lineWidth = 1.2; ctx.stroke();
     ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(cx, cy, r*0.3, 0, Math.PI*2); ctx.fill(); // the eye
   }
+  // ---- Estate Building models -----------------------------------------------------------------------
+  // Each def gets one iso model and one top-down glyph, dispatched by buildingKey. Built from the same two
+  // primitives (estateDrawPrism / estateDrawPyramid) as every other model here, so nothing new is needed to
+  // draw one and a new def only writes the two small functions.
+  // AQUEDUCT: two stone piers carrying a raised channel, with water in the trough when it is actually fed.
+  function estateDrawAqueduct(ctx, cx, cy, tier, rot, fed){
+    var base = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    var deckZ = 0.34 + Math.min(0.2, tier*0.01);
+    [-0.34, 0.34].forEach(function(dx){                        // the piers
+      var pf = estateRectFp(0.12, 0.16).map(function(p){ return [p[0]+dx, p[1]]; });
+      estateDrawPrism(ctx, cx, cy, pf, pf, 0, deckZ, rot, estateShadeColor(base,0.52), estateShadeColor(base,0.72));
+    });
+    var deck = estateRectFp(0.62, 0.2);                        // the channel body
+    estateDrawPrism(ctx, cx, cy, deck, deck, deckZ, deckZ+0.14, rot, estateShadeColor(base,0.66), estateShadeColor(base,0.92));
+    [-0.2, 0.2].forEach(function(dy){                          // trough walls
+      var wf = estateRectFp(0.62, 0.04).map(function(p){ return [p[0], p[1]+dy]; });
+      estateDrawPrism(ctx, cx, cy, wf, wf, deckZ+0.14, deckZ+0.26, rot, estateShadeColor(base,0.58), estateShadeColor(base,1.02));
+    });
+    if(fed){                                                   // water only when the chain reaches a source
+      var wet = estateRectFp(0.6, 0.15);
+      estateDrawPrism(ctx, cx, cy, wet, wet, deckZ+0.14, deckZ+0.21, rot, '#2e6f8e', '#4aa3c4');
+    }
+  }
+  function drawEstateAqueductModel(ctx, cx, cy, tier, rot, fed){
+    estateModelScale = 1.7;
+    estateDrawAqueduct(ctx, cx, cy, tier, rot, fed);
+    estateModelScale = 1;
+  }
+  function estateDrawTdAqueduct(ctx, cx, cy, tier, ts, fed){
+    var base = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    ctx.fillStyle = estateShadeColor(base,0.85);
+    ctx.fillRect(cx - ts*0.34, cy - ts*0.12, ts*0.68, ts*0.24);
+    ctx.fillStyle = fed ? '#4aa3c4' : estateShadeColor(base,0.55);
+    ctx.fillRect(cx - ts*0.32, cy - ts*0.05, ts*0.64, ts*0.1);
+  }
+  // SUN TERRACE: a broad low dais of stepped paving with a gnomon-like marker, reading as a sun deck.
+  function estateDrawSunTerrace(ctx, cx, cy, tier, rot){
+    var base = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    var z = 0;
+    [[0.62,0.1],[0.46,0.09],[0.3,0.08]].forEach(function(step, i){   // three shrinking steps
+      var f = estateRectFp(step[0], step[0]);
+      estateDrawPrism(ctx, cx, cy, f, f, z, z+step[1], rot, estateShadeColor(base,0.62+i*0.06), estateShadeColor(base,0.9+i*0.08));
+      z += step[1];
+    });
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.1,0.1), [0,0], z, z+0.34, rot, '#e8c15a');   // the gnomon
+    var glow = estateModelProject(cx, cy, 0, 0, z+0.38, rot);
+    ctx.fillStyle = 'rgba(232,193,90,0.9)'; ctx.beginPath(); ctx.arc(glow.x, glow.y, 2, 0, Math.PI*2); ctx.fill();
+  }
+  function drawEstateSunTerraceModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.7;
+    estateDrawSunTerrace(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdSunTerrace(ctx, cx, cy, tier, ts){
+    var base = MINING_STONE_COLORS[Math.floor(Math.min(TIER_COUNT-1, tier)/3)] || '#8d6f66';
+    ctx.fillStyle = estateShadeColor(base,0.88);
+    ctx.fillRect(cx - ts*0.3, cy - ts*0.3, ts*0.6, ts*0.6);
+    ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(cx, cy, ts*0.09, 0, Math.PI*2); ctx.fill();
+  }
+  // APIARY: stacked hive boxes on a stand, with a landing board and a bee or two at higher tiers.
+  function estateDrawApiary(ctx, cx, cy, tier, rot){
+    var wood = FORESTRY_COLORS ? (FORESTRY_COLORS[Math.min(TIER_COUNT-1, tier)] || '#b08a54') : '#b08a54';
+    var honey = '#e0a92e';
+    var stand = estateRectFp(0.34, 0.28);
+    estateDrawPrism(ctx, cx, cy, stand, stand, 0, 0.1, rot, estateShadeColor(wood,0.5), estateShadeColor(wood,0.68));
+    var z = 0.1, boxes = 2 + Math.min(3, Math.floor(tier/6));     // 2..5 supers as tiers climb
+    for(var i=0;i<boxes;i++){
+      var f = estateRectFp(0.3 - i*0.012, 0.26 - i*0.01);
+      estateDrawPrism(ctx, cx, cy, f, f, z, z+0.16, rot, estateShadeColor(honey, 0.62+((i%2)*0.12)), estateShadeColor(honey, 0.9+((i%2)*0.14)));
+      z += 0.16;
+    }
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.32,0.28), [0,0], z, z+0.16, rot, estateShadeColor(wood,0.95));  // gabled lid
+    var board = estateRectFp(0.16, 0.06).map(function(p){ return [p[0], p[1]+0.3]; });                            // landing board
+    estateDrawPrism(ctx, cx, cy, board, board, 0.1, 0.14, rot, estateShadeColor(wood,0.6), estateShadeColor(wood,0.84));
+    if(tier >= 6){
+      var bee = estateModelProject(cx, cy, 0.3, -0.26, z*0.7, rot);
+      ctx.fillStyle = honey; ctx.beginPath(); ctx.arc(bee.x, bee.y, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  function drawEstateApiaryModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.7;
+    estateDrawApiary(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdApiary(ctx, cx, cy, tier, ts){
+    ctx.fillStyle = estateShadeColor('#e0a92e',0.9);
+    ctx.fillRect(cx - ts*0.16, cy - ts*0.14, ts*0.32, ts*0.28);
+    ctx.strokeStyle = estateShadeColor('#b08a54',0.6); ctx.lineWidth = 1.2;
+    ctx.strokeRect(cx - ts*0.16, cy - ts*0.14, ts*0.32, ts*0.28);
+  }
+  // The two dispatchers the canvas calls. A def with no model draws nothing rather than throwing, so a
+  // half-finished building can never break the whole estate render.
+  function drawEstateBuildingModel(ctx, cx, cy, buildingId, rot, fed){
+    var key = buildingKeyOf(buildingId), tier = itemTierFromId(buildingId);
+    if(key === 'aqueduct') drawEstateAqueductModel(ctx, cx, cy, tier, rot, fed);
+    else if(key === 'sunterrace') drawEstateSunTerraceModel(ctx, cx, cy, tier, rot);
+    else if(key === 'apiary') drawEstateApiaryModel(ctx, cx, cy, tier, rot);
+  }
+  function estateDrawTdBuilding(ctx, cx, cy, buildingId, ts, fed){
+    var key = buildingKeyOf(buildingId), tier = itemTierFromId(buildingId);
+    if(key === 'aqueduct') estateDrawTdAqueduct(ctx, cx, cy, tier, ts, fed);
+    else if(key === 'sunterrace') estateDrawTdSunTerrace(ctx, cx, cy, tier, ts);
+    else if(key === 'apiary') estateDrawTdApiary(ctx, cx, cy, tier, ts);
+  }
   // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
   // a few green sprouts. One parametric model; tier only changes the soil hue.
   function estateDrawField(ctx, cx, cy, tier, rot){
@@ -32271,6 +32825,7 @@
       if(cell.workshopId) estateDrawTdWorkshop(ctx, p.x, p.y, WORKSHOP_ITEMS[cell.workshopId], ts);
       if(cell.cottageId) estateDrawTdCottage(ctx, p.x, p.y, COTTAGE_ITEMS[cell.cottageId], ts);
       if(cell.totemId) estateDrawTdTotem(ctx, p.x, p.y, itemTierFromId(cell.totemId), ts);
+      if(cell.buildingId) estateDrawTdBuilding(ctx, p.x, p.y, cell.buildingId, ts, !!(estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y]);
       if(cell.fieldTier != null) estateDrawTdField(ctx, p.x, p.y, cell.fieldTier, ts);
       var isSel = estateSelectedTile && estateSelectedTile.x===x && estateSelectedTile.y===y;
       var isHov = estateHoveredTile && estateHoveredTile.x===x && estateHoveredTile.y===y;
@@ -32372,6 +32927,10 @@
       }
       if(cell.totemId){
         drawEstateTotemModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, itemTierFromId(cell.totemId), estateRotation);
+      }
+      if(cell.buildingId){
+        drawEstateBuildingModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.buildingId, estateRotation,
+                                !!(estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y]);
       }
       if(cell.fieldTier != null){
         drawEstateFieldModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.fieldTier, estateRotation);
@@ -32839,6 +33398,35 @@
             html += '</div>';
           }
         }
+      } else if(cell.buildingId){
+        // ONE arm for every def in ESTATE_BUILDING_DEFS. The Workshop/Cottage/Totem arms above are three
+        // near-identical copies; this one is written once and a new building inherits it.
+        var bIt = buildingItem(cell.buildingId), bDefHere = buildingDefOf(cell.buildingId), bTierHere = itemTierFromId(cell.buildingId);
+        var bLabel = bDefHere ? bDefHere.label : 'Building';
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>'+escapeHtml(bLabel)+':</b> '+(bIt?bIt.icon+' '+escapeHtml(bIt.name):'Unknown')+'<br>'+escapeHtml(bDefHere?bDefHere.blurb(bTierHere):'')+
+                (buildingKeyOf(cell.buildingId)==='aqueduct' ? ('<br><span style="color:'+(aqueductFed[x+','+y] || guildAqueductFed[x+','+y] ? 'var(--gold)' : 'var(--hp-bad)')+'">'+
+                  ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles')+'</span>') : '')+'</div>';
+        html += '<button class="action-btn stop" data-action="estateRemoveBuilding" data-x="'+x+'" data-y="'+y+'">Remove</button>';
+        html += '</div>';
+        var bbCur = bTierHere|0, bbPaveT = pavementTierOf(cell), bbArchCap = estateArchitectureTierCap();
+        var bbMax = Math.min(bbPaveT, bbArchCap, TIER_COUNT-1);
+        if(bbCur < TIER_COUNT-1 && bDefHere){
+          var bbCanAny = bbMax > bbCur;
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade '+escapeHtml(bLabel)+'</b><br>Jump to any tier your pavement <i>and</i> Architecture support'+(bbMax>=0?' (up to '+escapeHtml(FORESTRY_NAMES[bbMax])+')':'')+' &bull; pays the built target, the old one comes back</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildingUpgradeMenu" '+((bbCanAny&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(bbCanAny?(estateBuildingUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher first'))+'</button></div>';
+          if(estateBuildingUpgradeMenuOpen && bbCanAny){
+            html += '<div class="estate-paving-library">';
+            for(var bbt=bbCur+1; bbt<=bbMax; bbt++){
+              var bbId = bDefHere.prefix+bbt, bbDefItem = buildingItem(bbId); if(!bbDefItem) continue;
+              var bbGate = buildingGateOk(bDefHere.key, bbt), bbOwn = state.inventory[bbId]||0, bbAff = bbGate && bbOwn>=1;
+              html += '<button class="estate-paving-option'+(bbAff?'':' locked')+'" data-action="estateUpgradeBuilding" data-x="'+x+'" data-y="'+y+'" data-tier="'+bbt+'" '+(bbAff?'':'disabled')+'>';
+              html += '<span>'+tierChipHtml(bbt)+' '+bbDefItem.icon+' '+escapeHtml(bbDefItem.name)+'</span><span class="style-lvl">'+(bbGate?(bbAff?'ready':'x0/1 &bull; craft it'):escapeHtml(buildingGateLabel(bDefHere.key, bbt)))+'</span>';
+              html += '</button>';
+            }
+            html += '</div>';
+          }
+        }
       } else {
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
@@ -32883,6 +33471,25 @@
               var tLvOk = totemLevelOk(itT);
               html += '<button class="estate-paving-option'+(tLvOk?'':' locked')+'" data-action="estatePlaceTotem" data-x="'+x+'" data-y="'+y+'" data-totem="'+it.id+'" '+(tLvOk?'':'disabled')+'>';
               html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(tLvOk?'':'Totems Lv'+totemLevelReq(itT)+' &bull; ')+'+'+itT+' yield &bull; x'+fmt(state.inventory[it.id]||0)+'</span>';
+              html += '</button>';
+            });
+            html += '</div>';
+          }
+        }
+        { // Estate Buildings: one menu for every def (Aqueduct, Sun Terrace, Apiary, ...)
+          var placeableB = placeableBuildingsFor(cell);
+          html += '<div class="estate-action-row">';
+          html += '<div class="estate-action-info"><b>Place Building</b><br>Aqueducts carry water to Fields, Sun Terraces undo the altitude penalty, Apiaries make honey. Built in Architecture; tier must be ≤ this pavement.</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildingMenu" '+((placeableB.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableB.length?(estateBuildingMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
+          html += '</div>';
+          if(estateBuildingMenuOpen && placeableB.length){
+            html += '<div class="estate-paving-library">';
+            placeableB.forEach(function(it){
+              var bArchOk = estateBuildTierLevelOk(it.tierIndex), bGateOk = buildingGateOk(it.buildingKey, it.tierIndex);
+              var bOk = bArchOk && bGateOk;
+              html += '<button class="estate-paving-option'+(bOk?'':' locked')+'" data-action="estatePlaceBuilding" data-x="'+x+'" data-y="'+y+'" data-building="'+it.id+'" '+(bOk?'':'disabled')+'>';
+              html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+
+                      (!bArchOk ? 'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ' : (!bGateOk ? escapeHtml(buildingGateLabel(it.buildingKey, it.tierIndex))+' &bull; ' : ''))+'x'+fmt(state.inventory[it.id]||0)+'</span>';
               html += '</button>';
             });
             html += '</div>';
@@ -32943,6 +33550,15 @@
       } else if(cell.cottageId){
         var cIt = COTTAGE_ITEMS[cell.cottageId], cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
         html += '<div class="estate-action-info"><b>Cottage:</b> '+tierChipHtml(cIt?cIt.tierIndex:0)+' '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+(cAdj?' &middot; Linked to an adjacent Workshop':' &middot; Not linked')+'</div>';
+      } else if(cell.totemId){
+        // A visitor could not see a Totem at all before v0.0.90.0 (it was missing from the snapshot AND had
+        // no arm here), so a tile carrying one read as "Empty paved tile, no building".
+        var vtIt = totemItem(cell.totemId), vtT = itemTierFromId(cell.totemId);
+        html += '<div class="estate-action-info"><b>Totem:</b> '+tierChipHtml(vtT)+' '+escapeHtml(vtIt?vtIt.name:'Unknown')+'<br>Fields within 1 tile yield +'+vtT+' crops per harvest.</div>';
+      } else if(cell.buildingId){
+        var vbIt = buildingItem(cell.buildingId), vbDef = buildingDefOf(cell.buildingId), vbT = itemTierFromId(cell.buildingId);
+        html += '<div class="estate-action-info"><b>'+escapeHtml(vbDef?vbDef.label:'Building')+':</b> '+tierChipHtml(vbT)+' '+(vbIt?vbIt.icon+' '+escapeHtml(vbIt.name):'Unknown')+
+                (vbDef?'<br>'+escapeHtml(vbDef.blurb(vbT)):'')+'</div>';
       } else {
         html += '<div class="estate-action-info">Empty paved tile, no building.</div>';
       }
@@ -33173,6 +33789,11 @@
       return { head:'Raising &bull; '+(tti ? tti.name : 'Totem')+' ('+job.x+', '+job.y+')',
                note:'Runs in the background &bull; +'+estateBuildXp(ttT)+' Totems XP when it finishes, and Fields within 1 tile yield +'+ttT+' crops' };
     }
+    if(job.kind === 'build'){
+      var bdf = buildingDefOf(job.buildingId), bdT = itemTierFromId(job.buildingId);
+      return { head:'Building &bull; '+buildingName(job.buildingId)+' ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; +'+estateBuildXp(bdT)+' Architecture XP when it finishes'+(bdf ? ' &bull; '+bdf.blurb(bdT) : '') };
+    }
     if(job.kind === 'field'){
       return { head:'Tilling &bull; '+(DIGGING_NAMES[job.fieldTier]||'')+' Field ('+job.x+', '+job.y+')',
                note:'Runs in the background &bull; +'+estateBuildXp(job.fieldTier)+' Digging XP when it finishes' };
@@ -33184,7 +33805,7 @@
     return { head:'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')',
              note:'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes' };
   }
-  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', totem:'raising a totem', assist:'assisting' };
+  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', totem:'raising a totem', build:'building', assist:'assisting' };
   function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
   // On the shared guild estate, show who else is doing what: each working member's action,
   // tile coords and (live) timer -- matching the red tiles on the canvas -- plus a compact
@@ -36024,6 +36645,24 @@
     scan(state.estate); scan(typeof guildEstate !== 'undefined' ? guildEstate : null);
     return n;
   }
+  // The per-KIND version of estStanding, needed because every estate building shares one cell field:
+  // estStanding('buildingId') counts Aqueducts, Sun Terraces and Apiaries as one lump, so a quest asking
+  // for "3 Apiaries standing" has to filter by the def key rather than by the field's truthiness.
+  function estStandingBuilding(key){
+    var n = 0;
+    function scan(est){
+      if(!est || !est.grid) return;
+      for(var x = 0; x < est.grid.length; x++){
+        var col = est.grid[x]; if(!col) continue;
+        for(var y = 0; y < col.length; y++){
+          var c = col[y];
+          if(c && c.buildingId && buildingKeyOf(c.buildingId) === key) n++;
+        }
+      }
+    }
+    scan(state.estate); scan(typeof guildEstate !== 'undefined' ? guildEstate : null);
+    return n;
+  }
   function cbSetSize(which){ var m = state.cbSets && state.cbSets[which]; return m ? Object.keys(m).length : 0; }
   function cbStat(key){ return (state.stats && state.stats[key]) || 0; }
   // The strip itself: session duration, running DPS, swings landed, kills, best single hit -- the
@@ -36245,6 +36884,10 @@
         if(c.masonryTileId) o.masonryTileId = c.masonryTileId;
         if(c.workshopId) o.workshopId = c.workshopId;
         if(c.cottageId) o.cottageId = c.cottageId;
+        // totemId was missing from this snapshot, so a visitor could not see anybody's Totems at all. Both
+        // it and the generic buildings travel now, or half the estate is invisible on someone else's screen.
+        if(c.totemId) o.totemId = c.totemId;
+        if(c.buildingId) o.buildingId = c.buildingId;
         if(c.fieldTier != null) o.fieldTier = c.fieldTier;
         return o;
       });
@@ -37596,17 +38239,17 @@
           // Legacy map from the old disc generator (flat dirt, pre-paved centre, sparse
           // obstacles, no edges). Wipe & regenerate in place so it matches a fresh My Estate.
           guildEstateHydrate(guildEstateDefaultBlob(gid), res.data.version);
-          guildEstateSubscribe(); recomputeGuildWorkshops();
+          guildEstateSubscribe(); recomputeGuildWorkshops(); recomputeGuildAqueducts();
           guildEstatePersist(); // version-guarded overwrite with the fresh map
           if(currentCategory==='guild'||currentCategory==='peons') render();
         } else {
-          guildEstateHydrate(d, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops();
+          guildEstateHydrate(d, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops(); recomputeGuildAqueducts();
           if(currentCategory==='guild'||currentCategory==='peons') render();
         }
       } else {
         var blob = guildEstateDefaultBlob(gid);
         chatClient.from('guild_estate').insert({ guild_id:gid, data:blob, version:0 }).select('version').then(function(ins){
-          if(ins && !ins.error){ guildEstateHydrate(blob, 0); guildEstateSubscribe(); recomputeGuildWorkshops(); if(currentCategory==='guild'||currentCategory==='peons') render(); }
+          if(ins && !ins.error){ guildEstateHydrate(blob, 0); guildEstateSubscribe(); recomputeGuildWorkshops(); recomputeGuildAqueducts(); if(currentCategory==='guild'||currentCategory==='peons') render(); }
           else { guildEstate.status='idle'; if(currentCategory==='guild'||currentCategory==='peons') render(); } // insert race -> reload next view
         }, function(){ guildEstate.status='idle'; });
       }
@@ -37637,7 +38280,7 @@
       .on('postgres_changes', { event:'UPDATE', schema:'public', table:'guild_estate', filter:'guild_id=eq.'+gid }, function(payload){
         var row = payload && payload.new;
         if(!row || typeof row.version !== 'number' || row.version <= guildEstate.version) return; // already have it (incl. our own write)
-        guildEstateHydrate(row.data, row.version); recomputeGuildWorkshops();
+        guildEstateHydrate(row.data, row.version); recomputeGuildWorkshops(); recomputeGuildAqueducts();
         if(currentCategory==='guild' && guildSub==='estate') needsRender = true;
       }).subscribe();
     // Jobs live in their own server table now: any member's start/assist/complete/cancel lands here, so
@@ -37683,7 +38326,7 @@
         var done = d.job;
         if(done.kind !== 'assist'){                    // an assist earns nothing; only the doer does
           var key = done.owner+'|'+done.x+'|'+done.y+'|'+Number(done.readyAt);
-          if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, guildJobFromServer(done), true, true); guildJobDone[key]=1; recomputeGuildWorkshops(); guildEstatePersist(); }
+          if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, guildJobFromServer(done), true, true); guildJobDone[key]=1; recomputeGuildWorkshops(); recomputeGuildAqueducts(); guildEstatePersist(); }
         }
         guildEstateJobsRefresh(); needsRender = true;
       } else { guildEstateJobsRefresh(); }             // 'early' (client clock ahead) / 'none' -> resync
@@ -38858,7 +39501,10 @@
     'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_','glyph_'];
   function getInventoryCategory(itemId){
     if(getEquipActionForItem(itemId)) return 'equipment';
-    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0 || itemId.indexOf('totem_t')===0) return 'estate';
+    // cottage_t was missing here and fell into 'crafting'; the generic buildings join on the same line so a
+    // new def is bucketed by ESTATE_BUILDING_ITEMS membership rather than by another hand-written prefix.
+    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0 ||
+       itemId.indexOf('totem_t')===0 || itemId.indexOf('cottage_t')===0 || ESTATE_BUILDING_ITEMS[itemId]) return 'estate';
     if(itemId==='coal' || itemId==='critter_cache' || itemId==='treasure_chest') return 'gathering';
     for(var i=0;i<GATHER_BUCKET_PREFIXES.length;i++){
       if(itemId.indexOf(GATHER_BUCKET_PREFIXES[i])===0) return 'gathering';
@@ -40527,6 +41173,7 @@
     tool:     { get:function(sub){ return selectedToolTier[sub]; },        set:function(sub,v){ selectedToolTier[sub]=v; },      inputs:function(sub,t){ return (GATHER_SKILL_IDS.indexOf(sub)!==-1 ? getGatherToolTierData(sub, t+1) : getCraftToolTierData(sub, t+1)).inputs; } },
     workshop: { get:function(sub){ return selectedWorkshopTier[sub]; },    set:function(sub,v){ selectedWorkshopTier[sub]=v; },  inputs:function(sub,t){ return getWorkshopTierData(sub, t).inputs; } },
     cottage:  { get:function(){ return selectedCottageTier; },             set:function(sub,v){ selectedCottageTier=v; },       inputs:function(sub,t){ return getCottageTierData(t).inputs; } },
+    building: { get:function(sub){ return selectedBuildingTier[sub]; },    set:function(sub,v){ selectedBuildingTier[sub]=v; }, inputs:function(sub,t){ return getBuildingTierData(sub, t).inputs; } },
     armor:    { get:function(sub){ return selectedBodyArmorTier[sub]; },   set:function(sub,v){ selectedBodyArmorTier[sub]=v; }, inputs:function(sub,t){ var slot=null,material=null; for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){ var s=BODY_ARMOR_SLOTS[i]; if(sub.length>s.length && sub.slice(-(s.length+1))==='_'+s){ slot=s; material=sub.slice(0, sub.length-s.length-1); break; } } return (slot&&material) ? getBodyArmorTierData(material, slot, t).inputs : {}; } },
     shaft:    { get:function(){ return selectedShaftLogTier; },            set:function(sub,v){ selectedShaftLogTier=v; } },
     belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
@@ -40801,6 +41448,16 @@
       estatePlaceTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-totem'));
     },
     estateRemoveTotem: function(btn, e){ estateRemoveTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateToggleBuildingMenu: function(btn, e){ estateBuildingMenuOpen = !estateBuildingMenuOpen; },
+    estateToggleBuildingUpgradeMenu: function(btn, e){ estateBuildingUpgradeMenuOpen = !estateBuildingUpgradeMenuOpen; },
+    estatePlaceBuilding: function(btn, e){
+      estatePlaceBuilding(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-building'));
+    },
+    estateUpgradeBuilding: function(btn, e){
+      estateUpgradeBuilding(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
+      estateBuildingUpgradeMenuOpen = false;
+    },
+    estateRemoveBuilding: function(btn, e){ estateRemoveBuilding(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
     estateToggleFieldMenu: function(btn, e){ estateFieldMenuOpen = !estateFieldMenuOpen; },
     estatePlaceField: function(btn, e){
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
@@ -40849,6 +41506,7 @@
     forgeTool: function(btn, e){ craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
     buildWorkshop: function(btn, e){ craftWorkshop(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
     buildCottage: function(btn, e){ craftCottage(parseInt(btn.getAttribute('data-tier'),10)); },
+    buildBuilding: function(btn, e){ craftBuilding(btn.getAttribute('data-building'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipTool: function(btn, e){ equipTool(btn.getAttribute('data-item')); },
     equipBestTool: function(btn, e){ equipBestTool(btn.getAttribute('data-skill')); },
     unequipTool: function(btn, e){ unequipTool(btn.getAttribute('data-skill')); },
@@ -41283,6 +41941,7 @@
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
     processEstateJob();
+    processApiaries();        // hives bank honey on their own clock, background like the estate job
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
     if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
     if(guildFarmOfflineMs) maybeGuildFarmCatchup(); // apply deferred guild-field auto-farm once the estate loads
@@ -42072,7 +42731,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.89.1';
+  var GAME_VERSION = '0.0.90.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -42275,7 +42934,17 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, rareCraftChance:rareCraftChance, supremeCraftChance:supremeCraftChance, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_RARE:FAITH_BASE_RARE, FAITH_BASE_SUPREME:FAITH_BASE_SUPREME, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, EST_ACTS:EST_ACTS, bumpStat:bumpStat, estStat:estStat, estSetSize:estSetSize, estStanding:estStanding, estCropHarvests:estCropHarvests, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, EST_ACTS:EST_ACTS, bumpStat:bumpStat, estStat:estStat, estSetSize:estSetSize, estStanding:estStanding, estStandingBuilding:estStandingBuilding, estCropHarvests:estCropHarvests,
+      // Estate buildings (v0.0.90.0): the def table, the generic place/upgrade/remove trio, the three
+      // effect hooks and the caches, so the suite can exercise a building end to end.
+      ESTATE_BUILDING_DEFS:ESTATE_BUILDING_DEFS, ESTATE_BUILDING_ITEMS:ESTATE_BUILDING_ITEMS, ESTATE_BUILDING_KEYS:ESTATE_BUILDING_KEYS,
+      getBuildingTierData:getBuildingTierData, buildingItem:buildingItem, buildingKeyOf:buildingKeyOf, buildingGateOk:buildingGateOk,
+      craftBuilding:craftBuilding, estatePlaceBuilding:estatePlaceBuilding, estateUpgradeBuilding:estateUpgradeBuilding, estateRemoveBuilding:estateRemoveBuilding,
+      placeableBuildingsFor:placeableBuildingsFor, cellHasBuilding:cellHasBuilding, aqueductRange:aqueductRange, sunTerracePenaltyCut:sunTerracePenaltyCut,
+      apiaryIntervalMs:apiaryIntervalMs, apiaryYieldBonusAt:apiaryYieldBonusAt, sunTerraceCutAt:sunTerraceCutAt, estateCellWatersFields:estateCellWatersFields,
+      recomputeAqueducts:recomputeAqueducts, recomputeGuildAqueducts:recomputeGuildAqueducts, processApiaries:processApiaries,
+      estateBreakPavement:estateBreakPavement, getInventoryCategory:getInventoryCategory,
+      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,
