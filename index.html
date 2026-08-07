@@ -12426,6 +12426,7 @@
   // unlike the totem aura) yields a flat +5 crops per harvest. One flat bonus however many banks the
   // tile touches. Works on both estates -- water is derived purely from tile height.
   var WATER_YIELD_BONUS = 5;
+  var APIARY_YIELD_BONUS = 1;   // one flat crop from a nearby hive, however many hives are in range
   function waterYieldBonusAt(scope, key){
     var grid = fieldGridFor(scope);
     if(!grid || typeof key !== 'string') return 0;
@@ -12441,22 +12442,25 @@
     }
     return 0;
   }
-  // The Apiary's own contribution to a harvest: +1 crop per Apiary within 1 tile (diagonals count, like a
+  // The Apiary's own contribution to a harvest: +1 crop to a Field within 1 tile (diagonals count, like a
   // Totem). Deliberately a flat 1 rather than tier-scaled -- the tier buys HONEY rate, and an Apiary that
   // matched a Totem's +tier would make the Totem pointless.
+  //
+  // APIARIES DO NOT STACK WITH EACH OTHER (owner order, v0.0.93.2, matching the Totem rule from .1): several
+  // hives reaching one Field is still +1, not +1 each. They DO stack with a Totem and with a waterside bank,
+  // because those are separate sources -- the rule is one bonus per SOURCE, not one bonus in total.
   function apiaryYieldBonusAt(scope, key){
     var grid = fieldGridFor(scope);
     if(!grid || typeof key !== 'string') return 0;
     var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
     if(!isFinite(px) || !isFinite(py)) return 0;
-    var bonus = 0;
     for(var dx=-1; dx<=1; dx++){
       for(var dy=-1; dy<=1; dy++){
         var c = grid[px+dx] && grid[px+dx][py+dy];
-        if(c && buildingKeyOf(c.buildingId) === 'apiary') bonus += 1;
+        if(c && buildingKeyOf(c.buildingId) === 'apiary') return APIARY_YIELD_BONUS;   // the first one found is the whole bonus
       }
     }
-    return bonus;
+    return 0;
   }
   function harvestPlot(scope, key, batch){
     var map = farmPlotMap(scope);
@@ -15136,7 +15140,7 @@
       // A PRODUCER: it banks its own item on a clock. One shared engine (processProducers) drives every def
       // carrying this, so the Weir below needed no second copy of the accrual, the cap or the offline rules.
       produces: { prefix:'beekeeping_t', xpSkill:'beekeeping', label:'honey' },
-      blurb: function(t){ return 'Yields ' + (ALL_GATHER_ITEMS[('beekeeping_t'+t)] ? ALL_GATHER_ITEMS['beekeeping_t'+t].name : 'honey') + ' on its own, and +1 crop per harvest to Fields within 1 tile.'; }
+      blurb: function(t){ return 'Yields ' + (ALL_GATHER_ITEMS[('beekeeping_t'+t)] ? ALL_GATHER_ITEMS['beekeeping_t'+t].name : 'honey') + ' on its own, and +1 crop per harvest to Fields within 1 tile. Apiaries do not stack with each other.'; }
     },
     weir: {
       key:'weir', prefix:'weir_t', label:'Fishing Weir', plural:'Fishing Weirs', shape:'fish',
@@ -34087,7 +34091,7 @@
       var h = '';
           var placeableB = placeableBuildingsFor(cell);
           h += '<div class="estate-action-row">';
-          h += '<div class="estate-action-info"><b>Place Building</b><br>Aqueducts carry water to Fields, Sun Terraces undo the altitude penalty, Apiaries make honey. Built in Architecture; tier must be ≤ this pavement.</div>';
+          h += '<div class="estate-action-info"><b>Place Building</b><br>Aqueducts carry water to Fields, Sun Terraces undo the altitude penalty, Apiaries make honey and add a crop (they do not stack with each other). Built in Architecture; tier must be ≤ this pavement.</div>';
           h += '<button class="action-btn" data-action="estateToggleBuildingMenu" '+((placeableB.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableB.length?(estateBuildingMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
           h += '</div>';
           if(estateBuildingMenuOpen && placeableB.length){
@@ -43623,7 +43627,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.93.1';
+  var GAME_VERSION = '0.0.93.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

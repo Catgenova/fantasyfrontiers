@@ -1145,13 +1145,23 @@
       FF.processProducers();
       eq(s.inventory.beekeeping_t0 || 0, 0, 'a hive with no clock pays nothing on its first tick');
       ok(!!g[7][7].apiaryAt, 'and starts its clock instead');
-      // The crop aura: flat +1 per Apiary in range, stacking, diagonals counted.
+      // The crop aura: a flat +1 to a Field in range, diagonals counted, and APIARIES DO NOT STACK WITH
+      // EACH OTHER (owner order, v0.0.93.2, matching the Totem rule from .1). They summed until then.
       g[6][6].type = 'dirt'; g[6][6].paveTileId = null; g[6][6].fieldTier = 20;
-      eq(FF.apiaryYieldBonusAt('personal','6,6'), 2, 'both Apiaries diagonally in range each add +1');
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'two Apiaries in range still give +1, not +1 each');
       g[7][7].buildingId = null;
-      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'removing one drops the bonus to +1');
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'and one alone gives the same +1');
       g[9][9].buildingId = 'apiary_t20';
       eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'an Apiary out of range adds nothing, whatever its tier');
+      // A t20 hive beside the Field is worth exactly what a t0 one is: the tier buys HONEY rate, not crops.
+      g[7][7].buildingId = 'apiary_t20';
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'and a high-tier hive alongside adds nothing either');
+      g[7][7].buildingId = null;
+      // It DOES still stack with a Totem: the rule is one bonus per SOURCE, not one bonus in total.
+      g[5][6].type = 'paved'; g[5][6].paveTileId = 'paving_t20'; g[5][6].totemId = 'totem_t5';
+      eq(FF.totemYieldBonusAt('personal','6,6'), 5, 'a Totem beside the same Field pays its own +5');
+      eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'and the Apiary still pays its +1 alongside it');
+      g[5][6].totemId = null;
       // A GUILD Apiary must not pay honey: one shared hive on a shared grid would pay every member.
       s.inventory = {};
       var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
