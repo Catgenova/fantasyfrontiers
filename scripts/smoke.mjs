@@ -24,7 +24,11 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, r));
 
 const base = `http://localhost:${PORT}/index.html`;
-const browser = await chromium.launch();
+// PW_CHROMIUM lets a sandbox with a pre-installed browser point at it, the same knob artcheck.mjs and
+// dpssim.mjs already take. Without it the documented local verification step cannot run wherever
+// Playwright's own download is skipped, which is every remote dev container.
+const browser = await chromium.launch(
+  process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
 let failed = false;
 try {
   // 1) Unit suite against the obfuscated build.
