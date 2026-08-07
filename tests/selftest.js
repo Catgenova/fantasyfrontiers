@@ -18995,27 +18995,49 @@
                        specialAccum:0, duelStartedAt:Date.now(), playerSwungOnce:false };
         return S.activity;
       }
+      // A REAL BLOCK is the enemy's own action, so its payouts are earned and pass the closed gate.
       var act = freshFoe(rt * 100);
       ok(!FF.combatEffectsArmed(), 'the gate is CLOSED on the fresh foe');
       var hp0 = act.monsterHp;
-      FF.heraldGuardFire(500, null, act, 500, true);
+      FF.heraldGuardFire(500, null, act, 500, false);   // isBrace = false: a real Block
       ok(hp0 - S.activity.monsterHp >= rt,
-         'the Retort LANDS through the closed gate (dealt ' + (hp0 - S.activity.monsterHp) + ', expected >= ' + rt + ')');
+         'a BLOCK Retort LANDS through the closed gate (dealt ' + (hp0 - S.activity.monsterHp) + ', expected >= ' + rt + ')');
+
+      // A BRACE is the player's own 5s clock, so it must NOT pass the closed gate. Thausale's follow-up:
+      // exempting it let a Herald farm trash with no swing at all ("a rabbit kills itself every 2 seconds").
+      act = freshFoe(rt * 100);
+      var hpBrace = act.monsterHp;
+      FF.heraldGuardFire(500, null, act, 500, true);    // isBrace = true: the self-clock
+      eq(S.activity.monsterHp, hpBrace, 'a BRACE Retort is HELD by the closed gate (no free kills while farming)');
+      // ...but once the player has swung at this foe, the Brace pays out normally, so the class still works.
+      S.activity.playerSwungOnce = true;
+      var hpArmed = S.activity.monsterHp;
+      FF.heraldGuardFire(500, null, S.activity, 500, true);
+      ok(hpArmed - S.activity.monsterHp >= rt, 'a BRACE Retort lands once the encounter has seen a swing');
 
       // THE REPORTED SYMPTOM: it must be able to land the KILLING blow, not merely tick a healthy foe.
       act = freshFoe(Math.max(1, Math.floor(rt / 2)));
       var killed = FF.applyEffectDamage(rt, 'Retort', { earned:true });
       ok(killed === true, 'a Retort worth more than the foe s remaining HP reports the kill');
 
-      // The Breach: it spends the wall FIRST, so a gated Breach is a pure loss. Fill the wall and fire.
-      act = freshFoe(1e15);
+      // The Breach spends the wall, so it must never be confiscated AFTER spending. A Block-fed wall pays
+      // out; a Brace-fed wall on a closed gate HOLDS the wall instead of burning it.
       if(FF.heraldBonus(80, S)){
+        act = freshFoe(1e15);
         S.heraldBarrier = FF.heraldBarrierCap(S);
         var bHp = act.monsterHp;
-        var dealt = FF.heraldBreachFire(S);
-        ok(dealt > 0, 'the Breach reports damage on a foe not yet swung at (' + dealt + ')');
+        var dealt = FF.heraldBreachFire(S, true);        // earned: the wall was filled by Blocks
+        ok(dealt > 0, 'a Block-fed Breach reports damage on a foe not yet swung at (' + dealt + ')');
         ok(bHp - S.activity.monsterHp > 0, '...and the foe actually took it, so the wall was not spent for nothing');
         eq(S.heraldBarrier, 0, 'the wall is spent by the Breach that paid out');
+        // The Brace-fed case: held, and crucially the wall SURVIVES for the next Guard after a swing.
+        act = freshFoe(1e15);
+        var capNow = FF.heraldBarrierCap(S);
+        S.heraldBarrier = capNow;
+        var hHp = act.monsterHp;
+        eq(FF.heraldBreachFire(S, false), 0, 'a Brace-fed Breach is held by the closed gate');
+        eq(S.activity.monsterHp, hHp, '...the foe takes nothing');
+        eq(S.heraldBarrier, capNow, '...and the wall is NOT burned, it waits');
       }
 
       // VACUITY GUARDS, the ticket-0159 pattern: prove the gate in this fixture is genuinely closed, so

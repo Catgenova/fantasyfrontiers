@@ -8466,20 +8466,25 @@
     if(legActive('wallbreaker', st)) m *= (1 + LEG_WALLBREAKER_PER_10 * per10);
     return m; }
   // Bank Barrier from a Block/Brace, then fire the Breach if it filled (Lv80).
-  function heraldBarrierAdd(amount, st){ st = st || state; if(!heraldBonus(1, st)) return 0;
+  function heraldBarrierAdd(amount, st, earned){ st = st || state; if(!heraldBonus(1, st)) return 0;
     amount = Math.round(amount * (legActive('perfectbulwark', st) ? HERALD_DEEPWALL_MULT : 1));
     if(!(amount > 0)) return 0;
     var cap = heraldBarrierCap(st);
     st.heraldBarrier = Math.min(cap, (st.heraldBarrier||0) + amount);
     if(!offlineCapture) spawnCombatFloat('Barrier '+Math.round(st.heraldBarrier), 'ft-success', false);
-    if(st.heraldBarrier >= cap) heraldBreachFire(st);
+    if(st.heraldBarrier >= cap) heraldBreachFire(st, earned);
     return st.heraldBarrier; }
   // Breach (Lv80): the full wall erupts, scaled off the recent average hit by how much was banked, rolling
   // its own Critical Hit. Spends the Barrier, which then rebuilds from the next Block/Brace.
-  function heraldBreachFire(st){ st = st || state; var a = st.activity;
+  function heraldBreachFire(st, earned){ st = st || state; var a = st.activity;
     if(!heraldBonus(80, st)) return 0;
     if(!a || a.type!=='combat' || (a.monsterHp||0) <= 0) return 0;
     var banked = heraldBarrier(st); if(banked <= 0) return 0;
+    // HOLD, do not BURN. A wall filled by Braces alone is not earned, so the gate would confiscate the
+    // eruption -- and the spend below is unconditional, so the player would lose the whole wall for
+    // nothing. Bail before spending instead: the full wall simply waits, and Breaches on the first Guard
+    // after the player swings. (A Block-fed wall is earned and never reaches this line.)
+    if(!effectGateOpen({ earned:!!earned })) return 0;
     var per10 = heraldBarrierFrac(st) * 10;                     // each tenth of the WALL is one unit
     var dmg = per10 * HERALD_BREACH_PCT * (st.heraldHitAvg||0);
     var critCh = criticalEyeCritChance(st) + newClassCritChance(st);
@@ -8493,9 +8498,9 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === a && a.type==='combat' && (a.monsterHp||0) > 0; _s++){
-      // earned: the wall is ALREADY SPENT two lines up, so a confiscated Breach costs the player the whole
-      // Barrier for nothing -- and it is funded by banked Guards off heraldHitAvg, not a carried tick.
-      applyEffectDamage(dmg, 'Breach', { earned:true });
+      // Carries the wall's provenance: a Block-fed wall is earned and passes the gate. A Brace-fed one
+      // never reaches here, because the hold-not-burn guard above returns before the wall is spent.
+      applyEffectDamage(dmg, 'Breach', { earned:!!earned });
       if(!offlineCapture) spawnCombatFloat((isCrit ? '\u2727 Breach -' : 'Breach -')+fmt(dmg), 'ft-crit', true);
     }
     if(st.activity === a && a.type==='combat'){
@@ -8535,6 +8540,10 @@
   // real damage, so it passes its Armor rating in that slot and the prevented-scaled reflects still pay out.
   function heraldGuardFire(prevented, monster, act, armorDefense, isBrace){
     var state_ = state; prevented = Math.max(0, prevented || 0);
+    // ticket-0160 follow-up (Thausale): a real BLOCK is the enemy's action, so its payouts are earned.
+    // A BRACE is the player's own 5s clock -- exempting that let a Herald farm trash with no swing at
+    // all ("a rabbit kills itself every 2 seconds"), which is the zero-swing kill the gate exists for.
+    var _earned = !isBrace;
     if(!act || act.type!=='combat') return;
     // Retort (Lv20): the Armor-scaled counterblow -- the Bastion's core answer, on Blocks and Braces alike.
     var _rt = heraldRetortDamage(state_);
@@ -8543,15 +8552,15 @@
       for(var _r = 0; _r < _rtN && state_.activity === act && act.type==='combat' && (act.monsterHp||0) > 0; _r++){
         // earned: a Guard is an EVENT, and the counterblow is a share of the player's own banked hits
         // (heraldHitAvg), not a carried per-second tick -- see the first-swing gate. Ticket-0160.
-        applyEffectDamage(_rt, 'Retort', { earned:true });
+        applyEffectDamage(_rt, 'Retort', { earned:_earned });
         if(!offlineCapture) spawnCombatFloat('⟲ Retort -'+fmt(_rt), 'ft-reflect', true);
       }
     }
     // Ironclad (Lv1): each Guard lays another course of the wall; a full wall Breaches inside heraldBarrierAdd.
-    heraldBarrierAdd(heraldBarrierCap(state_) * HERALD_BARRIER_PER_GUARD, state_);
+    heraldBarrierAdd(heraldBarrierCap(state_) * HERALD_BARRIER_PER_GUARD, state_, _earned);
     // Elemental Bastion (Herald D4 full): a Guard reflects an elemental burst of the prevented damage.
     var _eb = d4HeraldBastionReflect(prevented, monster, state_);
-    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion', { earned:true }); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
+    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion', { earned:_earned }); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
     // (Brittle Guard's block-Sunder retired: Rending Barbs holds the Sunder from the Bramble's tick now.)
     // Thornwall (legendary shield): a Block feeds the Bramble and forces an immediate tear.
     if(legActive('thornwall') && sentinelBonus(1)){
@@ -8575,7 +8584,7 @@
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
       if(legActive('rimeshell')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Thornwall (D2): a Block reflects 120% of the damage it prevented.
-      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyEffectDamage(_tw, 'Thornwall', { earned:true }); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
+      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyEffectDamage(_tw, 'Thornwall', { earned:_earned }); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
       // Bulwark of the Breach (D2): every Block banks a Barrier worth 2% of max Health.
       if(legActive('bulwarkbreach')) legBarrierAdd(maxHp(state) * LEG_BULWARKBREACH_PCT);
       // ---- D3 (Underground) legendary shields (Batch S): all Block-triggered ----
@@ -8596,7 +8605,7 @@
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Guard reflects an elemental burst of the prevented damage.
-      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyEffectDamage(_db, 'Dragonscale Bulwark', { earned:true }); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
+      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyEffectDamage(_db, 'Dragonscale Bulwark', { earned:_earned }); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
   }
   // Unbreakable (Lv60): the fraction of a blocked hit that still lands (0.25 = -75%), else the usual half.
   function heraldBlockMult(st){ st = st || state; return heraldBonus(60, st) ? HERALD_UNBREAKABLE_MULT : 0.5; }
@@ -40877,7 +40886,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.52';
+  var GAME_VERSION = '0.0.86.53';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
