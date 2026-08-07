@@ -95,6 +95,18 @@ Deno.serve(async (req) => {
   if (action === "get_questions") {
     const username = String(body.username || "").trim();
     if (!username) return json({ ok: false, error: "Enter your username." }, 400);
+    // Rate limit BEFORE the lookup (review finding 13). Guessing answers is defended by
+    // recovery_verify's fail_count / locked_until; asking what the questions ARE was defended by
+    // nothing and needs no auth, which gave free unlimited username enumeration plus disclosure of
+    // the user-authored questions -- the input half of the one credential path that skips the
+    // password. Keyed on the CALLER, never the username, so a sweep across many names cannot stay
+    // under the limit. Fails CLOSED: this guards a credential surface, so a broken limiter must
+    // refuse rather than wave callers through (register's rule, not rl_hit's).
+    const caller = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("cf-connecting-ip") || "";
+    const { data: allowed, error: rlErr } = await admin.rpc("recovery_lookup_allowed", { p_caller: caller });
+    if (rlErr || allowed !== true) {
+      return json({ ok: false, error: "Too many lookups. Wait a few minutes and try again." }, 429);
+    }
     const { data } = await admin.from("account_recovery").select("questions").ilike("username", username).maybeSingle();
     const questions = (data?.questions as { q: string }[] | undefined || []).map((x) => x.q);
     if (!questions.length) return json({ ok: false, error: "No recovery questions are set for that account." }, 404);

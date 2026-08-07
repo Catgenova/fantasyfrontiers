@@ -17730,6 +17730,17 @@
   // combat activity object. Cleared whenever a combat session truly ends (death) or a new one begins
   // from outside combat, so swapping classes between fights can never carry the old class's Reaper /
   // Templar / Lumen shields, Vigor, Wrath, Souls or kill-streak stacks into the new kit's fight.
+  //
+  // WHAT "SESSION" MEANS HERE, because every comment below says "between sessions" and it does NOT mean
+  // between logins. A session is one CHAIN OF FIGHTS. This runs from companionCastsOnCombatEntry, which
+  // returns early when the previous activity was already 'combat', so a foe-to-foe transition keeps every
+  // meter and anything else clears them.
+  //
+  // CONSEQUENCE, deliberate and worth knowing: the save is whole-state and restores state.activity, so a
+  // player who logs out MID-FIGHT returns with activity.type === 'combat' still set, takes that early
+  // return, and keeps every ramp below intact across the logout. That is not a leak to fix. Every meter
+  // here is capped, and staying logged in achieves exactly the same thing -- but a reader who took
+  // "between sessions" to mean "between logins" would expect otherwise, which is why this is spelled out.
   function resetPersistentCombatBuffs(){
     state.reaperShield = 0; state.lumenShield = 0; state.templarShield = 0;
     state.d3Souls = 0; // (d3ExecStacks retired -- the Soulharvester's hone is state.exHone now)

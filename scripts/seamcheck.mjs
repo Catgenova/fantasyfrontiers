@@ -125,5 +125,34 @@ for (const f of leaks) {
 }
 console.log(`seamcheck: ${assigned.size} act.* fields assigned, ${cleared.size} cleared on a foe swap, ${leaks.length} unexplained`);
 
+// ---- CHECK 3: offline catch-up must precede the item sync -------------------------------------------
+// applyOfflineProgress credits the away window; itemSync reports inventory to the ledger, whose rate clock
+// reads the account's own synced_at. Sync first and a returning player's allowance is computed against a
+// clock that has just been reset, which throttles them for the rest of the window. The ordering is enforced
+// today only by an `await` that reads like a formality, and the failure is invisible in play (a slow drip,
+// not an error). The browser suite cannot cover it either: boot is async, and suite() is synchronous and
+// discards its return value, so an assertion inside a .then() runs after the report is written. Hence here.
+{
+  const at = script.indexOf("async function startGameOnline()");
+  if (at === -1) {
+    fail("startGameOnline() not found -- the boot-order check cannot run.");
+  } else {
+    const fn = script.slice(at);
+    const body = fn.slice(0, fn.indexOf("\n  }") + 4);
+    const awaitInit = body.indexOf("await initGame()");
+    const sync = body.search(/\bitemSync\s*\(/);
+    if (awaitInit === -1) {
+      fail("startGameOnline no longer awaits initGame().\n"
+         + "       initGame runs applyOfflineProgress. Without the await, the item sync can land first and\n"
+         + "       throttle every returning player's allowance against a freshly reset synced_at clock.");
+    } else if (sync !== -1 && sync < awaitInit) {
+      fail("startGameOnline calls itemSync() BEFORE `await initGame()`.\n"
+         + "       initGame runs applyOfflineProgress. The ledger's rate clock reads synced_at, so syncing\n"
+         + "       first throttles every returning player's item allowance. Move the sync after the await.");
+    }
+  }
+}
+console.log("seamcheck: boot order (offline catch-up before item sync) intact.");
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

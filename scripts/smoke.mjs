@@ -50,6 +50,18 @@ try {
   const page2 = await browser.newPage();
   const errs2 = [];
   page2.on("pageerror", (e) => errs2.push("pageerror: " + e.message));
+  // Console errors count too. They used to be watched on the selftest page and NOT here, so a
+  // console.error thrown during a normal boot passed the gate that decides whether we publish.
+  // The allowlist is the reason it was not watched before: this sandbox has no backend, so every
+  // run logs failed Supabase fetches. Those are environmental and must never fail a build; anything
+  // else is the game complaining about itself on the way up, which is exactly what we want to catch.
+  const NET_NOISE = /ERR_CONNECTION|ERR_TUNNEL|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|Failed to load resource|net::/i;
+  page2.on("console", (m) => {
+    if (m.type() !== "error") return;
+    const t = m.text();
+    if (NET_NOISE.test(t)) return;
+    errs2.push("console: " + t);
+  });
   await page2.goto(base, { waitUntil: "domcontentloaded" });
   await page2.waitForTimeout(2500);
   const booted = await page2.evaluate(() => !!document.querySelector(".ff-brand, #ffCoinVal, #hdrGold"));
