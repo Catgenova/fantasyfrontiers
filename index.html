@@ -18045,6 +18045,19 @@
   // at best-in-slot against hits of ~1e11 -- the mistake that left Firebomb at 210 damage and the Reaver's
   // Bleed at 120 a second. Same channel and same reason as the Ranger's Feral Bond.
   var POTION_TOXIN_CLOCK_MS = 3000;   // one application every 3s while a Toxin is readied
+  // THE FIREBOMB IS THE OPENER (owner direction). It used to deal a FLAT amount -- 5 at t0 rising to 210 at
+  // t20 -- against best-in-slot hits of ~1e11, so a top-tier flask contributed two parts per billion. That is
+  // the same dead-scale bug the DoT chassis had in v0.0.68.0, in burst form, and it hid better: the old code
+  // subtracted monsterHp directly with no applyEffectDamage call, so it never appeared in the combat log at
+  // all. Nobody could see that it did nothing.
+  //
+  // Now it pays a share of your recent landed hit, and it pays it ONCE PER FOE. That is the identity: the
+  // Toxin is the sustain flask (clocked, continuous, better the longer a fight runs) and the Firebomb is the
+  // FARMING flask (huge on contact, negligible afterwards). One charge per foe rather than per swing, so a
+  // flask covers ten kills and weapon speed cannot change its worth.
+  var FB_OPENER_MIN = 0.15, FB_OPENER_MAX = 1.50;    // share of the recent hit, on the first strike vs a foe
+  var FB_SMOULDER_MIN = 0.002, FB_SMOULDER_MAX = 0.02; // and per attack after that, deliberately small
+  var FB_SPREAD = 0.25;                               // +/- roll on the opener, keeping the old wide-range feel
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
   // 'enchant' is NOT here: Enchant Crystals (enchant_t<n>) are the Improvement-tab enchant INPUT now, not a
   // combat consumable -- so they must never parse as a potion (that's what showed the stale "In combat" card).
@@ -18052,7 +18065,9 @@
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
     if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.003, 0.03, p.tier) };    // share of the recent average hit / sec for 3s
-    if(p.type==='firebomb') return { type:'firebomb', tier:p.tier, dmg: Math.round(potionLerp(5, 210, p.tier)) };
+    if(p.type==='firebomb') return { type:'firebomb', tier:p.tier,
+      opener: potionLerp(FB_OPENER_MIN, FB_OPENER_MAX, p.tier),
+      smoulder: potionLerp(FB_SMOULDER_MIN, FB_SMOULDER_MAX, p.tier) };
     if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
     if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
     if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.004, 0.045, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
@@ -18082,7 +18097,7 @@
     // proficiency levels. The maths has read dotBase -- your recent average landed hit -- ever since, so the
     // label described a unit the game had stopped using.
     if(e.type==='toxin')    return 'Poison '+potionPctLabel(e.pct)+' of your recent hit/s, applied every '+Math.round(POTION_TOXIN_CLOCK_MS/1000)+'s';
-    if(e.type==='firebomb') return '~'+e.dmg+' fire damage per hit';
+    if(e.type==='firebomb') return Math.round(e.opener*100)+'% of your recent hit on a fresh foe, then '+potionPctLabel(e.smoulder)+' per hit';
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
     if(e.type==='coating')  return 'Poison '+potionPctLabel(e.pct)+' of your recent hit/s for '+Math.round(e.durationMs/1000)+'s';
@@ -18101,9 +18116,28 @@
     // function, which would otherwise drain a clocked flask twice.
     if(e.type==='toxin') return;
     if(e.type==='firebomb'){
-      var fb = Math.round(randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)) * (1 + getFamBuff('firebomb'))); // wide range, + familiar firebomb buff
-      act.monsterHp -= fb;
-      spawnCombatFloat(svgIcon('flame','#e8641e')+' '+fb, 'ft-rare', true);
+      // First strike on this foe: the bomb goes off. Afterwards it only smoulders.
+      // Six familiar spells feed getFamBuff('firebomb') (Salvage Rights, Powder Keg, Immolate, Forge Fire,
+      // Blazing Fuel, Incendiary Blend), so fixing the base multiplies all of them at once.
+      var fresh = !act.fbOpened;
+      var share = fresh ? e.opener : e.smoulder;
+      var fb = dotBase(state) * share * (1 + getFamBuff('firebomb'));
+      if(fresh){
+        // Keep the old wide-range feel on the opener. NO crit re-roll: the share is taken from an average of
+        // post-crit hits, so multiplying crit in again is the double-dip that produced four wild first
+        // readings in the class reworks.
+        fb *= 1 + (Math.random() * 2 - 1) * FB_SPREAD;
+        act.fbOpened = true;
+      }
+      if(fb > 0){
+        applyEffectDamage(fb, 'Firebomb');   // MANDATORY: the old code never logged, which is why the dead damage went unnoticed
+        awardElementXp('fire', fb);          // a fire consumable that trained no Fire until now
+        if(!offlineCapture && fresh) spawnCombatFloat(svgIcon('flame','#e8641e')+' '+fmt(Math.round(fb)), 'ft-rare', true);
+      }
+      // A charge is spent per FOE, not per swing: only the opener costs one. Ten charges therefore cover ten
+      // kills, which is what makes this the farming flask.
+      if(fresh) potionSpendCharge();
+      return;
     } else if(e.type==='coating'){
       // Weapon Coating: same poison DoT channel as Toxin, but a longer-lasting venom (its own duration).
       // Plaguebearer Lv1 (Venomous) makes the coating hit +50% harder and last +50% longer.
@@ -19037,6 +19071,7 @@
     act.rgQuarry = 0; act.rgQuarryUntil = 0; // a fresh foe has not been run down yet
     act.pbSev = 0; act.pbUntil = 0; act.pbErupt = 0; // a fresh foe is uninfected (Pestilence re-seeds it below)
     act.toxinClockAccum = 0; act.potionPoisonName = null; // a fresh foe starts unvenomed; the clock re-arms
+    act.fbOpened = false; // a fresh foe has not been bombed: the Firebomb's opener re-arms per kill
     act.fwRime = 0; act.fwFrozenUntil = 0; act.fwRimewyrm = 0; // a fresh foe is unfrozen
     if(_rvCarry){ act.rvCuts = _rvCarry.cuts; act.rvBank = _rvCarry.bank; act.rvBleedHitAvg = _rvCarry.hitAvg; }
     if(_arterialCarry > 0){ // Bonereaver: the next foe inherits the slain foe's Bleed
@@ -41163,7 +41198,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.87.0';
+  var GAME_VERSION = '0.0.87.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

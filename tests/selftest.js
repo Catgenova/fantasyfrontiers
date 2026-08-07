@@ -11501,7 +11501,13 @@
     // Bomb: burst damage that scales and beats a Firebomb; Flash: stun chance that scales.
     var b0 = FF.potionEffect('bomb_t0'), b20 = FF.potionEffect('bomb_t20');
     ok(b0.type==='bomb' && b20.dmg > b0.dmg, 'bomb burst scales with tier');
-    ok(b20.dmg > FF.potionEffect('firebomb_t20').dmg, 'top Bomb hits harder than a top Firebomb');
+    // Bomb is still a FLAT number (10 at t0 to 350 at t20) and is therefore still ~9 orders of magnitude
+    // under a best-in-slot hit of ~1e11. The Firebomb was fixed to a share of the recent hit; Bomb was
+    // DELIBERATELY left alone, because it belongs to Tinkering and the owner asked for the Firebomb only.
+    // This assertion exists so the deferral is recorded rather than forgotten: when Bomb is fixed, it will
+    // fail, and that is the reminder to delete it.
+    ok(typeof b20.dmg === 'number' && b20.dmg < 1000, 'Bomb is still the flat, dead burst line (Tinkering, deferred on purpose)');
+    ok(FF.potionEffect('firebomb_t20').dmg === undefined, 'the Firebomb no longer carries a flat damage number');
     var f0 = FF.potionEffect('flash_t0'), f20 = FF.potionEffect('flash_t20');
     ok(f0.type==='flash' && f20.stun > f0.stun && f20.stun <= 0.20 + 1e-9, 'flash stun chance scales with tier (cap 20%)');
     ok(/burst damage/.test(FF.potionEffectDesc('bomb_t10')), 'bomb describes its burst');
@@ -11667,9 +11673,16 @@
     near(FF.potionEffect('toxin_t20').pct, 0.03, 'toxin t20 = 3% of a hit/s');
     near(FF.potionEffect('coating_t20').pct, 0.045, 'a top-tier coating = 4.5% of a hit/s');
     ok(FF.potionEffect('coating_t20').pct > FF.potionEffect('toxin_t20').pct, 'a coating still out-poisons a toxin');
-    eq(FF.potionEffect('firebomb_t0').dmg, 5, 'firebomb t0 = 5 dmg');
-    eq(FF.potionEffect('firebomb_t20').dmg, 210, 'firebomb t20 = 210 dmg');
-    eq(Math.round(FF.potionEffect('elixir_t0').crit*100), 5, 'elixir t0 = +5% crit dmg');
+    // THE FIREBOMB IS THE OPENER now. It used to deal a FLAT 5 at t0 rising to 210 at t20, against
+    // best-in-slot hits of ~1e11 -- two parts per billion, the dead-scale bug in burst form. It now pays a
+    // share of the recent landed hit, hugely on the first strike against a fresh foe and almost nothing
+    // afterwards, which makes it the farming flask to the clocked Toxin's sustain.
+    var fb0 = FF.potionEffect('firebomb_t0'), fb20 = FF.potionEffect('firebomb_t20');
+    near(fb0.opener, 0.15, 'firebomb t0 opens for 15% of a hit');
+    near(fb20.opener, 1.50, 'firebomb t20 opens for 150% of a hit');
+    ok(fb20.opener > fb0.opener && fb20.smoulder > fb0.smoulder, 'both halves scale with tier');
+    ok(fb20.smoulder * 20 < fb20.opener, 'the smoulder is an order of magnitude under the opener, so it stays the OPENER');
+    ok(fb20.opener > FF.potionEffect('toxin_t20').pct, 'and the opener dwarfs a toxin tick, which is the point of the split');    eq(Math.round(FF.potionEffect('elixir_t0').crit*100), 5, 'elixir t0 = +5% crit dmg');
     eq(Math.round(FF.potionEffect('elixir_t20').crit*100), 110, 'elixir t20 = +110% crit dmg');
     eq(Math.round(FF.potionEffect('catalyst_t0').fam*100), 5, 'catalyst t0 = +5% familiar');
     eq(Math.round(FF.potionEffect('catalyst_t20').fam*100), 110, 'catalyst t20 = +110% familiar');
@@ -20018,6 +20031,87 @@
       });
     } finally {
       S.activity = svAct; S.activePotion = svPot; S.potionCharges = svCh; S.inventory = svInv;
+    }
+  });
+
+  // ---- The Firebomb is the OPENER (owner direction) -------------------------------------------------
+  // It used to be `act.monsterHp -= fb` with a FLAT amount: 5 at t0 rising to 210 at t20, against
+  // best-in-slot hits of ~1e11. Two parts per billion, the dead-scale bug in burst form. It also never
+  // called applyEffectDamage, so it produced no combat-log row at all, which is precisely why nobody
+  // noticed the damage did nothing -- you could not see it.
+  //
+  // The split with the Toxin is the design: the Toxin is clocked, continuous and better the longer a fight
+  // runs; the Firebomb pays hugely on contact with a FRESH foe and almost nothing after, one charge per foe
+  // rather than per swing, so a flask covers ten kills. Farming flask versus boss flask.
+  suite('firebomb: the opener', function(){
+    var S = FF._state;
+    var svAct = S.activity, svPot = S.activePotion, svCh = S.potionCharges, svInv = S.inventory;
+    try {
+      function fight(){
+        S.activity = { type:'combat', monsterHp:1e12, monsterId:'rabbit', duelStartedAt:Date.now(),
+                       dotHitAvg:1e6, playerSwungOnce:true };
+        return S.activity;
+      }
+      function ready(id, charges){
+        S.inventory = {}; S.activePotion = id;
+        S.potionCharges = (charges == null) ? FF.POTION_MAX_CHARGES : charges;
+      }
+      var e20 = FF.potionEffect('firebomb_t20');
+      var mon = { hp:100 };
+
+      // ---- the opener fires once, and only once, per foe ---------------------------------------
+      var act = fight(); ready('firebomb_t20');
+      var hp0 = act.monsterHp;
+      FF.firePotionOnAttack(act, mon);
+      var opened = hp0 - act.monsterHp;
+      ok(act.fbOpened === true, 'the first strike marks this foe as bombed');
+      // 150% of a 1e6 hit, +/- the 25% spread. Bounds rather than a point value: the opener rolls.
+      ok(opened > 1e6 * e20.opener * 0.7 && opened < 1e6 * e20.opener * 1.35,
+         'the opener pays about its share of the recent hit (got ' + Math.round(opened) + ')');
+
+      var hp1 = act.monsterHp;
+      FF.firePotionOnAttack(act, mon);
+      var second = hp1 - act.monsterHp;
+      ok(second > 0, 'later strikes still smoulder');
+      ok(second < opened / 10, 'but for an order of magnitude less than the opener (got ' + Math.round(second) + ')');
+
+      // ---- the charge economy IS the identity: one per foe, not one per swing ------------------
+      act = fight(); ready('firebomb_t20');
+      FF.firePotionOnAttack(act, mon);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 1, 'the opener spends one charge');
+      FF.firePotionOnAttack(act, mon);
+      FF.firePotionOnAttack(act, mon);
+      FF.firePotionOnAttack(act, mon);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 1, 'three more swings on the same foe spend NOTHING');
+      // A fresh foe re-arms it, which is what makes ten charges cover ten kills.
+      act.fbOpened = false;
+      FF.firePotionOnAttack(act, mon);
+      eq(S.potionCharges, FF.POTION_MAX_CHARGES - 2, 'a fresh foe re-arms the opener and costs the next charge');
+
+      // ---- it scales off the HIT, never a flat number ------------------------------------------
+      act = fight(); act.dotHitAvg = 1e6; ready('firebomb_t20');
+      var a0 = act.monsterHp; FF.firePotionOnAttack(act, mon); var small = a0 - act.monsterHp;
+      act = fight(); act.dotHitAvg = 1e9; ready('firebomb_t20');
+      var b0 = act.monsterHp; FF.firePotionOnAttack(act, mon); var big = b0 - act.monsterHp;
+      ok(big > small * 100, 'a thousand times the recent hit is far more damage (never a flat number)');
+
+      // ---- MANDATORY: it appears in the combat log, which the old implementation never did -----
+      // combatLog is a module-scoped ring buffer, not state -- it is reached through the _clReset/_clGet
+      // seam. Reading S.combatLog found undefined and the assertion was vacuous until this was fixed.
+      FF._clReset();
+      act = fight(); ready('firebomb_t20');
+      FF.firePotionOnAttack(act, mon);
+      var rows = (FF._clGet() || []).filter(function(r){ return r && r.spName === 'Firebomb'; });
+      ok(rows.length >= 1, 'the Firebomb writes a combat-log row (it never used to)');
+      ok(rows[0].dmg > 0, 'and the row carries its damage');
+
+      // ---- the copy describes both halves, and no flat number ---------------------------------
+      var desc = FF.potionEffectDesc('firebomb_t20');
+      ok(/fresh foe/.test(desc), 'the tooltip says the opener needs a fresh foe');
+      ok(!/^~\d+ fire damage/.test(desc), 'and no longer advertises a flat damage figure');
+    } finally {
+      S.activity = svAct; S.activePotion = svPot; S.potionCharges = svCh; S.inventory = svInv;
+      FF._clReset();
     }
   });
 
