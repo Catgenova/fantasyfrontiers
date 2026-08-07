@@ -38,6 +38,14 @@ jobs:
       - name: Check item_catalog seed is in sync with the client registries
         run: node scripts/dump-item-catalog.mjs --check
 
+      - name: Install root deps (typescript, for the edge-function test)
+        # This job's Puppeteer install runs in tests/, so the ROOT node_modules does not exist here.
+        # test-save-uniques.mjs transpiles the real .ts source with the TypeScript compiler (Node 20
+        # cannot strip types itself), so without this it dies at import in 0 seconds. It did, on every
+        # push from v0.0.86.60 onward, while pages.yml stayed green because that workflow installs root
+        # deps. A step that fails identically whatever the code does is not testing the code.
+        run: npm install --no-audit --no-fund
+
       - name: Unit-test the save_game forged-unique audit
         # Runs against the REAL edge-function source, not a copy. The audit's enforcement path deletes
         # player items, and typecheck:functions only fails on a few high-signal codes, so this is the
