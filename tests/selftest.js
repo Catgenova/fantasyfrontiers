@@ -2304,6 +2304,17 @@
     var html = FF.renderPatchNotes();
     ok(html.indexOf(FF.PATCH_NOTES[0].heading) !== -1, 'the rendered notes lead with the newest release heading');
     ok(html.indexOf(FF.PATCH_NOTES[0].items[0]) !== -1, 'the newest release’s items render');
+    // The no-em-dash / no-emoji owner rule covers patch notes, but PATCH_NOTES is excluded from the
+    // def-table deep scan because the HISTORICAL entries predate the rule and keep their dashes. So
+    // guard the NEWEST entry only: that is always the one being written, and the rule applies to it.
+    var newest = FF.PATCH_NOTES[0];
+    var newestText = [newest.heading].concat(newest.items).join(' ');
+    ok(newestText.indexOf('—') === -1 && newestText.indexOf('&mdash;') === -1,
+      'the newest release entry carries no em dash, literal or entity (owner rule)');
+    ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(newestText),
+      'the newest release entry carries no emoji (owner rule)');
+    // renderPatchNotes escapes headings, so an entity there ships as literal text to the player.
+    ok(newest.heading.indexOf('&') === -1, 'the newest heading is plain text, no HTML entities');
   });
 
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
