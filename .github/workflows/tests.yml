@@ -44,6 +44,18 @@ jobs:
         # only thing standing between a bounds bug and someone's gear.
         run: npm run test:functions
 
+      - name: Parse every migration with the real PostgreSQL grammar
+        # Migrations are applied BY HAND in the Supabase dashboard, so nothing else in the pipeline ever
+        # reads a .sql file -- a syntax error surfaces as an error message in the owner's browser. This
+        # parses statements AND plpgsql bodies (libpg_query). Semantics are NOT checked: a column that
+        # does not exist parses fine, and runbook comments are not parsed at all. See scripts/sqlcheck.mjs.
+        #
+        # Deliberately NOT in pages.yml: it needs a PyPI install, and a package-index outage must never
+        # be able to block a deploy of a change that does not touch SQL.
+        run: |
+          python3 -m pip install --quiet pglast
+          npm run sqlcheck
+
   typecheck:
     name: Typecheck (checkJs, high-signal only)
     runs-on: ubuntu-latest
