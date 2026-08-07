@@ -10659,13 +10659,23 @@
     s.stats['crafted_tanning']=10; eq(FF.questProgress(q23), 0, 'crafting a different skill does not advance weaving');
     s.stats['crafted_weaving']=10; ok(FF.questComplete(q23), '10 weaves completes');
     invGrantCheck('weave_the_bolt','tool_tailoring_t0_normal',1);
-    // 24 Dress the Part: equip a cloth (tailoring) chest -> Fishing Rod
+    // 24 Dress the Part: equip a cloth (tailoring) CLOAK, i.e. the back slot -> Fishing Rod.
+    // It asked for a Cotton Tunic (chest) until the owner switched it. Tailoring's slotLabels name the back
+    // piece a Cloak and FARMING_NAMES[0] is Cotton, so the copy and the check have to agree on 'Cotton Cloak'
+    // or the quest tells the player to craft one thing and rewards another.
     var q24 = FF.questById('dress_the_part');
     ok(!!q24 && q24.reward.items[0].itemId==='tool_fishing_t0_normal', 'Dress the Part rewards a Fishing Rod');
+    ok(/Cotton Cloak/.test(q24.desc) && /Cotton Cloak/.test(q24.how), 'the copy asks for a Cotton Cloak');
+    ok(!/Cotton Tunic/.test(q24.desc) && !/Cotton Tunic/.test(q24.how), 'and no longer mentions the Tunic');
     s.quests={claimed:{}}; s.bodyArmor={};
-    eq(FF.questComplete(q24), false, 'no cloth chest -> not complete');
-    s.bodyArmor.chest={material:'chain',tier:1}; eq(FF.questComplete(q24), false, 'a chain chest is not cloth');
-    s.bodyArmor.chest={material:'tailoring',tier:1}; ok(FF.questComplete(q24), 'a tailoring (cloth) chest completes');
+    eq(FF.questComplete(q24), false, 'no cloth cloak -> not complete');
+    s.bodyArmor.chest={material:'tailoring',tier:1}; eq(FF.questComplete(q24), false, 'a cloth CHEST no longer completes it');
+    s.bodyArmor.back={material:'chain',tier:1}; eq(FF.questComplete(q24), false, 'a non-cloth back piece is not a Cotton Cloak');
+    s.bodyArmor={}; s.bodyArmor.back={material:'tailoring',tier:1}; ok(FF.questComplete(q24), 'a tailoring (cloth) cloak completes');
+    // The item the copy names must actually be craftable at the same gate as before, or the quest is a wall.
+    ok(FF.getBodyArmorTierData('tailoring','back',0).name === 'Cotton Cloak', 'the t0 cloth back piece really is called Cotton Cloak');
+    eq(FF.getBodyArmorTierData('tailoring','back',0).levelReq, FF.getBodyArmorTierData('tailoring','chest',0).levelReq,
+       'and it unlocks at the same level the Tunic did');
     invGrantCheck('dress_the_part','tool_fishing_t0_normal',1);
     // 25 Cast a Line: catch 50 fish -> Roasting Spit + 30 fish
     var q25 = FF.questById('cast_a_line');
