@@ -18149,8 +18149,12 @@
       act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
       // Tinkering Bomb: a heavy raw burst on each hit.
+      // It subtracted monsterHp directly, so it produced no combat-log row -- the same blind spot that let
+      // the Firebomb's dead damage go unnoticed for so long. Damage is UNCHANGED here: the Bomb's flat
+      // scaling (10 at t0 to 350 at t20, ~9 orders under a best-in-slot hit) is a separate decision that
+      // belongs to Tinkering, and is deliberately still outstanding. This only makes it visible.
       var bb = Math.round(randInt(Math.round(e.dmg*0.6), Math.round(e.dmg*1.4)) * demolitionistMult()); // Demolitionist: bigger bang
-      act.monsterHp -= bb;
+      applyEffectDamage(bb, 'Bomb');
       spawnCombatFloat(svgIcon('bomb','#8a97a6')+' '+bb, 'ft-rare', true);
     } else if(e.type==='flash'){
       // Pyrotechnics Flash Bomb: a chance to stun the enemy, freezing its action bar for 1.5s.
@@ -18546,7 +18550,16 @@
       if(frostwardenBonus(40) && enemyChilled(state) && Math.random() < FROST_SHATTER_CHANCE){
         var _shDmg = Math.round(dmgToMonster * FROST_SHATTER_PER_STACK * (act.chillStacks||0));
         if(_shDmg > 0){
-          act.monsterHp -= _shDmg;
+          // Logs as Shatter, which is what the player's perk is called. It fires on roughly a quarter of
+          // swings for 20% of the hit per Chill stack -- up to a whole extra hit at 5 stacks -- and none of
+          // it appeared in the combat log, so a Frostwarden could not see a mechanic worth that much.
+          //
+          // NOTE FOR THE REBAND: this is the SECOND thing called Shatter on this class. The rime engine's
+          // Shatter (fwShatterFire, the Lv60 perk) already logged; this one is the pre-rework Lv40 chill
+          // detonation, still live because rime DERIVES chillStacks. It also zeroes chillStacks and
+          // enemyChillUntil, which fwRimeSync re-derives on the very next hit, so the consumption is
+          // cosmetic. Whether it should survive at all is a balance call, not a logging one.
+          applyEffectDamage(_shDmg, 'Shatter');
           act.chillStacks = 0; act.enemyChillUntil = 0; // the Chill is consumed by the blast
           spawnCombatFloat(svgIcon('snowflake','#7cc4e0')+' Shatter -'+fmt(_shDmg), 'ft-crit', true);
         }
@@ -41198,7 +41211,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.87.1';
+  var GAME_VERSION = '0.0.87.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

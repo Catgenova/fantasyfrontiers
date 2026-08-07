@@ -20115,6 +20115,97 @@
     }
   });
 
+  // ---- Every consumable's damage reaches the combat log, and so does Shatter -----------------------
+  // The standing rule is that a damage source a player cannot see in the log is a damage source nobody can
+  // audit -- which is exactly how the Firebomb's 210-at-best-in-slot went unnoticed for so long. Two sources
+  // were still writing act.monsterHp directly:
+  //   * Tinkering's BOMB, the last damaging consumable with no log row (its flat scaling is a separate,
+  //     still-outstanding decision -- this only makes it visible).
+  //   * the Frostwarden's Lv40 chill detonation, which fires on ~25% of swings for 20% of the hit per Chill
+  //     stack. Up to a whole extra hit at 5 stacks, entirely invisible.
+  suite('consumables and Shatter reach the combat log', function(){
+    var S = FF._state;
+    var svAct = S.activity, svPot = S.activePotion, svCh = S.potionCharges, svInv = S.inventory, svXp = S.xp;
+    try {
+      function rows(name){ return (FF._clGet() || []).filter(function(r){ return r && r.spName === name; }); }
+
+      // ---- the Bomb ---------------------------------------------------------------------------
+      S.activity = { type:'combat', monsterHp:1e12, monsterId:'rabbit', duelStartedAt:Date.now(),
+                     dotHitAvg:1e6, playerSwungOnce:true };
+      S.inventory = {}; S.activePotion = 'bomb_t20'; S.potionCharges = FF.POTION_MAX_CHARGES;
+      FF._clReset();
+      var hp0 = S.activity.monsterHp;
+      FF.firePotionOnAttack(S.activity, { hp:100 });
+      var dealt = hp0 - S.activity.monsterHp;
+      ok(dealt > 0, 'the Bomb still deals its damage');
+      var br = rows('Bomb');
+      ok(br.length === 1, 'and now writes exactly one Bomb row to the combat log');
+      eq(br[0].dmg, Math.round(dealt), 'the logged figure matches the damage actually applied');
+
+      // Every damaging consumable is now accounted for. Elixir, Catalyst and Draught are passive buffs and
+      // deal none; Flash only stuns. Toxin and Coating log through the poison tick as Venom.
+      ['toxin','coating','firebomb','bomb'].forEach(function(t){
+        var e = FF.potionEffect(t + '_t20');
+        ok(!!e, t + ' still resolves as a consumable effect');
+      });
+      ok(FF.potionEffect('flash_t20').stun > 0, 'Flash is a stun, so it has no damage to log');
+      ok(FF.potionEffect('draught_t20').dr > 0, 'the Draught is mitigation, so it has none either');
+
+      // ---- the Frostwarden's Lv40 Shatter -----------------------------------------------------
+      // MUST be driven through playerAttackTick, not through applyEffectDamage directly. Calling the helper
+      // only proves the helper logs, which it always did -- the first version of this test did exactly that
+      // and passed happily with the bug reinstated. The detonation is a 25% roll, so Math.random is pinned
+      // to 0 to make it fire every swing.
+      var svRandom = Math.random, svArmor = S.bodyArmor, svMain = S.equippedMainhand,
+          svOff = S.equippedOffhand, svMainT = S.equippedMainhandTier, svOffT = S.equippedOffhandTier,
+          svPhys = S.physique, svUniq = S.uniqueItems, svHp = S.playerHp;
+      try {
+        var lv100 = FF.xpFloorForLevel(100);
+        S.xp = {}; ['frostwarden','wandWater','wands','water'].forEach(function(k){ S.xp[k] = lv100; });
+        S.physique = {}; (FF.PHYSIQUE_SKILLS || []).forEach(function(ph){ S.physique[ph.id] = lv100; });
+        var wTop = FF.legGearBaseTopTier('wandWater'), sTop = FF.legGearBaseTopTier('shieldMedium');
+        S.uniqueItems = {};
+        S.equippedMainhand = 'wandWater'; S.equippedMainhandTier = wTop + 1;
+        S.equippedOffhand = 'shieldMedium'; S.equippedOffhandTier = sTop + 1;
+        // Cloth's material id is 'tailoring', not 'cloth' -- miss that and activeClassId stays null and
+        // every Frostwarden perk silently reads false.
+        S.bodyArmor = { helmet:{material:'chain',tier:21}, chest:{material:'chain',tier:21},
+                        gauntlets:{material:'tailoring',tier:21}, boots:{material:'tailoring',tier:21} };
+        eq(FF.activeClassId(S), 'frostwarden', 'the fixture really is a Frostwarden (or the test proves nothing)');
+        ok(FF.frostwardenBonus(40, S), 'and is past the Lv40 gate the detonation needs');
+
+        S.playerHp = 500;
+        // A REAL monster id. playerAttackTick returns immediately if monsterById misses, and 'rabbit' is not
+        // an id (they are prefixed, e.g. wildlife_rabbit). With the wrong id the tick did nothing at all and
+        // the assertion below could not fail no matter what the code did.
+        var MID = FF.MONSTERS[0].id;
+        ok(!!FF.monsterById(MID), 'the fixture uses a monster id that actually resolves');
+        S.activity = { type:'combat', monsterHp:1e14, monsterId:MID, duelStartedAt:Date.now(),
+                       dotHitAvg:1e6, playerSwungOnce:true,
+                       chillStacks:5, enemyChillUntil:Date.now() + 5000 };
+        Math.random = function(){ return 0; };
+        FF._clReset();
+        FF.playerAttackTick();
+        var sr = rows('Shatter');
+        ok(sr.length >= 1, 'the chill detonation writes a Shatter row through the real attack tick');
+        ok(sr.length && sr[0].dmg > 0, 'and the row carries its damage');
+      } finally {
+        Math.random = svRandom; S.bodyArmor = svArmor; S.equippedMainhand = svMain;
+        S.equippedOffhand = svOff; S.equippedMainhandTier = svMainT; S.equippedOffhandTier = svOffT;
+        S.physique = svPhys; S.uniqueItems = svUniq; S.playerHp = svHp;
+      }
+
+      // The rime engine's own Shatter (the Lv60 perk) already logged under the same name, so the two now
+      // read consistently in the feed. This asserts the name the class def actually uses.
+      var fwPass = FF.CLASS_DEFS_BY_ID.frostwarden.passives;
+      eq(fwPass.filter(function(p){ return p.level === 60; })[0].name, 'Shatter',
+         'Shatter is the name the player sees on the perk, so it is the name in the log');
+    } finally {
+      S.activity = svAct; S.activePotion = svPot; S.potionCharges = svCh; S.inventory = svInv; S.xp = svXp;
+      FF._clReset();
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
