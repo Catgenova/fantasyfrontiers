@@ -18727,7 +18727,11 @@
     // Render the real panels with a maxed fixture and scan for bare digit runs. Digits inside HTML
     // attributes (ids, data-*, styles, colours) are stripped first -- only VISIBLE text is judged.
     function visibleText(html){
-      return String(html).replace(/<[^>]*>/g, '');   // tags out, marker in
+      // Tags out, marker in. NUMERIC ENTITIES have to go too: '&#10005;' is the multiplication sign,
+      // and stripping only tags left its digits behind, which this scanner then read as an unformatted
+      // 10005 in the Character tab. A false positive costs as much as a miss: it teaches you to ignore
+      // the guard, which has already failed a build on correct code once (see CLAUDE.md).
+      return String(html).replace(/<[^>]*>/g, '').replace(/&#x?[0-9a-fA-F]+;/g, ' ');
     }
     function bareBigRuns(html){
       var txt = visibleText(html);
@@ -18790,7 +18794,10 @@
   suite('ticket-0152: no unformatted large numbers ANYWHERE a renderer prints', function(){
     var S = FF._state;
     function bareBigRuns(html){
-      var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
+      // Numeric entities out as well as tags: '&#10005;' is the multiplication sign, and its digits
+      // otherwise read as an unformatted 10005 (the Character tab's Overwrite button).
+      var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ')
+                            .replace(/&#x?[0-9a-fA-F]+;/g, ' ');
       var out = [], m, re = /(^|[^\d,.])(\d{5,})/g;
       while((m = re.exec(txt))){ out.push(m[2]); if(out.length > 3) break; }
       return out;
@@ -18812,12 +18819,25 @@
       // biggest family of offenders and only a fat bag exposes them.
       S.inventory = {};
       Object.keys(FF.ALL_SELLABLE).forEach(function(k){ S.inventory[k] = 1234567; });
-      var scanned = 0, bad = [];
+      var scanned = 0, bad = [], junk = [];
+      // ticket-0161: the sweep above checks for the ABSENCE of a bad shape, which is why it happily passed
+      // a card reading "Owned: NaN". The v0.0.86.41 comma sweep wrapped fifteen forge cards in fmt() whose
+      // value was already an ownedSpan (an HTML string that formats its own number), and Math.floor on a
+      // string is NaN, so every equipment forge card read "Owned: NaN" for thirteen versions. A shape guard
+      // needs a value guard beside it: no renderer may print a non-number where a number belongs.
+      function junkNumbers(html){
+        var txt = String(html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
+        var out = [], m, re = /\b(NaN|undefined|Infinity|-Infinity)\b/g;
+        while((m = re.exec(txt))){ out.push(m[1]); if(out.length > 3) break; }
+        return out;
+      }
       function check(name, html){
         if(html == null) return;
         scanned++;
         var runs = bareBigRuns(html);
         if(runs.length) bad.push(name + ': ' + runs.join(','));
+        var j = junkNumbers(html);
+        if(j.length) junk.push(name + ': ' + j.join(','));
       }
       Object.keys(FF).forEach(function(k){
         if(typeof FF[k] !== 'function' || FF[k].length > 0) return;
@@ -18838,6 +18858,7 @@
         });
       });
       eq(bad.join(' || '), '', 'no renderer prints a bare 5+ digit run (offenders listed)');
+      eq(junk.join(' || '), '', 'no renderer prints NaN, undefined or Infinity (offenders listed)');
       // VACUITY GUARDS. Swallowing throws is how this suite stays runnable across renderers with varied
       // state needs, but it is also how it could silently scan nothing at all: pin a floor on the count,
       // and prove the fixture really pushes figures into the grouped range.

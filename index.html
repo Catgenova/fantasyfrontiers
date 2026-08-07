@@ -22083,7 +22083,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       var relicOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'relic_t'+recipe.tierIndex+'_'+r; }));
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+fmt(relicOwnedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+relicOwnedTotal+'</div></div></div>';
       html += '<div class="item-stats">'+xpStat('archaeology', recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>Normal: +'+Math.round(relicPreview*100)+'% dmg/armor</span></div>';
       html += '<div class="chance-line">Output: <b>1x Relic</b> at <b>'+successPct+'%</b> success (else a Broken Relic) &nbsp;|&nbsp; Rare <b>'+(chances.rare*100).toFixed(2)+'%</b>, Supreme <b>'+(chances.supreme*100).toFixed(2)+'%</b>, Fantastic <b>'+(chances.fantastic*100).toFixed(2)+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
@@ -22123,7 +22123,7 @@
       html += '<div class="empty-note">No logs owned. Gather some in Forestry first.</div>';
     } else {
       var selLog = GATHERING_SKILLS.forestry.items[selectedShaftLogTier];
-      html += '<div class="inputs-line">Log: '+tierStepper('shaft','',ownedLogTiers,selectedShaftLogTier,selLog.name+' (owned '+state.inventory[selLog.id]+')',false)+'</div>';
+      html += '<div class="inputs-line">Log: '+tierStepper('shaft','',ownedLogTiers,selectedShaftLogTier,selLog.name+' (owned '+fmt(state.inventory[selLog.id]||0)+')',false)+'</div>';
       var expectedShafts = shaftOutputFor(selectedShaftLogTier);
       html += '<div class="item-stats">'+xpStat('fletching', expectedShafts*2*1.5, 'craft', selectedShaftLogTier)+'</div>';
       html += '<div class="chance-line">Output: <b>'+expectedShafts+'x Shaft</b> at <b>'+shaftPct+'%</b> success (base 70%, Fletching Jig adds more)</div>';
@@ -22199,7 +22199,7 @@
     var toolOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
     var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
     var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+fmt(toolOwnedTotal)+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(toolBenefitLabel(tt))+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     var statLine = (data.successBonus != null)
@@ -22266,7 +22266,7 @@
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var html = '';
     html += renderSkillProgressBar('armorsmithing');
-    html += '<div class="physique-bonus">Total Armor Defense: <b>'+(Math.round(totalDefense*100)/100)+'</b></div>';
+    html += '<div class="physique-bonus">Total Armor Defense: <b>'+fmtDec(totalDefense, 2)+'</b></div>';
 
     html += '<h3 style="margin-top:14px">Forge Chain Mail &amp; Plate Armor</h3>';
     html += '<div class="card-grid">';
@@ -22289,7 +22289,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var armorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(armorOwnedTotal)+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Tier: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare'+(mat.rarityIds.length>2?'/supreme/fantastic':'')+' odds)</div>';
@@ -22431,7 +22431,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var leatherOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(leatherOwnedTotal)+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Wildlife: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22464,7 +22464,7 @@
     var beltFillId = beltIsActive ? (beltActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+beltActiveSlot.index) : '';
     var beltOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+fmt(beltOwnedTotal)+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+fmt(beltData.defense)+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
@@ -22499,7 +22499,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stqOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stquiver_'+q.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+fmt(stqOwnedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+stqOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('quiver',q.id,tierRange(maxUnlocked),sel,WILDLIFE_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(q.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22547,7 +22547,7 @@
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
         var tailorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+fmt(tailorOwnedTotal)+'</div></div></div>';
+        html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Fiber: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22599,7 +22599,7 @@
       var ringFantasticMult = rt.kind ? WAND_RARITY_DMG_MULT.fantastic : getRarity('fantastic').mult;
       // Match every other forge card: requirement + live owned count, not just the bonus.
       var ringOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'ring_'+rt.id+'_t'+sel+'_'+r; }));
-      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+fmt(ringOwned)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+ringOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22634,7 +22634,7 @@
       var normPct = isWard ? Math.round(amData.bonus*100) : 0;
       html += '<div class="item-card'+(amIsActive?' active-item':'')+'">';
       var amOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
-      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+fmt(amOwned)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+amOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+fmt(amData.defense)+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -22675,7 +22675,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stwOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(stwOwnedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -23071,7 +23071,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var stsOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stshield_'+s.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+fmt(stsOwnedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -23152,7 +23152,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stward_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ward',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(w.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>reflect '+Math.round(data.reflect*100)+'%</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the full-reflect rarity odds)</div>';
@@ -23195,7 +23195,7 @@
     var html = '<h3 style="margin-top:14px">Forge Scepter</h3>';
     html += '<div class="section-intro">A <b>Scepter</b> is a one-handed weapon that deals <b>half blunt, half '+elementLabel('light')+'</b> damage. The blunt half is weighed against enemy armour, the '+elementLabel('light')+' half against their element (+20% vs enemies weak to Light). Rarity is special: rare/supreme/fantastic scepters deal <b>2x / 4x / 8x</b> damage. Scepters share the <b>Scepters</b> weapon proficiency, trained by scepter damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
@@ -23232,7 +23232,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
@@ -23274,7 +23274,7 @@
     var html = '<h3 style="margin-top:14px">Carve Staff</h3>';
     html += '<div class="section-intro">A <b>Staff</b> is a two-handed weapon that deals no damage and never attacks. Instead it grants <b>Block</b> ('+Math.round(STAFF_BLOCK_MIN*100)+'% at Tier 1 up to '+Math.round(STAFF_BLOCK_MAX*100)+'% at the top tier) and <b>'+STAFF_BASE_FAMILIAR_SLOTS+' extra active-familiar slots</b>, so combat runs on your summons. Rarity grants even more slots: rare/supreme/fantastic = '+STAFF_RARITY_FAMILIAR_SLOTS.rare+'/'+STAFF_RARITY_FAMILIAR_SLOTS.supreme+'/'+STAFF_RARITY_FAMILIAR_SLOTS.fantastic+' slots. Staves share the <b>Staves</b> proficiency (familiar efficiency, +1% at Lv 1 up to +100% at Lv 100, trained by familiar damage).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">5s Downbeat swing &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+fmt(ownedTotal)+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">5s Downbeat swing &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>block '+Math.round(data.block*100)+'%</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the rarity odds. Higher rarity = more familiar slots)</div>';
@@ -30035,7 +30035,7 @@
     if(mins < 60) return mins + 'm';
     var h = Math.floor(mins/60), m = mins%60;
     if(h < 24) return h + 'h' + (m ? ' ' + m + 'm' : '');
-    return Math.floor(h/24) + 'd' + ((h%24) ? ' ' + (h%24) + 'h' : '');
+    return fmt(Math.floor(h/24)) + 'd' + ((h%24) ? ' ' + (h%24) + 'h' : '');
   }
   // Every lit cottage on BOTH estates draws from the same inventory, so this has to span scopes -- a
   // personal peon and a guild peon set to the same candle are competing for one stack, and a per-estate
@@ -40920,7 +40920,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.54';
+  var GAME_VERSION = '0.0.86.55';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -41050,7 +41050,11 @@
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
-      renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
+      renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,
+      // ticket-0161: every zero-arg tab renderer goes on the seam, so the renderer sweeps (bare big
+      // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
+      // here for 13 versions because these were the tabs the sweep could not reach.
+      renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, renderWorkshopForge:renderWorkshopForge, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
