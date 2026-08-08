@@ -5176,10 +5176,10 @@
   // ===== Wands (Arcanism one-handed weapons) =====
   // A Wand is a 1h mainhand crafted by Arcanism that deals ELEMENTAL damage of its element (gaining the
   // +20% elemental advantage against enemies weak to it). Instead of the usual rarity stat multiplier,
-  // rarity scales its damage 2x/4x/8x (rare/supreme/fantastic). Reuses the stackable-weapon plumbing
+  // rarity scales its damage 1.2x/1.5x/2x (rare/supreme/fantastic). Reuses the stackable-weapon plumbing
   // (item ids 'stweapon_<id>_...', craftKind 'stackweapon') but shares one 'wands' proficiency.
   var WAND_ELEMENTS = ['fire','water','earth','light','dark'];
-  var WAND_RARITY_DMG_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
+  var WAND_RARITY_DMG_MULT = { normal:1, rare:1.2, supreme:1.5, fantastic:2 };
   var WAND_TYPES = WAND_ELEMENTS.map(function(el){
     return { id:'wand'+el.charAt(0).toUpperCase()+el.slice(1), name: ELEMENT_META[el].label+' Wand', icon: elementIcon(el),
              damageType:'blunt', attackTypes:{blunt:1}, hand:'1h', weaponClass:'Wand', skillId:'arcanism',
@@ -5202,7 +5202,7 @@
   // ===== Scepter (Runesmithing one-handed hybrid weapon) =====
   // A Scepter is a 1h weapon crafted by Runesmithing (named after its metal). Half of its damage is
   // blunt (physical, mitigated by armour) and half is light (elemental, +20% vs enemies weak to light).
-  // Rarity scales its damage 2x/4x/8x, and it uses the 'scepters' weapon proficiency (+1% -> +100%).
+  // Rarity scales its damage 1.2x/1.5x/2x, and it uses the 'scepters' weapon proficiency (+1% -> +100%).
   var SCEPTER_TYPE = { id:'scepter', name:'Scepter', icon:svgIcon('starburst','#c9a227'), damageType:'blunt', attackTypes:{blunt:1},
     hand:'1h', weaponClass:'Scepter', skillId:'runesmithing', matPrefix:'metallurgy', tierCount:TIER_COUNT, attackSpeed:4, scepter:true, element:'light' };
   function isScepter(typeId){ return typeId==='scepter'; }
@@ -5378,7 +5378,7 @@
       var obj = { tier:i+1, name:(isQuiver ? WILDLIFE_NAMES[i] : METAL_TIER_NAMES[i])+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i),
         inputs: isQuiver ? tierInput('tanning',3)(i) : tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
       if(o.type==='shield') obj.defense = tierStat(2,i);
-      else { obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i); obj.ammoPreserve = tierCappedBonus(0.05,0.0075,0.20,i); } // Quiver: arrow dmg + a chance a shot doesn't spend its arrow (5% t0 -> 20% t20, x2/4/8 by rarity)
+      else { obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i); obj.ammoPreserve = tierCappedBonus(0.05,0.0075,0.20,i); } // Quiver: arrow dmg + a chance a shot doesn't spend its arrow (5% t0 -> 20% t20, x1.2/1.5/2 by rarity)
       list.push(obj);
     }
     OFFHAND_TYPE_RECIPES[o.id] = list;
@@ -5561,11 +5561,15 @@
   }
 
 
+  // v0.0.96.3 owner retune: the equipment rarity multiplier dropped from 2x/4x/8x to
+  // 1.2x/1.5x/2x. Every consumer of this table (gear stats, sell prices, gear value,
+  // sacrifice Faith) and the two mirror tables (WAND_RARITY_DMG_MULT, LEGENDARY_RARITY_MULT)
+  // moved together -- if one ever changes alone, rarity stops meaning one thing.
   var RARITY_TIERS = [
     {id:'normal', label:'', mult:1},
-    {id:'rare', label:'Rare ', mult:2},
-    {id:'supreme', label:'Supreme ', mult:4},
-    {id:'fantastic', label:'Fantastic ', mult:8}
+    {id:'rare', label:'Rare ', mult:1.2},
+    {id:'supreme', label:'Supreme ', mult:1.5},
+    {id:'fantastic', label:'Fantastic ', mult:2}
   ];
   var RARITY_BY_ID = {}; RARITY_TIERS.forEach(function(r){ RARITY_BY_ID[r.id] = r; });
   function getRarity(id){ return RARITY_BY_ID[id] || RARITY_TIERS[0]; } // hot path: damage formula + every card render
@@ -5580,10 +5584,10 @@
     });
     return out;
   }
-  // Tools use a much more modest rarity curve than other equipment -- a Rare/Supreme/
-  // Fantastic tool multiplies its speed/success bonus by 1.25x/1.5x/2.0x, not the usual
-  // 2x/4x/8x every other piece of equipment gets.
-  var TOOL_RARITY_MULT = { normal:1, rare:1.25, supreme:1.5, fantastic:2.0 };
+  // Tools multiply their speed/success bonus by 1.2x/1.5x/2x -- since the v0.0.96.3 retune
+  // this is the SAME curve as every other piece of equipment (tools were always modest;
+  // the rest of the gear came down to meet them, and rare eased 1.25 -> 1.2 to match).
+  var TOOL_RARITY_MULT = { normal:1, rare:1.2, supreme:1.5, fantastic:2.0 };
   function applyToolRarity(item, rarityId){
     if(!item || !rarityId || rarityId==='normal') return item;
     var r = getRarity(rarityId);
@@ -5631,7 +5635,7 @@
   // and firing with no usable arrows shoots "unfletched" at a fraction of the damage. ----
   var UNFLETCHED_DMG_MULT = 0.25;   // a bow with no arrows deals 25% damage
   var ARROW_MAX_INDEX = 19;         // fletching_arrow_t0 .. t19 (20 tiers; Copper is skipped)
-  // The Quiver's chance a shot doesn't consume its arrow, rarity-scaled (x2/4/8), capped at 95%.
+  // The Quiver's chance a shot doesn't consume its arrow, rarity-scaled (x1.2/1.5/2), capped at 95%.
   function quiverAmmoPreserve(st){ st = st || state; if(st.equippedOffhand !== 'quiver') return 0; var oi = getEquippedOffhandItem(st); return oi ? Math.min(0.95, oi.ammoPreserve || 0) : 0; }
   // The highest usable arrow tier for the equipped bow (arrows fancier than the bow can't be nocked).
   function bowArrowTierCap(st){ st = st || state; return Math.min(ARROW_MAX_INDEX, Math.max(0, (st.equippedMainhandTier || 1) - 1)); }
@@ -6114,9 +6118,9 @@
   });
   // ===== Mastercrafting =====
   // A dungeon Blueprint is forged into a LEGENDARY item. D1 (Cave) Rings: one of five signets, each with a
-  // unique effect only D1 legendary rings grant. Rarity scales the effect 2x/4x/8x (rare/supreme/fantastic).
+  // unique effect only D1 legendary rings grant. Rarity scales the effect 1.2x/1.5x/2x (rare/supreme/fantastic).
   // Only one legendary of each effect may be worn; they share the 5 ring slots with normal rings.
-  var LEGENDARY_RARITY_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
+  var LEGENDARY_RARITY_MULT = { normal:1, rare:1.2, supreme:1.5, fantastic:2 };
   var LEG_RING_RARITIES = ['normal','rare','supreme','fantastic'];
   var D1_LEG_RING_DEFS = [
     { key:'block',       name:'Signet of the Carapace', short:'Carapace', stat:'Block Chance',                 base:0.05, icon:svgIcon('shield','#c9a227') },
@@ -6146,7 +6150,7 @@
     });
   });
   // ---- D1 (Cave) Cloaks: one of three Shrouds, worn in the Back body-armor slot (displacing a normal
-  // cloak). Same 2x/4x/8x rarity scaling as the Signets; a Shroud's effect is inherent -- it grants no
+  // cloak). Same 1.2x/1.5x/2x rarity scaling as the Signets; a Shroud's effect is inherent -- it grants no
   // base defense (like a legendary Signet grants no base ring stat).
   var D1_LEG_CLOAK_DEFS = [
     { key:'accuracy',   name:'Shroud of Many Eyes',  short:'Many Eyes', stat:'Accuracy',        base:0.50, icon:svgIcon('target','#c9a227') },
@@ -6165,7 +6169,7 @@
     });
   });
   // ---- D1 (Cave) Amulets: one of three Pendants, worn in the single Amulet jewelry slot (displacing a
-  // normal/unique amulet). Same 2x/4x/8x rarity scaling as the Signets; a Pendant grants no base amulet
+  // normal/unique amulet). Same 1.2x/1.5x/2x rarity scaling as the Signets; a Pendant grants no base amulet
   // stat -- its effect is inherent. Universal effects every class benefits from (no class gating).
   var D1_LEG_AMULET_DEFS = [
     { key:'maxhealth',  name:'Pendant of the Broodmother', short:'Broodmother', stat:'Max Health',    base:0.10, icon:svgIcon('heart','#c9a227') },
@@ -6184,7 +6188,7 @@
     });
   });
   // ---- D2 (Tunnel) universal accessories: Signets / Shrouds / Pendants (Batch K) ----
-  // Same 2x/4x/8x rarity scaling and slots as the D1 accessories, but all-new universal stats (distinct from
+  // Same 1.2x/1.5x/2x rarity scaling and slots as the D1 accessories, but all-new universal stats (distinct from
   // D1's block/dodge/ignore-armor/ignore-resist/familiar-haste/accuracy/crit-chance/crit-damage/max-health/
   // treasure/cheat-death). Effect keys are unique, so their defs MERGE into the D1 lookup maps and their items
   // into the D1 item tables -- equip, display, and legendaryRingBonus/CloakBonus/AmuletBonus all work unchanged.
@@ -6566,7 +6570,7 @@
       countRare:function(){ return legGearCountRare(group); }, consumeRare:function(c){ legGearConsumeRare(group, c); } };
   }
   // Recipes keyed by "<layer>_<slot>". Each forges one Blueprint into a random Legendary of that slot,
-  // rarity rolled 2x/4x/8x. Ring vs cloak differ only in the material bill + which item family they yield.
+  // rarity rolled 1.2x/1.5x/2x. Ring vs cloak differ only in the material bill + which item family they yield.
   var MASTERCRAFT_RECIPES = {
     d1_ring: { layer:'d1', slot:'ring',
       inputs: { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 },
@@ -7248,7 +7252,7 @@
   // Each class has a defined 4-piece set (3 for bare-head classes) in the armor materials it actually
   // wears. Wearing 2 pieces grants the class's 2-piece bonus; wearing the full set grants the capstone
   // (3-piece for bare-head classes, 4-piece otherwise). Materials: tailoring=Cloth, leather, chain, plate.
-  // Set pieces are t21 (one tier above the t20 cap) unique armor scaled 2x/4x/8x by rarity -- best-in-slot
+  // Set pieces are t21 (one tier above the t20 cap) unique armor scaled 1.2x/1.5x/2x by rarity -- best-in-slot
   // AND enchantable. Effects are wired per class behind setBonusActive(cls, 2|full).
   var D1_SET_DEFS = {
     summoner:      { cls:'summoner',      pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
@@ -13014,7 +13018,7 @@
       for(var i=0;i<w.tierCount;i++){
         var data = getStackableWeaponTierData(w.id, i);
         var id = 'stweapon_'+w.id+'_t'+i+'_'+rarityId;
-        var dmgMult = (w.wand || w.scepter) ? WAND_RARITY_DMG_MULT[rarityId] : r.mult; // wands & scepters: rarity scales damage 2x/4x/8x
+        var dmgMult = (w.wand || w.scepter) ? WAND_RARITY_DMG_MULT[rarityId] : r.mult; // wands & scepters: rarity scales damage 1.2x/1.5x/2x
         STACKABLE_WEAPON_ITEMS[id] = {
           id: id,
           name: r.label + data.name,
@@ -13148,7 +13152,7 @@
       levelReq: TIER_LEVELS[tierIndex],
       xp: craftXp(tierIndex),
       dmgBonus: tierCappedBonus(0.05, 0.014, 0.35, tierIndex),   // +5% arrow dmg t0 -> +35%
-      ammoPreserve: tierCappedBonus(0.05, 0.0075, 0.20, tierIndex), // 5% keep-arrow t0 -> 20% (x2/4/8 by rarity)
+      ammoPreserve: tierCappedBonus(0.05, 0.0075, 0.20, tierIndex), // 5% keep-arrow t0 -> 20% (x1.2/1.5/2 by rarity)
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
     };
@@ -13479,7 +13483,7 @@
             tierIndex: i,
             rarity: rarityId,
             // Cloth (Tailoring) is the exception: rarity does NOT scale its base armor -- it
-            // instead pumps the inherent familiar-efficiency bonus 2x/4x/8x (see
+            // instead pumps the inherent familiar-efficiency bonus 1.2x/1.5x/2x (see
             // getClothArmorSpellBonus). Every other material scales defense by rarity as usual.
             defense: Math.round(data.defense * (material==='tailoring' ? 1 : r.mult))
           };
@@ -13489,7 +13493,7 @@
   });
   Object.assign(ALL_SELLABLE, BODY_ARMOR_ITEMS);
   // ===== D1 Set-piece armor: a t21 tier (one above the t20 craftable cap), used ONLY by Set pieces.
-  // Best-in-slot base defense scaled 2x/4x/8x by rarity (cloth keeps flat defense like normal cloth, its
+  // Best-in-slot base defense scaled 1.2x/1.5x/2x by rarity (cloth keeps flat defense like normal cloth, its
   // rarity instead pumping the familiar-efficiency bonus). Not craftable in the normal ladder -- these
   // items exist purely so an equipped Set piece resolves its stats through the usual armor plumbing.
   var SET_TIER_INDEX = TIER_COUNT;          // 21 -- D1 set pieces
@@ -13911,8 +13915,8 @@
   // weapon's mix is that type. Kind rings are a newer family: five Elemental rings each add
   // +1-20% damage of one element (folded into Elemental Attunement), a Precision ring adds
   // +5-30% Accuracy, and a Warding ring adds +1-20% flat damage resistance. Like wands/scepters,
-  // kind rings scale their bonus 2x/4x/8x with rarity (WAND_RARITY_DMG_MULT) rather than the
-  // usual gentle rarity mult, so a Fantastic kind ring is a genuine chase item.
+  // kind rings scale their bonus 1.2x/1.5x/2x with rarity (WAND_RARITY_DMG_MULT). Since the
+  // v0.0.96.3 retune that is the same curve as RARITY_TIERS; kept a separate table so the knobs stay independent.
   var RING_TYPES = [
     {id:'blunt',  name:'Ring of Blunt',  icon:svgIcon('ring','#8a8a8a'), damageType:'blunt'},
     {id:'slash',  name:'Ring of Slash',  icon:svgIcon('ring','#c9a227'), damageType:'slashing'},
@@ -13924,7 +13928,7 @@
     {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.05, max:0.50},
     {id:'precision', name:'Ring of Precision', icon:svgIcon('ring','#d8d8d8'), kind:'accuracy',   min:0.05, max:0.30},
     {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20, retired:true}, // no longer craftable -- the Warding role moved to the Amulet of Warding; existing rings still work
-    {id:'communion', name:'Ring of Communion', icon:svgIcon('ring','#7a5aa8'), kind:'familiar',   min:0.05, max:0.50} // +5% -> +50% familiar spell potency (Tier 0 -> Tier 20), 2x/4x/8x with rarity
+    {id:'communion', name:'Ring of Communion', icon:svgIcon('ring','#7a5aa8'), kind:'familiar',   min:0.05, max:0.50} // +5% -> +50% familiar spell potency (Tier 0 -> Tier 20), 1.2x/1.5x/2x with rarity
   ];
   var RING_TYPE_MAP = {};
   RING_TYPES.forEach(function(rt){ RING_TYPE_MAP[rt.id] = rt; });
@@ -13948,7 +13952,7 @@
       out.bonus = rt.min + (rt.max - rt.min) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
     } else {
       // Physical rings (Blunt/Slash/Pierce) now match the elemental/familiar curve: +5% at t0 -> +50% at
-      // t20 (Normal), then 2x/4x/8x with rarity. Applied to the fraction of your weapon that is that type.
+      // t20 (Normal), then 1.2x/1.5x/2x with rarity. Applied to the fraction of your weapon that is that type.
       out.dmgBonus = 0.05 + (0.50 - 0.05) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
     }
     return out;
@@ -13965,11 +13969,11 @@
           typeId: rt.id, tierIndex: i, rarity: rarityId, kind: rt.kind || 'physical'
         };
         if(rt.kind){
-          item.bonus = data.bonus * WAND_RARITY_DMG_MULT[rarityId]; // 2x/4x/8x with rarity
+          item.bonus = data.bonus * WAND_RARITY_DMG_MULT[rarityId]; // 1.2x/1.5x/2x with rarity
           if(rt.element) item.element = rt.element;
         } else {
           item.damageType = rt.damageType;
-          item.dmgBonus = data.dmgBonus * WAND_RARITY_DMG_MULT[rarityId]; // 2x/4x/8x with rarity, like the elemental rings
+          item.dmgBonus = data.dmgBonus * WAND_RARITY_DMG_MULT[rarityId]; // 1.2x/1.5x/2x with rarity, like the elemental rings
         }
         RING_ITEMS[id] = item;
       }
@@ -14021,7 +14025,7 @@
           id: id, name: r.label + data.name, icon: at.icon, sell: tierSell(15,i)*r.mult,
           typeId: at.id, tierIndex: i, rarity: rarityId, kind: at.kind
         };
-        // Warding amulets scale resistance 2x/4x/8x with rarity (like the old ring); plain scales defense.
+        // Warding amulets scale resistance 1.2x/1.5x/2x with rarity (like the old ring); plain scales defense.
         if(at.kind==='resistance') item.bonus = data.bonus * WAND_RARITY_DMG_MULT[rarityId];
         else item.defense = Math.round(data.defense * r.mult);
         AMULET_ITEMS[id] = item;
@@ -15470,7 +15474,7 @@
   // ---- Relics: the first equipment type that lives in inventory until equipped ----
   // A relic's bonus is a straight percentage added to both damage dealt and armor,
   // scaling 2% per tier (Normal), multiplied by its rarity roll. Uses the same shared
-  // RARITY_TIERS multipliers (1x/2x/4x/8x) as every other equipment type.
+  // RARITY_TIERS multipliers (1x/1.2x/1.5x/2x) as every other equipment type.
   var RELIC_RARITY_IDS = ['normal','rare','supreme','fantastic'];
   var RELIC_ITEMS = {};
   RELIC_RARITY_IDS.forEach(function(rarityId){
@@ -17490,7 +17494,7 @@
     improveConfirm = null;
     if(uniqueIsEquipped(uid)) unequipUnique(uid);
     var tier = u.tier+1, jb = (u.kind==='ring'||u.kind==='amulet');
-    // Base gear value (tier curve + jewelry + rarity 2x/4x/8x), then the unique's enchant bonus on top.
+    // Base gear value (tier curve + jewelry + the 2x/4x/8x sacrifice rarity mult), then the unique's enchant bonus on top.
     var restore = Math.round(sacrificeGearFaith(tier, jb, u.rarity) * (1 + 0.25*((u.enchants||[]).length)));
     restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));
     removeUnique(uid); if(improveSel===uid){ improveSel = null; } improvePending = null;
@@ -18111,9 +18115,12 @@
   }
 
   // Faith restored by sacrificing one piece of gear (non-relic): a tier curve, +50% for jewelry, and a
-  // rarity multiplier so a Rare/Supreme/Fantastic offering restores 2x/4x/8x Faith (getRarity().mult).
+  // rarity multiplier so a Rare/Supreme/Fantastic offering restores 2x/4x/8x Faith. Deliberately its OWN
+  // table since the v0.0.96.3 stat retune: sacrifice (like vendor sell, SELL_RARITY_MULT) prices the
+  // item's SCARCITY, and the rarity roll odds did not change -- only the stat value came down.
+  var SACRIFICE_RARITY_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
   function sacrificeGearFaith(tier, jewelryBoost, rarity){
-    return Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1) * getRarity(rarity||'normal').mult);
+    return Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1) * (SACRIFICE_RARITY_MULT[rarity||'normal'] || 1));
   }
   function sacrificeItem(category, id, silent){
     if((STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 || category==='relicgear') && state.lockedItems[id]){
@@ -21657,7 +21664,7 @@
     "<b>Cloth armor</b> makes your familiar's spells hit harder, and Catalyst potions from Alchemy stack on top. A well-dressed summoner is a dangerous one.",
     "<b>Physiques</b> train themselves from what you already do: heavy labor builds Body Strength (melee damage), fighting builds Agility (dodge). The Skills tab shows what trains each.",
     "<b>Gathering</b> succeeds 70% of the time (Fishing 50%). Forge that skill's gather Tool via Blacksmithing to work faster; the odds are fixed.",
-    "<b>Wands</b> deal elemental damage and <b>Wards</b> reflect it. Rarity multiplies a wand's damage 2x/4x/8x and gives a ward a chance to reflect a full hit.",
+    "<b>Wands</b> deal elemental damage and <b>Wards</b> reflect it. Rarity multiplies a wand's damage 1.2x/1.5x/2x and gives a ward a chance to reflect a full hit.",
     "Place a <b>Workshop</b> on your Estate to speed a skill and add double-output. Put a Cottage beside it and idle Peons will work that skill for you.",
     "<b>Elemental Attunements</b> grow as you deal or take that element's damage, raising both the damage you deal and your resistance to it.",
     "Below 25% HP, <b>Tenacity</b> turns desperation into power: deal more and take less. Some classes fight hurt on purpose.",
@@ -21749,7 +21756,7 @@
     "<b>Offline</b> progress keeps working your current task; return to a 'While You Were Away' summary.",
     "The <b>Skills</b> tab lists every skill with its level and progress. Tap the '?' for what trains it.",
     "A <b>Staff's</b> rarity grants even more familiar slots. A Fantastic Staff fields the biggest menagerie.",
-    "<b>Wand</b> rarity multiplies its damage 2x, 4x, or 8x instead of scaling a stat. Chase the Fantastic roll.",
+    "<b>Wand</b> rarity multiplies its damage 1.2x, 1.5x, or 2x instead of scaling a stat. Chase the Fantastic roll.",
     "Run four buffs at once: <b>Feasts</b> (damage), <b>Teas</b> (XP), <b>Tomes</b> (work speed), and <b>Scrolls</b> (defense).",
     "<b>Firebombs</b> blast a fresh foe for a share of your recent hit; <b>Elixirs</b> pump your crit damage; <b>Catalysts</b> supercharge familiars.",
     "Rarity ranks go Normal, Rare, Supreme, Fantastic. Each a stronger stat roll on the same item.",
@@ -22046,14 +22053,14 @@
         var setClasses = {}; recipe.outcomes.forEach(function(o){ setClasses[o.cls] = true; });
         var setClsNames = Object.keys(setClasses).map(function(c){ return (CLASS_DEFS_BY_ID[c]||{}).name || c; }).sort();
         var matLabel = (BODY_ARMOR_MATERIALS[recipe.material] && BODY_ARMOR_MATERIALS[recipe.material].label) || (recipe.material==='tailoring' ? 'Cloth' : recipe.material.charAt(0).toUpperCase()+recipe.material.slice(1));
-        html += '<div class="chance-line" style="margin-top:6px">Yields one random <b>'+escapeHtml(matLabel)+'</b> Set piece. Tier-21 best-in-slot armor scaled <b>2x / 4x / 8x</b> by rarity, part of a class set (2-piece &amp; full-set bonuses). One of ' + recipe.outcomes.length + ' pieces across these class sets:</div>';
+        html += '<div class="chance-line" style="margin-top:6px">Yields one random <b>'+escapeHtml(matLabel)+'</b> Set piece. Tier-21 best-in-slot armor scaled <b>1.2x / 1.5x / 2x</b> by rarity, part of a class set (2-piece &amp; full-set bonuses). One of ' + recipe.outcomes.length + ' pieces across these class sets:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">' + setClsNames.map(function(n){ return '<span class="style-btn" style="cursor:default">' + escapeHtml(n) + '</span>'; }).join('') + '</div>';
         var haveRareA = recipe.countRare();
         html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (haveRareA >= recipe.rareCount ? 'ok' : 'bad') + '">' + recipe.rareCount + 'x ' + escapeHtml(recipe.rareLabel) + ' (' + haveRareA + ')</span></div>';
         var canCraftA = haveBp > 0 && hasInputs(recipe.inputs) && haveRareA >= recipe.rareCount;
         html += '<button class="action-btn" data-action="craftMastercraft" data-item="' + selBp.id + '" ' + (canCraftA ? '' : 'disabled') + '>Mastercraft</button>';
       } else {
-        html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
+        html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>1.2x / 1.5x / 2x</b> by the rarity it rolls:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">';
         recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(!d) return;
           if(recipe.gear){ html += '<span class="style-btn" style="cursor:default">' + legGearBaseIcon(d.base) + ' ' + escapeHtml(d.name) + ' <span class="style-type" style="text-transform:none">' + escapeHtml(((CLASS_DEFS_BY_ID[d.cls]||{}).name) || '') + '</span></span>'; }
@@ -23326,7 +23333,7 @@
     html += craftStatsLine('tailoring');
 
     html += '<h3 style="margin-top:14px">Forge Cloth Armor</h3>';
-    html += '<div class="section-intro">Cloth is the caster\'s armor: rarity doesn\'t raise its (light) defense the way it does for Chain/Plate/Leather. Instead, a piece\'s rarity multiplies its inherent familiar-efficiency bonus 2x/4x/8x -- each worn Cloth piece adds +5% summon spell potency at Normal, up to +40% at Fantastic. Defense still grows with tier.</div>';
+    html += '<div class="section-intro">Cloth is the caster\'s armor: rarity doesn\'t raise its (light) defense the way it does for Chain/Plate/Leather. Instead, a piece\'s rarity multiplies its inherent familiar-efficiency bonus 1.2x/1.5x/2x -- each worn Cloth piece adds +5% summon spell potency at Normal, up to +10% at Fantastic. Defense still grows with tier.</div>';
     html += '<div class="card-grid">';
     TAILORING_MATERIALS.forEach(function(material){
       var mat = BODY_ARMOR_MATERIALS[material];
@@ -23379,7 +23386,7 @@
     html += renderRecipeGrid('jewelrycrafting', CRAFTING_SKILLS.jewelrycrafting.recipes);
 
     html += '<h3>Forge Rings</h3>';
-    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) and Elemental Rings (Fire/Water/Earth/Light/Dark) add <b>+5% damage at Tier 0 rising to +50% at Tier 20</b>. Physical rings scaled by how much of your weapon\'s damage is that type, elemental rings applied to their element. A Precision Ring adds +5-30% Accuracy, and a Ring of Communion adds +5-50% familiar spell potency. Every ring scales its bonus <b>2x/4x/8x with rarity</b> (so a Fantastic Tier-20 ring is +400%). (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
+    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) and Elemental Rings (Fire/Water/Earth/Light/Dark) add <b>+5% damage at Tier 0 rising to +50% at Tier 20</b>. Physical rings scaled by how much of your weapon\'s damage is that type, elemental rings applied to their element. A Precision Ring adds +5-30% Accuracy, and a Ring of Communion adds +5-50% familiar spell potency. Every ring scales its bonus <b>1.2x/1.5x/2x with rarity</b> (so a Fantastic Tier-20 ring is +100%). (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
     html += '<div class="card-grid">';
     RING_TYPES.forEach(function(rt){
       if(rt.retired) return; // retired ring types (e.g. Warding) stay usable if owned but are no longer craftable
@@ -23416,7 +23423,7 @@
     html += '</div>';
 
     html += '<h3>Forge Amulets</h3>';
-    html += '<div class="section-intro">The plain <b>Amulet</b> adds flat Armor. The <b>Amulet of Warding</b> adds +1-20% flat damage resistance instead (scaling 2x/4x/8x with rarity, like the old Ring of Warding). Sacrificing an Amulet also restores extra Faith.</div>';
+    html += '<div class="section-intro">The plain <b>Amulet</b> adds flat Armor. The <b>Amulet of Warding</b> adds +1-20% flat damage resistance instead (scaling 1.2x/1.5x/2x with rarity, like the old Ring of Warding). Sacrificing an Amulet also restores extra Faith.</div>';
     html += '<div class="card-grid">';
     AMULET_TYPES.forEach(function(at){
       if(selectedAmuletTier[at.id] === undefined) selectedAmuletTier[at.id] = maxUnlocked;
@@ -23992,12 +23999,12 @@
     var current = (state.equippedMainhand && isScepter(state.equippedMainhand) && state.equippedMainhandTier>0)
       ? STACKABLE_WEAPON_ITEMS['stweapon_scepter_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
     var html = '<h3 style="margin-top:14px">Forge Scepter</h3>';
-    html += '<div class="section-intro">A <b>Scepter</b> is a one-handed weapon that deals <b>half blunt, half '+elementLabel('light')+'</b> damage. The blunt half is weighed against enemy armour, the '+elementLabel('light')+' half against their element (+20% vs enemies weak to Light). Rarity is special: rare/supreme/fantastic scepters deal <b>2x / 4x / 8x</b> damage. Scepters share the <b>Scepters</b> weapon proficiency, trained by scepter damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
+    html += '<div class="section-intro">A <b>Scepter</b> is a one-handed weapon that deals <b>half blunt, half '+elementLabel('light')+'</b> damage. The blunt half is weighed against enemy armour, the '+elementLabel('light')+' half against their element (+20% vs enemies weak to Light). Rarity is special: rare/supreme/fantastic scepters deal <b>1.2x / 1.5x / 2x</b> damage. Scepters share the <b>Scepters</b> weapon proficiency, trained by scepter damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
-    html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
+    html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the Rare/Supreme/Fantastic odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-scepter-'+w.id)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
     if(isActive){
@@ -24012,7 +24019,7 @@
   function renderArcanismTab(){
     var lvl = getLevel(state.xp.arcanism);
     var html = renderSkillProgressBar('arcanism');
-    html += '<div class="section-intro" style="margin-top:10px">Arcanism crafts <b>Wands</b>. One-handed weapons that deal <b>elemental damage</b> of their element (gaining +20% against enemies weak to it). Rarity is special: rare/supreme/fantastic wands deal <b>2x / 4x / 8x</b> damage. Wands share the <b>Wands</b> weapon proficiency, trained by wand damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
+    html += '<div class="section-intro" style="margin-top:10px">Arcanism crafts <b>Wands</b>. One-handed weapons that deal <b>elemental damage</b> of their element (gaining +20% against enemies weak to it). Rarity is special: rare/supreme/fantastic wands deal <b>1.2x / 1.5x / 2x</b> damage. Wands share the <b>Wands</b> weapon proficiency, trained by wand damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
     html += '<h3 style="margin-top:14px">Craft Wands</h3>';
     html += '<div class="card-grid">';
     WAND_TYPES.forEach(function(w){
@@ -24034,7 +24041,7 @@
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
-      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
+      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the Rare/Supreme/Fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
@@ -29774,7 +29781,7 @@
     var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar, and each Class has one too. Completing an action for that skill carries a small (1/3000) chance to permanently summon it (a Class familiar rolls on kills while that class is active). Expand a summoned familiar to see its level and spells, then activate it as a Companion to bring it into combat: each casts one spell every '+_castSec+' seconds, cycling through its list. You have <b>'+_slots+'</b> companion slot'+(_slots===1?'':'s')+' (a Staff adds more). Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
     html += renderActiveCompanionsSection();
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
-    html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency. Each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 2x/4x/8x (Rare +10%, Supreme +20%, Fantastic +40%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
+    html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency. Each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 1.2x/1.5x/2x (Rare +6%, Supreme +7.5%, Fantastic +10%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
     html += '<input type="text" id="menagerieSearchInput" class="inv-search" style="margin-top:10px;" placeholder="Search familiars by name, skill, or spell…" value="'+menagerieSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
     html += '<div id="menagerieList">'+renderMenagerieList()+'</div>';
     return html;
@@ -44252,7 +44259,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.2';
+  var GAME_VERSION = '0.0.96.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44440,6 +44447,7 @@
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
+      RARITY_TIERS:RARITY_TIERS, TOOL_RARITY_MULT:TOOL_RARITY_MULT, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, SACRIFICE_RARITY_MULT:SACRIFICE_RARITY_MULT, SELL_RARITY_MULT:SELL_RARITY_MULT,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk, estateJobFieldsFrom:estateJobFieldsFrom, estateQueueClaimOutcome:estateQueueClaimOutcome,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, combatEffectsArmed:combatEffectsArmed, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,

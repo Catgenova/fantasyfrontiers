@@ -980,6 +980,19 @@ again. Two consequences: (1) every melee ceiling was measured on a t19 weapon an
 ~94B/~85B is understated more than the melee classes'. Re-measure before comparing any new class against
 these numbers, and never hardcode a tier in BUILDS.
 
+**RARITY WARNING (v0.0.96.3, owner retune): every recorded ceiling above is STALE.** The equipment
+rarity multiplier dropped from 2x/4x/8x to **1.2x/1.5x/2x** across all four stat tables at once
+(`RARITY_TIERS.mult`, `WAND_RARITY_DMG_MULT`, `LEGENDARY_RARITY_MULT`, and `TOOL_RARITY_MULT`'s rare
+eased 1.25 to 1.2 to match). Every ceiling was measured with fantastic (8x) gear, so BiS weapon damage,
+armor, kind rings, legendary accessory effects and set-piece defense all shrank by up to 4x, and the
+knock-ons are not uniform per class (EMA-driven engines scale with hits; flat set lines do not). Derived
+figures quoted in this file changed with it: two fantastic +15 Rings of Earth are now +1,200% elemental,
+not +4,800% (the x49 wand stack is now ~x13), and the familiar Lv100 anchor (Rare top-tier weapon) makes
+the Lv1-to-Lv100 climb ~160x, not ~270x. The ECONOMY tables were deliberately left at 2x/4x/8x
+(`SELL_RARITY_MULT` and the new `SACRIFICE_RARITY_MULT`): they price the roll's SCARCITY, which did not
+change. A pinned selftest suite ('rarity retune') holds both sides of that split. Re-measure any class
+before tuning against the numbers above, and expect owner re-banding to follow this retune.
+
 The owner-approved best-in-slot rules (v0.0.57.11):
 
 - **Every slot filled, all fantastic**: class weapon (legendary effect per config), full

@@ -5408,18 +5408,18 @@
     eq(am5['amulet_t4_normal'], 1, 'amulet now consumes its Normal previous tier');
     ok(FF.getRingTierData('fire', 0).inputs['ring_fire_t-1_normal'] === undefined, 'tier 0 ring has no previous-tier requirement');
     // Damage rings (physical Blunt/Slash/Pierce + elemental) now do +5% at t0 -> +50% at t20 (Normal),
-    // scaled 2x/4x/8x by rarity -- matching the familiar/Communion curve.
+    // scaled 1.2x/1.5x/2x by rarity -- matching the familiar/Communion curve.
     near(FF.getRingTierData('blunt', 0).dmgBonus, 0.05, 'physical ring t0 = +5%');
     near(FF.getRingTierData('blunt', 20).dmgBonus, 0.50, 'physical ring t20 = +50%');
     near(FF.getRingTierData('fire', 0).bonus, 0.05, 'elemental ring t0 = +5%');
     near(FF.getRingTierData('fire', 20).bonus, 0.50, 'elemental ring t20 = +50%');
     var RS = FF.ALL_SELLABLE;
     near(RS['ring_fire_t20_normal'].bonus, 0.50, 'fire ring t20 normal = 50%');
-    near(RS['ring_fire_t20_rare'].bonus, 1.00, 'fire ring t20 rare = 100% (x2)');
-    near(RS['ring_fire_t20_supreme'].bonus, 2.00, 'fire ring t20 supreme = 200% (x4)');
-    near(RS['ring_fire_t20_fantastic'].bonus, 4.00, 'fire ring t20 fantastic = 400% (x8)');
+    near(RS['ring_fire_t20_rare'].bonus, 0.60, 'fire ring t20 rare = 60% (x1.2)');
+    near(RS['ring_fire_t20_supreme'].bonus, 0.75, 'fire ring t20 supreme = 75% (x1.5)');
+    near(RS['ring_fire_t20_fantastic'].bonus, 1.00, 'fire ring t20 fantastic = 100% (x2)');
     near(RS['ring_blunt_t0_normal'].dmgBonus, 0.05, 'blunt ring t0 normal = 5%');
-    near(RS['ring_blunt_t20_fantastic'].dmgBonus, 4.00, 'blunt ring t20 fantastic = 400% (x8)');
+    near(RS['ring_blunt_t20_fantastic'].dmgBonus, 1.00, 'blunt ring t20 fantastic = 100% (x2)');
     ok(FF.getAmuletTierData('plain', 0).inputs['amulet_t-1_normal'] === undefined, 'tier 0 amulet has no previous-tier requirement');
     // The gem/twine part of the recipe is untouched (Setting is additive, not a replacement).
     ok(ring5['twine_t5'] === 3 && ring5['digging_t5'] == null, 'ring keeps its Twine and does not eat raw clay directly');
@@ -7216,14 +7216,14 @@
     ok(fresh !== null && fresh > 95, 'a lapsed buff does not carry its old peak into a new, shorter one (' + fresh + '%)');
   });
 
-  // ---- Mastercrafting: D1 Ring Blueprint -> one of 5 Legendary Signets (effect scaled 2x/4x/8x) --------
+  // ---- Mastercrafting: D1 Ring Blueprint -> one of 5 Legendary Signets (effect scaled 1.2x/1.5x/2x) --------
   suite('mastercraft: D1 legendary rings', function(){
     var s = FF._state;
     eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d1'; }).length, 20, '5 D1 effects x 4 rarities = 20 D1 legendary ring items');
     eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','normal')].value, 0.05, 'block Signet base is 5%');
-    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','rare')].value, 0.10, 'rare = 2x');
-    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','supreme')].value, 0.20, 'supreme = 4x');
-    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','fantastic')].value, 0.40, 'fantastic = 8x');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','rare')].value, 0.06, 'rare = 1.2x');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','supreme')].value, 0.075, 'supreme = 1.5x');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','fantastic')].value, 0.10, 'fantastic = 2x');
     // Recipe matches the spec; only D1 Ring exists so far.
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ring')]);
     ok(rec && rec.inputs.metallurgy_t20===1000 && rec.inputs.gem_voidcrystal===100 && rec.inputs.twine_t20===100 && rec.inputs.goldsmithing_t20===100 && rec.rareCount===10, 'D1 Ring recipe = 1000 ingots / 100 gems / 100 twine / 100 settings / 10 rare rings');
@@ -7231,7 +7231,7 @@
     // Effect aggregation from an equipped Signet.
     var svJ = s.jewelrySlots;
     s.jewelrySlots = { ring1:{leg:'block',rarity:'rare'}, ring2:{typeId:null,tier:0,rarity:'normal'}, ring3:{typeId:null,tier:0,rarity:'normal'}, ring4:{typeId:null,tier:0,rarity:'normal'}, ring5:{typeId:null,tier:0,rarity:'normal'} };
-    near(FF.legendaryRingBonus('block', s), 0.10, 'an equipped rare block Signet gives +10% block');
+    near(FF.legendaryRingBonus('block', s), 0.06, 'an equipped rare block Signet gives +6% block');
     ok(FF.legRingEquipped('block', s) && !FF.legRingEquipped('dodge', s), 'legRingEquipped is per-effect');
     s.jewelrySlots = svJ;
     // Full craft: materials + 10 rare Tier-20 rings + a Blueprint -> one Signet, all inputs consumed.
@@ -7252,13 +7252,13 @@
   suite('mastercraft: D1 legendary cloaks (Shrouds)', function(){
     var s = FF._state;
     eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d1'; }).length, 12, '3 D1 effects x 4 rarities = 12 D1 legendary cloak items');
-    // Each effect has its own base, scaled 2x/4x/8x by rarity.
+    // Each effect has its own base, scaled 1.2x/1.5x/2x by rarity.
     eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','normal')].value, 0.50, 'accuracy Shroud base is 50%');
-    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','fantastic')].value, 4.00, 'accuracy fantastic = 8x = 400%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','fantastic')].value, 1.00, 'accuracy fantastic = 2x = 100%');
     eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critchance','normal')].value, 0.05, 'crit-chance Shroud base is 5%');
-    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critchance','supreme')].value, 0.20, 'crit-chance supreme = 4x = 20%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critchance','supreme')].value, 0.075, 'crit-chance supreme = 1.5x = 7.5%');
     eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critdmg','normal')].value, 0.20, 'crit-damage Shroud base is 20%');
-    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critdmg','rare')].value, 0.40, 'crit-damage rare = 2x = 40%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critdmg','rare')].value, 0.24, 'crit-damage rare = 1.2x = 24%');
     // Recipe = 1000 Tier-20 Cloths + 10 rare Tier-20 Cloaks.
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','cape')]);
     ok(rec && rec.inputs.weaving_t20===1000 && rec.rareCount===10, 'D1 Cloak recipe = 1000 refined cloths / 10 rare cloaks');
@@ -7266,7 +7266,7 @@
     // Effect aggregation from an equipped Shroud in the Back slot.
     var svB = s.bodyArmor.back;
     s.bodyArmor.back = { leg:'critchance', rarity:'supreme', tier:0, material:null };
-    near(FF.legendaryCloakBonus('critchance', s), 0.20, 'an equipped supreme crit-chance Shroud gives +20% crit chance');
+    near(FF.legendaryCloakBonus('critchance', s), 0.075, 'an equipped supreme crit-chance Shroud gives +7.5% crit chance');
     eq(FF.legendaryCloakBonus('critdmg', s), 0, 'only the worn effect counts');
     ok(FF.legCloakEquipped(s), 'legCloakEquipped detects a worn Shroud');
     s.bodyArmor.back = svB;
@@ -8077,26 +8077,26 @@
     eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d2'; }).length, 20, '5 Signets x 4 rarities = 20 D2 ring items');
     eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d2'; }).length, 12, '3 Shrouds x 4 = 12 D2 cloak items');
     eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d2'; }).length, 12, '3 Pendants x 4 = 12 D2 amulet items');
-    // Bonus readers pick up the merged D2 keys and scale by rarity (rare = x2).
+    // Bonus readers pick up the merged D2 keys and scale by rarity (rare = x1.2).
     var R = FF.RING_SLOT_IDS[0];
     function ringSt(key, r){ var js = {}; js[R] = { leg:key, rarity:r||'rare' }; return { jewelrySlots: js }; }
     function cloakSt(key, r){ return { bodyArmor: { back: { leg:key, rarity:r||'rare' } } }; }
     function amuSt(key, r){ return { jewelrySlots: { amulet: { leg:key, rarity:r||'rare' } } }; }
-    near(FF.legendaryRingBonus('d2_leech', ringSt('d2_leech')), 0.10, 'Signet of the Leech (Rare): +10% Lifesteal');
-    near(FF.legendaryRingBonus('d2_fury', ringSt('d2_fury','fantastic')), 0.40, 'Signet of Fury (Fantastic): +40% Attack Speed');
-    near(FF.legendaryRingBonus('d2_bramble', ringSt('d2_bramble')), 0.30, 'Signet of the Bramble (Rare): +30% Reflect');
-    near(FF.legendaryRingBonus('d2_goldfind', ringSt('d2_goldfind')), 0.50, 'Signet of Plunder (Rare): +50% Gold Find');
+    near(FF.legendaryRingBonus('d2_leech', ringSt('d2_leech')), 0.06, 'Signet of the Leech (Rare): +6% Lifesteal');
+    near(FF.legendaryRingBonus('d2_fury', ringSt('d2_fury','fantastic')), 0.10, 'Signet of Fury (Fantastic): +10% Attack Speed');
+    near(FF.legendaryRingBonus('d2_bramble', ringSt('d2_bramble')), 0.18, 'Signet of the Bramble (Rare): +18% Reflect');
+    near(FF.legendaryRingBonus('d2_goldfind', ringSt('d2_goldfind')), 0.30, 'Signet of Plunder (Rare): +30% Gold Find');
     // Regression: the Signet's Gold Find stat was defined and tested but READ nowhere in the gold path -- the
     // ring did nothing until the Reliquary rework built a real Gold Find multiplier for it to feed.
-    near(FF.thGoldFindMult(ringSt('d2_goldfind')), 1.50, 'Signet of Plunder actually multiplies combat gold now');
+    near(FF.thGoldFindMult(ringSt('d2_goldfind')), 1.30, 'Signet of Plunder actually multiplies combat gold now');
     near(FF.thGoldFindMult(ringSt('d2_leech')), 1, 'a different Signet leaves Gold Find alone');
     ok(FF.legRingEquipped('d2_feast', ringSt('d2_feast')), 'legRingEquipped detects an equipped D2 Signet');
-    near(FF.legendaryCloakBonus('d2_ruin', cloakSt('d2_ruin')), 0.16, 'Shroud of Ruin (Rare): +16% All Damage');
-    near(FF.legendaryCloakBonus('d2_tunnelborn', cloakSt('d2_tunnelborn')), 0.16, 'Shroud of the Tunnelborn (Rare): +16% Damage Reduction');
-    near(FF.legendaryCloakBonus('d2_warpack', cloakSt('d2_warpack')), 0.30, 'Shroud of the Warpack (Rare): +30% Elemental Damage');
-    near(FF.legendaryAmuletBonus('d2_ironhide', amuSt('d2_ironhide')), 0.50, 'Pendant of Ironhide (Rare): +50% Armor');
-    near(FF.legendaryAmuletBonus('d2_veteran', amuSt('d2_veteran')), 0.40, 'Pendant of the Veteran (Rare): +40% XP');
-    near(FF.legendaryAmuletBonus('d2_zealot', amuSt('d2_zealot')), 0.50, 'Pendant of the Zealot (Rare): +50% Faith');
+    near(FF.legendaryCloakBonus('d2_ruin', cloakSt('d2_ruin')), 0.096, 'Shroud of Ruin (Rare): +9.6% All Damage');
+    near(FF.legendaryCloakBonus('d2_tunnelborn', cloakSt('d2_tunnelborn')), 0.096, 'Shroud of the Tunnelborn (Rare): +9.6% Damage Reduction');
+    near(FF.legendaryCloakBonus('d2_warpack', cloakSt('d2_warpack')), 0.18, 'Shroud of the Warpack (Rare): +18% Elemental Damage');
+    near(FF.legendaryAmuletBonus('d2_ironhide', amuSt('d2_ironhide')), 0.30, 'Pendant of Ironhide (Rare): +30% Armor');
+    near(FF.legendaryAmuletBonus('d2_veteran', amuSt('d2_veteran')), 0.24, 'Pendant of the Veteran (Rare): +24% XP');
+    near(FF.legendaryAmuletBonus('d2_zealot', amuSt('d2_zealot')), 0.30, 'Pendant of the Zealot (Rare): +30% Faith');
     // Full forge (ring): give the bill + 20 rare t20 rings, craft, confirm a d2 Signet is added to inventory.
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
     var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
@@ -8130,16 +8130,16 @@
     function ringDmgSt(key, act){ var js={}; js[R]={leg:key,rarity:'rare'}; return { jewelrySlots:js, bodyArmor:{}, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
     function cloakDmgSt(key, act){ return { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
     // Grave (vs Cursed) / Wight (vs afflicted) / Reap (vs low-HP) — via d3AccessoryDmgMult.
-    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', playerSwungOnce:true, monsterHp:800, curseUntil:now+4000})), 1.20, 'Signet of the Grave: +20% vs a Cursed foe (rare)');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', playerSwungOnce:true, monsterHp:800, curseUntil:now+4000})), 1.12, 'Signet of the Grave: +12% vs a Cursed foe (rare)');
     near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', playerSwungOnce:true, monsterHp:800})), 1.0, 'Grave inert on an uncursed foe');
-    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_wight', {type:'combat', playerSwungOnce:true, monsterHp:800, decayStacks:1, decayUntil:now+4000})), 1.16, 'Signet of the Wight: +16% vs an afflicted (Decaying) foe');
-    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', playerSwungOnce:true, monsterHp:200})), 1.24, 'Shroud of the Reaper: +24% vs a foe below 30% HP');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_wight', {type:'combat', playerSwungOnce:true, monsterHp:800, decayStacks:1, decayUntil:now+4000})), 1.096, 'Signet of the Wight: +9.6% vs an afflicted (Decaying) foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', playerSwungOnce:true, monsterHp:200})), 1.144, 'Shroud of the Reaper: +14.4% vs a foe below 30% HP');
     near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', playerSwungOnce:true, monsterHp:800})), 1.0, 'Reap inert on a healthy foe');
     // Decay Power (Crypt) via d3DecayTickMult.
-    near(FF.d3DecayTickMult(ringSt('d3_crypt')), 1.40, 'Signet of the Crypt: +40% Decay Power (rare)');
+    near(FF.d3DecayTickMult(ringSt('d3_crypt')), 1.24, 'Signet of the Crypt: +24% Decay Power (rare)');
     // Deathless (Undeath) via d3SetIncomingMult, only below 50% HP.
     var lowHp = { bodyArmor:{ back:{leg:'d3_undeath',rarity:'rare'} }, jewelrySlots:{}, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true,monsterHp:100}, playerHp:1 };
-    near(FF.d3SetIncomingMult(lowHp), 0.80, 'Shroud of Undeath: -20% Damage Reduction below 50% HP (rare)');
+    near(FF.d3SetIncomingMult(lowHp), 0.88, 'Shroud of Undeath: -12% Damage Reduction below 50% HP (rare)');
     lowHp.playerHp = 1e9; near(FF.d3SetIncomingMult(lowHp), 1.0, 'Undeath inert above 50% HP');
     // enemyAfflicted spans DoT / Decay / Curse.
     ok(FF.enemyAfflicted({ activity:{type:'combat', playerSwungOnce:true, monsterHp:100, curseUntil:now+4000} }), 'a Cursed foe is afflicted');
@@ -8177,31 +8177,31 @@
     function amuletSt(key, extra){ var st = { jewelrySlots:{ amulet:{leg:key,rarity:'rare'} }, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', playerSwungOnce:true, monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
 
     // Signet of the Wyrm: +Elemental Damage (rare = 0.15 x2 = +0.30 folded into elementDmgMult).
-    near(FF.elementDmgMult(ringSt('d4_wyrm'), 'fire') - FF.elementDmgMult(ringSt('d4_nothere'), 'fire'), 0.30, 'Signet of the Wyrm: +30% Elemental Damage (rare)');
+    near(FF.elementDmgMult(ringSt('d4_wyrm'), 'fire') - FF.elementDmgMult(ringSt('d4_nothere'), 'fire'), 0.18, 'Signet of the Wyrm: +18% Elemental Damage (rare)');
     // Signet of Scales: +Elemental Resistance (0.08 x2 = 0.16).
-    near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.10, 'Signet of Scales: +10% Elemental Resistance (rare, base trimmed to 0.05)');
+    near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.06, 'Signet of Scales: +6% Elemental Resistance (rare, base trimmed to 0.05)');
     // Signet of Wrath: +damage per Wrath stack (0.02 x2 = 0.04/stack).
-    near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.02*5, 'Signet of Wrath: +2% damage per Wrath stack (rare, base trimmed to 0.01)');
+    near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.012*5, 'Signet of Wrath: +1.2% damage per Wrath stack (rare, base trimmed to 0.01)');
     // Signet of the Breath / Hoard: stat values (behaviour rides charge / kill hooks).
-    near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.50, 'Signet of the Breath: +50% Breath Power (rare)');
-    near(FF.legendaryRingBonus('d4_hoard', ringSt('d4_hoard')), 1.00, 'Signet of the Hoard: +100% elemental-kill gold (rare)');
+    near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.30, 'Signet of the Breath: +30% Breath Power (rare)');
+    near(FF.legendaryRingBonus('d4_hoard', ringSt('d4_hoard')), 0.60, 'Signet of the Hoard: +60% elemental-kill gold (rare)');
 
     // Shroud of Scales: elemental DR (0.12 x2 = 0.24 -> x0.76 incoming from an elemental foe).
-    near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:'fire' }), 0.76, 'Shroud of Scales: -24% elemental damage (rare)');
+    near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:'fire' }), 0.856, 'Shroud of Scales: -14.4% elemental damage (rare)');
     near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:null }), 1.0, 'Shroud of Scales inert vs a non-elemental foe');
     // Shroud of the Wyrm: +damage vs an elemental foe (0.12 x2 = +0.24).
-    near(FF.d4LegDmgMult({ element:'fire' }, cloakSt('d4_wyrmshroud')), 1.16, 'Shroud of the Wyrm: +16% vs an elemental foe (rare, base trimmed to 0.08)');
+    near(FF.d4LegDmgMult({ element:'fire' }, cloakSt('d4_wyrmshroud')), 1.096, 'Shroud of the Wyrm: +9.6% vs an elemental foe (rare, base trimmed to 0.08)');
     near(FF.d4LegDmgMult({ element:null }, cloakSt('d4_wyrmshroud')), 1.0, 'Shroud of the Wyrm inert vs a non-elemental foe');
     // Shroud of Cinders: stat value (retort rides the incoming hook).
-    near(FF.legendaryCloakBonus('d4_cinders', cloakSt('d4_cinders')), 0.30, 'Shroud of Cinders: 30% Fire retort (rare)');
+    near(FF.legendaryCloakBonus('d4_cinders', cloakSt('d4_cinders')), 0.18, 'Shroud of Cinders: 18% Fire retort (rare)');
 
     // Pendant of the Elements: +damage vs a Scorched foe (0.15 x2 = +0.30).
-    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Pendant of the Elements: +20% vs a Scorched foe (rare, base trimmed to 0.10, atop the Scorch stack)');
+    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.12, 'Pendant of the Elements: +12% vs a Scorched foe (rare, base trimmed to 0.10, atop the Scorch stack)');
     near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend')), 1.0, 'Pendant of the Elements inert on an unscorched foe');
     // Pendant of the Everflame: +DoT damage (0.15 x2 = +0.30 into legNecromancyDoTMult).
-    near(FF.legNecromancyDoTMult(amuletSt('d4_everflame')), 1.30, 'Pendant of the Everflame: elemental DoTs tick +30% (rare)');
+    near(FF.legNecromancyDoTMult(amuletSt('d4_everflame')), 1.18, 'Pendant of the Everflame: elemental DoTs tick +18% (rare)');
     // Pendant of the Dragon: +Attunement XP stat value.
-    near(FF.legendaryAmuletBonus('d4_dragon', amuletSt('d4_dragon')), 1.00, 'Pendant of the Dragon: +100% Attunement XP (rare)');
+    near(FF.legendaryAmuletBonus('d4_dragon', amuletSt('d4_dragon')), 0.60, 'Pendant of the Dragon: +60% Attunement XP (rare)');
 
     // Full forge (ring) — mirrors the D3 ring forge's known catalyst family.
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
@@ -8225,14 +8225,14 @@
       var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
       for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; } }
     try {
-      // C1: stack Scaleward (herald 2pc, +0.15) + two fantastic Signets of Scales (+0.40 each) = 0.95 raw
-      // -> must clamp to 0.60, and elementResistMult must never go negative. (Warscale retired with the Warlord.)
+      // C1: stack Scaleward (herald 2pc, +0.15) + FIVE fantastic Signets of Scales (+0.10 each) = 0.65 raw
+      // -> must clamp to 0.60, and elementResistMult must never go negative. (Warscale retired with the
+      // Warlord; the retune shrank the signets, so all five slots are needed to clear the cap at all.)
       s.bodyArmor = { helmet:{uid:'h1'}, chest:{uid:'h2'} };
       s.uniqueItems = { h1:{set:'herald',setLayer:'d4'}, h2:{set:'herald',setLayer:'d4'} };
-      var R2 = FF.RING_SLOT_IDS[1];
-      s.jewelrySlots = {}; s.jewelrySlots[R] = { leg:'d4_scales', rarity:'fantastic' }; s.jewelrySlots[R2] = { leg:'d4_scales', rarity:'fantastic' };
+      s.jewelrySlots = {}; FF.RING_SLOT_IDS.forEach(function(rs){ s.jewelrySlots[rs] = { leg:'d4_scales', rarity:'fantastic' }; });
       ok(FF.d4SetElementResist(s, 'fire') <= 0.60 + 1e-9, 'd4SetElementResist is hard-capped at 0.60');
-      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'an over-cap aggregate (0.95 raw) is clamped to 0.60');
+      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'an over-cap aggregate (0.65 raw) is clamped to 0.60');
       ok(FF.elementResistMult(s, 'fire') > 0, 'elementResistMult stays positive — an elemental hit can never heal you');
       ok(FF.elementResistMult(s, 'fire') >= 0.05, 'elementResistMult respects the 5% floor');
       s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0; s.jewelrySlots = {};
@@ -10341,10 +10341,10 @@
     eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d1'; }).length, 12, '3 D1 effects x 4 rarities = 12 D1 Pendant items');
     eq(FF.legAmuletItemId('maxhealth','rare'), 'legamulet_d1_maxhealth_rare', 'Pendant item id format');
 
-    // Bonus scaling: base value x the 2x/4x/8x rarity ladder.
+    // Bonus scaling: base value x the 1.2x/1.5x/2x rarity ladder.
     near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','normal')), 0.10, 'Max Health: +10% at Normal');
-    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','rare')), 0.20, 'Max Health: +20% at Rare (2x)');
-    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','fantastic')), 0.80, 'Max Health: +80% at Fantastic (8x)');
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','rare')), 0.12, 'Max Health: +12% at Rare (1.2x)');
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','fantastic')), 0.20, 'Max Health: +20% at Fantastic (2x)');
     near(FF.legendaryAmuletBonus('treasure', amSt('treasure','normal')), 0.25, 'Treasure: +25% at Normal');
     near(FF.legendaryAmuletBonus('cheatdeath', amSt('cheatdeath','normal')), 0.15, 'Cheat Death: revive to 15% at Normal');
     near(FF.legendaryAmuletBonus('maxhealth', amSt('treasure','normal')), 0, 'a Pendant only grants its own effect');
@@ -10356,11 +10356,11 @@
     var mhAmu  = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:'maxhealth', rarity:'normal' } } };
     eq(FF.maxHp(mhAmu), Math.round(FF.maxHp(mhBase) * 1.10), 'Pendant of Vitality raises max HP by +10% at Normal');
     var mhFan  = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:'maxhealth', rarity:'fantastic' } } };
-    eq(FF.maxHp(mhFan), Math.round(FF.maxHp(mhBase) * 1.80), 'Fantastic Pendant of Vitality raises max HP by +80%');
+    eq(FF.maxHp(mhFan), Math.round(FF.maxHp(mhBase) * 1.20), 'Fantastic Pendant of Vitality raises max HP by +20%');
 
     // Treasure multiplier.
     near(FF.legTreasureMult(amSt('treasure','normal')), 1.25, 'Treasure Find multiplier is 1.25x at Normal');
-    near(FF.legTreasureMult(amSt('treasure','supreme')), 2.0, 'Treasure Find multiplier is 2.0x at Supreme (4x base)');
+    near(FF.legTreasureMult(amSt('treasure','supreme')), 1.375, 'Treasure Find multiplier is 1.375x at Supreme (1.5x base)');
     near(FF.legTreasureMult(amSt('maxhealth','normal')), 1, 'no Treasure bonus without the Fortune Pendant');
 
     // Forge recipe: exact input bill the user specified.
@@ -12754,7 +12754,7 @@
     // Monotonic climb, and far steeper than the old +5%/lvl linear potency (~6x) it replaced.
     var prev = -1, mono = true; for(var lv=1; lv<=100; lv++){ var d = FF.familiarHitLevelDamage(lv, 15); if(d < prev) mono = false; prev = d; }
     ok(mono, 'familiar hit damage climbs monotonically from Lv1 to Lv100');
-    ok(l100 / l1 > 200, 'the Lv1 -> Lv100 climb is ~270x (far steeper than the old ~6x linear potency)');
+    ok(l100 / l1 > 120, 'the Lv1 -> Lv100 climb is ~160x (the retune lowered the Rare top-tier anchor; still far steeper than the old ~6x linear potency)');
     // Per-spell weighting preserved: a higher-amount spell hits harder at the same level.
     ok(FF.familiarHitLevelDamage(50,16) > FF.familiarHitLevelDamage(50,13), 'a higher-amount spell hits harder at the same level');
     // Heals/buffs keep the gentle linear potency (unchanged) -- only direct damage got the steep curve.
@@ -12774,7 +12774,7 @@
     // Poison DoT familiars ride the SAME steep curve: a poison's per-application total (dps*duration) is
     // weighted through familiarHitLevelDamage, so poison keeps pace at Lv100 instead of falling behind.
     var pL1 = FF.familiarHitLevelDamage(1, 6*6), pL100 = FF.familiarHitLevelDamage(100, 6*6);
-    ok(pL100 / pL1 > 200, 'poison per-application total climbs on the same ~270x curve as direct hits');
+    ok(pL100 / pL1 > 120, 'poison per-application total climbs on the same ~160x curve as direct hits');
   });
 
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
@@ -13812,17 +13812,17 @@
     ok(FF.getStackableWeaponTierData('wandFire', 0).inputs['stweapon_wandFire_t-1_normal'] === undefined, 'tier 0 has no previous-tier requirement');
     eq(FF.getStackableWeaponTierData('wandDark', 8).inputs['glyph_dark'], 3, 'dark wand needs dark glyphs');
 
-    // Rarity scales damage 2x / 4x / 8x (not the standard rarity mult).
+    // Rarity scales damage 1.2x / 1.5x / 2x (v0.0.96.3 retune; same values as the standard mult, own table).
     eq(FF.WAND_RARITY_DMG_MULT.normal, 1, 'normal = 1x');
-    eq(FF.WAND_RARITY_DMG_MULT.rare, 2, 'rare = 2x');
-    eq(FF.WAND_RARITY_DMG_MULT.supreme, 4, 'supreme = 4x');
-    eq(FF.WAND_RARITY_DMG_MULT.fantastic, 8, 'fantastic = 8x');
+    eq(FF.WAND_RARITY_DMG_MULT.rare, 1.2, 'rare = 1.2x');
+    eq(FF.WAND_RARITY_DMG_MULT.supreme, 1.5, 'supreme = 1.5x');
+    eq(FF.WAND_RARITY_DMG_MULT.fantastic, 2, 'fantastic = 2x');
     var n = FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_normal'];
     var f = FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_fantastic'];
     ok(n && f, 'wand items exist');
     eq(n.element, 'water', 'wand item carries its element');
-    eq(f.dmgMax, n.dmgMax*8, 'fantastic wand deals 8x the normal damage');
-    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_rare'].dmgMax, n.dmgMax*2, 'rare = 2x');
+    eq(f.dmgMax, Math.round(n.dmgMax*2), 'fantastic wand deals 2x the normal damage');
+    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_rare'].dmgMax, Math.round(n.dmgMax*1.2), 'rare = 1.2x');
 
     // Wands share one 'wands' proficiency; the per-element wand styles are not proficiency skills.
     ok(FF.WEAPON_STYLE_IDS.indexOf('wands') === -1, 'wands is not a per-style weapon id');
@@ -13913,12 +13913,12 @@
     eq(d.inputs['stweapon_scepter_t6_normal'], 1, 'scepter now also consumes its Normal previous tier');
     ok(d.name.indexOf(FF.SCEPTER_TYPE.name) !== -1, 'scepter named after its metal tier');
 
-    // Rarity scales damage 2x / 4x / 8x (same as wands, not the standard rarity mult).
+    // Rarity scales damage 1.2x / 1.5x / 2x (same as wands, via WAND_RARITY_DMG_MULT).
     var n = FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_normal'];
     var f = FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_fantastic'];
     ok(n && f, 'scepter items exist');
-    eq(f.dmgMax, n.dmgMax*8, 'fantastic scepter deals 8x the normal damage');
-    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_rare'].dmgMax, n.dmgMax*2, 'rare = 2x');
+    eq(f.dmgMax, Math.round(n.dmgMax*2), 'fantastic scepter deals 2x the normal damage');
+    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_rare'].dmgMax, Math.round(n.dmgMax*1.2), 'rare = 1.2x');
     ok(n.dmgMax > 0, 'scepter deals damage (unlike a staff)');
 
     // Scepters share one 'scepters' proficiency; the scepter style is not a per-style weapon id.
@@ -14735,11 +14735,11 @@
     near(q0.ammoPreserve, 0.05, 't0 quiver keeps ammo 5% of the time');
     near(q20.ammoPreserve, 0.20, 't20 quiver keeps ammo 20% of the time');
 
-    // The stackable items live in ALL_SELLABLE and carry rarity-scaled bonuses (x2/4/8).
+    // The stackable items live in ALL_SELLABLE and carry rarity-scaled bonuses (x1.2/1.5/2).
     var stq0 = FF.ALL_SELLABLE['stquiver_quiver_t0_normal'];
     ok(stq0 && stq0.tierIndex === 0, 'stquiver_quiver_t0_normal exists as a sellable equipment item');
     near(stq0.ammoPreserve, 0.05, 't0 normal stack quiver keeps 5%');
-    near(FF.ALL_SELLABLE['stquiver_quiver_t20_fantastic'].ammoPreserve, 1.60, 'rarity scales ammo-keep x8 (0.20 -> 1.60 pre-cap)');
+    near(FF.ALL_SELLABLE['stquiver_quiver_t20_fantastic'].ammoPreserve, 0.40, 'rarity scales ammo-keep x2 (0.20 -> 0.40)');
 
     // The craft engine routes its XP / success / tool-speed to Leatherworking.
     eq(FF.getSpecialSkillId({ craftKind:'stackquiver', typeId:'quiver' }), 'leatherworking', 'a quiver craft trains Leatherworking');
@@ -14748,7 +14748,7 @@
     var worn = FF.getEquippedOffhandItem({ equippedOffhand:'quiver', equippedOffhandTier:21, equippedOffhandRarity:'fantastic' });
     ok(worn && worn.id === 'stquiver_quiver_t20_fantastic', 'a worn quiver resolves to its stack item');
     // quiverAmmoPreserve reads the equipped quiver and caps the effective chance at 95%.
-    eq(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', equippedOffhandTier:21, equippedOffhandRarity:'fantastic' }), 0.95, 'a t20 fantastic quiver caps ammo-keep at 95%');
+    near(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', equippedOffhandTier:21, equippedOffhandRarity:'fantastic' }), 0.40, 'a t20 fantastic quiver keeps 40% (the 95% cap no longer binds at the new curve)');
     near(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', equippedOffhandTier:1, equippedOffhandRarity:'normal' }), 0.05, 'a t1 normal quiver keeps 5%');
     eq(FF.quiverAmmoPreserve({ equippedOffhand:null }), 0, 'no quiver equipped -> 0% keep');
 
@@ -15107,30 +15107,30 @@
     ok(byId.blunt && !byId.blunt.kind, 'physical rings still have no kind');
 
     var TC = FF.TIER_COUNT;
-    // Tier ladder scales min->max at Normal; rarity multiplies 2x/4x/8x (wand ladder).
+    // Tier ladder scales min->max at Normal; rarity multiplies 1.2x/1.5x/2x (wand ladder).
     var fireTop = FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_normal'];
     near(fireTop.bonus, 0.50, 'top-tier Normal Ring of Fire = +50% fire dmg');
     eq(fireTop.kind, 'elementDamage', 'ring item carries kind');
     eq(fireTop.element, 'fire', 'ring item carries element');
     near(FF.RING_ITEMS['ring_fire_t0_normal'].bonus, 0.05, 't0 Normal Ring of Fire = +5%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_rare'].bonus, 1.00, 'Rare x2 = +100%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_supreme'].bonus, 2.00, 'Supreme x4 = +200%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_fantastic'].bonus, 4.00, 'Fantastic x8 = +400%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_rare'].bonus, 0.60, 'Rare x1.2 = +60%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_supreme'].bonus, 0.75, 'Supreme x1.5 = +75%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_fantastic'].bonus, 1.00, 'Fantastic x2 = +100%');
     near(FF.RING_ITEMS['ring_precision_t'+(TC-1)+'_normal'].bonus, 0.30, 'top Precision Normal = +30% acc');
     near(FF.RING_ITEMS['ring_precision_t0_normal'].bonus, 0.05, 't0 Precision = +5% acc');
     near(FF.RING_ITEMS['ring_warding_t'+(TC-1)+'_normal'].bonus, 0.20, 'top Warding Normal = +20% resist');
-    // Ring of Communion: +5% (t0) -> +50% (t20) familiar potency at Normal, 2x/4x/8x with rarity.
+    // Ring of Communion: +5% (t0) -> +50% (t20) familiar potency at Normal, 1.2x/1.5x/2x with rarity.
     near(FF.RING_ITEMS['ring_communion_t0_normal'].bonus, 0.05, 't0 Communion Normal = +5% familiar potency');
     near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_normal'].bonus, 0.50, 't20 Communion Normal = +50%');
-    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_rare'].bonus, 1.00, 'Rare x2 = +100%');
-    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_supreme'].bonus, 2.00, 'Supreme x4 = +200%');
-    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_fantastic'].bonus, 4.00, 'Fantastic x8 = +400%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_rare'].bonus, 0.60, 'Rare x1.2 = +60%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_supreme'].bonus, 0.75, 'Supreme x1.5 = +75%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_fantastic'].bonus, 1.00, 'Fantastic x2 = +100%');
 
     // Physical rings now share the +5%->+50% x rarity curve (dmgBonus, applied by weapon-type fraction).
     var bluntTop = FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_normal'];
     near(bluntTop.dmgBonus, 0.50, 'top Normal Blunt ring = +50% (before weapon-type scaling)');
     near(FF.RING_ITEMS['ring_blunt_t0_normal'].dmgBonus, 0.05, 't0 Normal Blunt ring = +5%');
-    near(FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_fantastic'].dmgBonus, 4.00, 'Fantastic x8 = +400%');
+    near(FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_fantastic'].dmgBonus, 1.00, 'Fantastic x2 = +100%');
     ok(bluntTop.damageType === 'blunt' && bluntTop.bonus === undefined, 'physical rings keep damageType, no kind bonus field');
 
     function sl(typeId, tier, rarity){ return {typeId:typeId, tier:tier, rarity:rarity||'normal'}; }
@@ -15148,16 +15148,16 @@
     var twoFire = st([sl('fire', TC, 'normal'), sl('fire', TC, 'normal')]);
     near(FF.getRingElementDamageBonus(twoFire, 'fire'), 1.00, 'two fire rings stack to +100%');
 
-    // Enhance scales a UNIQUE ring's base stat, like weapons/belts (a +6 rare Copper Water ring: +10% -> +30%).
+    // Enhance scales a UNIQUE ring's base stat, like weapons/belts (a +6 rare Copper Water ring: +6% -> +18%).
     function enhRingSt(enh){
       return { physique:{}, xp:{},
         uniqueItems:{ RW:{ uid:'RW', kind:'ring', base:'ring_water_t0_rare', tier:0, rarity:'rare', enchants:[], enhance:enh } },
         jewelrySlots:{ ring1:{typeId:'water',tier:1,rarity:'rare',uid:'RW'}, ring2:empty(), ring3:empty(), ring4:empty(), ring5:empty(), amulet:{tier:0,rarity:'normal'} } };
     }
-    near(FF.getRingItemInSlot(enhRingSt(0),'ring1').bonus, 0.10, '+0 enhance: base rare Copper Water ring is +10%');
-    near(FF.getRingItemInSlot(enhRingSt(6),'ring1').bonus, 0.30, '+6 enhance triples the base ring stat to +30%');
-    near(FF.getRingElementDamageBonus(enhRingSt(6), 'water'), 0.30, '+6 enhance: combat Water bonus is +30%');
-    near(FF.getRingElementDamageBonus(enhRingSt(15), 'water'), 0.60, '+15 (max) enhance: x6 -> +60%');
+    near(FF.getRingItemInSlot(enhRingSt(0),'ring1').bonus, 0.06, '+0 enhance: base rare Copper Water ring is +6%');
+    near(FF.getRingItemInSlot(enhRingSt(6),'ring1').bonus, 0.18, '+6 enhance triples the base ring stat to +18%');
+    near(FF.getRingElementDamageBonus(enhRingSt(6), 'water'), 0.18, '+6 enhance: combat Water bonus is +18%');
+    near(FF.getRingElementDamageBonus(enhRingSt(15), 'water'), 0.36, '+15 (max) enhance: x6 -> +36%');
 
     // Folds into elementDmgMult on top of attunement.
     var baseMult = FF.elementDmgMult(st([]), 'fire');
@@ -15202,12 +15202,12 @@
     eq(FF.parseAmuletId('amulet_warding_t5_rare').typeId, 'warding', 'warding amulet id parses back to its type');
     eq(FF.parseAmuletId('amulet_t5_rare').typeId, 'plain', 'plain amulet id parses to plain');
 
-    // Warding amulet grants resistance (not defense) and scales 2x/4x/8x with rarity like the old ring.
+    // Warding amulet grants resistance (not defense) and scales 1.2x/1.5x/2x with rarity like the rings.
     var wNorm = FF.AMULET_ITEMS['amulet_warding_t'+(TC-1)+'_normal'];
     var wFant = FF.AMULET_ITEMS['amulet_warding_t'+(TC-1)+'_fantastic'];
     near(wNorm.bonus, 0.20, 'top Warding amulet (Normal) = +20% resist');
     ok(wNorm.defense == null, 'warding amulet has no defense');
-    near(wFant.bonus, 1.60, 'Fantastic warding amulet scales 8x (capped later in combat)');
+    near(wFant.bonus, 0.40, 'Fantastic warding amulet scales 2x');
 
     // Its inputs are the AMULET line (Diving Pearl + Setting + prev-tier warding amulet), not the ring's Gem.
     var win = FF.getAmuletTierData('warding', 5).inputs;
@@ -15241,32 +15241,32 @@
     eq(clothDef('supreme'), cn, 'Supreme cloth: same defense');
     eq(clothDef('fantastic'), cn, 'Fantastic cloth: same defense');
 
-    // Non-cloth materials still scale base armor 2x/4x/8x with rarity.
+    // Non-cloth materials still scale base armor 1.2x/1.5x/2x with rarity.
     var plateBase = FF.getBodyArmorTierData('plate','chest',5).defense;
     function plateDef(rarity){ return FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t5_'+rarity].defense; }
     eq(plateDef('normal'), Math.round(plateBase), 'plate Normal defense = base');
-    eq(plateDef('fantastic'), Math.round(plateBase*8), 'plate Fantastic defense = 8x base');
+    eq(plateDef('fantastic'), Math.round(plateBase*2), 'plate Fantastic defense = 2x base');
     ok(plateDef('fantastic') > plateDef('normal'), 'plate rarity still raises defense');
 
-    // The inherent familiar-efficiency bonus DOES scale 2x/4x/8x with cloth rarity.
+    // The inherent familiar-efficiency bonus DOES scale 1.2x/1.5x/2x with cloth rarity.
     function withChest(rarity){ return { bodyArmor: { chest: {material:'tailoring', tier:6, rarity:rarity} } }; }
     near(FF.getClothArmorSpellBonus(withChest('normal')), FF.CLOTH_SLOT_SPELL_BONUS, 'Normal cloth chest = +5% potency');
-    near(FF.getClothArmorSpellBonus(withChest('rare')), FF.CLOTH_SLOT_SPELL_BONUS*2, 'Rare cloth chest = +10% (2x)');
-    near(FF.getClothArmorSpellBonus(withChest('supreme')), FF.CLOTH_SLOT_SPELL_BONUS*4, 'Supreme cloth chest = +20% (4x)');
-    near(FF.getClothArmorSpellBonus(withChest('fantastic')), FF.CLOTH_SLOT_SPELL_BONUS*8, 'Fantastic cloth chest = +40% (8x)');
+    near(FF.getClothArmorSpellBonus(withChest('rare')), FF.CLOTH_SLOT_SPELL_BONUS*1.2, 'Rare cloth chest = +6% (1.2x)');
+    near(FF.getClothArmorSpellBonus(withChest('supreme')), FF.CLOTH_SLOT_SPELL_BONUS*1.5, 'Supreme cloth chest = +7.5% (1.5x)');
+    near(FF.getClothArmorSpellBonus(withChest('fantastic')), FF.CLOTH_SLOT_SPELL_BONUS*2, 'Fantastic cloth chest = +10% (2x)');
 
     // Multiple pieces stack; non-cloth pieces contribute nothing to the spell bonus.
     var full = { bodyArmor: {} };
     FF.TAILORING_SLOTS.forEach(function(slot){ full.bodyArmor[slot] = {material:'tailoring', tier:6, rarity:'fantastic'}; });
-    near(FF.getClothArmorSpellBonus(full), FF.CLOTH_SLOT_SPELL_BONUS*8*FF.TAILORING_SLOTS.length, 'five Fantastic cloth pieces stack');
+    near(FF.getClothArmorSpellBonus(full), FF.CLOTH_SLOT_SPELL_BONUS*2*FF.TAILORING_SLOTS.length, 'five Fantastic cloth pieces stack');
     var plateOnly = { bodyArmor: { chest: {material:'plate', tier:6, rarity:'fantastic'} } };
     eq(FF.getClothArmorSpellBonus(plateOnly), 0, 'plate pieces give no familiar bonus');
 
     // Card display: the inherent material bonus shown on item cards, per material/slot/rarity.
     eq(FF.armorMaterialBonusLines('tailoring','chest','normal').join('|'), '+5% Familiar spell potency', 'cloth card: +5% familiar potency at Normal');
-    eq(FF.armorMaterialBonusLines('tailoring','chest','fantastic').join('|'), '+40% Familiar spell potency', 'cloth card: +40% at Fantastic');
-    eq(FF.armorMaterialBonusLines('chain','helmet','rare').join('|'), '+10% Melee damage', 'chain card: +10% melee at Rare');
-    eq(FF.armorMaterialBonusLines('leather','boots','supreme').join('|'), '+12% Ranged damage|+4% Dodge chance', 'leather card: ranged + dodge at Supreme (3%/slot since the bow-chassis rebalance)');
+    eq(FF.armorMaterialBonusLines('tailoring','chest','fantastic').join('|'), '+10% Familiar spell potency', 'cloth card: +10% at Fantastic');
+    eq(FF.armorMaterialBonusLines('chain','helmet','rare').join('|'), '+6% Melee damage', 'chain card: +6% melee at Rare');
+    eq(FF.armorMaterialBonusLines('leather','boots','supreme').join('|'), '+5% Ranged damage|+2% Dodge chance', 'leather card: ranged + dodge at Supreme (3%/slot, x1.5, rounded for display)');
     eq(FF.armorMaterialBonusLines('plate','helmet','normal').join('|'), '+5% Block chance', 'plate helmet card: +5% block');
     eq(FF.armorMaterialBonusLines('plate','chest','fantastic').join('|'), '', 'plate CHEST card: no block bonus (chest is excluded)');
   });
@@ -16780,6 +16780,30 @@
     // The jewelry boost and the rarity multiplier compound.
     var rawRing = 15 * Math.pow(1.25, 2) * 1.5; // tier-3 jewelry base
     eq(FF.sacrificeGearFaith(3, true, 'supreme'), Math.round(rawRing * 4), 'jewelry + supreme => 4x on top of the +50% jewelry base');
+  });
+
+  // ---- The v0.0.96.3 rarity retune: the STAT curve is 1.2x/1.5x/2x everywhere, the ECONOMY
+  // curve (vendor sell + sacrifice Faith, which price scarcity, not power) stays 2x/4x/8x.
+  // These pins exist so a partial revert of one table cannot slip through: rarity must keep
+  // meaning ONE thing per side of that split.
+  suite('rarity retune: stat tables at 1.2/1.5/2, economy tables at 2/4/8', function(){
+    function tbl(t){ return [t.rare || t[1], t.supreme || t[2], t.fantastic || t[3]].join('/'); }
+    // The four stat tables move together.
+    eq(FF.getRarity('rare').mult, 1.2, 'RARITY_TIERS rare = 1.2x');
+    eq(FF.getRarity('supreme').mult, 1.5, 'RARITY_TIERS supreme = 1.5x');
+    eq(FF.getRarity('fantastic').mult, 2, 'RARITY_TIERS fantastic = 2x');
+    eq(tbl(FF.WAND_RARITY_DMG_MULT), '1.2/1.5/2', 'wand/scepter damage table matches');
+    eq(tbl(FF.LEGENDARY_RARITY_MULT), '1.2/1.5/2', 'legendary accessory table matches');
+    eq(tbl(FF.TOOL_RARITY_MULT), '1.2/1.5/2', 'tool table matches (rare eased 1.25 -> 1.2)');
+    // The two economy tables deliberately kept the old premium (roll odds did not change).
+    eq(tbl(FF.SELL_RARITY_MULT), '2/4/8', 'vendor sell premium still prices scarcity at 2x/4x/8x');
+    eq(tbl(FF.SACRIFICE_RARITY_MULT), '2/4/8', 'sacrifice Faith premium still prices scarcity at 2x/4x/8x');
+    // The curve reaches a real item end to end: a fantastic melee weapon lands exactly 2x its normal twin.
+    var wn = FF.ALL_SELLABLE['stweapon_rapier_t10_normal'], wf = FF.ALL_SELLABLE['stweapon_rapier_t10_fantastic'];
+    ok(wn && wf, 'rapier t10 rarity variants exist');
+    eq(wf.dmgMax, Math.round(wn.dmgMax * 2), 'fantastic rapier dmgMax = 2x normal');
+    // And the vendor repricing pass really does keep the 8x premium on that same item.
+    eq(wf.sell, wn.sell * 8, 'fantastic rapier still vendors at 8x the normal price');
   });
 
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
@@ -20117,12 +20141,17 @@
       ok(scanned >= 40, 'the sweep really exercised the renderers (scanned ' + scanned + ')');
       var ringLine = FF.uniqueBaseStatLines({ uid:'c_r', kind:'ring', base:'ring_fire_t'+TOP+'_fantastic',
                                               rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })[0] || '';
-      ok(/^\+\d,\d{3}% /.test(ringLine), 'the reported ring line is grouped: ' + ringLine);
+      // The retune brought every honest BiS percentage under 1,000, so the end-to-end fixtures pin the
+      // exact new ceilings (the math) and the grouping CODE PATH is pinned at the formatter directly.
+      eq(ringLine, '+600% Fire damage (+15)', 'the BiS ring line reads the retuned ceiling exactly');
       var relicLine = FF.uniqueBaseStatLines({ uid:'c_l', kind:'relic', base:'relic_t'+TOP+'_fantastic',
                                                rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })
                         .filter(function(l){ return /Damage & Armour/.test(l); })[0] || '';
-      ok(/^\+\d,\d{3}% /.test(relicLine), 'the reported relic line is grouped: ' + relicLine);
-      ok(/\(\+\d,\d{3}% relic\)/.test(FF.renderCombatStatsPanel()), 'the panel relic tag is grouped');
+      eq(relicLine, '+504% Damage & Armour', 'the BiS relic line reads the retuned ceiling exactly');
+      // 480, not 504: the panel fixture equips equippedRelicTier = TOP, which combat reads as tier INDEX
+      // TOP-1 (the -1 convention every equipped-tier field uses), so it is one tier below the card fixture.
+      ok(FF.renderCombatStatsPanel().indexOf('(+480% relic)') !== -1, 'the panel relic tag reads the retuned ceiling');
+      eq(FF.fmtPct(2400), '2,400%', 'fmtPct still groups thousands (the sweep above guards every renderer)');
     } finally {
       S.xp = sv.xp; S.physique = sv.phys; S.bodyArmor = sv.armor; S.uniqueItems = sv.uniq;
       S.jewelrySlots = sv.jew; S.equippedMainhand = sv.mh; S.equippedMainhandTier = sv.mhT;
