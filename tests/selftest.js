@@ -21965,6 +21965,56 @@
     }
   });
 
+  // ---- The PWA install path (v0.0.96.0): manifest, icons, service worker ----------------------------
+  // Synchronous XHR throughout, because suite() is synchronous and discards promises: an assertion inside
+  // a .then() runs after the report is written and a failure there is silently invisible (the standing
+  // rule at the top of this file). Sync XHR is deprecated for production code and exactly right here.
+  // Against the dist server (the smoke test) these fetches also prove build.mjs actually SHIPPED the
+  // files, which no source-tree check can.
+  suite('PWA: the manifest, icons and worker are present, linked and coherent', function(){
+    function get(url){
+      var x = new XMLHttpRequest();
+      x.open('GET', url, false);
+      try { x.send(); } catch(e){ return { status:0, text:'' }; }
+      return { status:x.status, text:x.responseText || '' };
+    }
+    var link = document.querySelector('link[rel="manifest"]');
+    ok(!!link, 'the page links a web app manifest');
+    ok(/manifest\.webmanifest$/.test(link ? link.getAttribute('href') : ''), 'and it points at manifest.webmanifest');
+    ok(!!document.querySelector('meta[name="theme-color"]'), 'a theme-color meta exists (the dark-marble ground)');
+    ok(!!document.querySelector('link[rel="apple-touch-icon"]'), 'an apple-touch-icon is linked for iOS');
+    var mres = get('manifest.webmanifest');
+    eq(mres.status, 200, 'the manifest is served');
+    var man = null;
+    try { man = JSON.parse(mres.text); } catch(e){}
+    ok(!!man, 'and parses as JSON');
+    if(man){
+      eq(man.display, 'standalone', 'display is standalone (installability requires it)');
+      eq(man.start_url, '/', 'start_url is the root');
+      var sizes = (man.icons || []).map(function(i){ return i.sizes; });
+      ok(sizes.indexOf('192x192') !== -1 && sizes.indexOf('512x512') !== -1, 'the 192 and 512 icons are declared');
+      ok((man.icons || []).some(function(i){ return i.purpose === 'maskable'; }), 'a maskable icon is declared (Android crops to a disc)');
+      // Every icon the manifest names must actually be served -- a declared icon that 404s fails install
+      // silently on some launchers. Against dist this is the build-copy proof.
+      (man.icons || []).forEach(function(i){
+        var r = get(i.src);
+        eq(r.status, 200, 'declared icon ' + i.src + ' is served');
+        ok(r.text.length > 1000, 'and is a real image, not a stub (' + i.src + ')');
+      });
+      ok(!/—/.test(mres.text), 'no em dashes in the manifest (player-facing copy rule)');
+    }
+    var sres = get('sw.js');
+    eq(sres.status, 200, 'the service worker is served');
+    ok(sres.text.indexOf("req.mode === 'navigate'") !== -1, 'and carries the navigation branch seamcheck pins as network-first');
+    // The registration call must be in the page. Whether registration SUCCEEDS is async and cannot be
+    // asserted here; the shape of the worker is what seamcheck CHECK 10 owns.
+    var ares = get('.well-known/assetlinks.json');
+    eq(ares.status, 200, 'the Android assetlinks placeholder is served');
+    var al = null; try { al = JSON.parse(ares.text); } catch(e){}
+    ok(!!al && Array.isArray(al) && !!al[0] && !!al[0].target && !!al[0].target.package_name,
+       'and is well-formed (the fingerprint stays a placeholder until the owner signs the app)');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

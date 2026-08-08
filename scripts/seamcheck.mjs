@@ -332,5 +332,64 @@ console.log("seamcheck: every damage source reaches the combat log.");
   }
 }
 
+// ---- CHECK 10: the service worker must never be able to pin an old build --------------------------------
+// The game updates itself by polling version.json and reloading when the deployed build id changes. A
+// service worker sits IN FRONT of that: cache-first navigations would serve the old index.html forever and
+// the "update" reload would reload the stale copy -- the classic PWA one-release-behind bug, invisible in
+// any test that runs a single load. So the worker's shape is pinned structurally:
+//   * navigations are NETWORK-FIRST (fetch() appears before caches.open in the navigate branch),
+//   * version.json is never named in sw.js at all (it must fall through untouched),
+//   * exactly two respondWith branches exist (navigations + static art), so nothing else can be intercepted,
+//   * the page links the manifest and registers the worker, and the build ships all four PWA statics.
+{
+  // Comment-stripped, because the worker's header comment NAMES the invariants it protects ("never touch
+  // version.json", "never calling respondWith") and a guard that reads comments fails on its own
+  // documentation -- the authRender precedent from v0.0.72, repeated here within the hour.
+  const swSrc = readFileSync("sw.js", "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const navAt = swSrc.indexOf("req.mode === 'navigate'");
+  if (navAt === -1) {
+    fail("sw.js has no navigation branch (req.mode === 'navigate'). Navigations must be network-first.");
+  } else {
+    const navBlock = swSrc.slice(navAt, swSrc.indexOf("// 2.", navAt) === -1 ? swSrc.length : swSrc.indexOf("// 2.", navAt));
+    const fetchAt = navBlock.indexOf("fetch(req)");
+    const cacheAt = navBlock.indexOf("caches.open");
+    if (fetchAt === -1 || cacheAt === -1 || fetchAt > cacheAt) {
+      fail("sw.js navigations are not network-first: fetch(req) must come before any cache read in the\n"
+         + "       navigate branch. Cache-first here pins every player one release behind forever.");
+    }
+  }
+  if (/version\.json/.test(swSrc)) {
+    fail("sw.js mentions version.json. The updater's poll must fall through the worker untouched --\n"
+       + "       any special-casing (even well-meant) risks serving a stale build id.");
+  }
+  const intercepts = (swSrc.match(/respondWith/g) || []).length;
+  if (intercepts !== 2) {
+    fail(`sw.js has ${intercepts} respondWith call(s), expected exactly 2 (navigations + static art).\n`
+       + "       A third interception path must be argued for here and in the worker's header comment.");
+  }
+  const manifest = JSON.parse(readFileSync("manifest.webmanifest", "utf8"));
+  const sizes = (manifest.icons || []).map((i) => i.sizes);
+  if (manifest.display !== "standalone" || !sizes.includes("192x192") || !sizes.includes("512x512")) {
+    fail("manifest.webmanifest must declare display:standalone and 192x192 + 512x512 icons (installability).");
+  }
+  if (!(manifest.icons || []).some((i) => i.purpose === "maskable")) {
+    fail("manifest.webmanifest has no maskable icon; Android renders the fallback icon shrunken in a white disc.");
+  }
+  for (const f of ["icons/icon-192.png", "icons/icon-512.png", "icons/icon-512-maskable.png", ".well-known/assetlinks.json"]) {
+    if (!existsSync(f)) fail(`${f} is missing but the manifest or the TWA path expects it.`);
+  }
+  if (!/rel="manifest"/.test(html) || !/serviceWorker' in navigator/.test(html)) {
+    fail("index.html must link the manifest and register sw.js (both were present at v0.0.96.0).");
+  }
+  const build = readFileSync("scripts/build.mjs", "utf8");
+  for (const name of ["manifest.webmanifest", "sw.js", '"icons"', '".well-known"']) {
+    if (!build.includes(name)) {
+      fail(`scripts/build.mjs no longer copies ${name} to dist -- the deployed site would silently lose it\n`
+         + "       while the repo copy keeps working, which no browser test of the source tree can see.");
+    }
+  }
+  if (!failures) console.log("seamcheck: the service worker is network-first, leaves version.json alone, and the PWA statics ship.");
+}
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

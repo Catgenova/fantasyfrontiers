@@ -128,6 +128,13 @@ writeFileSync(`${OUT_DIR}/.nojekyll`, "");                                  // s
 if (existsSync("tests")) cpSync("tests", `${OUT_DIR}/tests`, { recursive: true }); // keep ?selftest working
 if (existsSync("CNAME")) cpSync("CNAME", `${OUT_DIR}/CNAME`);               // preserve a custom domain if set
 if (existsSync("favicon.svg")) cpSync("favicon.svg", `${OUT_DIR}/favicon.svg`); // browser-tab icon (the crest logo)
+// PWA statics (v0.0.96.0): the manifest and worker make the site installable, icons/ is the manifest's
+// icon set, and .well-known/assetlinks.json is the Android TWA verification file (a placeholder until
+// the owner fills in the Play signing fingerprint; invalid is harmless, it just fails verification).
+if (existsSync("manifest.webmanifest")) cpSync("manifest.webmanifest", `${OUT_DIR}/manifest.webmanifest`);
+if (existsSync("sw.js")) cpSync("sw.js", `${OUT_DIR}/sw.js`);
+if (existsSync("icons")) cpSync("icons", `${OUT_DIR}/icons`, { recursive: true });
+if (existsSync(".well-known")) cpSync(".well-known", `${OUT_DIR}/.well-known`, { recursive: true });
 // Painted class icons (see art/README.md). art/src/ holds the full-resolution originals and must NOT ship --
 // it is ~7x the size of what the client actually fetches, and no player ever requests it. The README stays
 // out too; it documents the pipeline for us, not for anyone loading the game.

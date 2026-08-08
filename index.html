@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" id="ffViewport">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#141109">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <script>
   /* Phones default to the compact "zoomed-out" layout: render the game at a fixed ~780px CSS width
      scaled to fit the screen. The denser multi-column layout (2-up cards, full tab row, all action
@@ -44245,8 +44248,17 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.95.1';
+  var GAME_VERSION = '0.0.96.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
+  // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
+  // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
+  // the page and never touches version.json, so the reload this updater fires always fetches the new
+  // build. A cache-first worker would pin players one release behind forever; seamcheck CHECK 10
+  // enforces the worker's shape structurally. Registration fails silently (http, old browsers, private
+  // mode): the game runs identically without it, the worker only adds installability and offline art.
+  try {
+    if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+  } catch(e){}
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
   var updatePending = false;          // a newer build was detected; reload at the next safe moment
