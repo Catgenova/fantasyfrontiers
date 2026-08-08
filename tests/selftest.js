@@ -8287,13 +8287,13 @@
 
   // ---- Balance pass, Batch JJ: global incoming-damage floor (N1) -----------------------------------
   suite('balance JJ: incoming mitigation floor', function(){
-    eq(FF.INCOMING_FLOOR_FRAC, 0.05, 'the incoming floor is 5% of the raw swing');
+    eq(FF.INCOMING_FLOOR_FRAC, 0.25, 'the incoming floor is 25% of the raw swing (the 75% damage-reduction cap)');
     // A mitigation chain that would round the hit to 0 is clamped up to 5% of the raw roll.
-    eq(FF.incomingMitigationFloor(0, 1000), 50, 'a fully-mitigated 1000 swing still lands 50 (5%)');
-    eq(FF.incomingMitigationFloor(3, 1000), 50, 'near-zero mitigation is floored to 5%');
+    eq(FF.incomingMitigationFloor(0, 1000), 250, 'a fully-mitigated 1000 swing still lands 250 (25%)');
+    eq(FF.incomingMitigationFloor(3, 1000), 250, 'near-zero mitigation is floored to 25%');
     // A hit already above the floor is untouched.
     eq(FF.incomingMitigationFloor(400, 1000), 400, 'a hit above the floor passes through unchanged');
-    eq(FF.incomingMitigationFloor(50, 1000), 50, 'exactly at the floor is unchanged');
+    eq(FF.incomingMitigationFloor(250, 1000), 250, 'exactly at the floor is unchanged');
     // Tiny swings still land at least 1.
     eq(FF.incomingMitigationFloor(0, 5), 1, 'a tiny swing still lands at least 1');
     eq(FF.incomingMitigationFloor(0, 0), 1, 'floor never returns 0');
@@ -8309,6 +8309,35 @@
       var landed = false; for(var i=0;i<12 && !landed;i++){ s.playerHp = FF.maxHp(s); FF.monsterAttackTick(); if(s.playerHp < FF.maxHp(s)) landed = true; }
       ok(landed, 'a landed enemy hit always deals at least the floor (never fully mitigated to 0)');
     } finally { s.activity=sv.act; s.playerHp=sv.hp; s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js; }
+  });
+
+  // ---- v0.0.96.7 defensive caps: Dodge 75%, damage reduction 75% (the floor above), Block 90% --------
+  suite('balance: dodge/block caps', function(){
+    eq(FF.DODGE_CHANCE_CAP, 0.75, 'Dodge is capped at 75%');
+    eq(FF.BLOCK_CHANCE_CAP, 0.90, 'Block is capped at 90%');
+    // The clamp binds on the REAL aggregation path, with synthetic states so the live test state's
+    // physiques cannot drift the totals. Probe-measured raw values: dodge 0.904, block 0.98.
+    function mk(extra){ return Object.assign({ xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{}, activity:null }, extra); }
+    var L100 = FF.SKILL_XP_FLOOR[100];
+    var dArmor = {}; FF.TAILORING_SLOTS.forEach(function(sl){ dArmor[sl] = { material:'leather', tier:21, rarity:'fantastic' }; });
+    dArmor.back = { leg:'d3_wraith', rarity:'fantastic' };
+    var dRings = {}; FF.RING_SLOT_IDS.forEach(function(sl){ dRings[sl] = { leg:'dodge', rarity:'fantastic' }; });
+    var dSt = mk({ bodyArmor: dArmor, jewelrySlots: dRings, physique: { agility: L100, reflexes: L100 } });
+    ok(FF.playerDodgeChance(dSt) > 0.85, 'the fixture really pushes raw Dodge past the cap (got ' + FF.playerDodgeChance(dSt) + ')');
+    eq(FF.effectiveDodgeChance(dSt), 0.75, 'the combat roll uses the capped 75%');
+    var bArmor = {}; ['helmet','chest','gauntlets','boots'].forEach(function(sl){ bArmor[sl] = { material:'plate', tier:21, rarity:'fantastic' }; });
+    var bRings = {}; FF.RING_SLOT_IDS.forEach(function(sl){ bRings[sl] = { leg:'block', rarity:'fantastic' }; });
+    var bSt = mk({ bodyArmor: bArmor, jewelrySlots: bRings, physique: { blocking: L100, reflexes: L100 } });
+    ok(FF.playerBlockChance(bSt) > 0.95, 'the fixture really pushes raw Block past the cap (got ' + FF.playerBlockChance(bSt) + ')');
+    eq(FF.effectiveBlockChance(bSt), 0.90, 'the combat roll uses the capped 90%');
+    // Under the cap, the effective chance is the raw chance untouched.
+    var mild = mk({ bodyArmor: { chest: { material:'leather', tier:21, rarity:'normal' } } });
+    near(FF.effectiveDodgeChance(mild), FF.playerDodgeChance(mild), 'an under-cap Dodge passes through unclamped');
+    // The stats panel spells the caps out.
+    var panel = FF.renderCombatStatsPanel();
+    ok(/cap 75%|capped at 75%/.test(panel), 'the Dodge row shows its 75% cap');
+    ok(/cap 90%|capped at 90%/.test(panel), 'the Block row shows its 90% cap');
+    ok(panel.indexOf('Damage Reduction Cap') !== -1 && panel.indexOf('at least 25%') !== -1, 'the Damage Reduction Cap row shows 75% and the 25% floor');
   });
 
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
