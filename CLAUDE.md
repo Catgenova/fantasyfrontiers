@@ -986,12 +986,16 @@ rarity multiplier dropped from 2x/4x/8x to **1.2x/1.5x/2x** across all four stat
 eased 1.25 to 1.2 to match). Every ceiling was measured with fantastic (8x) gear, so BiS weapon damage,
 armor, kind rings, legendary accessory effects and set-piece defense all shrank by up to 4x, and the
 knock-ons are not uniform per class (EMA-driven engines scale with hits; flat set lines do not). Derived
-figures quoted in this file changed with it: two fantastic +15 Rings of Earth are now +1,200% elemental,
-not +4,800% (the x49 wand stack is now ~x13), and the familiar Lv100 anchor (Rare top-tier weapon) makes
+figures quoted in this file changed with it: two fantastic +15 Rings of Earth are now +500% elemental,
+not +4,800% (0.50 base x2 rarity x2.5 enhance each; the x49 wand stack is now ~x6), and the familiar
+Lv100 anchor (Rare top-tier weapon) makes
 the Lv1-to-Lv100 climb ~160x, not ~270x. The ECONOMY tables were deliberately left at 2x/4x/8x
 (`SELL_RARITY_MULT` and the new `SACRIFICE_RARITY_MULT`): they price the roll's SCARCITY, which did not
-change. A pinned selftest suite ('rarity retune') holds both sides of that split. Re-measure any class
-before tuning against the numbers above, and expect owner re-banding to follow this retune.
+change. A pinned selftest suite ('rarity retune') holds both sides of that split. **v0.0.96.4 (same
+owner pass) also cut the ENHANCE ceiling: +15 now scales base + enchant stats x2.5 (+150%), not x6
+(+500%)** -- `enhanceStatMult` is the single chokepoint (weapon, belt, relic, jewelry, enchant totals
+and the staff's Downbeat lend all read it), and the pin suite holds 2.5. Re-measure any class before
+tuning against the numbers above, and expect owner re-banding to follow these retunes.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
@@ -1001,7 +1005,7 @@ The owner-approved best-in-slot rules (v0.0.57.11):
   familiar classes), amulet, unique t20 relic (+dmg%!), unique t20 belt.
 - **Enchant THEN enhance is the intended min-max order** (owner-confirmed): give each
   unique its 4 max fantastic enchant lines FIRST, then `enhance: 15` — the +15 multiplies
-  base AND enchant stats ×6. The enchant lock is one-directional (no NEW enchants after
+  base AND enchant stats ×2.5 since v0.0.96.4 (was ×6). The enchant lock is one-directional (no NEW enchants after
   enhancing); never "fix" this stacking, it is by design.
 - Max everything else: all `st.xp` keys Lv100 **plus the per-style weapon key** (e.g.
   `st.xp.staff` — accuracy reads the typeId, not the shared proficiency) and every

@@ -13979,7 +13979,7 @@
     // A +15 staff lends x6 Downbeat, matching mainhandEnhanceMult ("enhance scales base + enchant stats").
     var pwEnh = { equippedMainhand:'staff', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{},
       equippedMainhandUid:'E', uniqueItems:{ E:{ uid:'E', kind:'weapon', base:'stweapon_staff_t9_normal', tier:9, rarity:'normal', enchants:[], enhance:15 } } };
-    eq(FF.staffDownbeatPower(pwEnh), Math.round(((pit.dmgMin + pit.dmgMax) / 2) * 6), 'a +15 staff lends x6 Downbeat power');
+    eq(FF.staffDownbeatPower(pwEnh), Math.round(((pit.dmgMin + pit.dmgMax) / 2) * 2.5), 'a +15 staff lends x2.5 Downbeat power');
 
     // Behavioral (live state): the rhythm engine -- Downbeat stacks, Crescendo, Syncopation window,
     // Accelerando cast haste, Grand Finale consumption, Skeletal Wraiths.
@@ -15148,16 +15148,16 @@
     var twoFire = st([sl('fire', TC, 'normal'), sl('fire', TC, 'normal')]);
     near(FF.getRingElementDamageBonus(twoFire, 'fire'), 1.00, 'two fire rings stack to +100%');
 
-    // Enhance scales a UNIQUE ring's base stat, like weapons/belts (a +6 rare Copper Water ring: +6% -> +18%).
+    // Enhance scales a UNIQUE ring's base stat, like weapons/belts (a +6 rare Copper Water ring: +6% -> +9.6%).
     function enhRingSt(enh){
       return { physique:{}, xp:{},
         uniqueItems:{ RW:{ uid:'RW', kind:'ring', base:'ring_water_t0_rare', tier:0, rarity:'rare', enchants:[], enhance:enh } },
         jewelrySlots:{ ring1:{typeId:'water',tier:1,rarity:'rare',uid:'RW'}, ring2:empty(), ring3:empty(), ring4:empty(), ring5:empty(), amulet:{tier:0,rarity:'normal'} } };
     }
     near(FF.getRingItemInSlot(enhRingSt(0),'ring1').bonus, 0.06, '+0 enhance: base rare Copper Water ring is +6%');
-    near(FF.getRingItemInSlot(enhRingSt(6),'ring1').bonus, 0.18, '+6 enhance triples the base ring stat to +18%');
-    near(FF.getRingElementDamageBonus(enhRingSt(6), 'water'), 0.18, '+6 enhance: combat Water bonus is +18%');
-    near(FF.getRingElementDamageBonus(enhRingSt(15), 'water'), 0.36, '+15 (max) enhance: x6 -> +36%');
+    near(FF.getRingItemInSlot(enhRingSt(6),'ring1').bonus, 0.096, '+6 enhance (x1.6) lifts the base ring stat to +9.6%');
+    near(FF.getRingElementDamageBonus(enhRingSt(6), 'water'), 0.096, '+6 enhance: combat Water bonus is +9.6%');
+    near(FF.getRingElementDamageBonus(enhRingSt(15), 'water'), 0.15, '+15 (max) enhance: x2.5 -> +15%');
 
     // Folds into elementDmgMult on top of attunement.
     var baseMult = FF.elementDmgMult(st([]), 'fire');
@@ -16804,6 +16804,11 @@
     eq(wf.dmgMax, Math.round(wn.dmgMax * 2), 'fantastic rapier dmgMax = 2x normal');
     // And the vendor repricing pass really does keep the 8x premium on that same item.
     eq(wf.sell, wn.sell * 8, 'fantastic rapier still vendors at 8x the normal price');
+    // v0.0.96.4: the Enhance ceiling dropped from +500% (x6 at +15) to +150% (x2.5 at +15).
+    eq(FF.enhanceStatMult(0), 1, '+0 enhance = 1x');
+    near(FF.enhanceStatMult(6), 1.6, '+6 enhance = 1.6x');
+    near(FF.enhanceStatMult(15), 2.5, '+15 enhance = 2.5x (+150%, the new ceiling)');
+    near(FF.enhanceStatMult(99), 2.5, 'enhance is clamped at ENHANCE_MAX');
   });
 
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
@@ -18457,7 +18462,7 @@
     ok(typeof FF.equippedEnchantTotals === 'function', 'aggregate exported');
     // enhance scaling: +0 = x1, +15 = x6 (base + up to +500%)
     near(FF.enhanceStatMult(0), 1, 'enhance +0 = x1');
-    near(FF.enhanceStatMult(15), 6, 'enhance +15 = x6 (+500%)');
+    near(FF.enhanceStatMult(15), 2.5, 'enhance +15 = x2.5 (+150%, the v0.0.96.4 ceiling)');
     // an unequipped/empty state contributes nothing
     var t0 = FF.equippedEnchantTotals({ uniqueItems:{} });
     ok(t0 && Object.keys(t0).length===0, 'nothing equipped -> zero totals (additive-safe)');
@@ -18467,7 +18472,7 @@
     eq(t1.critDamage, 25, 'two Critical Damage enchants stack to +25');
     // enhance doubles-plus: at +15 the same enchants scale x6
     st.uniqueItems.u1.enhance = 15;
-    eq(FF.equippedEnchantTotals(st).critDamage, 150, 'enhanced +15 scales enchant totals x6');
+    eq(FF.equippedEnchantTotals(st).critDamage, 62.5, 'enhanced +15 scales enchant totals x2.5');
     // Stage 3: armour, jewelry, and offhand slots now feed the aggregate off their real slot models
     // (jewelrySlots[ringN].uid / jewelrySlots.amulet.uid / bodyArmor[slot].uid / equippedOffhandUid).
     var stAll = { uniqueItems:{
@@ -18577,7 +18582,7 @@
     ok(oldDec && oldDec.base==='stweapon_maul_t19_rare' && !oldDec.leg, 'a legacy 3-field link still decodes (no leg field)');
     // Unique cards always list their enchants, enhance-scaled (mirrors the improvement/inventory cards).
     var uLines = FF.uniqueEnchantLines({ kind:'weapon', enhance:15, enchants:[{mod:'critDamage',roll:10}] });
-    ok(uLines.length===1 && /Critical Damage/.test(uLines[0]) && /\+60(\.0)?%/.test(uLines[0]), 'enchant line is enhance-scaled (10% x6 = 60%)');
+    ok(uLines.length===1 && /Critical Damage/.test(uLines[0]) && /\+25(\.0)?%/.test(uLines[0]), 'enchant line is enhance-scaled (10% x2.5 = 25%)');
     // Equip comparison chip: coloured gain/loss vs equipped.
     ok(/equip-cmp up/.test(FF.equipDeltaChip(20, 12)) && /\+8/.test(FF.equipDeltaChip(20,12)), 'higher candidate -> green +delta');
     ok(/equip-cmp down/.test(FF.equipDeltaChip(12, 20)), 'lower candidate -> red delta');
@@ -18611,10 +18616,10 @@
     // +enhance scales the base stat (enhanceStatMult(15) = 6x).
     var _b0 = FF.getEquippedBeltDefense({ equippedBeltTier:6, equippedBeltRarity:'rare', equippedBeltUid:null, uniqueItems:{} });
     var _b15 = FF.getEquippedBeltDefense({ equippedBeltTier:6, equippedBeltRarity:'rare', equippedBeltUid:'ub', uniqueItems:{ ub:{ uid:'ub', base:'belt_t5_rare', kind:'belt', tier:5, rarity:'rare', enhance:15, enchants:[] } } });
-    ok(_b0 > 0 && Math.abs(_b15 - _b0*6) <= 1, 'a +15 unique belt scales its Defense 6x');
+    ok(_b0 > 0 && Math.abs(_b15 - _b0*2.5) <= 1, 'a +15 unique belt scales its Defense 2.5x');
     var _r0 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:null, uniqueItems:{} });
     var _r15 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:'ur', uniqueItems:{ ur:{ uid:'ur', base:'relic_t3_supreme', kind:'relic', tier:3, rarity:'supreme', enhance:15, enchants:[] } } });
-    ok(_r0 > 0 && Math.abs(_r15 - _r0*6) < 1e-9, 'a +15 unique relic scales its bonus 6x');
+    ok(_r0 > 0 && Math.abs(_r15 - _r0*2.5) < 1e-9, 'a +15 unique relic scales its bonus 2.5x');
     // The unique card's BASE damage line scales a weapon by its Enhance (combat uses mainhandEnhanceMult
     // === enhanceStatMult), so +N no longer looks like it only touches the enchants.
     var wid = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ return /wandWater_t5_fantastic$/.test(k); })[0];
@@ -20143,14 +20148,14 @@
                                               rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })[0] || '';
       // The retune brought every honest BiS percentage under 1,000, so the end-to-end fixtures pin the
       // exact new ceilings (the math) and the grouping CODE PATH is pinned at the formatter directly.
-      eq(ringLine, '+600% Fire damage (+15)', 'the BiS ring line reads the retuned ceiling exactly');
+      eq(ringLine, '+250% Fire damage (+15)', 'the BiS ring line reads the retuned ceiling exactly');
       var relicLine = FF.uniqueBaseStatLines({ uid:'c_l', kind:'relic', base:'relic_t'+TOP+'_fantastic',
                                                rarity:'fantastic', tier:TOP, enhance:15, enchants:[] })
                         .filter(function(l){ return /Damage & Armour/.test(l); })[0] || '';
-      eq(relicLine, '+504% Damage & Armour', 'the BiS relic line reads the retuned ceiling exactly');
+      eq(relicLine, '+210% Damage & Armour', 'the BiS relic line reads the retuned ceiling exactly');
       // 480, not 504: the panel fixture equips equippedRelicTier = TOP, which combat reads as tier INDEX
       // TOP-1 (the -1 convention every equipped-tier field uses), so it is one tier below the card fixture.
-      ok(FF.renderCombatStatsPanel().indexOf('(+480% relic)') !== -1, 'the panel relic tag reads the retuned ceiling');
+      ok(FF.renderCombatStatsPanel().indexOf('(+200% relic)') !== -1, 'the panel relic tag reads the retuned ceiling');
       eq(FF.fmtPct(2400), '2,400%', 'fmtPct still groups thousands (the sweep above guards every renderer)');
     } finally {
       S.xp = sv.xp; S.physique = sv.phys; S.bodyArmor = sv.armor; S.uniqueItems = sv.uniq;

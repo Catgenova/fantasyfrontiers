@@ -8000,7 +8000,7 @@
     var ench = equippedEnchantTotals(st);
     var flat = (ench.flatDamage||0) + (ench.flatElemFire||0) + (ench.flatElemWater||0) + (ench.flatElemEarth||0) + (ench.flatElemLight||0) + (ench.flatElemDark||0);
     // A +enhanced staff scales its Downbeat like its swings (enhance = "base + enchant stats"): the
-    // Downbeat IS the staff's damage, so a +15 staff lends x6 to the host, matching mainhandEnhanceMult.
+    // Downbeat IS the staff's damage, so a +15 staff lends x2.5 to the host, matching mainhandEnhanceMult.
     var enh = (st === state) ? mainhandEnhanceMult() : (function(){ var uid = st.equippedMainhandUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; })();
     return Math.max(0, Math.round(((w.dmgMin + w.dmgMax) / 2 + flat) * (1 + (ench.pctDamage||0)/100) * enh));
   }
@@ -14274,7 +14274,7 @@
   }
   // A unique (enhanced) ring/amulet scales its BASE stat by the enhance multiplier -- just like unique
   // weapons/belts/relics do. Returns a scaled copy so combat AND the equip UI both read the boosted value
-  // (a +6 rare Copper Ring of Water goes from +10% to +30%). Enchant mods are handled separately.
+  // (a +6 rare Copper Ring of Water goes from +6% to +9.6%). Enchant mods are handled separately.
   function applyJewelryEnhance(item, uid, st){
     if(!item || !uid) return item;
     var u = st && st.uniqueItems && st.uniqueItems[uid];
@@ -16552,7 +16552,7 @@
   //   - ENCHANTS it: rolls a random modifier at an RNG value. Re-enchanting rolls again and the
   //     player keeps the better; rarity caps held enchants (normal 1 / rare 2 / supreme 3 / fantastic 4).
   //     Each enchant costs (current enchant count + 1) Enchant Crystals of tier >= the item's tier.
-  //   - ENHANCES it (Stage 2): +1..+15, scaling base + enchant stats up to +500%.
+  //   - ENHANCES it (Stage 2): +1..+15, scaling base + enchant stats up to +150%.
   // Unique items don't stack, can't be craft inputs, and are dropped from the table when sold/sacrificed.
   // This block is the data model + pools + pure helpers; the UI, combat wiring, and enhance land next.
   var ENCHANT_SLOTS_BY_RARITY = { normal:1, rare:2, supreme:3, fantastic:4 };
@@ -16740,8 +16740,11 @@
   }
 
   // ---- Enchant bonuses feed combat (Stage 1c) ----
-  // Enhance scales base + enchant stats up to +500% across +1..+15 (enhance stays 0 until Stage 2).
-  function enhanceStatMult(enhance){ return 1 + Math.max(0, Math.min(ENHANCE_MAX, enhance||0)) / ENHANCE_MAX * 5; }
+  // Enhance scales base + enchant stats up to +150% across +1..+15 (enhance stays 0 until Stage 2).
+  // v0.0.96.4 owner retune: the +15 ceiling dropped from +500% (x6) to +150% (x2.5). The 1.5 here IS
+  // that ceiling (enh/15 * 1.5); every enhance consumer (weapon, belt, relic, jewelry, enchant lines,
+  // staff Downbeat lend, both display strings) reads THIS function, so this is the only knob.
+  function enhanceStatMult(enhance){ return 1 + Math.max(0, Math.min(ENHANCE_MAX, enhance||0)) / ENHANCE_MAX * 1.5; }
   // Sum every EQUIPPED unique item's enchant modifiers into { statKey: total }. Empty when nothing
   // enchanted is equipped, so this is purely additive on top of the existing combat math.
   function equippedEnchantTotals(st){
@@ -16909,7 +16912,7 @@
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     if(clearUniqueSlots(uid)){ addLog('Unequipped '+uniqueDisplayName(u)+'.','chronicle'); saveGame(); render(); }
   }
-  // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
+  // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +150% at +15.
   function mainhandEnhanceMult(){ var uid = state.equippedMainhandUid, u = uid && state.uniqueItems && state.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
 
   // ================= LOADOUTS =================
@@ -44259,7 +44262,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.3';
+  var GAME_VERSION = '0.0.96.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
