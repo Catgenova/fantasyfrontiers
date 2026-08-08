@@ -27314,18 +27314,22 @@
   // hit the cap by floor ~90 -- it lives on ONLY as the guild bosses' frozen GBOSS_* curve below.)
   var TOWER_HP_BASE = 20, TOWER_ATK_MIN_BASE = 1, TOWER_ATK_MAX_BASE = 3;
   var TOWER_CAP_FLOOR = 500;
-  // v0.0.96.9 owner re-anchor: floor 1 opens at exactly TOWER_HP_FLOOR1 HP (10,000) and the line still
-  // lands on the cap at floor 500, so the HP ratio is solved between THOSE two anchors (~x1.0257/tier)
-  // and the tier-0 base is back-derived from the floor-1 anchor. Attack keeps its own anchors (1-3 roll
-  // at tier 0, max attack = half the cap at floor 500) and did not move.
+  // v0.0.96.9 owner re-anchor (floor-1 side): floor 1 opens at exactly TOWER_HP_FLOOR1 HP (10,000) and
+  // a TOWER_ATK_FLOOR1 max-attack roll (150, min keeps the 1:3 roll shape -> 50). Both lines still land
+  // on their floor-500 anchors (HP on the cap, max attack on HALF the cap), so each ratio is solved
+  // between ITS two anchors (HP ~x1.0257/tier, attack ~x1.0293/tier) and the tier-0 bases are
+  // back-derived from the floor-1 anchors.
   var TOWER_HP_FLOOR1 = 10000;
+  var TOWER_ATK_FLOOR1 = 150;
   var TOWER_HP_RATIO  = Math.pow(TOWER_STAT_CAP / TOWER_HP_FLOOR1, 1 / (towerFloorTier(TOWER_CAP_FLOOR) - towerFloorTier(1)));
   var TOWER_HP_BASE_DERIVED = TOWER_HP_FLOOR1 / Math.pow(TOWER_HP_RATIO, towerFloorTier(1));
-  var TOWER_ATK_RATIO = Math.pow((TOWER_STAT_CAP / 2) / TOWER_ATK_MAX_BASE, 1 / towerFloorTier(TOWER_CAP_FLOOR));
-  // Shared scaler: the Tower reads the anchor-derived ratios; the guild bosses pass the FROZEN pre-recurve
-  // pair (and omit hpBase, keeping the old base 20) so the five bosses keep the exact difficulty guilds
-  // tuned their rosters against.
-  function towerScaledStats(floor, hpRatio, atkRatio, hpBase){
+  var TOWER_ATK_RATIO = Math.pow((TOWER_STAT_CAP / 2) / TOWER_ATK_FLOOR1, 1 / (towerFloorTier(TOWER_CAP_FLOOR) - towerFloorTier(1)));
+  var TOWER_ATK_MAX_BASE_DERIVED = TOWER_ATK_FLOOR1 / Math.pow(TOWER_ATK_RATIO, towerFloorTier(1));
+  var TOWER_ATK_MIN_BASE_DERIVED = TOWER_ATK_MAX_BASE_DERIVED / 3;
+  // Shared scaler: the Tower reads the anchor-derived ratios and bases; the guild bosses pass the FROZEN
+  // pre-recurve pair (and omit the base overrides, keeping hp 20 / atk 1-3) so the five bosses keep the
+  // exact difficulty guilds tuned their rosters against.
+  function towerScaledStats(floor, hpRatio, atkRatio, hpBase, atkMinBase, atkMaxBase){
     floor = Math.max(1, floor|0);
     var i = towerFloorTier(floor), base = towerBaseMonster(floor);
     function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
@@ -27333,12 +27337,12 @@
     return {
       tier: i, baseName: base.name, baseId: base.id, icon: base.icon, attackSpeed: base.attackSpeed || 3,
       element: towerFloorElement(floor), type: towerFloorType(floor),
-      hp: pw(hpBase || TOWER_HP_BASE, hpRatio), atkMin: pw(TOWER_ATK_MIN_BASE, atkRatio), atkMax: pw(TOWER_ATK_MAX_BASE, atkRatio)
+      hp: pw(hpBase || TOWER_HP_BASE, hpRatio), atkMin: pw(atkMinBase || TOWER_ATK_MIN_BASE, atkRatio), atkMax: pw(atkMaxBase || TOWER_ATK_MAX_BASE, atkRatio)
     };
   }
   // Pure preview of a floor's scaled foe (no registration) -- shared by the entrance-card preview and the
   // real monster build, so the numbers a player sees before entering are exactly what they'll fight.
-  function towerFloorStats(floor){ return towerScaledStats(floor, TOWER_HP_RATIO, TOWER_ATK_RATIO, TOWER_HP_BASE_DERIVED); }
+  function towerFloorStats(floor){ return towerScaledStats(floor, TOWER_HP_RATIO, TOWER_ATK_RATIO, TOWER_HP_BASE_DERIVED, TOWER_ATK_MIN_BASE_DERIVED, TOWER_ATK_MAX_BASE_DERIVED); }
   // Build (and register for combat lookup) the scaled foe for an entrance's floor.
   function buildTowerMonster(entrance, floor){
     floor = Math.max(1, floor|0);
@@ -44316,7 +44320,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.9';
+  var GAME_VERSION = '0.0.96.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

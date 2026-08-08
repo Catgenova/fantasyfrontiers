@@ -10692,11 +10692,12 @@
     ok(Math.abs(f500.atkMax / (FF.TOWER_STAT_CAP / 2) - 1) < 1e-9, 'floor 500 max attack is half the cap');
     ok(FF.towerFloorStats(499).hp < FF.TOWER_STAT_CAP, 'floor 499 is still UNDER the cap (every floor to 500 is distinct)');
     eq(FF.towerFloorStats(501).hp, FF.TOWER_STAT_CAP, 'the cap holds past the anchor');
-    // v0.0.96.9: floor 1 is anchored at exactly 10,000 HP; the HP line still caps at floor 500
-    // (~x1.0257/tier between the anchors). Attack kept its own anchors and did not move.
-    eq(FF.towerFloorStats(1).hp, 10000, 'floor 1 opens at exactly 10,000 HP');
+    // v0.0.96.9/.10: floor 1 is anchored at exactly 10,000 HP and a 50-150 attack roll; both lines
+    // still land on their floor-500 anchors (HP ~x1.0257/tier, attack ~x1.0293/tier between anchors).
+    var f1 = FF.towerFloorStats(1);
+    ok(f1.hp === 10000 && f1.atkMin === 50 && f1.atkMax === 150, 'floor 1 opens at exactly 10,000 HP and a 50-150 roll');
     var f100 = FF.towerFloorStats(100);
-    ok(f100.hp === 1521825 && f100.atkMin === 860 && f100.atkMax === 2581, 'floor 100 = 1,521,825 HP / 860-2,581 attack (attack unmoved)');
+    ok(f100.hp === 1521825 && f100.atkMin === 15257 && f100.atkMax === 45771, 'floor 100 = 1,521,825 HP / 15,257-45,771 attack');
     ok(pv.element === 'dark' && pv.type === 'blunt' && pv.baseName && pv.attackSpeed > 0, 'the preview carries element/type/foe/speed');
     // The borrowed foe's element ALWAYS agrees with the floor's element rotation (name and element match).
     for(var f=1; f<=10; f++){ eq(FF.towerBaseMonster(f).element, FF.towerFloorElement(f), 'floor '+f+' foe element matches the floor element'); }
