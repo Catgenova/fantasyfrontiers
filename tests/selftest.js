@@ -22012,7 +22012,16 @@
     eq(ares.status, 200, 'the Android assetlinks placeholder is served');
     var al = null; try { al = JSON.parse(ares.text); } catch(e){}
     ok(!!al && Array.isArray(al) && !!al[0] && !!al[0].target && !!al[0].target.package_name,
-       'and is well-formed (the fingerprint stays a placeholder until the owner signs the app)');
+       'and is well-formed');
+    // Live since v0.0.96.2: the REAL fingerprints (Play's app signing key + the owner's upload key).
+    // Android's verifier is unforgiving about format -- 32 uppercase colon-separated hex pairs -- and a
+    // malformed entry fails silently as a browser bar that never goes away, so the format is pinned here.
+    eq(al[0].target.package_name, 'online.fantasyfrontiers.app', 'the package name matches the Play app');
+    var fps = al[0].target.sha256_cert_fingerprints || [];
+    ok(fps.length >= 2, 'both certificates are present (app signing + upload)');
+    fps.forEach(function(f){
+      ok(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(f), 'fingerprint is 32 uppercase hex pairs: ' + f.slice(0, 18) + '...');
+    });
   });
 
   // ---- The bill sweep (v0.0.96.1): no input id may be unnamed or unobtainable -----------------------
