@@ -12772,7 +12772,7 @@
     // Monotonic climb, and far steeper than the old +5%/lvl linear potency (~6x) it replaced.
     var prev = -1, mono = true; for(var lv=1; lv<=100; lv++){ var d = FF.familiarHitLevelDamage(lv, 15); if(d < prev) mono = false; prev = d; }
     ok(mono, 'familiar hit damage climbs monotonically from Lv1 to Lv100');
-    ok(l100 / l1 > 120, 'the Lv1 -> Lv100 climb is ~160x (the retune lowered the Rare top-tier anchor; still far steeper than the old ~6x linear potency)');
+    ok(l100 / l1 > 8, 'the Lv1 -> Lv100 climb is ~10x (the v0.0.96.6 linear weapon ladder compresses the anchors; still steeper than the ~6x linear potency)');
     // Per-spell weighting preserved: a higher-amount spell hits harder at the same level.
     ok(FF.familiarHitLevelDamage(50,16) > FF.familiarHitLevelDamage(50,13), 'a higher-amount spell hits harder at the same level');
     // Heals/buffs keep the gentle linear potency (unchanged) -- only direct damage got the steep curve.
@@ -12792,7 +12792,7 @@
     // Poison DoT familiars ride the SAME steep curve: a poison's per-application total (dps*duration) is
     // weighted through familiarHitLevelDamage, so poison keeps pace at Lv100 instead of falling behind.
     var pL1 = FF.familiarHitLevelDamage(1, 6*6), pL100 = FF.familiarHitLevelDamage(100, 6*6);
-    ok(pL100 / pL1 > 120, 'poison per-application total climbs on the same ~160x curve as direct hits');
+    ok(pL100 / pL1 > 8, 'poison per-application total climbs on the same ~10x curve as direct hits');
   });
 
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
@@ -16827,6 +16827,15 @@
     near(FF.enhanceStatMult(6), 1.6, '+6 enhance = 1.6x');
     near(FF.enhanceStatMult(15), 2.5, '+15 enhance = 2.5x (+150%, the new ceiling)');
     near(FF.enhanceStatMult(99), 2.5, 'enhance is clamped at ENHANCE_MAX');
+    // v0.0.96.6: the weapon damage ladder is LINEAR -- t0 keeps 2-5, a t20 one-hander lands exactly on
+    // 200-500 and a t20 two-hander on 340-850 (x1.7). Pin the anchors end to end through real items.
+    var w1 = FF.ALL_SELLABLE['stweapon_rapier_t20_normal'], w2 = FF.ALL_SELLABLE['stweapon_greatsword_t20_normal'];
+    ok(w1 && w1.dmgMin === 200 && w1.dmgMax === 500, 'a t20 one-hander rolls exactly 200-500');
+    ok(w2 && w2.dmgMin === 340 && w2.dmgMax === 850, 'a t20 two-hander rolls exactly 340-850');
+    var w0 = FF.ALL_SELLABLE['stweapon_rapier_t0_normal'];
+    ok(w0 && w0.dmgMin === 2 && w0.dmgMax === 5, 'the t0 one-hander keeps its 2-5 roll');
+    var mid = FF.ALL_SELLABLE['stweapon_rapier_t10_normal'];
+    ok(mid && mid.dmgMin === 101 && mid.dmgMax === 253, 'the ladder is linear: t10 sits halfway (101-253)');
   });
 
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------

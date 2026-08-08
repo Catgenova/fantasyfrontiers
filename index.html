@@ -3230,6 +3230,19 @@
   function tierSell(base, i){ return Math.round(base * Math.pow(1.45, i)); }
   function tierTime(base, step, i){ return Math.round((base + step*i)*10)/10; }
   function tierStat(base, i){ return Math.max(1, Math.round(base * Math.pow(1.32, i))); }
+  // v0.0.96.6 owner recurve: the weapon damage ladder is LINEAR, not exponential. Anchors: t0 keeps the
+  // 2-5 roll, t20 lands exactly on 200-500 for a one-hander (the min stays 40% of the max all the way up,
+  // preserving the t0 roll shape), and the two-hand multiplier is 1.7 so a t20 two-hander maxes at 850.
+  // The old tierStat(2/5) x1.32^tier ladder reached 516-1,290 / 671-1,677 at t20 and made low tiers nearly
+  // worthless (a t2 weapon rolled 3-9); tierStat itself is untouched (armor and other stats still use it).
+  // The familiar direct-damage anchors (FAM_HIT_DMG_L1/L100) read THESE helpers, so familiars keep
+  // tracking the weapon ladder automatically -- change the anchors here and familiars follow.
+  var WEAPON_DMG_MIN_T0 = 2, WEAPON_DMG_MAX_T0 = 5;
+  var WEAPON_DMG_MAX_TOP = 500;                      // the owner anchor: a t20 one-hander's max roll
+  var WEAPON_DMG_MIN_TOP = WEAPON_DMG_MAX_TOP * 0.4; // 200 -- keeps the 2:5 roll shape at the top
+  var WEAPON_2H_MULT = 1.7;                          // t20 two-hander max = 850 (was 1.3 on the exponential ladder)
+  function weaponTierDmgMin(i){ return WEAPON_DMG_MIN_T0 + (WEAPON_DMG_MIN_TOP - WEAPON_DMG_MIN_T0) * (i / (TIER_COUNT - 1)); }
+  function weaponTierDmgMax(i){ return WEAPON_DMG_MAX_T0 + (WEAPON_DMG_MAX_TOP - WEAPON_DMG_MAX_T0) * (i / (TIER_COUNT - 1)); }
   function tierCappedBonus(base, step, cap, i){ return Math.min(cap, Math.round((base + step*i)*1000)/1000); }
   function tierInput(sourceId, qty){
     return function(i){ var o={}; o[sourceId+'_t'+i] = qty; return o; };
@@ -5672,7 +5685,7 @@
     var m = /^fletching_arrow_t(\d+)$/.exec(arrowId || '');
     if(!m) return null;
     var i = +m[1];
-    return { dmgMin: Math.max(1, Math.round(tierStat(2, i))), dmgMax: Math.max(2, Math.round(tierStat(5, i))) };
+    return { dmgMin: Math.max(1, Math.round(weaponTierDmgMin(i))), dmgMax: Math.max(2, Math.round(weaponTierDmgMax(i))) }; // the LINEAR weapon ladder -- an arrow matches its tier's (short) bow
   }
   // Off-hand Claw: a second weapon sharing the off-hand slot (equippedOffhand='claw'). Only valid while
   // a Claw is the main hand. getEquippedOffhandItem returns null for it (it's a weapon, not defensive gear).
@@ -10937,15 +10950,15 @@
   var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1 (+495% at level 100) -- heals/buffs/debuffs
   // Familiar DIRECT-damage curve (hit + siphon spells). These should read like a weapon of the player's era:
   // at familiar level 1 a reference spell lands about a Tier-2 weapon's raw hit, and by level 100 about a
-  // Rare (x2) Tier-20 weapon's raw hit -- roughly a 300x climb, far steeper than the +5%/lvl linear potency
-  // (which only reaches ~6x and is kept for heals/buffs). The endpoints are derived from the same
-  // tierStat()/rarity math the weapons use, so they track any future weapon-scaling change. Per-spell
-  // strength is preserved by weighting each spell's own amount against FAM_HIT_REF_AMOUNT.
+  // Rare (x1.2) Tier-20 weapon's raw hit. On the v0.0.96.6 LINEAR weapon ladder that is ~38 -> ~399, a ~10x
+  // climb (the old exponential ladder plus 2x rarity made it ~300x). The endpoints read the SAME
+  // weaponTierDmgMin/Max helpers and rarity table the weapons use, so they track any future weapon-scaling
+  // change. Per-spell strength is preserved by weighting each spell's own amount against FAM_HIT_REF_AMOUNT.
   var FAM_HIT_REF_AMOUNT   = 15;                                                      // a "standard" hit/siphon amount
-  var FAM_HIT_TOP_WEAPON_TIER = 19;                                                   // weapons craft 20 tiers (index 0-19); the 20th ("Tier 20") is index 19
-  var FAM_HIT_DMG_L1       = (tierStat(2,2) + tierStat(5,2)) / 2;                     // ~6    : a Tier-2 weapon's avg raw hit
-  var FAM_HIT_DMG_L100     = ((tierStat(2,FAM_HIT_TOP_WEAPON_TIER) + tierStat(5,FAM_HIT_TOP_WEAPON_TIER)) / 2) * RARITY_TIERS[1].mult; // ~1368 : a Rare (x2) top-tier ("Tier 20") weapon's avg raw hit (range 782-1954)
-  var FAM_HIT_DMG_GROWTH   = Math.pow(FAM_HIT_DMG_L100 / FAM_HIT_DMG_L1, 1/99);       // per-level geometric growth (~1.056)
+  var FAM_HIT_TOP_WEAPON_TIER = 19;                                                   // the anchor tier the band tests pin (a "Tier 20" weapon, index 19)
+  var FAM_HIT_DMG_L1       = (weaponTierDmgMin(2) + weaponTierDmgMax(2)) / 2;                     // ~38  : a Tier-2 weapon's avg raw hit
+  var FAM_HIT_DMG_L100     = ((weaponTierDmgMin(FAM_HIT_TOP_WEAPON_TIER) + weaponTierDmgMax(FAM_HIT_TOP_WEAPON_TIER)) / 2) * RARITY_TIERS[1].mult; // ~399 : a Rare (x1.2) t19 weapon's avg raw hit
+  var FAM_HIT_DMG_GROWTH   = Math.pow(FAM_HIT_DMG_L100 / FAM_HIT_DMG_L1, 1/99);       // per-level geometric growth (~1.024)
   // Elemental attunement physiques have no familiar, so they're excluded from the familiar roster.
   var FAMILIAR_PHYSIQUE_IDS = PHYSIQUE_SKILLS.filter(function(p){ return !p.element; }).map(function(p){ return p.id; });
   var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(FAMILIAR_PHYSIQUE_IDS);
@@ -12981,7 +12994,7 @@
   function stackableWeaponTierNames(w){ return w.matPrefix==='forestry' ? FORESTRY_NAMES : METAL_TIER_NAMES; }
   function getStackableWeaponTierData(typeId, tierIndex){
     var w = STACKABLE_WEAPON_TYPE_MAP[typeId];
-    var handBonus = (w.hand==='2h' ? 1.3 : 1.0) * (w.dmgMult || 1); // per-type damage scalar (bows: Short 1 / Medium 1.25 / Long 1.5)
+    var handBonus = (w.hand==='2h' ? WEAPON_2H_MULT : 1.0) * (w.dmgMult || 1); // per-type damage scalar (bows: Short 1 / Medium 1.25 / Long 1.5)
     var is2h = w.hand==='2h';
     var inputs = {};
     if(w.staff){
@@ -13004,8 +13017,8 @@
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
       levelReq: TIER_LEVELS[tierIndex],
       xp: craftXp(tierIndex) * (is2h ? 2 : 1),   // two-handed weapons grant twice the crafting XP
-      dmgMin: Math.max(1, Math.round(tierStat(2,tierIndex)*handBonus)), // staves swing again (5s Downbeat): full two-handed damage
-      dmgMax: Math.max(2, Math.round(tierStat(5,tierIndex)*handBonus)),
+      dmgMin: Math.max(1, Math.round(weaponTierDmgMin(tierIndex)*handBonus)), // staves swing again (5s Downbeat): full two-handed damage
+      dmgMax: Math.max(2, Math.round(weaponTierDmgMax(tierIndex)*handBonus)),
       block: w.staff ? staffBlockPct(tierIndex) : 0,
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
@@ -44279,7 +44292,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.5';
+  var GAME_VERSION = '0.0.96.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
