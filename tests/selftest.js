@@ -3943,6 +3943,42 @@
     ok(T.some(function(t){ return /Enchant before you Enhance/.test(t); }), 'the enchant-before-enhance ordering tip is present');
     ok(T.some(function(t){ return /Barrier Shards/.test(t) && /star/.test(t); }), 'the Barrier Shard source tip is present');
     ok(T.some(function(t){ return /Toxin/.test(t) && /own clock/.test(t); }), 'the clocked-Toxin tip is present');
+
+    // ---- THE ESTATE SERIES (v0.0.90.0 through v0.0.94.0). Ten tips, each pinned to the number or rule it
+    // states, because every one of these systems is young enough to be re-tuned. A tip that quotes a figure
+    // is a promise, so the figures are read from the SHARED constants rather than retyped here: change the
+    // constant and this fails instead of the ticker quietly lying to players.
+    ok(T.some(function(t){ return /Curbs, Fences and Walls/.test(t) && /one minute per tier/.test(t) && /Architecture/.test(t); }),
+       'a tip states the border build timer and the Architecture gate');
+    // The three multipliers ARE 1/2/3, so the tip's "one/two/three minutes per tier" is checked against them.
+    eq([FF.ESTATE_BORDER_TYPE_TIME_MULT.curb, FF.ESTATE_BORDER_TYPE_TIME_MULT.fence, FF.ESTATE_BORDER_TYPE_TIME_MULT.wall].join(','), '1,2,3',
+       'and the multipliers it quotes are the ones the game uses');
+    eq(FF.ESTATE_BORDER_MS_PER_TIER, 60000, 'the per-tier minute the tip quotes is a real minute');
+    eq(FF.ESTATE_BORDER_GATE_SKILL, 'architecture', 'the skill the tip names is the skill that gates');
+    ok(T.some(function(t){ return /<b>Curb<\/b>/.test(t) && /Aqueduct/.test(t) && /free/.test(t); }),
+       'a tip explains that a Curb lines an Aqueduct link');
+    ok(T.some(function(t){ return /fenced on all four borders/.test(t) && /15%/.test(t) && /weakest/.test(t); }),
+       'a tip states the fence shelter: all four, and priced off the weakest');
+    eq(Math.round(FF.FENCE_SHELTER_MAX_CUT * 100), 15, 'and the 15% it quotes is the real cap');
+    ok(T.some(function(t){ return /Estate Appraisal/.test(t) && /20%/.test(t) && /dilutes/.test(t); }),
+       'a tip states the Appraisal, its Peon effect, and that expanding dilutes it');
+    eq(Math.round(FF.ESTATE_APPRAISAL_MAX_CUT * 100), 20, 'and the 20% it quotes is the real cap');
+    ok(T.some(function(t){ return /Bunkhouse/.test(t) && /five Peons to ten/.test(t); }), 'a tip states the Bunkhouse Peon cap');
+    eq(FF.PEON_MAX_SLOTS + FF.BUNKHOUSE_MAX, 10, 'and five Bunkhouses really do reach ten Peons');
+    // The OLD cap tip said "up to five ... and five on the guild's" flat, which the Bunkhouse made false.
+    ok(!T.some(function(t){ return /Run up to five on your Estate/.test(t); }), 'no tip still gives the flat five-Peon cap');
+    ok(T.some(function(t){ return /Foreman's Office/.test(t) && /several neighbouring Workshops/.test(t); }),
+       'a tip explains what a Foreman fixes for a crowded Cottage');
+    ok(T.some(function(t){ return /Salvage Yards/.test(t) && /at or below/.test(t) && /five times/.test(t); }),
+       'a tip states the Yard tier rule and the fantastic scrap multiple');
+    eq(FF.SALVAGE_YIELD_BY_RANK[3] / FF.SALVAGE_YIELD_BY_RANK[0], 5, 'and a fantastic item really scraps for five times a normal one');
+    ok(T.some(function(t){ return /Ley Font/.test(t) && /Bellows/.test(t) && /only the bill/.test(t); }),
+       'a tip states the refund buildings and that they do not touch the odds');
+    ok(T.some(function(t){ return /Apiary/.test(t) && /within one tile/.test(t) && /still one bonus/.test(t); }),
+       'a tip states the Apiary aura and that hives do not stack');
+    eq(FF.APIARY_YIELD_BONUS, 1, 'and the one crop it promises is the real figure');
+    ok(T.some(function(t){ return /Aqueduct/.test(t) && /waterside/.test(t) && /Sun Terrace/.test(t); }),
+       'a tip explains the Aqueduct as a waterside bank and the Sun Terrace as the hilltop fix');
   });
 
   // ---- Icon shape symbols exist (previously-blank Dairy/Ranching/Tanning/Weaving/etc. icons) ---------
