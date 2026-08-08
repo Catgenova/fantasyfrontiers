@@ -27275,20 +27275,33 @@
     var idx = Math.min(pool.length - 1, Math.floor((Math.max(1, floor) - 1) / 2)); // climb the roster as floors rise
     return pool[idx] || pool[pool.length - 1] || MONSTERS[0];
   }
-  // Pure preview of a floor's scaled foe (no registration) -- shared by the entrance-card preview and the
-  // real monster build, so the numbers a player sees before entering are exactly what they'll fight.
-  function towerFloorStats(floor){
+  // v0.0.96.5 owner recurve: the climb is ANCHOR-derived, not hand-picked ratios. The two anchors are
+  // "HP hits TOWER_STAT_CAP exactly at floor TOWER_CAP_FLOOR" and "max attack is half the cap there";
+  // the per-tier ratios are solved from them (a straight line on a log scale), so raising the cap or
+  // moving the cap floor re-tunes the whole curve with no second knob to forget. Solved values: HP
+  // ~x1.0318/tier, attack ~x1.0330/tier. Attack deliberately ends at HALF the foe's own capped HP, so
+  // the deep tower kills you before it outlasts you. (Old curve: HP x1.2 / attack x1.1 per tier, which
+  // hit the cap by floor ~90 -- it lives on ONLY as the guild bosses' frozen GBOSS_* curve below.)
+  var TOWER_HP_BASE = 20, TOWER_ATK_MIN_BASE = 1, TOWER_ATK_MAX_BASE = 3;
+  var TOWER_CAP_FLOOR = 500;
+  var TOWER_HP_RATIO  = Math.pow(TOWER_STAT_CAP / TOWER_HP_BASE, 1 / towerFloorTier(TOWER_CAP_FLOOR));
+  var TOWER_ATK_RATIO = Math.pow((TOWER_STAT_CAP / 2) / TOWER_ATK_MAX_BASE, 1 / towerFloorTier(TOWER_CAP_FLOOR));
+  // Shared scaler: the Tower reads the anchor-derived ratios; the guild bosses pass the FROZEN pre-recurve
+  // pair so the five bosses keep the exact difficulty guilds tuned their rosters against.
+  function towerScaledStats(floor, hpRatio, atkRatio){
     floor = Math.max(1, floor|0);
     var i = towerFloorTier(floor), base = towerBaseMonster(floor);
     function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
-    // The Tower gives NO gold (its reward is Barrier Shards) -- only HP + attack scale. Gentler curves than
-    // the bestiary: HP x1.2^tier, attack x1.1^tier, so the climb lasts far longer before stats blow up.
+    // The Tower gives NO gold (its reward is Barrier Shards) -- only HP + attack scale.
     return {
       tier: i, baseName: base.name, baseId: base.id, icon: base.icon, attackSpeed: base.attackSpeed || 3,
       element: towerFloorElement(floor), type: towerFloorType(floor),
-      hp: pw(20, 1.2), atkMin: pw(1, 1.1), atkMax: pw(3, 1.1)
+      hp: pw(TOWER_HP_BASE, hpRatio), atkMin: pw(TOWER_ATK_MIN_BASE, atkRatio), atkMax: pw(TOWER_ATK_MAX_BASE, atkRatio)
     };
   }
+  // Pure preview of a floor's scaled foe (no registration) -- shared by the entrance-card preview and the
+  // real monster build, so the numbers a player sees before entering are exactly what they'll fight.
+  function towerFloorStats(floor){ return towerScaledStats(floor, TOWER_HP_RATIO, TOWER_ATK_RATIO); }
   // Build (and register for combat lookup) the scaled foe for an entrance's floor.
   function buildTowerMonster(entrance, floor){
     floor = Math.max(1, floor|0);
@@ -39967,9 +39980,13 @@
     });
   }
   // Build (and register) the Tower-strength foe for a boss index; single encounter at its floor difficulty.
+  // Guild bosses price themselves in tower-floor units, but on the FROZEN pre-v0.0.96.5 curve: the tower
+  // recurve (cap at floor 500) would have cut boss 5 from ~186M HP to ~313 by accident. GBOSS_* keeps the
+  // five bosses at the exact stats guilds have been fighting; retune them deliberately or not at all.
+  var GBOSS_HP_RATIO = 1.2, GBOSS_ATK_RATIO = 1.1;
   function buildGuildBossMonster(idx){
     var d = GUILD_BOSSES[idx]; if(!d) return null;
-    var st = towerFloorStats(d.floor);
+    var st = towerScaledStats(d.floor, GBOSS_HP_RATIO, GBOSS_ATK_RATIO);
     var atkT = {}; atkT[st.type] = 1; var armT = {}; armT[st.type] = 1;
     var mon = {
       id:'gboss_' + idx, name:d.name, icon:d.icon, category:'tower',
@@ -40051,9 +40068,9 @@
     html += '<div class="card-grid">';
     GUILD_BOSSES.forEach(function(d){
       var srv = guildBossState.bosses[d.idx] || { cleared:false, cleared_by:null };
-      var st = towerFloorStats(d.floor), reward = guildBossReward(d.idx);
+      var st = towerScaledStats(d.floor, GBOSS_HP_RATIO, GBOSS_ATK_RATIO), reward = guildBossReward(d.idx); // the FROZEN boss curve -- must match buildGuildBossMonster, not the recurved tower
       html += '<div class="item-card'+(srv.cleared?' rar-supreme':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+d.icon+'</div><div><div class="item-name">'+escapeHtml(d.name)+'</div><div class="item-meta">Difficulty ~Tower Floor '+d.floor+' &bull; '+fmt(st.hp)+' HP</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+d.icon+'</div><div><div class="item-name">'+escapeHtml(d.name)+'</div><div class="item-meta">'+fmt(st.hp)+' HP</div></div></div>';
       html += '<div class="item-meta" style="margin:4px 0;color:var(--gold);">Reward: '+reward+' Barrier Shard'+(reward===1?'':'s')+' to every member</div>';
       if(srv.cleared){
         html += '<div class="item-meta" style="color:var(--rarity-superior);font-weight:700;">&#10003; Cleared today by '+escapeHtml(srv.cleared_by||'a guildmate')+'</div>';
@@ -44262,7 +44279,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.4';
+  var GAME_VERSION = '0.0.96.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44416,6 +44433,7 @@
       fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables, trayConsumStatusText:trayConsumStatusText, trayFoldBtn:trayFoldBtn,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
+      towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,

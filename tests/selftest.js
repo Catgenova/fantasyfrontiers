@@ -10482,15 +10482,21 @@
     FF.GUILD_BOSSES.forEach(function(b, i){
       eq(b.idx, i, 'boss ' + i + ' carries idx ' + i);
       eq(FF.guildBossReward(i), i + 1, 'boss ' + i + ' rewards ' + (i + 1) + ' Barrier Shard(s)');
-      var mon = FF.buildGuildBossMonster(i), st = FF.towerFloorStats(b.floor);
+      // v0.0.96.5: bosses stay on the FROZEN pre-recurve curve (GBOSS_*), NOT towerFloorStats -- the
+      // tower recurve would have shrunk boss 5 from ~186M HP to ~313 by accident.
+      var mon = FF.buildGuildBossMonster(i), st = FF.towerScaledStats(b.floor, FF.GBOSS_HP_RATIO, FF.GBOSS_ATK_RATIO);
       ok(mon && mon.id === 'gboss_' + i, 'boss ' + i + ' builds monster gboss_' + i);
-      eq(mon.hp, st.hp, 'boss ' + i + ' HP matches Tower Floor ' + b.floor);
+      eq(mon.hp, st.hp, 'boss ' + i + ' HP matches the frozen boss curve at floor ' + b.floor);
       var rb = FF.monsterById('gboss_' + i);   // reload path
       ok(rb && rb.hp === st.hp, 'gboss_' + i + ' resolves via monsterById after a reload');
     });
     for(var i = 1; i < FF.GUILD_BOSSES.length; i++){
       ok(FF.buildGuildBossMonster(i).hp > FF.buildGuildBossMonster(i - 1).hp, 'boss ' + i + ' is tougher than boss ' + (i - 1));
     }
+    // Absolute pins so a curve swap cannot silently move the bosses: these are the LIVE pre-recurve stats.
+    eq(FF.buildGuildBossMonster(0).hp, 124, 'boss 1 keeps its frozen 124 HP');
+    eq(FF.buildGuildBossMonster(4).hp, 185771740, 'boss 5 keeps its frozen ~186M HP');
+    eq(FF.buildGuildBossMonster(4).atkMax, 13173, 'boss 5 keeps its frozen max attack');
     // The combat activity carries the guildBoss marker so the kill dispatch reports the clear (not a re-engage).
     var act = FF.makeGuildBossActivity(2);
     ok(act && act.type === 'combat' && act.guildBoss && act.guildBoss.idx === 2 && act.guildBoss.floor === 20, 'makeGuildBossActivity marks a guildBoss combat at Floor 20');
@@ -10649,6 +10655,18 @@
     // The card preview is the SAME scaled stats the fight uses (pure, no registration).
     var pv = FF.towerFloorStats(5);
     ok(pv.hp === m5.hp && pv.atkMin === m5.atkMin && pv.atkMax === m5.atkMax, 'the entrance-card preview matches the real foe stats');
+    // v0.0.96.5 anchor-derived curve: HP hits TOWER_STAT_CAP exactly at floor TOWER_CAP_FLOOR (500) and
+    // max attack is HALF the cap there; the ratios are solved from those two anchors, so pin the anchors.
+    eq(FF.TOWER_CAP_FLOOR, 500, 'the cap floor anchor is 500');
+    var f500 = FF.towerFloorStats(500);
+    eq(f500.hp, FF.TOWER_STAT_CAP, 'floor 500 HP sits exactly on the stat cap');
+    ok(Math.abs(f500.atkMax / (FF.TOWER_STAT_CAP / 2) - 1) < 1e-9, 'floor 500 max attack is half the cap');
+    ok(FF.towerFloorStats(499).hp < FF.TOWER_STAT_CAP, 'floor 499 is still UNDER the cap (every floor to 500 is distinct)');
+    eq(FF.towerFloorStats(501).hp, FF.TOWER_STAT_CAP, 'the cap holds past the anchor');
+    // Two absolute mid-curve pins (the solved ratios, ~x1.0318 HP / ~x1.0330 attack per tier).
+    eq(FF.towerFloorStats(1).hp, 27, 'floor 1 = 27 HP on the recurve');
+    var f100 = FF.towerFloorStats(100);
+    ok(f100.hp === 13422 && f100.atkMin === 860 && f100.atkMax === 2581, 'floor 100 = 13,422 HP / 860-2,581 attack');
     ok(pv.element === 'dark' && pv.type === 'blunt' && pv.baseName && pv.attackSpeed > 0, 'the preview carries element/type/foe/speed');
     // The borrowed foe's element ALWAYS agrees with the floor's element rotation (name and element match).
     for(var f=1; f<=10; f++){ eq(FF.towerBaseMonster(f).element, FF.towerFloorElement(f), 'floor '+f+' foe element matches the floor element'); }
