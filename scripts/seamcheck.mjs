@@ -287,5 +287,50 @@ console.log("seamcheck: every damage source reaches the combat log.");
   }
 }
 
+// ---- CHECK 8: every reconstructed border cell must carry the Trellis flag ------------------------------
+// The estate expansion re-grid rebuilds each carried border as a FRESH OBJECT LITERAL naming the fields it
+// keeps, so any field not listed is silently dropped. A Trellis is a flag on the edge cell, which means
+// expanding the estate would have quietly stripped every Trellis a player had raised. No in-game assertion
+// reaches that (the flag is gone before any seam exists, and only on the expansion path), so like the peon
+// clamp above it is checked as source structure.
+{
+  const edgeLiterals = L
+    .map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => /newEdges\.edges[XY]\[[^\]]+\]\[[^\]]+\]\s*=\s*\{/.test(line));
+  if (edgeLiterals.length !== 2) {
+    fail(`expected exactly 2 expansion border-carry literals, found ${edgeLiterals.length}.\n`
+       + "       The expansion re-grid carries edgesY and edgesX once each. If that changed, re-check that\n"
+       + "       every field on an edge cell (type, masonryTileId, trellis) still survives an expansion.");
+  }
+  const missing = edgeLiterals.filter(({ line }) => !/trellis/.test(line));
+  if (missing.length) {
+    fail(`${missing.length} expansion border-carry literal(s) drop the trellis flag (line(s) ${missing.map((b) => b.n).join(", ")}).\n`
+       + "       Expanding the estate would strip every Flowering Trellis. Carry the flag explicitly.");
+  } else if (edgeLiterals.length === 2) {
+    console.log("seamcheck: both expansion border-carry literals keep the trellis flag.");
+  }
+}
+
+// ---- CHECK 9: the live and offline harvests accumulate the same yield bonuses ---------------------------
+// harvestPlot and the offline catch-up are two separate accumulation sites, and a bonus added to one and not
+// the other is invisible in play: the number is simply lower after an absence, with nothing to notice. The
+// Apiary carries a comment warning about exactly this. So the two are pinned to each other by count.
+{
+  const yieldAdds = L.filter((line) => /yieldQty\s*\+=/.test(line));
+  const apiary = yieldAdds.filter((line) => /apiary/i.test(line)).length;
+  const trellis = yieldAdds.filter((line) => /trellis/i.test(line)).length;
+  if (apiary < 2) {
+    fail(`expected the apiary yield bonus to be accumulated in at least 2 places, found ${apiary}.\n`
+       + "       The live harvest and the offline catch-up each add it. If that changed, re-check that every\n"
+       + "       yield bonus still reaches BOTH paths.");
+  } else if (trellis !== apiary) {
+    fail(`the trellis yield reaches ${trellis} accumulation site(s) but the apiary reaches ${apiary}.\n`
+       + "       A bonus wired into the live harvest but not the offline one silently pays less to a player\n"
+       + "       who was away. Add it to both.");
+  } else {
+    console.log(`seamcheck: the live and offline harvests both accumulate every yield bonus (${apiary} sites).`);
+  }
+}
+
 console.log(failures ? `seamcheck: ${failures} failure(s).` : "seamcheck: clean.");
 process.exit(failures ? 1 : 0);

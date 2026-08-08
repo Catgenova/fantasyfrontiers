@@ -21700,6 +21700,211 @@
     }
   });
 
+  // ---- Border specials: the Waterfall and the Flowering Trellis (v0.0.95.0) -------------------------
+  suite('border specials: the client timer is the server timer, for every border id', function(){
+    // THE ONE INVARIANT THAT MATTERS MOST. estate_job_tier_from_id matches /_t(\d+)$/ and the server's
+    // 'border' arm computes (t+1) * 60000 * ((t % 3) + 1). A special is priced by its ID's tier, not by its
+    // declared type, so waterfall_t20 (which declares 'waterfall', not 'wall') must still come out at the
+    // wall rate. Checked across EVERY border id rather than the two new ones, so any future special that
+    // picks an id whose tier gives the wrong multiplier fails here instead of showing a player a timer that
+    // is not the one gating their reward.
+    var ids = [];
+    for(var v = 0; v <= 20; v++) ids.push('masonry_t' + v);
+    Object.keys(FF.ESTATE_BORDER_SPECIALS).forEach(function(k){ ids.push(k); });
+    var offenders = ids.filter(function(id){
+      var m = /_t(\d+)$/.exec(id);
+      var t = Math.max(0, Math.min(20, m ? parseInt(m[1], 10) : 0));
+      return FF.borderBuildMs(id) !== (t + 1) * 60000 * ((t % 3) + 1);
+    });
+    eq(offenders.join(', '), '', 'every border id is priced by the server formula (offenders listed)');
+    ok(ids.length >= 23, 'the sweep covers the 21 Masonry borders plus every special');
+    // Every special must carry a real _t suffix, or the server clamps it to tier 0 and prices it at 1 min.
+    Object.keys(FF.ESTATE_BORDER_SPECIALS).forEach(function(k){
+      ok(/_t(\d+)$/.test(k), k + ' ends in a tier the server can read');
+    });
+    eq(FF.borderBuildMs('waterfall_t20'), 3780000, 'a Waterfall is 63 minutes, the Marble Wall rate');
+    eq(FF.borderBuildMs('trellis_t19'), 2400000, 'a Trellis is 40 minutes, the Marble Fence rate');
+    // The declared type is what the game reads, and it must NOT be derived from tier % 3 for a special.
+    eq(FF.borderTypeOf('waterfall_t20'), 'waterfall', 'a Waterfall is its own type, not the wall t20 % 3 implies');
+    eq(FF.borderTypeOf('trellis_t19'), 'fence', 'a Trellis stays a fence, which is what keeps its shelter');
+    // A special resolves through borderRecipeOf so materials, refunds and labels all work.
+    Object.keys(FF.ESTATE_BORDER_SPECIALS).forEach(function(k){
+      var r = FF.borderRecipeOf(k);
+      ok(!!r && !!r.inputs && Object.keys(r.inputs).length > 0, k + ' resolves to a recipe with inputs');
+      var mats = FF.estateJobMaterials({ kind:'border', masonryTileId:k });
+      eq(mats.length, Object.keys(r.inputs).length, k + ' bills every one of its inputs');
+      ok(FF.estateJobShapeOk({ kind:'border', orient:'y', masonryTileId:k }), k + ' survives a reload as a job');
+    });
+  });
+
+  suite('the Waterfall: a Grand Aqueduct meeting open water, and nothing else', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var g = S.estate.grid;
+    var svJob = S.estate.job, svQueue = S.estate.queue, svInv = S.inventory, svLog = S.log.slice();
+    var svXp = { m:S.xp.masonry, a:S.xp.architecture, d:S.xp.digging, mi:S.xp.mining };
+    var cells = [[6,6],[5,6]].map(function(p){ return { p:p, c:g[p[0]][p[1]], s:JSON.stringify(g[p[0]][p[1]]) }; });
+    var E = S.estate.edgesX[6][6], svE = { t:E.type, m:E.masonryTileId, tr:E.trellis };
+    function place(){ return FF.borderSpecialPlaceable(g, S.estate, { orient:'x', x:6, y:6 }, 'waterfall_t20'); }
+    try {
+      S.estate.job = null; S.estate.queue = []; S.inventory = {};
+      E.type = null; E.masonryTileId = null; E.trellis = false;
+      cells.forEach(function(o){ var c = o.c; c.obstacle=null; c.owned=true; c.type='paved'; c.paveTileId='paving_t20';
+        c.workshopId=null; c.cottageId=null; c.totemId=null; c.buildingId=null; c.fieldTier=null; c.height=8; });
+      // THE PLACEMENT RULE, one refusal at a time.
+      ok(!place().ok, 'refused between two dry paved tiles');
+      ok(/Grand Aqueduct/.test(place().msg), 'and the refusal says what it wants');
+      g[5][6].height = 0; g[5][6].type = 'dirt';
+      ok(!place().ok, 'refused with water but no Aqueduct');
+      g[6][6].buildingId = 'aqueduct_t10';
+      ok(!place().ok, 'refused with a lesser Aqueduct: the GRAND one is the gate');
+      g[6][6].buildingId = 'aqueduct_t20';
+      ok(place().ok, 'allowed with a Grand Aqueduct on one side and open water on the other');
+      // Water on BOTH sides is not a spillway either.
+      g[6][6].buildingId = null; g[6][6].height = 0; g[6][6].type = 'dirt';
+      ok(!place().ok, 'refused between two water tiles');
+      g[6][6].height = 8; g[6][6].type = 'paved'; g[6][6].buildingId = 'aqueduct_t20';
+      // A real build, then completion.
+      S.xp.masonry = FF.xpFloorForLevel(100); S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]); S.xp.mining = FF.xpFloorForLevel(100);
+      var wf = FF.ESTATE_BORDER_SPECIALS.waterfall_t20;
+      Object.keys(wf.inputs).forEach(function(k){ S.inventory[k] = wf.inputs[k]; });
+      FF.estateBuildBorder('x', 6, 6, 'waterfall_t20');
+      var j = S.estate.job;
+      ok(!!j && j.masonryTileId === 'waterfall_t20', 'the raise starts');
+      eq(Math.round(j.readyAt - j.startAt), 3780000, 'clocked at 63 minutes');
+      Object.keys(wf.inputs).forEach(function(k){ eq(S.inventory[k] || 0, 0, 'the bill consumed ' + k); });
+      ok(FF.applyEstateJobCompletion(S.estate, j, true, false), 'and completes');
+      eq(E.type, 'waterfall', 'the edge is a Waterfall');
+      S.estate.job = null;
+      // IT IS NOT A WALL. Every shipped border effect must ignore it.
+      ok(FF.estateAppraisal('personal').walled === 0 || FF.edgeTypeIn(S.estate, { orient:'x', x:6, y:6 }) !== 'wall',
+         'a Waterfall is never counted as a Wall by the Estate Appraisal');
+      eq(FF.fenceShelterCutAt('personal', 6, 6), 0, 'nor as a Fence by the shelter');
+      // THE TWO STRAND GUARDS. A Waterfall spans two tiles, so either one changing would orphan it.
+      FF.estateRaiseLayer(5, 6);
+      ok(!S.estate.job, 'raising the water it pours into is refused');
+      ok(/Waterfall pours/.test((S.log[S.log.length-1] || {}).msg || ''), 'and says why');
+      FF.estateRemoveBuilding(6, 6);
+      eq(g[6][6].buildingId, 'aqueduct_t20', 'removing the Aqueduct it spills from is refused');
+      ok(/Waterfall spills/.test((S.log[S.log.length-1] || {}).msg || ''), 'and says why');
+      ok(FF.tileHasWaterfallBorder(S.estate, 6, 6) && FF.tileHasWaterfallBorder(S.estate, 5, 6),
+         'both tiles know a Waterfall rides one of their borders');
+      ok(!FF.tileHasWaterfallBorder(S.estate, 12, 12), 'and an unrelated tile does not');
+      // The queued raise is refused at DISPATCH too, not only at the button.
+      var qv = FF.estateQueuedJobValid({ kind:'raise', x:5, y:6 }, g[5][6], S.estate);
+      ok(!qv.ok && /Waterfall/.test(qv.msg), 'a queued raise onto that water is dropped at dispatch');
+    } finally {
+      cells.forEach(function(o){ var r = JSON.parse(o.s); Object.keys(r).forEach(function(k){ o.c[k] = r[k]; }); });
+      E.type = svE.t; E.masonryTileId = svE.m; E.trellis = svE.tr;
+      S.estate.job = svJob; S.estate.queue = svQueue; S.inventory = svInv; S.log = svLog;
+      S.xp.masonry = svXp.m; S.xp.architecture = svXp.a; S.xp.digging = svXp.d; S.xp.mining = svXp.mi;
+      FF.estRecomputeWorkshops();
+    }
+  });
+
+  suite('the Flowering Trellis: a flag on a Marble Fence that pays both sides', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var g = S.estate.grid;
+    var svJob = S.estate.job, svQueue = S.estate.queue, svInv = S.inventory, svLog = S.log.slice();
+    var svXp = { m:S.xp.masonry, a:S.xp.architecture, mi:S.xp.mining };
+    var tiles = [[9,9],[9,10]].map(function(p){ return { p:p, c:g[p[0]][p[1]], s:JSON.stringify(g[p[0]][p[1]]) }; });
+    var quad = FF.borderEdgesOfTile(9, 9).concat(FF.borderEdgesOfTile(9, 10));
+    var saved = quad.map(function(e){ var c = FF.edgeCellIn(S.estate, e); return { c:c, t:c.type, m:c.masonryTileId, tr:c.trellis }; });
+    function setFence(e, tre){ var c = FF.edgeCellIn(S.estate, e); c.type = 'fence'; c.masonryTileId = 'masonry_t19'; c.trellis = !!tre; }
+    var shared = { orient:'y', x:9, y:10 };   // the border between (9,9) and (9,10)
+    try {
+      S.estate.job = null; S.estate.queue = []; S.inventory = {};
+      saved.forEach(function(o){ o.c.type = null; o.c.masonryTileId = null; o.c.trellis = false; });
+      tiles.forEach(function(o){ var c = o.c; c.obstacle=null; c.owned=true; c.type='dirt'; c.fieldTier=5; c.height=8;
+        c.workshopId=null; c.cottageId=null; c.totemId=null; c.buildingId=null; });
+      // IT IS AN UPGRADE, so it needs its base and refuses everything else.
+      var pl = function(){ return FF.borderSpecialPlaceable(g, S.estate, shared, 'trellis_t19'); };
+      ok(!pl().ok, 'refused on a bare border');
+      ok(/Marble Fence/.test(pl().msg), 'and names the fence it wants');
+      var sc = FF.edgeCellIn(S.estate, shared);
+      sc.type = 'wall'; sc.masonryTileId = 'masonry_t20';
+      ok(!pl().ok, 'refused on a Wall');
+      sc.type = 'curb'; sc.masonryTileId = 'masonry_t18';
+      ok(!pl().ok, 'refused on a Curb');
+      sc.type = 'fence'; sc.masonryTileId = 'masonry_t16';
+      ok(!pl().ok, 'refused on a lesser Fence: the top one is the gate');
+      sc.masonryTileId = 'masonry_t19';
+      ok(pl().ok, 'allowed on the Marble Fence');
+      // Build it and check the FENCE SURVIVES. This is the whole reason it is a flag.
+      S.xp.masonry = FF.xpFloorForLevel(100); S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]); S.xp.mining = FF.xpFloorForLevel(100);
+      var tr = FF.ESTATE_BORDER_SPECIALS.trellis_t19;
+      Object.keys(tr.inputs).forEach(function(k){ S.inventory[k] = tr.inputs[k]; });
+      FF.estateBuildBorder('y', 9, 10, 'trellis_t19');
+      var j = S.estate.job;
+      ok(!!j && j.masonryTileId === 'trellis_t19', 'the raise starts');
+      eq(Math.round(j.readyAt - j.startAt), 2400000, 'clocked at 40 minutes');
+      ok(FF.applyEstateJobCompletion(S.estate, j, true, false), 'and completes');
+      S.estate.job = null;
+      eq(sc.type, 'fence', 'the border is STILL a fence');
+      eq(sc.masonryTileId, 'masonry_t19', 'and still the Marble Fence that was paid for');
+      eq(sc.trellis, true, 'with the Trellis flag set on top');
+      ok(!pl().ok, 'and it refuses a second Trellis');
+      // THE PAYOUT. One Trellis on a shared border pays BOTH sides, which is the design.
+      eq(FF.trellisYieldBonusAt('personal', '9,9'), 1, 'the Field on one side gains 1');
+      eq(FF.trellisYieldBonusAt('personal', '9,10'), 1, 'and the Field on the other side gains 1 from the SAME Trellis');
+      eq(FF.TRELLIS_YIELD_BONUS, 1, 'one crop per trellised border');
+      // Geometry is the cap: four borders, so +4 and no more.
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, true); });
+      eq(FF.trellisYieldBonusAt('personal', '9,9'), 4, 'all four trellised is +4, which geometry caps');
+      // The shelter the ring was built for must be untouched by trellising it.
+      var cut = FF.fenceShelterCutAt('personal', 9, 9);
+      ok(cut > 0, 'a fully trellised ring STILL shelters the Field');
+      eq(Math.round(cut * 1e6) / 1e6, Math.round(FF.FENCE_SHELTER_MAX_CUT * (20 / FF.TIER_COUNT) * 1e6) / 1e6,
+         'and shelters it by exactly the t19 amount, so the Trellis costs nothing');
+      // An untrellised fence pays no yield, so the flag is what pays and not the fence.
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, false); });
+      eq(FF.trellisYieldBonusAt('personal', '9,9'), 0, 'a bare Marble Fence ring pays no yield');
+      ok(FF.fenceShelterCutAt('personal', 9, 9) > 0, 'but still shelters');
+      // Stripping leaves the fence and its shelter.
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, true); });
+      FF.estateStripTrellis('y', 9, 10);
+      eq(FF.trellisYieldBonusAt('personal', '9,9'), 3, 'stripping one Trellis drops that Field to +3');
+      eq(FF.edgeCellIn(S.estate, shared).type, 'fence', 'and the Fence under it still stands');
+      ok(FF.fenceShelterCutAt('personal', 9, 9) > 0, 'so the shelter survives a strip');
+      // THE REAL HARVEST, not just the helper. Asserting trellisYieldBonusAt alone was vacuous: a guard-proof
+      // plant that deleted the line adding it to harvestPlot passed everything. So this harvests an actual
+      // ready plot twice, with the dice pinned so the Green Thumb roll and the seed return are constant, and
+      // asserts the delta is exactly the four crops the four Trellises promise.
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, false); });
+      var map = FF.farmPlotMap('personal');
+      var cropId = 'farming_t3';
+      function harvestOnce(){
+        S.inventory = {};
+        map['9,9'] = { cropType:'fiber', tierIndex:3, plantedAt:Date.now() - 1000, readyAt:Date.now() - 1 };
+        var saved = Math.random;
+        Math.random = function(){ return 0.999999; };   // no Green Thumb, no Composter, no seed return
+        try { FF.harvestPlot('personal', '9,9', true); } finally { Math.random = saved; }
+        return S.inventory[cropId] || 0;
+      }
+      var bare = harvestOnce();
+      ok(bare > 0, 'the probe harvest actually produced crops (' + bare + ')');
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, true); });
+      var trellised = harvestOnce();
+      eq(trellised - bare, 4, 'a real harvest off a fully trellised Field yields exactly 4 more');
+      // The OFFLINE harvest is a SEPARATE call site and cannot be reached from here, so it is guarded
+      // structurally instead: seamcheck CHECK 9 requires the trellis bonus to be accumulated wherever the
+      // apiary bonus is. An `|| true` assertion stood here first and was, of course, worthless.
+      // Demolishing the border takes the Trellis with it.
+      FF.borderEdgesOfTile(9, 9).forEach(function(e){ setFence(e, true); });
+      FF.estateDestroyBorder('y', 9, 9);
+      var nc = FF.edgeCellIn(S.estate, { orient:'y', x:9, y:9 });
+      eq(nc.type, null, 'destroying the border clears it');
+      eq(nc.trellis, false, 'and the Trellis cannot outlive the Fence it was laid over');
+    } finally {
+      tiles.forEach(function(o){ var r = JSON.parse(o.s); Object.keys(r).forEach(function(k){ o.c[k] = r[k]; }); });
+      saved.forEach(function(o){ o.c.type = o.t; o.c.masonryTileId = o.m; o.c.trellis = o.tr; });
+      S.estate.job = svJob; S.estate.queue = svQueue; S.inventory = svInv; S.log = svLog;
+      S.xp.masonry = svXp.m; S.xp.architecture = svXp.a; S.xp.mining = svXp.mi;
+      FF.estRecomputeWorkshops();
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

@@ -12390,6 +12390,30 @@
   // sides and one Lime Fence would otherwise buy nearly the full bonus for a twentieth of the stone.
   // Curbs and Walls do NOT count: a Curb is ankle-height and a Wall is the Appraisal's business. Giving
   // each of the three types one job is the point of the whole batch.
+  // ---- THE FLOWERING TRELLIS: +1 crop per trellised border (v0.0.95.0) ---------------------------------
+  // This is the ONE effect in the estate that pays per BORDER, and it is allowed to because geometry caps
+  // it: a Field has exactly four borders, so the bonus cannot exceed +4 however much stone anyone owns.
+  // The full +4 is four Marble Fences plus four Trellises, eight serialised 40-minute jobs, against a base
+  // harvest of 5 (10 fertilized, 15 with a Composter) where a single t20 Totem already pays +20. So it is
+  // bounded, visible on the harvest line, and never the efficient buy -- which is what separates it from
+  // the pinned-count trap that "+X% per Wall" would have been.
+  //
+  // A Trellis BETWEEN TWO FIELDS PAYS TWICE, once to each side, so packing Fields into a block and
+  // trellising the internal borders is the play. That is the whole design and the UI says so, because a
+  // player would not otherwise discover it.
+  var TRELLIS_YIELD_BONUS = 1;
+  function trellisYieldBonusAt(scope, key){
+    var edges = scope === 'guild' ? (guildEstate.status === 'ready' ? guildEstate : null) : (state.estate || null);
+    if(!edges || typeof key !== 'string') return 0;
+    var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
+    if(!isFinite(px) || !isFinite(py)) return 0;
+    var quad = borderEdgesOfTile(px, py), n = 0;
+    for(var i=0;i<quad.length;i++){
+      var c = edgeCellIn(edges, quad[i]);
+      if(c && c.trellis) n++;
+    }
+    return n * TRELLIS_YIELD_BONUS;
+  }
   var FENCE_SHELTER_MAX_CUT = 0.15;   // a fully Lime-fenced Field grows 15% faster
   function fenceShelterCutAt(scope, px, py){
     var edges = scope === 'guild' ? (guildEstate.status === 'ready' ? guildEstate : null) : (state.estate || null);
@@ -12510,6 +12534,8 @@
     yieldQty += waterBonus;
     var apiaryBonus = apiaryYieldBonusAt(scope, key);
     yieldQty += apiaryBonus;
+    var trellisBonus = trellisYieldBonusAt(scope, key);
+    yieldQty += trellisBonus;
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
     estSet('crop', cropData.id);   // Estate quests: how many DIFFERENT crops you have brought in
@@ -12523,7 +12549,7 @@
     maybeSummonFamiliar('farming');
     if(!batch){
       var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
-      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (apiaryBonus > 0 ? ' (+' + apiaryBonus + ' apiary)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
+      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (apiaryBonus > 0 ? ' (+' + apiaryBonus + ' apiary)' : '') + (trellisBonus > 0 ? ' (+' + trellisBonus + ' trellis)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
     }
     delete map[key];
     if(!batch) saveGame();
@@ -12731,6 +12757,7 @@
     yieldQty += greenThumbExtraYield();
     yieldQty += totemYieldBonusAt(scope, key); // nearby Totems boost offline harvests too
     yieldQty += apiaryYieldBonusAt(scope, key); // ...and so do nearby Apiaries (v0.0.90.0)
+    yieldQty += trellisYieldBonusAt(scope, key); // ...and trellised borders (v0.0.95.0). BOTH paths or offline harvests silently miss it.
     yieldQty += waterYieldBonusAt(scope, key); // ...and so does a waterside bank
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
@@ -15707,12 +15734,12 @@
     var edgesY = [], edgesX = [];
     for(var x=0; x<ESTATE_GRID_SIZE; x++){
       var colY = [];
-      for(var y=0; y<=ESTATE_GRID_SIZE; y++) colY.push({ type:null, masonryTileId:null });
+      for(var y=0; y<=ESTATE_GRID_SIZE; y++) colY.push({ type:null, masonryTileId:null, trellis:false });
       edgesY.push(colY);
     }
     for(var x2=0; x2<=ESTATE_GRID_SIZE; x2++){
       var colX = [];
-      for(var y2=0; y2<ESTATE_GRID_SIZE; y2++) colX.push({ type:null, masonryTileId:null });
+      for(var y2=0; y2<ESTATE_GRID_SIZE; y2++) colX.push({ type:null, masonryTileId:null, trellis:false });
       edgesX.push(colX);
     }
     return { edgesY:edgesY, edgesX:edgesX };
@@ -21472,8 +21499,8 @@
               if(!edgesYOk || !edgesXOk){
                 Object.assign(state.estate, generateEstateEdges());
               } else {
-                state.estate.edgesY.forEach(function(col){ col.forEach(function(e){ if(e.masonryTileId===undefined) e.masonryTileId=null; }); });
-                state.estate.edgesX.forEach(function(col){ col.forEach(function(e){ if(e.masonryTileId===undefined) e.masonryTileId=null; }); });
+                state.estate.edgesY.forEach(function(col){ col.forEach(function(e){ if(e.masonryTileId===undefined) e.masonryTileId=null; if(e.trellis===undefined) e.trellis=false; }); });
+                state.estate.edgesX.forEach(function(col){ col.forEach(function(e){ if(e.masonryTileId===undefined) e.masonryTileId=null; if(e.trellis===undefined) e.trellis=false; }); });
               }
             }
           } catch(estateErr){
@@ -29799,7 +29826,7 @@
       for(var ex=0; ex<ESTATE_CORE_SIZE; ex++){
         for(var ey=0; ey<=ESTATE_CORE_SIZE; ey++){
           var oldE = oldEstate.edgesY[ex] && oldEstate.edgesY[ex][ey];
-          if(oldE) newEdges.edgesY[ex+OFF][ey+OFF] = { type: oldE.type||null, masonryTileId: oldE.masonryTileId||null };
+          if(oldE) newEdges.edgesY[ex+OFF][ey+OFF] = { type: oldE.type||null, masonryTileId: oldE.masonryTileId||null, trellis: !!oldE.trellis };
         }
       }
     }
@@ -29807,7 +29834,7 @@
       for(var ex2=0; ex2<=ESTATE_CORE_SIZE; ex2++){
         for(var ey2=0; ey2<ESTATE_CORE_SIZE; ey2++){
           var oldE2 = oldEstate.edgesX[ex2] && oldEstate.edgesX[ex2][ey2];
-          if(oldE2) newEdges.edgesX[ex2+OFF][ey2+OFF] = { type: oldE2.type||null, masonryTileId: oldE2.masonryTileId||null };
+          if(oldE2) newEdges.edgesX[ex2+OFF][ey2+OFF] = { type: oldE2.type||null, masonryTileId: oldE2.masonryTileId||null, trellis: !!oldE2.trellis };
         }
       }
     }
@@ -30135,7 +30162,7 @@
       case 'build':    return typeof j.buildingId === 'string' && !!buildingItem(j.buildingId);
       // A border needs a REAL Masonry recipe and one of exactly two orientations. A bad orient would
       // index the wrong edge grid on completion and silently build the border somewhere else.
-      case 'border':   return typeof j.masonryTileId === 'string' && !!getMasonryRecipe(j.masonryTileId)
+      case 'border':   return typeof j.masonryTileId === 'string' && !!borderRecipeOf(j.masonryTileId)
                               && (j.orient === 'x' || j.orient === 'y');
       default:         return false;
     }
@@ -30155,7 +30182,7 @@
       // A border is BUILT IN PLACE from its Masonry recipe's own inputs (bricks, pillars, fill) rather
       // than from a crafted item, so this is the one arm that returns several pairs. Refund and consume
       // both run off this list, so a cancel returns every input.
-      case 'border':   var br = getMasonryRecipe(job.masonryTileId);
+      case 'border':   var br = borderRecipeOf(job.masonryTileId);
                        return br ? Object.keys(br.inputs).map(function(k){ return [k, br.inputs[k]]; }) : [];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
@@ -30209,8 +30236,17 @@
     // Checked BEFORE the cell guard: a border's x can be GRID_SIZE (the outer boundary), where there is
     // legitimately no tile, so the tile-missing check below would reject every outer-edge border.
     if(job.kind === 'border'){
-      var ec = edgeCellIn(edges, { orient:job.orient, x:job.x, y:job.y });
+      var bEdge = { orient:job.orient, x:job.x, y:job.y };
+      var ec = edgeCellIn(edges, bEdge);
       if(!ec) return { ok:false, msg:'that border is not on this estate' };
+      // A SPECIAL owns its own preconditions, and they are re-asked here rather than only at the button:
+      // a Waterfall can be queued and then have its Aqueduct torn down, and a Trellis can be queued and
+      // then have its Fence demolished, before the job ever dispatches.
+      if(borderSpecialOf(job.masonryTileId)){
+        var gridFor = (edges === (state.estate||null)) ? (state.estate && state.estate.grid)
+                    : ((typeof guildEstate !== 'undefined' && edges === guildEstate) ? guildEstate.grid : null);
+        return borderSpecialPlaceable(gridFor, edges, bEdge, job.masonryTileId);
+      }
       if(ec.type) return { ok:false, msg:'something is already built on that border' };
       return { ok:true };
     }
@@ -30221,6 +30257,7 @@
                        // Re-checked here, not just at the button: a raise can be queued BEFORE a water
                        // building is placed on the same tile, and raising it would strand the building.
                        if(c.buildingId && buildingSurface(buildingKeyOf(c.buildingId)) === 'water') return { ok:false, msg:'a Fishing Weir stands in that water' };
+                       if(estateIsWater(c) && tileHasWaterfallBorder(edges, job.x, job.y)) return { ok:false, msg:'a Waterfall pours into that water' };
                        return (c.height < ESTATE_MAX_HEIGHT-1) ? { ok:true } : { ok:false, msg:'that tile is already at max height' };
       case 'lower':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be dug down' };
                        if(c.fieldTier != null && c.height <= 1) return { ok:false, msg:'lowering further would flood the Field' };
@@ -30565,7 +30602,8 @@
       case 'totem':    return (job.upgrade ? 'Upgrade to ' : 'Raise ') + ((totemItem(job.totemId)||{}).name || 'Totem');
       case 'build':    return (job.upgrade ? 'Upgrade to ' : 'Build ') + buildingName(job.buildingId);
       case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
-      case 'border':   return 'Build ' + ((getMasonryRecipe(job.masonryTileId)||{}).name || 'border');
+      case 'border':   var bsp = borderSpecialOf(job.masonryTileId);
+                       return (bsp && bsp.upgradeOf ? 'Raise a ' : 'Build ') + ((borderRecipeOf(job.masonryTileId)||{}).name || 'border');
     }
     return job.kind;
   }
@@ -30595,6 +30633,11 @@
     // existing rule that refuses to lower a Field into the water.
     if(cell.buildingId && buildingSurface(buildingKeyOf(cell.buildingId)) === 'water'){
       addLog('Remove the ' + buildingName(cell.buildingId) + ' before raising this tile out of the water.', 'danger'); return;
+    }
+    // Same reasoning one step out: raising this tile out of the waterline would leave a Waterfall on its
+    // border pouring into dry ground.
+    if(estateIsWater(cell) && tileHasWaterfallBorder(estActive, x, y)){
+      addLog('A Waterfall pours into this water. Destroy it before raising the tile.', 'danger'); return;
     }
     if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     // Validate the CAP against where the tile will be once anything already queued for it lands, so a
@@ -30784,9 +30827,17 @@
         }
         return false;
       }
-      var brec = getMasonryRecipe(job.masonryTileId);
-      ec.type = borderTypeOf(job.masonryTileId);
-      ec.masonryTileId = job.masonryTileId;
+      var brec = borderRecipeOf(job.masonryTileId);
+      var bsp = borderSpecialOf(job.masonryTileId);
+      if(bsp && bsp.upgradeOf){
+        // AN UPGRADE SETS ITS FLAG AND LEAVES THE BORDER ALONE. Writing type/masonryTileId here would
+        // turn a Marble Fence into a 'trellis_t19' border, and fenceShelterCutAt refuses anything whose
+        // type is not 'fence' -- so trellising a completed ring would have silently deleted its shelter.
+        if(bsp.flag) ec[bsp.flag] = true;
+      } else {
+        ec.type = borderTypeOf(job.masonryTileId);
+        ec.masonryTileId = job.masonryTileId;
+      }
       // The borders feed three effects (fence shelter, curb-lined aqueducts, the walled appraisal), and
       // the aqueduct chain is a CACHE -- a new curb has to invalidate it or the water it just carried
       // would not arrive until some unrelated action happened to recompute.
@@ -31925,6 +31976,11 @@
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.buildingId) return;
     var bid = cell.buildingId;
+    // A Waterfall spills FROM a Grand Aqueduct. Taking the Aqueduct away would leave the spillway running
+    // from nothing, so the removal is refused rather than silently stranding it.
+    if(buildingKeyOf(bid) === 'aqueduct' && tileHasWaterfallBorder(estActive, x, y)){
+      addLog('A Waterfall spills from this Aqueduct. Destroy the Waterfall first.', 'danger'); return;
+    }
     addItem(bid, 1);
     cell.buildingId = null;
     cell.apiaryAt = null;            // a removed hive must not resume an old clock when one is placed later
@@ -32787,7 +32843,7 @@
   // the estate costs exactly what crafting it normally would. Destroying any of the
   // three back to an empty border is a flat Mining 20, no materials returned.
   var ESTATE_BORDER_TYPE_MOD = { curb:0, fence:1, wall:2 };
-  var ESTATE_BORDER_TYPE_LABEL = { curb:'Curb', fence:'Fence', wall:'Wall' };
+  var ESTATE_BORDER_TYPE_LABEL = { curb:'Curb', fence:'Fence', wall:'Wall', waterfall:'Waterfall' };
   var ESTATE_DESTROY_BORDER_LEVEL = 20;
   // ---- BUILD TIMERS AND THE SKILL GATE (v0.0.94.0) -------------------------------------------------
   // Borders were the ONE estate construction that finished instantly: estateBuildBorder consumed the
@@ -32806,16 +32862,110 @@
   // extra payload, because the TIER ENCODES THE TYPE (tier % 3): the whole formula is
   // (t+1) * 60000 * ((t % 3) + 1) on both sides. Never change one side without the other.
   var ESTATE_BORDER_MS_PER_TIER = 60 * 1000;
+  // THE THREE MASONRY TYPES ONLY. A special is NOT in this table on purpose: it is priced from its id's
+  // tier by the server's own formula in borderBuildMs, and listing it here as well would be a second
+  // mechanism for one number -- break either and the other silently covers for it, which is exactly what
+  // a guard-proof plant caught when both existed.
   var ESTATE_BORDER_TYPE_TIME_MULT = { curb:1, fence:2, wall:3 };
+  // ---- BORDER SPECIALS (v0.0.95.0): edge constructions that are NOT one of Masonry's three ------------
+  // Masonry's list is 7 stones x 3 types and the TIER ENCODES THE TYPE (tier % 3), which is what lets the
+  // server price a border with no extra payload field. That encoding is also why a fourth Masonry type is
+  // impossible: it would renumber every existing border. So a special is its own def, built IN PLACE from
+  // its own inputs exactly as a Masonry border is (estateBuildBorder consumes the recipe's inputs, never a
+  // crafted item), which means A SPECIAL ADDS NO ITEM KEYS and needs no catalogue insert.
+  //
+  // THE ID STILL ENDS _t<n>, AND THAT IS LOAD-BEARING. estate_job_tier_from_id matches /_t(\d+)$/ and the
+  // server's 'border' arm computes (t+1) * 60000 * ((t % 3) + 1). Naming these waterfall_t20 and
+  // trellis_t19 lands them on 63 and 40 minutes with NO MIGRATION, which is the whole reason they are
+  // named that way. Pick an id whose tier gives the wrong multiplier and the timer the player watches
+  // stops being the timer that gates the reward.
+  //
+  // `upgradeOf` marks a special that sits ON TOP of an existing border rather than replacing it. The
+  // Trellis MUST be that shape: fenceShelterCutAt refuses any border whose type is not 'fence', so a
+  // Trellis that changed the type would silently destroy the shelter bonus the ring was built for.
+  var ESTATE_BORDER_SPECIALS = {
+    waterfall_t20: {
+      id:'waterfall_t20', name:'Waterfall', type:'waterfall', levelReq:TIER_LEVELS[20],
+      inputs:{ mining_t19:50, digging_t6:75 },     // raw Marble and humble Mud
+      color:[150, 198, 224],
+      blurb:'A stone lip and spillway where a Grand Aqueduct meets open water. Decorative: it carries the '
+          + 'water nowhere it was not already going.'
+    },
+    trellis_t19: {
+      id:'trellis_t19', name:'Flowering Trellis', type:'fence', upgradeOf:'masonry_t19', flag:'trellis',
+      levelReq:TIER_LEVELS[19],
+      inputs:{ herbalism_t19:30, carpentry_t19:40 },   // Ghost Orchid and planks
+      color:[214, 150, 196],
+      blurb:'A lattice woven over a Marble Fence and left to flower. Every Field it touches harvests one '
+          + 'more, so a Trellis BETWEEN two Fields pays twice.'
+    }
+  };
+  function borderSpecialOf(id){ return ESTATE_BORDER_SPECIALS[id] || null; }
+  // Does a Waterfall ride any border of this tile? A Waterfall spans TWO tiles (a Grand Aqueduct and open
+  // water), so either tile changing strands it. Both callers below refuse the change rather than let it
+  // strand, which is the rule estateRaiseLayer already applies to the Fishing Weir.
+  function tileHasWaterfallBorder(edges, x, y){
+    if(!edges) return false;
+    var quad = borderEdgesOfTile(x, y);
+    for(var i=0;i<quad.length;i++){ if(edgeTypeIn(edges, quad[i]) === 'waterfall') return true; }
+    return false;
+  }
+  // Is this special legal on this edge RIGHT NOW? Takes the grid and edge holder explicitly, so it can be
+  // asked of the owning estate rather than whichever one is on screen, and so the queue can re-ask it at
+  // dispatch. Returns the same {ok,msg} shape estateQueuedJobValid uses.
+  function borderSpecialPlaceable(grid, edges, edge, id){
+    var sp = borderSpecialOf(id);
+    if(!sp) return { ok:true };
+    var ec = edgeCellIn(edges, edge);
+    if(!ec) return { ok:false, msg:'that border is not on this estate' };
+    if(sp.upgradeOf){
+      // An upgrade needs its base border already finished, and refuses to stack twice.
+      if(ec.masonryTileId !== sp.upgradeOf){
+        var base = getMasonryRecipe(sp.upgradeOf);
+        return { ok:false, msg:'a ' + ((base||{}).name || sp.upgradeOf) + ' must already stand on that border' };
+      }
+      if(sp.flag && ec[sp.flag]) return { ok:false, msg:'that border already carries a ' + sp.name };
+      return { ok:true };
+    }
+    if(ec.type) return { ok:false, msg:'something is already built on that border' };
+    if(id === 'waterfall_t20'){
+      // The edge must separate a GRAND Aqueduct from open water. Either side may hold either, and the
+      // Aqueduct is guaranteed to be carrying water by this rule alone: aqueductRange(20) is 22 and a
+      // tile touching water is one step out, so a t20 Aqueduct beside water is always fed.
+      var pair = borderTilesOf(edge);
+      var a = grid && grid[pair[0][0]] && grid[pair[0][0]][pair[0][1]];
+      var b = grid && grid[pair[1][0]] && grid[pair[1][0]][pair[1][1]];
+      var aqu = null, wat = null;
+      [[a,b],[b,a]].forEach(function(p){
+        if(!aqu && p[0] && p[0].buildingId === 'aqueduct_t20' && p[1] && estateIsWater(p[1])){ aqu = p[0]; wat = p[1]; }
+      });
+      if(!aqu) return { ok:false, msg:'a Waterfall needs a Grand Aqueduct on one side and open water on the other' };
+      return { ok:true };
+    }
+    return { ok:true };
+  }
+  // The recipe-shaped thing behind any border id: a Masonry recipe, or a special's own def. Every caller
+  // that used getMasonryRecipe for a border now reads this instead, so materials, refunds, the shape
+  // check and the label all work for specials without a second code path.
+  function borderRecipeOf(id){ return borderSpecialOf(id) || getMasonryRecipe(id); }
   // ONE definition of "which of the three is this stone". It lived inline inside estateBuildBorder and
   // nowhere else; six sites read it now (job label, timer, shelter, appraisal, the lined aqueduct link).
+  // A SPECIAL DECLARES ITS TYPE rather than deriving it: waterfall_t20 would otherwise read as a wall
+  // (20 % 3 === 2) and be counted by the Estate Appraisal.
   function borderTypeOf(masonryTileId){
+    var sp = borderSpecialOf(masonryTileId);
+    if(sp) return sp.type;
     var v = itemTierFromId(masonryTileId);
     return v%3===0 ? 'curb' : (v%3===1 ? 'fence' : 'wall');
   }
   function borderBuildMs(masonryTileId){
     var v = Math.max(0, Math.min(TIER_COUNT-1, itemTierFromId(masonryTileId)));
-    return (v + 1) * ESTATE_BORDER_MS_PER_TIER * (ESTATE_BORDER_TYPE_TIME_MULT[borderTypeOf(masonryTileId)] || 1);
+    var sp = borderSpecialOf(masonryTileId);
+    // A special's multiplier comes from the SERVER's formula (tier % 3), not from its declared type: the
+    // Trellis declares 'fence' and t19 % 3 is 1, which agree, but the Waterfall declares 'waterfall'
+    // while t20 % 3 is 2, so reading the type would price it at 1x against the server's 3x.
+    var mult = sp ? ((v % 3) + 1) : (ESTATE_BORDER_TYPE_TIME_MULT[borderTypeOf(masonryTileId)] || 1);
+    return (v + 1) * ESTATE_BORDER_MS_PER_TIER * mult;
   }
   // THE SKILL GATE. Masonry already gated the RECIPE (you cannot raise a stone you cannot cut); this is
   // the separate ESTATE gate, in exactly the shape buildingGateOk uses -- the tier's own level
@@ -32896,9 +33046,17 @@
   function estateBuildBorder(orient, x, y, masonryTileId){
     var edge = { orient:orient, x:x, y:y };
     var cell = estateGetEdgeCell(edge);
-    if(!cell || cell.type) return;
-    var recipe = getMasonryRecipe(masonryTileId);
+    if(!cell) return;
+    var special = borderSpecialOf(masonryTileId);
+    // A fresh border needs an empty edge; an UPGRADE needs an occupied one, so the emptiness check moves
+    // into borderSpecialPlaceable rather than gating both.
+    if(!special && cell.type) return;
+    var recipe = borderRecipeOf(masonryTileId);
     if(!recipe) return;
+    if(special){
+      var lv = borderSpecialPlaceable(estActive && estActive.grid, estActive, edge, masonryTileId);
+      if(!lv.ok){ addLog('Cannot raise a ' + special.name + ' there: ' + lv.msg + '.', 'danger'); return; }
+    }
     // A border is not a tile, so the tile-busy check does not cover it -- two jobs on ONE edge would
     // both complete and the second would pay nothing for the stone it consumed.
     if(estJobOnBorder(orient, x, y)){ addLog('That border is already being built.', 'danger'); return; }
@@ -32933,10 +33091,27 @@
       return;
     }
     var label = ESTATE_BORDER_TYPE_LABEL[cell.type] || 'structure';
-    addLog('You destroyed the ' + label + ' at this border.', 'important');
+    addLog('You destroyed the ' + label + ' at this border' + (cell.trellis ? ', and the Trellis with it' : '') + '.', 'important');
     cell.type = null;
     cell.masonryTileId = null;
+    cell.trellis = false;      // an upgrade cannot outlive the border it was laid over
     estRecomputeWorkshops();   // a removed Curb can break an Aqueduct chain that was riding it
+    estPersist();
+    needsRender = true;
+  }
+  // Strip an upgrade and LEAVE the border. Without this the only way to undo a Trellis is to demolish the
+  // 40-minute Marble Fence under it, which also costs the Field its shelter bonus. Instant and gated on
+  // Mining like the destroy it is a lighter version of, and it returns nothing either.
+  function estateStripTrellis(orient, x, y){
+    if(guildDestroyBlocked()) return;
+    var cell = estateGetEdgeCell({ orient:orient, x:x, y:y });
+    if(!cell || !cell.trellis) return;
+    if(getLevel(state.xp.mining) < ESTATE_DESTROY_BORDER_LEVEL){
+      addLog('Stripping this requires Mining level ' + ESTATE_DESTROY_BORDER_LEVEL + '.', 'danger');
+      return;
+    }
+    cell.trellis = false;
+    addLog('You stripped the Trellis from this border. The Fence still stands.', 'important');
     estPersist();
     needsRender = true;
   }
@@ -34114,6 +34289,8 @@
     // Draw every border on top of the tile faces so built structures and selection/hover
     // highlights are always visible and clickable, even over a busy tile surface.
     function estateBorderColor(masonryTileId){
+      var sp = borderSpecialOf(masonryTileId);
+      if(sp) return 'rgb('+sp.color.join(',')+')';
       var recipe = getMasonryRecipe(masonryTileId);
       if(!recipe) return 'rgb(170,170,170)';
       var spaceIdx = recipe.name.indexOf(' ');
@@ -34136,11 +34313,52 @@
       else if(hasBuilt){
         ctx.strokeStyle = cell.masonryTileId ? estateBorderColor(cell.masonryTileId) : 'rgb(170,170,170)';
         ctx.lineWidth = cell.type==='curb' ? 2 : (cell.type==='fence' ? 3.5 : 5.5);
+        // A WATERFALL is drawn, not stroked: a pale stone lip along the edge and a few offset streaks
+        // spilling off it, so it reads as falling water in a still image. Deliberately static -- the
+        // estate canvas is not on a repaint clock, and putting it on one to animate three streaks would
+        // cost a full estate redraw ten times a second for the whole session.
+        if(cell.type === 'waterfall'){
+          ctx.strokeStyle = 'rgb(206,226,238)'; ctx.lineWidth = 4;
+          ctx.stroke();
+          var mx = (e.p1.x + e.p2.x)/2, my = (e.p1.y + e.p2.y)/2;
+          var ex2 = e.p2.x - e.p1.x, ey2 = e.p2.y - e.p1.y;
+          var elen = Math.sqrt(ex2*ex2 + ey2*ey2) || 1;
+          // Unit vector along the edge, and its normal, so the spill runs across the border whichever of
+          // the four iso faces this edge happens to be.
+          var ux = ex2/elen, uy = ey2/elen, nx = -uy, ny = ux;
+          [[-0.26, 7, 0.34], [0, 10, 0.5], [0.26, 6, 0.3]].forEach(function(sp){
+            var sx = mx + ux*(elen*sp[0]), sy = my + uy*(elen*sp[0]);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + nx*sp[1]*0.35, sy + ny*sp[1]*0.35 + sp[1]);
+            ctx.strokeStyle = 'rgba(150,198,224,' + sp[2] + ')';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          });
+          // A pale foam arc where it lands.
+          ctx.beginPath();
+          ctx.arc(mx + nx*3.5, my + ny*3.5 + 10, 3.2, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(228,242,248,0.5)';
+          ctx.fill();
+          return;
+        }
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.lineWidth = 1;
       }
       ctx.stroke();
+      // A TRELLIS keeps the Fence's own stone line and gains blossoms, because it still IS a Fence:
+      // fenceShelterCutAt reads the type, so the border must stay recognisable as one both to the code
+      // and to the player who built the ring for its shelter.
+      if(cell && cell.trellis && !isS && !isH){
+        var tdx = e.p2.x - e.p1.x, tdy = e.p2.y - e.p1.y;
+        [0.2, 0.38, 0.55, 0.72, 0.86].forEach(function(t, i){
+          ctx.beginPath();
+          ctx.arc(e.p1.x + tdx*t, e.p1.y + tdy*t - 1.5, (i % 2) ? 1.5 : 2.1, 0, Math.PI*2);
+          ctx.fillStyle = (i % 2) ? 'rgba(236,196,222,0.95)' : 'rgba(214,150,196,0.95)';
+          ctx.fill();
+        });
+      }
     }
     for(var ex=0; ex<ESTATE_GRID_SIZE; ex++){
       for(var ey=0; ey<=ESTATE_GRID_SIZE; ey++){
@@ -34307,6 +34525,31 @@
     if(edge.x===ESTATE_GRID_SIZE) return 'Outer boundary \u2014 east side of row '+edge.y;
     return 'Between Tile ('+(edge.x-1)+', '+edge.y+') and Tile ('+edge.x+', '+edge.y+')';
   }
+  // Rows for every border SPECIAL that is legal on this edge right now. Shown on both an empty border (the
+  // Waterfall) and a built one (the Trellis, which is an upgrade), so the panel does not need to know which
+  // kind of special exists -- borderSpecialPlaceable decides.
+  function renderBorderSpecialRows(edge, cell){
+    var out = '';
+    Object.keys(ESTATE_BORDER_SPECIALS).forEach(function(id){
+      var sp = ESTATE_BORDER_SPECIALS[id];
+      var lv = borderSpecialPlaceable(estActive && estActive.grid, estActive, edge, id);
+      if(!lv.ok) return;                                   // not legal here: say nothing rather than tease
+      if(estJobOnBorder(edge.orient, edge.x, edge.y)) return;
+      var levelOk = getLevel(state.xp.masonry) >= sp.levelReq;
+      var gateOk = borderGateOk(id);
+      var matsOk = hasInputs(sp.inputs);
+      var ok = levelOk && gateOk && matsOk;
+      var mats = Object.keys(sp.inputs).map(function(k){
+        return ((ALL_SELLABLE[k]||{}).name || k) + ' x' + fmt(sp.inputs[k]) + ' (have ' + fmt(state.inventory[k]||0) + ')';
+      }).join(', ');
+      out += '<div class="estate-action-row">';
+      out += '<div class="estate-action-info"><b>'+escapeHtml(sp.name)+'</b><br>'+escapeHtml(sp.blurb)
+          +  '<br><span class="style-lvl">Masonry Lv'+sp.levelReq+' &bull; '+borderGateLabel(id)+' &bull; '+formatHoursCompact(borderBuildMs(id))+' &bull; '+mats+'</span></div>';
+      out += '<button class="action-btn" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+id+'" '+(ok?'':'disabled')+'>'+(ok?'Build':'Locked')+'</button>';
+      out += '</div>';
+    });
+    return out;
+  }
   function renderEstateEdgeOptions(){
     var edge = estateSelectedEdge;
     var cell = estateGetEdgeCell(edge);
@@ -34323,6 +34566,7 @@
         return html;
       }
       var masonryLvl = getLevel(state.xp.masonry);
+      html += renderBorderSpecialRows(edge, cell);
       // What each of the three actually DOES, because until v0.0.94.0 they differed only in price.
       html += '<div class="estate-action-row"><div class="estate-action-info">'
            +  '<b>Curb</b> lines an Aqueduct channel: a Curb on the border between two Aqueducts carries water across it for free.<br>'
@@ -34359,8 +34603,17 @@
       var destroyLevelOk = getLevel(state.xp.mining) >= ESTATE_DESTROY_BORDER_LEVEL;
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Currently Built:</b> '+(builtRecipe?builtRecipe.icon+' '+builtRecipe.name:ESTATE_BORDER_TYPE_LABEL[cell.type])
+           +  (cell.trellis ? ' <span style="color:#d696c4;font-weight:700">+ Flowering Trellis</span>' : '')
            +  '<br><span style="color:var(--text-dim)">'+escapeHtml(borderEffectBlurb(edge, cell))+'</span></div>';
       html += '</div>';
+      html += renderBorderSpecialRows(edge, cell);
+      if(cell.trellis){
+        var stripOk = getLevel(state.xp.mining) >= ESTATE_DESTROY_BORDER_LEVEL;
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Strip Trellis</b><br>Removes the lattice and leaves the Fence (and its shelter) standing. Requires Mining '+ESTATE_DESTROY_BORDER_LEVEL+' &bull; No materials returned</div>';
+        html += '<button class="action-btn stop" data-action="estateStripTrellis" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" '+(stripOk?'':'disabled')+'>'+(stripOk?'Strip':'Lv '+ESTATE_DESTROY_BORDER_LEVEL+' Req.')+'</button>';
+        html += '</div>';
+      }
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Destroy '+ESTATE_BORDER_TYPE_LABEL[cell.type]+'</b><br>Requires Mining '+ESTATE_DESTROY_BORDER_LEVEL+' &bull; No materials returned</div>';
       html += '<button class="action-btn stop" data-action="estateDestroyBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" '+(destroyLevelOk?'':'disabled')+'>'+(destroyLevelOk?'Destroy':'Lv '+ESTATE_DESTROY_BORDER_LEVEL+' Req.')+'</button>';
@@ -35176,11 +35429,12 @@
         var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
         var totemB = totemYieldBonusAt(scope, key), waterB = waterYieldBonusAt(scope, key);
         var shelterB = fenceShelterCutAt(scope, fc.x, fc.y);   // the fence ring's grow-time cut, already inside growM
+        var trellisB = trellisYieldBonusAt(scope, key);        // +1 per trellised border, capped at +4 by geometry
         // Altitude: growth-time modifier from the tile's height (z10 = baseline, z19 +50%, z1 -50%).
         var growM = fieldGrowthMult(scope, key), growPct = Math.round((growM - 1) * 100);
         var growTag = growPct === 0 ? '' : ' &bull; <span style="color:'+(growPct<0?'#7fbf5a':'#d08a3f')+';font-weight:700">'+(growPct>0?'+':'')+growPct+'% grow time (z'+(fieldGridFor(scope)[fc.x][fc.y].height|0)+')</span>';
         out += '<div class="item-card">';
-        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+(waterB>0?' &bull; <span style="color:#5aa0d0;font-weight:700">+'+waterB+' waterside</span>':'')+(shelterB>0?' &bull; <span style="color:#7fbf5a;font-weight:700">-'+Math.round(shelterB*100)+'% fenced</span>':'')+'</div></div></div>';
+        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+(waterB>0?' &bull; <span style="color:#5aa0d0;font-weight:700">+'+waterB+' waterside</span>':'')+(shelterB>0?' &bull; <span style="color:#7fbf5a;font-weight:700">-'+Math.round(shelterB*100)+'% fenced</span>':'')+(trellisB>0?' &bull; <span style="color:#d696c4;font-weight:700">+'+trellisB+' trellis</span>':'')+'</div></div></div>';
         // Per-plot state used to enable/disable the four action buttons below (Sow / Fertilize / Harvest / Cancel).
         var empty = isPlotEmpty(plot);
         var cd = null, remaining = 0, ready = false, canFert = false, hasCrop = false;
@@ -42715,6 +42969,9 @@
     estateBuildBorder: function(btn, e){
       estateBuildBorder(btn.getAttribute('data-orient'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
     },
+    estateStripTrellis: function(btn, e){
+      estateStripTrellis(btn.getAttribute('data-orient'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    },
     estateDestroyBorder: function(btn, e){
       estateDestroyBorder(btn.getAttribute('data-orient'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     },
@@ -43974,7 +44231,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.94.2';
+  var GAME_VERSION = '0.0.95.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -44190,6 +44447,9 @@
       ESTATE_BORDER_MS_PER_TIER:ESTATE_BORDER_MS_PER_TIER, ESTATE_BORDER_TYPE_TIME_MULT:ESTATE_BORDER_TYPE_TIME_MULT, ESTATE_BORDER_GATE_SKILL:ESTATE_BORDER_GATE_SKILL,
       borderEdgesOfTile:borderEdgesOfTile, borderEdgeBetween:borderEdgeBetween, edgeCellIn:edgeCellIn, edgeTypeIn:edgeTypeIn,
       estateBuildBorder:estateBuildBorder, estateDestroyBorder:estateDestroyBorder, estJobOnBorder:estJobOnBorder, estJobOnTile:estJobOnTile,
+      ESTATE_BORDER_SPECIALS:ESTATE_BORDER_SPECIALS, borderSpecialOf:borderSpecialOf, borderRecipeOf:borderRecipeOf,
+      borderSpecialPlaceable:borderSpecialPlaceable, tileHasWaterfallBorder:tileHasWaterfallBorder,
+      trellisYieldBonusAt:trellisYieldBonusAt, TRELLIS_YIELD_BONUS:TRELLIS_YIELD_BONUS, estateStripTrellis:estateStripTrellis,
       estateQueuedJobValid:estateQueuedJobValid, estateJobLabel:estateJobLabel,
       fenceShelterCutAt:fenceShelterCutAt, FENCE_SHELTER_MAX_CUT:FENCE_SHELTER_MAX_CUT, APIARY_YIELD_BONUS:APIARY_YIELD_BONUS, SALVAGE_YIELD_BY_RANK:SALVAGE_YIELD_BY_RANK,
       estateAppraisal:estateAppraisal, estateAppraisalCut:estateAppraisalCut, ESTATE_APPRAISAL_MAX_CUT:ESTATE_APPRAISAL_MAX_CUT,
