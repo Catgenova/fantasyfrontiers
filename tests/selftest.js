@@ -10692,10 +10692,11 @@
     ok(Math.abs(f500.atkMax / (FF.TOWER_STAT_CAP / 2) - 1) < 1e-9, 'floor 500 max attack is half the cap');
     ok(FF.towerFloorStats(499).hp < FF.TOWER_STAT_CAP, 'floor 499 is still UNDER the cap (every floor to 500 is distinct)');
     eq(FF.towerFloorStats(501).hp, FF.TOWER_STAT_CAP, 'the cap holds past the anchor');
-    // Two absolute mid-curve pins (the solved ratios, ~x1.0318 HP / ~x1.0330 attack per tier).
-    eq(FF.towerFloorStats(1).hp, 27, 'floor 1 = 27 HP on the recurve');
+    // v0.0.96.9: floor 1 is anchored at exactly 10,000 HP; the HP line still caps at floor 500
+    // (~x1.0257/tier between the anchors). Attack kept its own anchors and did not move.
+    eq(FF.towerFloorStats(1).hp, 10000, 'floor 1 opens at exactly 10,000 HP');
     var f100 = FF.towerFloorStats(100);
-    ok(f100.hp === 13422 && f100.atkMin === 860 && f100.atkMax === 2581, 'floor 100 = 13,422 HP / 860-2,581 attack');
+    ok(f100.hp === 1521825 && f100.atkMin === 860 && f100.atkMax === 2581, 'floor 100 = 1,521,825 HP / 860-2,581 attack (attack unmoved)');
     ok(pv.element === 'dark' && pv.type === 'blunt' && pv.baseName && pv.attackSpeed > 0, 'the preview carries element/type/foe/speed');
     // The borrowed foe's element ALWAYS agrees with the floor's element rotation (name and element match).
     for(var f=1; f<=10; f++){ eq(FF.towerBaseMonster(f).element, FF.towerFloorElement(f), 'floor '+f+' foe element matches the floor element'); }
