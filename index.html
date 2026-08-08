@@ -15263,7 +15263,11 @@
       onlyTier: TIER_COUNT - 1,                        // OWNER RULE: t20 only, at a very high material cost
       nameFor: function(){ return 'Bunkhouse'; },
       colorFor: function(){ return '#c8b088'; },
-      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 2500; inputs['tailoring_t'+t] = 500; },
+      // weaving (cloth for the bedding), NOT tailoring: tailoring is an OUTFITTING skill whose output is
+      // equipment, so 'tailoring_t20' names no stackable item at all -- the original bill was uncraftable
+      // and rendered as a raw id on the forge card. The bill sweep in tests/selftest.js now makes an
+      // input id that is unnamed or unobtainable fail the suite, so this class of typo cannot ship again.
+      extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 2500; inputs['weaving_t'+t] = 500; },
       bigStone: 250,                                   // 250 Bricks + 100 Pillars, not the usual 10 + 4
       gateSkill: 'architecture',
       maxPerEstate: function(){ return BUNKHOUSE_MAX; },
@@ -44248,7 +44252,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.0';
+  var GAME_VERSION = '0.0.96.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

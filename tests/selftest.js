@@ -22015,6 +22015,52 @@
        'and is well-formed (the fingerprint stays a placeholder until the owner signs the app)');
   });
 
+  // ---- The bill sweep (v0.0.96.1): no input id may be unnamed or unobtainable -----------------------
+  // Found because a player screenshot showed the Bunkhouse card demanding "500x tailoring_t20 (0 owned)":
+  // tailoring is an OUTFITTING skill whose output is equipment, so the id named no stackable item and the
+  // building was not merely ugly, it was UNCRAFTABLE. A def table typo like that passes typecheck (it is
+  // just a string) and every behavioural test (nothing crafts the building in a test), so the durable fix
+  // is this sweep. Two tiers of strictness, deliberately different:
+  //   * ESTATE BILLS (every building tier + both border specials) must be named AND obtainable, because
+  //     their whole input space is gathers, craft recipes and prior-tier buildings.
+  //   * EVERY CRAFT RECIPE input must at least be NAMED, so a raw id can never render anywhere. It is not
+  //     held to obtainability, because corpses, artifacts, powders, coal and shafts legitimately arrive
+  //     from combat and gather side-drops rather than from any recipe.
+  suite('bill sweep: every estate bill is named and obtainable, every recipe input is named', function(){
+    var sellable = FF.ALL_SELLABLE || {};
+    var obtainable = {};
+    Object.keys(FF.ALL_GATHER_ITEMS || {}).forEach(function(k){ obtainable[k] = true; });
+    Object.keys(FF.ALL_CRAFT_RECIPES || {}).forEach(function(k){ obtainable[k] = true; });
+    var offenders = [];
+    function strict(where, id){
+      if(!(sellable[id] || {}).name) offenders.push(where + ' bills UNNAMED id ' + id);
+      else if(!obtainable[id] && !FF.buildingItem(id)) offenders.push(where + ' bills UNOBTAINABLE id ' + id);
+    }
+    Object.keys(FF.ESTATE_BUILDING_DEFS).forEach(function(key){
+      (FF.buildingTiersFor(key) || []).forEach(function(t){
+        var d = FF.getBuildingTierData(key, t);
+        Object.keys((d && d.inputs) || {}).forEach(function(id){ strict('building ' + key + ' t' + t, id); });
+      });
+    });
+    Object.keys(FF.ESTATE_BORDER_SPECIALS).forEach(function(k){
+      Object.keys(FF.ESTATE_BORDER_SPECIALS[k].inputs).forEach(function(id){ strict('special ' + k, id); });
+    });
+    eq(offenders.join(' | '), '', 'every estate bill line is a real, obtainable item (offenders listed)');
+    // The regression that started this, pinned by name.
+    var bun = FF.getBuildingTierData('bunkhouse', FF.TIER_COUNT - 1);
+    ok(!bun.inputs['tailoring_t20'], 'the Bunkhouse no longer bills the phantom tailoring_t20');
+    eq(bun.inputs['weaving_t20'], 500, 'it bills 500 Starweave Cloth instead');
+    eq((sellable['weaving_t20'] || {}).name, 'Starweave Cloth', 'and that id really is the t20 cloth');
+    // The global naming pass: a raw id in ANY recipe's needs-list is a display bug wherever it happens.
+    var unnamed = [];
+    Object.keys(FF.ALL_CRAFT_RECIPES || {}).forEach(function(rid){
+      Object.keys(FF.ALL_CRAFT_RECIPES[rid].inputs || {}).forEach(function(id){
+        if(!(sellable[id] || {}).name && unnamed.length < 5) unnamed.push(rid + ' -> ' + id);
+      });
+    });
+    eq(unnamed.join(' | '), '', 'no craft recipe anywhere bills an id ALL_SELLABLE cannot name (first 5 shown)');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
