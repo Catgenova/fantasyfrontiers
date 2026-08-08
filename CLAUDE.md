@@ -300,7 +300,7 @@ reads `synced_at`, so a sync that fires before `applyOfflineProgress` would thro
 **PER-CLASS CAPS ARE THE WRONG SHAPE — the owner caught this, and the arithmetic is why.** An endgame account
 runs `MAX_TASK_SLOTS = 15`; weapons/tools are `tierTime(7,0.3,i)` (7s at t0); at 50% action time with the
 workshop double-craft that is legitimately ~370,000 of ONE key per 12h offline window (~2M at the
-`toolSpeedMultiplier` floor of 0.1), of which ~590 are fantastic at the 0.0016 cap. Any equipment cap low
+`toolSpeedMultiplier` floor of 0.1), of which ~590 were fantastic at the old 0.0016 cap (v0.0.96.8 cut the whole fantastic channel 10x: base 0.001%, cap 0.016%, so ~59 now; the sweep thresholds date from the 0.16% era and are therefore conservative). Any equipment cap low
 enough to catch injection stops a legitimate mass-crafter from selling their own output. The RATE was never
 the problem: 50,000/key/hour already sits above the legitimate 16–30k.
 
@@ -311,7 +311,7 @@ signal run live flagged the real injection AND two rows belonging to Valuren, an
 Hence `20260731200000`: judge a DELTA against a snapshot table (`item_earn_watch`), subtract what the server
 witnessed (`item_credit_log`), and ship it **shadow-only**. `20260803230000` added a second arm by owner
 order: flag ANY client-reported fantastic growth (even 1) whose family shows ZERO normal growth — the one
-honest way to trip it is a player whose only craft of the family in the window rolled fantastic (0.16%),
+honest way to trip it is a player whose only craft of the family in the window rolled fantastic (0.16% then, 0.016% since v0.0.96.8),
 accepted as review noise. It reads strictly fantastic-vs-normal, so a lone injected SUPREME is still only
 caught by the ratio rule at volume. `20260803270000` closed a coverage hole the SAME DAY an authorized
 probe walked through it (AndJustice4All injected one fantastic Signet unseen): the sweep's "every leg*

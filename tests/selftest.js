@@ -3772,7 +3772,7 @@
     ok(Math.abs(FF.huntsmanOutputBonus() - 0.12) < 1e-6, 'Huntsman +12% butcher output at Lv100');
     ok(Math.abs(FF.masterworkRarityBonus('rare') - 0.05) < 1e-6, 'Masterwork +5% rare odds at Lv100 (5x base)');
     ok(Math.abs(FF.masterworkRarityBonus('supreme') - 0.005) < 1e-6, 'Masterwork +0.5% supreme odds at Lv100 (5x base)');
-    ok(Math.abs(FF.masterworkRarityBonus('fantastic') - 0.0005) < 1e-6, 'Masterwork +0.05% fantastic odds at Lv100 (5x base)');
+    ok(Math.abs(FF.masterworkRarityBonus('fantastic') - 0.00005) < 1e-9, 'Masterwork +0.005% fantastic odds at Lv100 (5x base)');
     ok(FF.masterworkRarityBonus('rare') > 0 && FF.masterworkRarityBonus('normal') === 0, 'Masterwork bonus is per-rarity (nothing for normal)');
     ok(Math.abs(FF.sylvanBondCacheBonus() - 0.05) < 1e-6, 'Sylvan Bond +5% cache at Lv100');
     ok(Math.abs(FF.physBonus('anglersEye', 0.3) - 0.3) < 1e-6, 'physBonus reaches its cap at Lv100');
@@ -3787,7 +3787,7 @@
   });
 
   // ---- Rarity chance: ONE unified formula across every craft (ordinary / relic / masterwork) ----
-  // Each rarity = its static base (Rare 1% / Supreme 0.1% / Fantastic 0.01%) lifted linearly by up to
+  // Each rarity = its static base (Rare 1% / Supreme 0.1% / Fantastic 0.001% since the v0.0.96.8 cut) lifted linearly by up to
   // +5x-base each from a max-tier Faith activity, the Lv100 Masterwork physique, and the server Rarity Bonus.
   suite('rarity chance: unified bases + 5x-base caps', function(){
     var S = FF._state;
@@ -3797,24 +3797,24 @@
       // Static bases.
       near(FF.rareCraftChance(), 0.01, 'base Rare is 1%', 1e-9);
       near(FF.supremeCraftChance(), 0.001, 'base Supreme is 0.1%', 1e-9);
-      near(FF.fantasticCraftChance(), 0.0001, 'base Fantastic is 0.01%', 1e-9);
+      near(FF.fantasticCraftChance(), 0.00001, 'base Fantastic is 0.001% (10x rarer since v0.0.96.8)', 1e-12);
       // Mastery (Lv100) adds 5x base to each.
       S.physique.masterwork = FF.xpFloorForLevel(100);
       near(FF.rareCraftChance(), 0.01 + 0.05, 'Lv100 Mastery adds +5% rare', 1e-9);
       near(FF.supremeCraftChance(), 0.001 + 0.005, 'Lv100 Mastery adds +0.5% supreme', 1e-9);
-      near(FF.fantasticCraftChance(), 0.0001 + 0.0005, 'Lv100 Mastery adds +0.05% fantastic', 1e-9);
+      near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'Lv100 Mastery adds +0.005% fantastic', 1e-12);
       S.physique.masterwork = 0;
       // Server Rarity Bonus adds 5x base to each.
       FF._serverBuff.rarityUntil = Date.now() + 60000;
       near(FF.rareCraftChance(), 0.01 + 0.05, 'server buff adds +5% rare', 1e-9);
       near(FF.supremeCraftChance(), 0.001 + 0.005, 'server buff adds +0.5% supreme', 1e-9);
-      near(FF.fantasticCraftChance(), 0.0001 + 0.0005, 'server buff adds +0.05% fantastic', 1e-9);
+      near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'server buff adds +0.005% fantastic', 1e-12);
       FF._serverBuff.rarityUntil = 0;
       // Max-tier Faith activity adds 5x base to its rarity.
       S.faith = 1e9;
       S.faithActivity = { type:'devotion', tier:20 }; near(FF.faithRarityBonus('devotion'), 0.05, 'max Devotion caps Rare bonus at +5%', 1e-9);
       S.faithActivity = { type:'blessing', tier:20 }; near(FF.faithRarityBonus('blessing'), 0.005, 'max Blessing caps Supreme bonus at +0.5%', 1e-9);
-      S.faithActivity = { type:'miracle', tier:20 }; near(FF.faithRarityBonus('miracle'), 0.0005, 'max Miracle caps Fantastic bonus at +0.05%', 1e-9);
+      S.faithActivity = { type:'miracle', tier:20 }; near(FF.faithRarityBonus('miracle'), 0.00005, 'max Miracle caps Fantastic bonus at +0.005%', 1e-12);
       // Relics read the SAME unified chances (were previously base + Faith only, and no Mastery/server buff).
       S.faithActivity = { type:null, tier:0 };
       var rc = FF.relicRarityChances(S);
@@ -3830,10 +3830,10 @@
     var sv = { mw:S.physique.masterwork, rand:Math.random, rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, faith:S.faith };
     try {
       FF._serverBuff.rarityUntil = 0; S.faithActivity = { type:null, tier:0 }; S.faith = 0; S.physique.masterwork = 0; // isolate: base only
-      // Bands (base): Fantastic [0,0.0001), Supreme [0.0001,0.0011), Rare [0.0011,0.0111), Normal [0.0111,1).
-      Math.random = function(){ return 0.00005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll < 0.0001 -> Fantastic (unified 0.01% base)');
-      Math.random = function(){ return 0.0005; };  eq(FF.rollMastercraftRarity(), 'supreme',   'roll in [0.0001,0.0011) -> Supreme (0.1% base)');
-      Math.random = function(){ return 0.005; };   eq(FF.rollMastercraftRarity(), 'rare',      'roll in [0.0011,0.0111) -> Rare (1% base)');
+      // Bands (base): Fantastic [0,0.00001), Supreme [0.00001,0.00101), Rare [0.00101,0.01101), Normal [0.01101,1).
+      Math.random = function(){ return 0.000005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll < 0.00001 -> Fantastic (unified 0.001% base)');
+      Math.random = function(){ return 0.0005; };  eq(FF.rollMastercraftRarity(), 'supreme',   'roll in [0.00001,0.00101) -> Supreme (0.1% base)');
+      Math.random = function(){ return 0.005; };   eq(FF.rollMastercraftRarity(), 'rare',      'roll in [0.00101,0.01101) -> Rare (1% base)');
       Math.random = function(){ return 0.5; };     eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.5 -> Normal');
     } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.faith = sv.faith; }
   });
@@ -4199,8 +4199,8 @@
     // Effect: the per-rarity chance bonus applies ONLY while the shared timer is live.
     eq(FF.SERVER_RARITY_BONUS.rare, 0.05, 'rare bonus is +5% (5x base)');
     eq(FF.SERVER_RARITY_BONUS.supreme, 0.005, 'supreme bonus is +0.5% (5x base)');
-    eq(FF.SERVER_RARITY_BONUS.fantastic, 0.0005, 'fantastic bonus is +0.05% (5x base)');
-    eq(FF.rarityBonusShortLabel(), '5%R · 0.5%S · 0.05%F', 'the top-bar chip shows the compact per-rarity summary');
+    eq(FF.SERVER_RARITY_BONUS.fantastic, 0.00005, 'fantastic bonus is +0.005% (5x base)');
+    eq(FF.rarityBonusShortLabel(), '5%R · 0.5%S · 0.005%F', 'the top-bar chip shows the compact per-rarity summary (3dp so the fantastic figure survives)');
     var sv = FF._serverBuff.rarityUntil;
     try {
       FF._serverBuff.rarityUntil = 0;
@@ -4209,7 +4209,7 @@
       ok(FF.serverRarityBuffActive(), 'active with a future timer');
       near(FF.serverBuffRarityBonus('rare'), 0.05, 'rare +5% while active', 1e-9);
       near(FF.serverBuffRarityBonus('supreme'), 0.005, 'supreme +0.5% while active', 1e-9);
-      near(FF.serverBuffRarityBonus('fantastic'), 0.0005, 'fantastic +0.05% while active', 1e-9);
+      near(FF.serverBuffRarityBonus('fantastic'), 0.00005, 'fantastic +0.005% while active', 1e-12);
     } finally { FF._serverBuff.rarityUntil = sv; }
   });
 
@@ -11955,13 +11955,13 @@
     eq(between.linked, null, 'a cottage adjacent to two workshops attaches to neither');
   });
 
-  // ---- Miracle cards show the Fantastic chance to a thousandths place (adjacent tiers are distinct) ----
-  suite('faith cards: Miracle Fantastic chance shows 3 decimals', function(){
+  // ---- Miracle cards show the Fantastic chance to four decimals (v0.0.96.8 odds cut: 0.00025% tier steps) ----
+  suite('faith cards: Miracle Fantastic chance shows 4 decimals', function(){
     var s = FF._state, saved = { m:s.xp.miracle, d:s.xp.devotion };
     try {
       s.xp.miracle = 1e12; s.xp.devotion = 1e12; // max level so every tier card renders
       var m = FF.renderFaithActivityTab('miracle');
-      ok(/\d\.\d{3}% Fantastic/.test(m), 'Miracle cards show a thousandths place on the Fantastic chance');
+      ok(/\d\.\d{4}% Fantastic/.test(m), 'Miracle cards show four decimals on the Fantastic chance');
       // Rare odds are larger, so Devotion keeps 2 decimals (no needless thousandths).
       var d = FF.renderFaithActivityTab('devotion');
       ok(/\d\.\d{2}% Rare/.test(d) && !/\d\.\d{3}% Rare/.test(d), 'Devotion keeps 2 decimals on the Rare chance');
