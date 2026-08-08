@@ -443,11 +443,71 @@
   });
 
   // ---- Estate expansion cost ------------------------------------------------------------
+  // THE MULTIPLIER COMPOUNDS PER TILE, and a full estate is 300 tiles (5 rings of 44/52/60/68/76 around
+  // the 10x10 core), so the exponent runs 0..299. Pinned at both ends and at the ring boundaries, because
+  // the reachable size of an estate is entirely this one number: at the old 1.25 the last tile of ring 1
+  // cost 14.7M and the final tile 9.5e31, so nobody left 12x12.
   suite('getEstateExpansionCost', function(){
     eq(FF.getEstateExpansionCost(0), 1000, 'expansion base cost');
-    eq(FF.getEstateExpansionCost(1), 1250, 'expansion +25%');
+    eq(FF.getEstateExpansionCost(1), 1100, 'expansion +10% per tile (owner change, v0.0.95.1)');
+    eq(FF.getEstateExpansionCost(2), 1210, 'and it compounds rather than adding a flat 100');
     var pc = 0;
     for(var i = 0; i < 20; i++){ var c = FF.getEstateExpansionCost(i); ok(c >= pc, 'expansion cost non-decreasing @' + i); pc = c; }
+    // The ring boundaries, which are the figures a player actually meets. Recomputed from the formula
+    // rather than retyped, so this cannot drift from the constant while still looking authoritative.
+    var B = 1000, M = 1.10;
+    function want(i){ return Math.round(B * Math.pow(M, i)); }
+    [0, 43, 44, 95, 96, 155, 156, 223, 224, 299].forEach(function(i){
+      eq(FF.getEstateExpansionCost(i), want(i), 'cost at purchase index ' + i);
+    });
+    eq(FF.getEstateExpansionCost(43), 60240, 'the last tile of ring 1 (12x12) is 60,240g, not the old 14.7M');
+    eq(FF.getEstateExpansionCost(299), 2379100905625876, 'and the 300th and final tile is 2.38e15g');
+    // Ring 1 in full: the number that decides whether an ordinary player ever expands at all.
+    var ring1 = 0;
+    for(var r = 0; r < 44; r++) ring1 += FF.getEstateExpansionCost(r);
+    eq(ring1, 652639, 'completing ring 1 (12x12) costs 652,639g in total');
+    // 300 purchasable tiles, and the order refuses to run past them.
+    eq(FF.ESTATE_EXPANSION_ORDER.length, 300, 'there are exactly 300 purchasable tiles (100 core + 300 = 20x20)');
+  });
+
+  // THE REAL PURCHASE, because asserting the pure function is not enough: a guard-proof plant that charged
+  // getEstateExpansionCost(floor(purchased / 44)) -- per RING instead of per tile -- passed every assertion
+  // above. What matters to a player is the number estateExpand actually takes out of their pocket, so that
+  // is what is checked here.
+  suite('estate expansion charges the per-TILE index, not a per-ring one', function(){
+    var S = FF._state;
+    FF.estUse(false);
+    var svGold = S.gold, svPurchased = S.estate.expansionsPurchased, svLog = S.log.slice();
+    var owned = [];
+    try {
+      // Buy the 11th tile: at a per-ring price this would cost index 0 (1,000g) instead of index 10.
+      S.estate.expansionsPurchased = 10;
+      var next = FF.ESTATE_EXPANSION_ORDER[10];
+      var cell = S.estate.grid[next.x][next.y];
+      owned.push({ c:cell, o:cell.owned });
+      cell.owned = false;
+      S.gold = 1e9;
+      FF.estateExpand();
+      eq(svGold === S.gold, false, 'gold was spent');
+      eq(1e9 - S.gold, FF.getEstateExpansionCost(10), 'it charged exactly the cost of purchase index 10 (' + FF.getEstateExpansionCost(10) + 'g)');
+      eq(S.estate.expansionsPurchased, 11, 'and counted the purchase');
+      eq(cell.owned, true, 'and the next tile in the expansion order is now owned');
+      // Too little gold buys nothing and charges nothing.
+      var before = FF.getEstateExpansionCost(11);
+      S.gold = before - 1;
+      FF.estateExpand();
+      eq(S.gold, before - 1, 'a player who cannot afford the next tile is charged nothing');
+      eq(S.estate.expansionsPurchased, 11, 'and buys nothing');
+      // Fully expanded refuses rather than charging for a tile that does not exist.
+      S.estate.expansionsPurchased = 300;
+      S.gold = 1e18;
+      FF.estateExpand();
+      eq(S.gold, 1e18, 'a fully expanded estate charges nothing');
+      eq(S.estate.expansionsPurchased, 300, 'and stays at 300');
+    } finally {
+      owned.forEach(function(o){ o.c.owned = o.o; });
+      S.gold = svGold; S.estate.expansionsPurchased = svPurchased; S.log = svLog;
+    }
   });
 
   // ---- Estate: upgrade a placed pavement (20x the next-tier tile, keeps any building) ---
