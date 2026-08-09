@@ -30173,6 +30173,10 @@
     if(p.masonryTileId != null) job.masonryTileId = p.masonryTileId;
     if(p.orient != null) job.orient = p.orient;
     if(p.upgrade) job.upgrade = true;
+    // matVer must survive the mirror: it selects which MATERIAL BILL a job pays and refunds (workshop and
+    // cottage upgrades at 2, crafted-item borders at 3). A resync that dropped it would hand a cancelled
+    // job the legacy bill it never paid.
+    if(p.matVer != null) job.matVer = p.matVer;
     return job;
   }
   // Pull the authoritative job on load / auth restore, so a second window opens showing the REAL
@@ -30337,11 +30341,13 @@
       case 'cottage':  return (job.upgrade && !(job.matVer >= 2)) ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]]; // cottages joined the built-building price in v0.0.86.31 (same matVer migration as workshops)
       case 'totem':    return [[job.totemId, 1]];
       case 'build':    return [[job.buildingId, 1]];   // fresh AND upgrade both pay the built target itself
-      // A border is BUILT IN PLACE from its Masonry recipe's own inputs (bricks, pillars, fill) rather
-      // than from a crafted item, so this is the one arm that returns several pairs. Refund and consume
-      // both run off this list, so a cancel returns every input.
-      case 'border':   var br = borderRecipeOf(job.masonryTileId);
-                       return br ? Object.keys(br.inputs).map(function(k){ return [k, br.inputs[k]]; }) : [];
+      // A masonry border consumes the CRAFTED item (matVer 3, v0.0.96.33); an in-flight pre-patch job
+      // (no matVer) still consumes/refunds the recipe's raw stones it actually paid, the workshop-upgrade
+      // matVer pattern. Specials carry their own bills either way. Refund and consume both run off this
+      // list, so a cancel returns exactly what was spent.
+      case 'border':   var bb = (job.matVer >= 3) ? borderBuildBill(job.masonryTileId)
+                                : (borderRecipeOf(job.masonryTileId) || {}).inputs || {};
+                       return Object.keys(bb).map(function(k){ return [k, bb[k]]; });
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
       default:         return []; // lower, clear
@@ -33111,6 +33117,16 @@
   // that used getMasonryRecipe for a border now reads this instead, so materials, refunds, the shape
   // check and the label all work for specials without a second code path.
   function borderRecipeOf(id){ return borderSpecialOf(id) || getMasonryRecipe(id); }
+  // THE BORDER BILL (v0.0.96.33, owner order): a masonry border consumes the CRAFTED Curb/Fence/Wall
+  // item, never the recipe's raw stones. Masonry's crafted goods had no consumer at all -- crafting a
+  // Wall and building a Wall were two disjoint ways to spend the same bricks, so the whole skill was XP
+  // plus vendor gold. Border SPECIALS (Waterfall, Trellis) keep their own material bills: they are
+  // one-off set pieces, not masonry stock.
+  function borderBuildBill(id){
+    var sp = borderSpecialOf(id);
+    if(sp) return sp.inputs || {};
+    var bill = {}; bill[id] = 1; return bill;
+  }
   // ONE definition of "which of the three is this stone". It lived inline inside estateBuildBorder and
   // nowhere else; six sites read it now (job label, timer, shelter, appraisal, the lined aqueduct link).
   // A SPECIAL DECLARES ITS TYPE rather than deriving it: waterfall_t20 would otherwise read as a wall
@@ -33231,13 +33247,15 @@
       addLog('Raising a ' + recipe.name + ' on the estate requires ' + borderGateLabel(masonryTileId) + '.', 'danger');
       return;
     }
-    if(!hasInputs(recipe.inputs)){
-      addLog('You don\'t have the materials to build a ' + recipe.name + '.', 'danger');
+    if(!hasInputs(borderBuildBill(masonryTileId))){
+      addLog(borderSpecialOf(masonryTileId)
+        ? 'You don\'t have the materials to build a ' + recipe.name + '.'
+        : 'You need a crafted ' + recipe.name + ' in your pack to build one (craft it under Masonry).', 'danger');
       return;
     }
     var ms = borderBuildMs(masonryTileId);
-    estateEnqueueOrStart('border', x, y, { orient:orient, masonryTileId:masonryTileId }, ms, {
-      jobFields: { orient:orient, masonryTileId:masonryTileId },
+    estateEnqueueOrStart('border', x, y, { orient:orient, masonryTileId:masonryTileId, matVer:3 }, ms, {
+      jobFields: { orient:orient, masonryTileId:masonryTileId, matVer:3 },
       closeMenu: function(){ estateBorderMenuOpen = null; },
       startedMsg: 'You began building a ' + recipe.name + ' at this border. It will finish in ' + formatHoursCompact(ms) + '.',
       startedFt: 'Building…',
@@ -34747,12 +34765,13 @@
           getMasonryRecipesByType(borderType).forEach(function(r){
             var levelOk = masonryLvl >= r.levelReq;
             var gateOk = borderGateOk(r.id);
-            var matsOk = hasInputs(r.inputs);
+            var rBill = borderBuildBill(r.id);
+            var matsOk = hasInputs(rBill);
             var ok = levelOk && gateOk && matsOk;
-            var matsSummary = Object.keys(r.inputs).map(function(k){
+            var matsSummary = Object.keys(rBill).map(function(k){
               var itemName = (ALL_SELLABLE[k]||{}).name || k;
               var owned = state.inventory[k]||0;
-              return itemName+' x'+fmt(r.inputs[k])+' (have '+fmt(owned)+')';
+              return itemName+' x'+fmt(rBill[k])+' (have '+fmt(owned)+')';
             }).join(', ');
             html += '<button class="estate-paving-option'+(ok?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+(ok?'':'disabled')+'>';
             html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+borderGateLabel(r.id)+' &bull; '+formatHoursCompact(borderBuildMs(r.id))+' &bull; '+matsSummary+'</span>';
@@ -44405,7 +44424,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.32';
+  var GAME_VERSION = '0.0.96.33';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44633,7 +44652,7 @@
       ESTATE_BORDER_MS_PER_TIER:ESTATE_BORDER_MS_PER_TIER, ESTATE_BORDER_TYPE_TIME_MULT:ESTATE_BORDER_TYPE_TIME_MULT, ESTATE_BORDER_GATE_SKILL:ESTATE_BORDER_GATE_SKILL,
       borderEdgesOfTile:borderEdgesOfTile, borderEdgeBetween:borderEdgeBetween, edgeCellIn:edgeCellIn, edgeTypeIn:edgeTypeIn,
       estateBuildBorder:estateBuildBorder, estateDestroyBorder:estateDestroyBorder, estJobOnBorder:estJobOnBorder, estJobOnTile:estJobOnTile,
-      ESTATE_BORDER_SPECIALS:ESTATE_BORDER_SPECIALS, borderSpecialOf:borderSpecialOf, borderRecipeOf:borderRecipeOf,
+      ESTATE_BORDER_SPECIALS:ESTATE_BORDER_SPECIALS, borderSpecialOf:borderSpecialOf, borderRecipeOf:borderRecipeOf, borderBuildBill:borderBuildBill,
       borderSpecialPlaceable:borderSpecialPlaceable, tileHasWaterfallBorder:tileHasWaterfallBorder,
       trellisYieldBonusAt:trellisYieldBonusAt, TRELLIS_YIELD_BONUS:TRELLIS_YIELD_BONUS, estateStripTrellis:estateStripTrellis,
       estateQueuedJobValid:estateQueuedJobValid, estateJobLabel:estateJobLabel,

@@ -21814,11 +21814,11 @@
       // THE GATE IS CONSULTED BY THE REAL PATH, not merely computable. borderGateOk is asserted as a
       // predicate in the suite above, and a predicate nothing calls is a gate that does not exist: with
       // materials in hand and Masonry maxed, Architecture alone must refuse this.
-      Object.keys(rec.inputs).forEach(function(k){ S.inventory[k] = rec.inputs[k]; });
+      S.inventory['masonry_t2'] = 1;   // the CRAFTED stone is the bill now (v0.0.96.33)
       S.xp.architecture = 0;
       FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
       ok(!S.estate.job, 'no border raise below the Architecture bar');
-      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k], rec.inputs[k], 'and a refused raise does not spend ' + k); });
+      eq(S.inventory['masonry_t2'], 1, 'and a refused raise does not spend the stone');
       ok(/Architecture/.test((S.log[S.log.length-1] || {}).msg || ''), 'the refusal names the missing skill');
       S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]);
       // THE OUTER BOUNDARY. An edge x runs 0..GRID_SIZE, so this addresses grid[20], which does not
@@ -21828,8 +21828,9 @@
       var j = S.estate.job;
       ok(!!j && j.kind === 'border', 'the raise starts as a border job');
       eq(j.orient, 'x', 'and remembers WHICH edge grid its x/y index');
+      eq(j.matVer, 3, 'stamped with the crafted-item bill version');
       eq(Math.round(j.readyAt - j.startAt), 540000, 'clocked at the t2 Wall duration');
-      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k] || 0, 0, 'the recipe input ' + k + ' is consumed at start'); });
+      eq(S.inventory['masonry_t2'] || 0, 0, 'the crafted Sand Wall is consumed at start');
       ok(E.type === null, 'the edge stays empty while it builds');
       // The two coordinate spaces must not be confused for each other.
       ok(FF.estJobOnBorder('x', 20, 7), 'the border knows it is busy');
@@ -21839,9 +21840,9 @@
       // Asserting only "charges nothing" was vacuous: logged out, the generic one-job-at-a-time rule
       // refuses it anyway and spends nothing either, so the border-specific check could be deleted with
       // the test still passing. The MESSAGE is what distinguishes the two.
-      Object.keys(rec.inputs).forEach(function(k){ S.inventory[k] = rec.inputs[k]; });
+      S.inventory['masonry_t2'] = 1;
       FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
-      Object.keys(rec.inputs).forEach(function(k){ eq(S.inventory[k], rec.inputs[k], 'a second raise on a busy border charges nothing for ' + k); });
+      eq(S.inventory['masonry_t2'], 1, 'a second raise on a busy border charges nothing');
       ok(/border is already being built/.test((S.log[S.log.length-1] || {}).msg || ''), 'and is refused as a busy BORDER, not by the generic one-task-at-a-time rule');
       // estJobOnBorder must also see a QUEUED border, which is the case the check really exists for: two
       // queued raises on one edge would each spend their stone and the second would land on an occupied
@@ -21861,11 +21862,18 @@
       ok(!FF.estateJobShapeOk({ kind:'border', orient:'z', masonryTileId:'masonry_t5' }), 'a bad orient is malformed');
       ok(!FF.estateJobShapeOk({ kind:'border', orient:'y', masonryTileId:'masonry_t99' }), 'a stone that is not a recipe is malformed');
       ok(!FF.estateJobShapeOk({ kind:'border', orient:'y' }), 'no stone at all is malformed');
-      // Materials: a border is the one kind billed from a recipe's whole input MAP, so refunds must
-      // return every line of it.
-      var mats = FF.estateJobMaterials({ kind:'border', masonryTileId:'masonry_t2' });
-      eq(mats.length, Object.keys(rec.inputs).length, 'the bill covers every input of the recipe');
-      mats.forEach(function(m){ eq(m[1], rec.inputs[m[0]], 'and bills ' + m[0] + ' at the recipe quantity'); });
+      // Materials: a masonry border consumes the CRAFTED stone (v0.0.96.33, closing the Masonry loop);
+      // a pre-patch in-flight job (no matVer) still bills the raw inputs it actually paid, and border
+      // specials keep their own bills.
+      var mats = FF.estateJobMaterials({ kind:'border', masonryTileId:'masonry_t2', matVer:3 });
+      eq(mats.length, 1, 'the crafted-item bill is one line');
+      eq(mats[0][0], 'masonry_t2', 'the crafted stone itself');
+      eq(mats[0][1], 1, 'exactly one');
+      var legacyMats = FF.estateJobMaterials({ kind:'border', masonryTileId:'masonry_t2' });
+      eq(legacyMats.length, Object.keys(rec.inputs).length, 'a pre-patch job still bills every raw input it paid');
+      legacyMats.forEach(function(m){ eq(m[1], rec.inputs[m[0]], 'at the recipe quantity: ' + m[0]); });
+      eq(JSON.stringify(FF.borderBuildBill('waterfall_t20')), JSON.stringify(FF.ESTATE_BORDER_SPECIALS.waterfall_t20.inputs), 'a border special keeps its own material bill');
+      eq(JSON.stringify(FF.borderBuildBill('masonry_t7')), JSON.stringify({ masonry_t7: 1 }), 'every masonry stone bills as itself');
       // The queue validator reads the EDGE, not a tile, and refuses an occupied one.
       var vFree = FF.estateQueuedJobValid({ kind:'border', orient:'y', x:3, y:3, masonryTileId:'masonry_t2' }, null, S.estate);
       ok(vFree.ok, 'a free edge validates even with no tile cell passed');
