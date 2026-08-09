@@ -8739,9 +8739,9 @@
     eq(FF.LEG_WYRMTHORNMAUL_SWING, 1.25, 'Wyrmthorn Maul: swings +25% while the hedge Blooms');
 
     // The Dragon's Breath pillar is retired outright (v0.0.96.31): its machinery is gone from the seam.
-    eq(FF.d4BreathFullSet, undefined, 'd4BreathFullSet is gone (the Breath pillar is retired)');
-    eq(FF.d4BreathChargeOnHit, undefined, 'd4BreathChargeOnHit is gone');
-    eq(FF.d4BreathFire, undefined, 'd4BreathFire is gone');
+    // (Bracket lookups on purpose: seamcheck's static FF.<name> scan would demand an export for a
+    // member access, and these assert the ABSENCE of one.)
+    ['d4BreathFullSet','d4BreathChargeOnHit','d4BreathFire'].forEach(function(k){ eq(FF[k], undefined, k + ' is gone (the Breath pillar is retired)'); });
 
     // Detection for all 7 (block/on-hit/Magmacore effects are behavioural).
     ['bastionbreaker','wyrmthornmaul','wrathscale','magmacore'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
@@ -9231,9 +9231,10 @@
       near(FF.elementResistMult(s, 'fire'), (1 - FF.elementResistBonus(s,'fire')) * 0.85, 'Scaleward folds x0.85 into elementResistMult');
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4SetElementResist(s, 'fire'), 0, 'no Dragonscale set -> no D4 resist');
 
-      // (The Dragon's Breath charge meter is retired: its helpers left the file with the pillar.)
+      // (The Dragon's Breath charge meter is retired: its helpers left the file with the pillar.
+      // Bracket lookup so seamcheck's FF.<name> scan does not demand an export for an absence check.)
       s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
-      eq(FF.d4BreathCharge, undefined, 'the Breath charge meter is gone');
+      eq(FF['d4BreathCharge'], undefined, 'the Breath charge meter is gone');
 
       // --- Wrath stacking buff ---
       FF.d4WrathReset(s); eq(FF.d4WrathStacks(s), 0, 'Wrath starts empty');
