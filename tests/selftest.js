@@ -261,7 +261,7 @@
     eq(FF.vendorSellValue('x_t5', { rarity:'fantastic' }, false), 480, 'other t5 fantastic = 60 x8');
     // Non-tiered specials keep their hand-set value (null -> unchanged).
     eq(FF.vendorSellValue('shaft', {}, false), null, 'non-tiered item is not repriced');
-    eq((S['formula_d1_masterwork']||{}).sell, 0, 'the D1 Formula stays non-vendorable (sell 0)');
+    eq(S['formula_d1_masterwork'], undefined, 'the Masterwork Formulas are deleted outright (never granted, no sink; the drop is Blueprints)');
     // No tiered sell is exponentially large anymore: the max tiered non-rarity sell is 210 (was thousands).
     var maxTieredNormalSell = 0;
     Object.keys(S).forEach(function(id){ var it = S[id]; if(it && /_t\d/.test(id) && !it.rarity && typeof it.sell === 'number' && it.sell > maxTieredNormalSell) maxTieredNormalSell = it.sell; });
@@ -5199,7 +5199,7 @@
     ok(ench5.potionType === undefined, 'enchant recipe carries no potionType (retired consumable)');
     // An Enchant Crystal must NOT read as a potion (that stale path put a bogus "In combat" line on its card).
     eq(FF.potionEffectDesc('enchant_t5'), '', 'an Enchant Crystal has no combat-consumable effect text');
-    ok(FF.potionEffectDesc('coating_t5') !== '', 'a real consumable (coating) still describes its combat effect');
+    ok(FF.potionEffectDesc('draught_t5') !== '', 'a real consumable (draught) still describes its combat effect');
     ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
   });
 
@@ -5369,14 +5369,27 @@
     // COATINGS ARE RETIRED, NOT CONFISCATED. No recipe makes one, but every held stack must keep working:
     // still parseable, still readied, still named, still on the server's item allowlist.
     ok(!FF.ALL_CRAFT_RECIPES['coating_t5'], 'no recipe crafts a coating any more');
-    ok(FF.POTION_TYPE_IDS.indexOf('coating') !== -1, 'a held coating still readies as a consumable');
-    var c0 = FF.potionEffect('coating_t0'), c20 = FF.potionEffect('coating_t20');
-    ok(c0 && c0.type==='coating' && c20 && c20.type==='coating', 'coating potionEffect still resolves');
-    ok(c20.pct > c0.pct, 'coating poison still scales with tier');
-    ok(c20.durationMs > 3000, 'coating still poisons longer than a Toxin burst');
-    ok(!!(FF.ALL_SELLABLE['coating_t5'] && FF.ALL_SELLABLE['coating_t5'].name), 'a held coating keeps its name and vendor price');
-    ok(FF.buildItemCatalog()['coating_t5'] === 1, 'and stays tradeable on the server item allowlist');
-    ok(/Poison .* of your recent hit\/s/.test(FF.potionEffectDesc('coating_t10')), 'coating describes its poison DoT');
+    // Coatings are REMOVED outright now (v0.0.96.34): no potion type, no defs, and any held stack pays
+    // out as gold at the old vendor price through retireCoatingsSweep on load.
+    ok(FF.POTION_TYPE_IDS.indexOf('coating') === -1, 'coating is no longer a potion type');
+    eq(FF.potionEffect('coating_t5'), null, 'a coating id no longer resolves to a combat effect');
+    eq(FF.ALL_SELLABLE['coating_t5'], undefined, 'coatings are out of the item registry');
+    (function(){
+      var S2 = FF._state, svInv = S2.inventory, svGold = S2.gold, svPot = S2.activePotion, svCh = S2.potionCharges;
+      try {
+        S2.inventory = { coating_t0: 3, coating_t20: 1, toxin_t5: 2 };
+        S2.activePotion = 'coating_t20'; S2.potionCharges = 4; S2.gold = 0;
+        var paid = FF.retireCoatingsSweep();
+        ok(paid > 0 && S2.gold === paid, 'held coatings pay out as gold');
+        eq(S2.inventory.coating_t0, undefined, 'the stacks are gone');
+        eq(S2.inventory.coating_t20, undefined, 'top-tier included');
+        eq(S2.inventory.toxin_t5, 2, 'other consumables untouched');
+        eq(S2.activePotion, null, 'a readied coating is cleared from the potion slot');
+        eq(FF.retireCoatingsSweep(), 0, 'the sweep is idempotent');
+      } finally { S2.inventory = svInv; S2.gold = svGold; S2.activePotion = svPot; S2.potionCharges = svCh; }
+    })();
+    ok(FF.buildItemCatalog()['coating_t5'] === undefined, 'coatings are off the server item allowlist');
+    eq(FF.potionEffectDesc('coating_t10'), '', 'a coating id describes nothing');
     ok(FF.GATHER_PHYSIQUE.mycology && FF.CRAFT_PHYSIQUE.apothecary, 'physique tables include the new skills');
   });
 
@@ -6723,8 +6736,8 @@
     // every enemy: SVG portrait + full combat typing + registered in monsterById
     ok(en.every(function(e){ return typeof e.icon === 'string' && e.icon.indexOf('<svg') === 0; }), 'every enemy has an SVG portrait');
     ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every enemy has element/armor/attack/hp and resolves via monsterById');
-    // D1 Masterwork Formula registered for inventory display
-    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /Masterwork Formula/.test(f.name), 'the D1 Masterwork Formula item is registered');
+    // (The legacy D1 Formula is deleted: Blueprints are the drop, v0.0.96.34.)
+    eq(FF.ALL_SELLABLE['formula_d1_masterwork'], undefined, 'the D1 Formula item no longer exists');
     // Threat: plate armour draws more than cloth.
     function armorSet(mat){ var b = {}; ['helmet','chest','gauntlets','boots'].forEach(function(s){ b[s] = { material:mat, tier:5, rarity:'normal' }; }); return b; }
     ok(FF.playerThreat({ bodyArmor: armorSet('plate') }) > FF.playerThreat({ bodyArmor: armorSet('tailoring') }), 'plate armour generates more threat than cloth');
@@ -6775,10 +6788,8 @@
     // hand-crafted => every portrait is unique (no two orcs share an SVG string)
     var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
     ok(uniq, 'all 25 orc portraits are unique (hand-crafted, no repeats)');
-    // D2 Masterwork Formula registered + non-vendorable
-    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D2 Masterwork Formula/.test(f.name), 'the D2 Masterwork Formula item is registered');
-    eq(f.sell, 0, 'the D2 Formula is non-vendorable (sell 0)');
-    ok(def.reward !== FF.DUNGEON_DEFS.d1.reward, 'D2 drops a different Formula than D1');
+    // (The legacy D2 Formula is deleted: Blueprints are the drop, v0.0.96.34.)
+    eq(FF.ALL_SELLABLE['formula_d2_masterwork'], undefined, 'the D2 Formula item no longer exists');
     // CRITICAL client<->server invariant: the shared enemy HP/attack curves must match the server
     // (dungeon edge fn d2Roster): hp[i]=round(150000*1.05^i), boss=round(hp[23]*10);
     // atkMin=round(400*1.04^i), atkMax=round(1000*1.04^i), interval_ms=round((2.2+(i%5)*0.3)*1000).
@@ -6814,9 +6825,7 @@
     ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every undead has element/armor/attack/hp and resolves via monsterById');
     var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
     ok(uniq, 'all 25 undead portraits are unique (hand-crafted, no repeats)');
-    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D3 Masterwork Formula/.test(f.name), 'the D3 Masterwork Formula item is registered');
-    eq(f.sell, 0, 'the D3 Formula is non-vendorable (sell 0)');
-    ok(def.reward !== FF.DUNGEON_DEFS.d2.reward && def.reward !== FF.DUNGEON_DEFS.d1.reward, 'D3 drops a Formula distinct from D1/D2');
+    eq(FF.ALL_SELLABLE['formula_d3_masterwork'], undefined, 'the D3 Formula item no longer exists (Blueprints are the drop)');
     // CRITICAL client<->server invariant (dungeon edge fn d3Roster): hp[i]=round(450000*1.05^i),
     // boss=round(hp[23]*10); atkMin=round(800*1.04^i), atkMax=round(2000*1.04^i).
     for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(450000 * Math.pow(1.05, _i)), 'undead ' + _i + ' HP matches the server formula');
@@ -6850,8 +6859,8 @@
     ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every dragon has element/armor/attack/hp and resolves via monsterById');
     var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
     ok(uniq, 'all 25 dragon portraits are unique (hand-crafted, no repeats)');
-    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D4 Masterwork Formula/.test(f.name), 'the D4 Masterwork Formula item is registered');
-    eq(f.sell, 0, 'the D4 Formula is non-vendorable (sell 0)');
+    eq(def.reward, undefined, 'the legacy Formula reward field is deleted (the drop is Blueprints)');
+    eq(FF.ALL_SELLABLE['formula_d4_masterwork'], undefined, 'the D4 Formula item no longer exists');
     // CRITICAL client<->server invariant (dungeon edge fn d4Roster): hp[i]=round(1350000*1.05^i),
     // boss=round(hp[23]*10); atkMin=round(1600*1.04^i), atkMax=round(4000*1.04^i).
     for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(1350000 * Math.pow(1.05, _i)), 'dragon ' + _i + ' HP matches the server formula');
@@ -6860,10 +6869,8 @@
       eq(en[_j].atkMin, Math.round(1600 * Math.pow(1.04, _j)), 'dragon ' + _j + ' atkMin matches server');
       eq(en[_j].atkMax, Math.round(4000 * Math.pow(1.04, _j)), 'dragon ' + _j + ' atkMax matches server');
     }
-    // Every dungeon Formula is distinct across all four layers.
-    var rewards = FF.DUNGEON_ORDER.map(function(l){ return FF.DUNGEON_DEFS[l].reward; });
-    var rset = {}; rewards.forEach(function(r){ rset[r] = 1; });
-    eq(Object.keys(rset).length, 4, 'all four dungeon Formulas are distinct');
+    // (The legacy per-layer Formula reward fields are deleted: Blueprints are the drop, v0.0.96.34.)
+    ok(FF.DUNGEON_ORDER.every(function(l){ return FF.DUNGEON_DEFS[l].reward === undefined; }), 'no layer carries a legacy Formula reward field');
   });
 
   // ---- Masterwork Blueprints: 13 formula types x 4 dungeons, weighted boss drops, separate inventory ----
@@ -12747,8 +12754,7 @@
     // dotBase suite below) -- so the coefficients came down hard while the actual damage went up enormously.
     near(FF.potionEffect('toxin_t0').pct, 0.003, 'toxin t0 = 0.3% of a hit/s');
     near(FF.potionEffect('toxin_t20').pct, 0.03, 'toxin t20 = 3% of a hit/s');
-    near(FF.potionEffect('coating_t20').pct, 0.045, 'a top-tier coating = 4.5% of a hit/s');
-    ok(FF.potionEffect('coating_t20').pct > FF.potionEffect('toxin_t20').pct, 'a coating still out-poisons a toxin');
+    eq(FF.potionEffect('coating_t20'), null, 'coatings no longer resolve as potions (removed v0.0.96.34)');
     // THE FIREBOMB IS THE OPENER now. It used to deal a FLAT 5 at t0 rising to 210 at t20, against
     // best-in-slot hits of ~1e11 -- two parts per billion, the dead-scale bug in burst form. It now pays a
     // share of the recent landed hit, hugely on the first strike against a fresh foe and almost nothing
@@ -13185,7 +13191,7 @@
     eq(FF.marketItemCategory('mixology_t0'), 'consumables', 'a tea (mixology) -> Consumables');
     eq(FF.marketItemCategory('tome_t0'), 'consumables', 'a tome/book (bookbinding) -> Consumables');
     eq(FF.marketItemCategory('scroll_t0'), 'consumables', 'a scroll (inscription) -> Consumables');
-    eq(FF.marketItemCategory('coating_t0'), 'consumables', 'a toxin coating (alchemy) -> Consumables');
+    eq(FF.marketItemCategory('draught_t0'), 'consumables', 'an Apothecary draught -> Consumables');
     // Tier chip: 1-based, tier-less items show nothing.
     ok(/T6/.test(FF.marketItemTierHtml('metallurgy_t5')), 'the tier chip is 1-based (t5 -> T6)');
     eq(FF.marketItemTierHtml('meat'), '', 'a tier-less item shows no tier chip');
@@ -21338,7 +21344,7 @@
       eq(S.potionCharges, FF.POTION_MAX_CHARGES - 1, 'a draught spends per attack, as the Elixir does');
 
       // No copy anywhere still claims the retired "combat score" unit.
-      ['toxin_t10','coating_t10','draught_t10','firebomb_t10','elixir_t10','catalyst_t10'].forEach(function(id){
+      ['toxin_t10','draught_t10','firebomb_t10','elixir_t10','catalyst_t10'].forEach(function(id){
         ok(!/combat score/i.test(FF.potionEffectDesc(id)), id + ' does not describe itself in combat score');
       });
     } finally {
@@ -21455,8 +21461,8 @@
       eq(br[0].dmg, Math.round(dealt), 'the logged figure matches the damage actually applied');
 
       // Every damaging consumable is now accounted for. Elixir, Catalyst and Draught are passive buffs and
-      // deal none; Flash only stuns. Toxin and Coating log through the poison tick as Venom.
-      ['toxin','coating','firebomb','bomb'].forEach(function(t){
+      // deal none; Flash only stuns. Toxin logs through the poison tick as Venom. (Coatings removed, v0.0.96.34.)
+      ['toxin','firebomb','bomb'].forEach(function(t){
         var e = FF.potionEffect(t + '_t20');
         ok(!!e, t + ' still resolves as a consumable effect');
       });

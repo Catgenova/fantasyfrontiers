@@ -3095,26 +3095,11 @@
   // (Mycology's toxic caps distilled with Herbalism), which is the thematically right home for them -- the
   // poison IS the cure at the right dose.
   var DRAUGHT_NAMES = ['Thin Tonic','Bitter Tonic','Nettle Draught','Salve Draught','Antivenom Draught','Viper Antivenom','Marrow Tonic','Blightward Draught','Ironhide Tonic','Wraithward Draught','Basilisk Antivenom','Plagueward Draught','Death Cap Tincture','Doomward Draught','Voidward Tonic','Soulward Draught','Hydra Tincture','Wyvern Antivenom','Dragonhide Tonic','Elder Draught','God-Ward Draught'];
-  var COATING_NAMES = ['Weak Venom','Irritant Coating','Nettle Venom','Toxin Salve','Spider Venom','Viper Venom','Necrotic Coating','Blight Venom','Corrosive Coating','Wraith Venom','Basilisk Venom','Plague Coating','Death Cap Extract','Doom Venom','Void Toxin','Soulrot Coating','Hydra Venom','Wyvern Venom','Dragon Venom','Elder Venom','God-Slayer Toxin'];
 
-  // RETIRED ITEMS: still items, no longer craftable. Apothecary's Weapon Coatings became Draughts (owner
-  // direction), and deleting the recipes ALSO deleted the coatings from ALL_SELLABLE, which is the master
-  // item registry. That cost them their name, icon and vendor price, and dropped them out of
-  // buildItemCatalog -- the server's item-key ALLOWLIST, which gates the item ledger and the marketplace.
-  // A player's held stacks would have gone unnameable, unsellable and unlistable overnight.
-  //
-  // Retiring a recipe must never confiscate an item somebody already owns, so the DEFS stay registered while
-  // the RECIPES are gone. Anything retired in future belongs here for the same reason. `retired` marks them
-  // so a UI can say so; nothing else keys off it.
-  var RETIRED_ITEM_DEFS = (function(){
-    var m = {};
-    for(var i = 0; i < TIER_COUNT; i++){
-      m['coating_t' + i] = { id:'coating_t' + i, name: COATING_NAMES[i], sell: tierSell(15, i),
-                             icon: svgIcon('droplet', MYCOLOGY_COLORS[i]), potionType: 'coating', retired: true };
-    }
-    return m;
-  })();
-
+  // (WEAPON COATINGS REMOVED outright, v0.0.96.34, owner order. They were retired-but-usable for a
+  // while -- defs kept so held stacks stayed nameable -- and are now gone entirely: retireCoatingsSweep
+  // in the load path sells any held stack for gold at the old vendor price, so nothing is confiscated
+  // silently, and the defs, the potion type, and the catalog keys all leave with them.)
   // ---- Papermaking (crafting) -> Bookbinding (crafting): the "knowledge" slice ----------------
   // Papermaking pulps Forestry logs into Paper; Bookbinding binds Paper + Cured Leather (from
   // Tanning) into Tomes. Studying a Tome grants a timed work-speed buff to ALL gathering & crafting
@@ -4015,7 +4000,7 @@
       // This line REPLACED the Weapon Coatings (owner direction). Coatings were a longer, slightly stronger
       // Alchemy Toxin writing the very same potionPoisonDps field, so the two skills were one system with a
       // duplicate. Alchemy now owns offensive poison outright and Apothecary owns the defensive slot, which
-      // no crafting skill occupied at all. The coating ITEMS are untouched: coating_t* still parses, still
+      // no crafting skill occupied at all. (Coatings themselves were later removed outright, v0.0.96.34.)
       // readies, and still poisons, so held stacks and live market listings keep working. They simply cannot
       // be crafted any more.
       recipes: (function(){
@@ -4705,7 +4690,7 @@
   // ================= DUNGEONS =================
   // D1 "Cave" -- the first dungeon layer: 25 arachnids fought ONE AT A TIME, levels 100->125, each with
   // its own element + armour mix. The 25th (The Broodmother) is the boss at ~10x the 24th's HP. Clearing
-  // it grants each surviving player a D1 Masterwork Formula. Playable solo now; a synchronous 1-4 player
+  // it rolls each surviving player's Masterwork Blueprints. Playable solo now; a synchronous 1-4 player
   // layer (server-authoritative) follows. These are registered into MONSTERS_BY_ID so the FULL combat
   // engine (classes, enchants, familiars, DoTs) applies -- but they're kept OUT of the MONSTERS array and
   // MONSTER_CATEGORIES so they never appear in the normal hunt tabs.
@@ -4759,7 +4744,7 @@
 
   // ---- D2 "Tunnel" -- the second dungeon layer: 25 Orcs fought ONE AT A TIME, levels 126->150, each
   // with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Gorthak the Undertyrant) is
-  // the boss at ~10x the 24th's HP; clearing it grants each surviving player a D2 Masterwork Formula.
+  // the boss at ~10x the 24th's HP; clearing it rolls each surviving player's Masterwork Blueprints.
   // Same synchronous one-at-a-time engine as D1 (registered into MONSTERS_BY_ID, kept out of the hunt).
   var DUNGEON_D2_NAMES = ['Tunnel Grunt','Cave Marauder','Gravel Brute','Stoneskull Raider','Emberfist Orc','Gloomtusk Savage','Rockjaw Breaker','Ashen Berserker','Bloodmaw Reaver','Ironhide Enforcer','Deeproot Shaman','Cindereye Warcaller','Bonegrinder Butcher','Murkblood Slasher','Craghorn Warrior','Venomtooth Stalker','Skullcleaver Champion','Nightfang Marauder','Molten Warbringer','Doomjaw Executioner','Grimtide Warchief','Blackrock Overseer','Ravenous Devourer','Elder Warbeast','Gorthak the Undertyrant'];
   var DUNGEON_D2_ELEM_CYCLE = ['earth','fire','dark','water','light'];
@@ -4898,7 +4883,7 @@
   // ---- D3 "Underground Chamber" -- the third dungeon layer: 25 Undead fought ONE AT A TIME, levels
   // 151->175, each with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Malothrax the
   // Deathless) is the boss at ~10x the 24th's HP; clearing it grants each surviving player a D3
-  // Masterwork Formula. Same synchronous one-at-a-time engine as D1/D2.
+  // Masterwork Blueprints. Same synchronous one-at-a-time engine as D1/D2.
   var DUNGEON_D3_NAMES = ['Shambling Corpse','Crypt Skeleton','Rotting Ghoul','Pale Revenant','Bonepicker Fiend','Grave Wight','Festering Zombie','Hollow Wraith','Cinder Skeleton','Drowned Husk','Plague Cadaver','Gravebound Shade','Marrow Fiend','Sunken Lurker','Ashen Reaper','Rictus Stalker','Bonecrush Colossus','Nightshade Wight','Emberbound Revenant','Doomcaller Lich','Grave Tyrant','Blackbone Overlord','Soul-Render','Elder Deathknight','Malothrax the Deathless'];
   var DUNGEON_D3_ELEM_CYCLE = ['dark','earth','water','fire','light'];
   // Twenty-five hand-picked undead busts. Each spec is a distinct combination of pallor, headgear,
@@ -5020,7 +5005,7 @@
   // ---- D4 "Nest of the Depths" -- the final dungeon layer: 25 Dragons fought ONE AT A TIME, levels
   // 176->200, each with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Vaeldrûn the
   // Worldender) is the boss at ~10x the 24th's HP; clearing it grants each surviving player a D4
-  // Masterwork Formula. Same synchronous one-at-a-time engine as D1/D2/D3.
+  // Masterwork Blueprints. Same synchronous one-at-a-time engine as D1/D2/D3.
   var DUNGEON_D4_NAMES = ['Emberscale Wyrmling','Frostfang Drake','Mossback Drake','Gloomscale Serpent','Bronze Wyrmling','Cindermaw Drake','Tidewyrm','Venom Wyvern','Nightscale Wyrm','Goldhoard Drake','Ashwing Dragon','Deepmaw Serpent','Stonehide Drake','Voidscale Wyvern','Stormwing Dragon','Emberstorm Dragon','Glacial Leviathan','Thornscale Wyrm','Shadowmaw Drake','Sunflare Dragon','Magmaheart Wyrm','Abyssal Serpent','Elder Rootdrake','Obsidian Tyrant','Vaeldrûn the Worldender'];
   var DUNGEON_D4_ELEM_CYCLE = ['fire','water','earth','dark','light'];
   // Twenty-five hand-picked dragon busts. Each spec draws a distinct combination of scale palette, horns,
@@ -5123,10 +5108,10 @@
   DUNGEON_D4_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
 
   var DUNGEON_DEFS = {
-    d1: { id:'d1', category:'Cave',   label:'D1: Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
-    d2: { id:'d2', category:'Tunnel', label:'D2: Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' },
-    d3: { id:'d3', category:'Underground Chamber', label:'D3: Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' },
-    d4: { id:'d4', category:'Nest of the Depths', label:'D4: Nest of the Depths', theme:'dragons', enemies:DUNGEON_D4_ENEMIES, reward:'formula_d4_masterwork', rewardName:'D4 Masterwork Formula' }
+    d1: { id:'d1', category:'Cave',   label:'D1: Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES },
+    d2: { id:'d2', category:'Tunnel', label:'D2: Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES },
+    d3: { id:'d3', category:'Underground Chamber', label:'D3: Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES },
+    d4: { id:'d4', category:'Nest of the Depths', label:'D4: Nest of the Depths', theme:'dragons', enemies:DUNGEON_D4_ENEMIES }
   };
   var DUNGEON_ORDER = ['d1', 'd2', 'd3', 'd4'];
 
@@ -5512,6 +5497,26 @@
   // short string in saved state; the popup-queue balloon of v0.0.77.40 is the cautionary tale). Extra
   // creations past the cap still count, as an "and N more" tally.
   var OFFLINE_CRAFT_BATCH_KINDS_MAX = 40;
+  // WEAPON COATINGS REMOVED (v0.0.96.34, owner order): any held stacks convert to gold at their old
+  // vendor price (tierSell(15, tier), what RETIRED_ITEM_DEFS charged) on load, so nothing is silently
+  // confiscated. Also clears a readied coating from the potion slot. Runs every load: a stack that
+  // arrives late (an old market listing collected after the update) converts on the next login.
+  function retireCoatingsSweep(){
+    if(!state.inventory) return 0;
+    var gold = 0, n = 0;
+    for(var i = 0; i < TIER_COUNT; i++){
+      var k = 'coating_t' + i, q = state.inventory[k] || 0;
+      if(q > 0){ gold += q * tierSell(15, i); n += q; }
+      if(k in state.inventory) delete state.inventory[k];
+      if(state.lockedItems && (k in state.lockedItems)) delete state.lockedItems[k];
+    }
+    if(state.activePotion && /^coating_t\d+$/.test(state.activePotion)){ state.activePotion = null; state.potionCharges = 0; }
+    if(n > 0){
+      state.gold += gold;
+      addLog('Weapon Coatings have been retired. Your ' + fmt(n) + ' coating' + (n === 1 ? '' : 's') + ' sold for ' + fmt(gold) + ' gold.', 'important');
+    }
+    return gold;
+  }
   function maybeShowRarityPopup(rarityId, itemName, icon){
     if(!rarityId || rarityId==='normal') return;
     var settingKey = 'popup' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1);
@@ -6098,14 +6103,9 @@
   ALL_DROP_ITEMS[COAL_ITEM.id] = COAL_ITEM;
   MUDDY_ARTIFACT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   ALL_DROP_ITEMS.shaft = { id:'shaft', name:'Shaft', icon:svgIcon('dowel','#a8895c'), sell:1 };
-  // Legacy single-formula placeholders (kept registered so any already-owned copies still resolve).
-  // The live drop is the typed Masterwork Blueprint system below.
-  var FORMULA_ITEMS = {
-    formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true },
-    formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true },
-    formula_d3_masterwork: { id:'formula_d3_masterwork', name:'D3 Masterwork Formula', icon:svgIcon('gem','#8a5fb0'), sell:0, dungeon:'d3', formula:true },
-    formula_d4_masterwork: { id:'formula_d4_masterwork', name:'D4 Masterwork Formula', icon:svgIcon('gem','#c0392b'), sell:0, dungeon:'d4', formula:true }
-  };
+  // (Masterwork FORMULAS deleted outright, v0.0.96.34: four registered keys with no source, no sink and
+  // no vendor value. Nothing ever granted one -- DUNGEON_DEFS' reward field was never read; the real boss
+  // drop has always been the typed Masterwork Blueprints below -- so there is nothing to confiscate.)
   // ===== Masterwork Blueprints =====
   // Each dungeon boss clear rolls each of these thirteen formula types INDEPENDENTLY at its own drop
   // chance. A hit grants that type's Blueprint for the cleared dungeon. The taxonomy is by FORGE OUTPUT:
@@ -6712,11 +6712,10 @@
   // all carry sell:0 -- the vendor won't buy them (sellItem/sellAll skip sell-0 stacks), so the ONLY
   // way to part with one is a player-priced Auction House listing. Legendary weapons/armor stay
   // untradeable (they're minted as uniques with per-item enchants/enhances, not stackable keys).
-  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS,
+  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS,
     BLUEPRINT_ITEMS, LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS);
   // Retired-but-held keys join the registry so they keep a name, an icon, a vendor price and a place on the
   // server's item allowlist. See RETIRED_ITEM_DEFS.
-  Object.assign(ALL_SELLABLE, RETIRED_ITEM_DEFS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
   var CRAFT_SKILL_IDS = Object.keys(CRAFTING_SKILLS);
@@ -18521,15 +18520,13 @@
     elixir:   { label:'Elixir',   shape:'starburst', color:'#c94a6a' },
     catalyst: { label:'Catalyst', shape:'wing',      color:'#5fb8c4' },
     enchant:  { label:'Weapon Enchant', shape:'starburst', color:'#a06ad8' },
-    coating:  { label:'Weapon Coating', shape:'droplet', color:'#6a8a3a' },
     bomb:     { label:'Bomb',          shape:'flame',   color:'#c8853a' },
     flash:    { label:'Flash Bomb',    shape:'sun',     color:'#e8a02a' },
     draught:  { label:'Draught',       shape:'droplet', color:'#5a9a7a' }
   };
-  // 'coating' STAYS here even though Apothecary no longer crafts it: coating_t* stacks exist in inventories
   // and in market listings, so they must keep parsing and keep working. Retiring the recipe does not entitle
   // us to break property somebody already owns.
-  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','coating','bomb','flash','draught']; // 'enchant' retired -> Enchant Crystals are now the Improvement-tab enchant input, not a combat consumable
+  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','bomb','flash','draught']; // 'coating' removed v0.0.96.34 (retireCoatingsSweep pays out held stacks); // 'enchant' retired -> Enchant Crystals are now the Improvement-tab enchant input, not a combat consumable
   var POTION_MAX_CHARGES = 10;
   var POTION_POISON_DURATION_MS = 3000;
   // THE TOXIN RUNS ON ITS OWN CLOCK, not on your attacks (owner direction). Every other potion fires from
@@ -18559,7 +18556,7 @@
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
   // 'enchant' is NOT here: Enchant Crystals (enchant_t<n>) are the Improvement-tab enchant INPUT now, not a
   // combat consumable -- so they must never parse as a potion (that's what showed the stale "In combat" card).
-  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|coating|bomb|flash|draught)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
+  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|bomb|flash|draught)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
     if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.003, 0.03, p.tier) };    // share of the recent average hit / sec for 3s
@@ -18568,7 +18565,6 @@
       smoulder: potionLerp(FB_SMOULDER_MIN, FB_SMOULDER_MAX, p.tier) };
     if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
     if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
-    if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.004, 0.045, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
     if(p.type==='bomb')     return { type:'bomb',     tier:p.tier, dmg: Math.round(potionLerp(10, 350, p.tier)) };        // heavy raw burst per hit (bigger than a Firebomb)
     if(p.type==='flash')    return { type:'flash',    tier:p.tier, stun: potionLerp(0.08, 0.20, p.tier) };                // chance per hit to stun the enemy
     // Apothecary's Draught: the DEFENSIVE consumable, the one slot no crafting skill occupied. A fraction of
@@ -18598,7 +18594,6 @@
     if(e.type==='firebomb') return Math.round(e.opener*100)+'% of your recent hit on a fresh foe, then '+potionPctLabel(e.smoulder)+' per hit';
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
-    if(e.type==='coating')  return 'Poison '+potionPctLabel(e.pct)+' of your recent hit/s for '+Math.round(e.durationMs/1000)+'s';
     if(e.type==='draught')  return 'Take '+Math.round(e.dr*100)+'% less damage';
     if(e.type==='bomb')     return '~'+e.dmg+' burst damage per hit';
     if(e.type==='flash')    return Math.round(e.stun*100)+'% chance to stun per hit';
@@ -18636,15 +18631,6 @@
       // kills, which is what makes this the farming flask.
       if(fresh) potionSpendCharge();
       return;
-    } else if(e.type==='coating'){
-      // Weapon Coating: same poison DoT channel as Toxin, but a longer-lasting venom (its own duration).
-      // Plaguebearer Lv1 (Venomous) makes the coating hit +50% harder and last +50% longer.
-      var _cpct = e.pct, _cdur = (e.durationMs || POTION_POISON_DURATION_MS);
-      // (Venomous retired: the class no longer routes its identity through a crafted coating.)
-      legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
-      var _coDps = dotBase(state) * _cpct * (1 + getFamBuff('potionPoison'));
-      if(_coDps > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()){ act.potionPoisonDps = _coDps; act.potionPoisonName = 'Venom'; }
-      act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
       // Tinkering Bomb: a heavy raw burst on each hit.
       // It subtracted monsterHp directly, so it produced no combat-log row -- the same blind spot that let
@@ -21598,6 +21584,7 @@
           if(!state.classDebuffs || typeof state.classDebuffs !== 'object') state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
           if(typeof state.activePotion === 'undefined') state.activePotion = null;
           if(typeof state.potionCharges !== 'number') state.potionCharges = 0;
+          retireCoatingsSweep(); // Weapon Coatings removed v0.0.96.34: held stacks pay out as gold
           if(state.activePotion && !parsePotionId(state.activePotion)) { state.activePotion = null; state.potionCharges = 0; }
           var elapsed = Date.now() - (loaded.lastSaved || Date.now());
           // Bound the boot credit by the SERVER-witnessed absence too (offline-catchup audit,
@@ -22550,7 +22537,7 @@
       // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
       var _arrowDmg = arrowBaseDamage(recipe.id);
       html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+fmtRange(_arrowDmg.dmgMin, _arrowDmg.dmgMax, '-')+' dmg</span>' : '')+'</div>';
-      // Combat consumables (Apothecary coatings, Pyrotechnics flash bombs, Alchemy toxins/bombs...)
+      // Combat consumables (Apothecary draughts, Pyrotechnics flash bombs, Alchemy toxins/bombs...)
       // stated what they COST but never what they DO, unlike a weapon card. potionEffectDesc already
       // produces the exact per-tier numbers used in combat, so surface them on the card too.
       // No potionType guard: Alchemy's toxin/firebomb/elixir/catalyst are identified by their id
@@ -26235,7 +26222,7 @@
   // dungeon_sessions/dungeon_members) owns the shared enemy HP + progression; each client accrues
   // damage as a clamped power*elapsed proxy (the server can't run the JS combat engine), and the
   // shared HP + advancement stream back over realtime. Stage A is the co-op DPS core (the enemy does
-  // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
+  // not yet attack back); Stage B adds threat targeting, death/wipe, and the Blueprint claim.
   // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
   // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
   var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{}, swingsResolved:0, shieldTaken:0, rewardedIndex:null };
@@ -26731,7 +26718,7 @@
     });
   }
   function renderDungeonBrowse(){
-    var html = '<div class="section-intro">Descend into <b>Dungeons</b>. Gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
+    var html = '<div class="section-intro">Descend into <b>Dungeons</b>. Gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver rolls <b>Masterwork Blueprints</b>, the plans for endgame gear.</div>';
     var myTotal = playerTotalLevel(state);
     // One tab per dungeon -- each layer (and its loot) is viewed on its own.
     if(!DUNGEON_DEFS[dungeonBrowseLayer]) dungeonBrowseLayer = DUNGEON_ORDER[0];
@@ -26765,7 +26752,7 @@
     html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : escapeHtml(block)) + '</button>';
     if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
     html += '</div>';
-    html += '<div style="font-size:11px;color:var(--text-faint);margin-top:5px">Solo is tuned to <b>' + Math.round(DUNGEON_SOLO_DIFFICULTY * 100) + '%</b> of party difficulty; solo Formula drops roll at <b>' + Math.round(DUNGEON_SOLO_DROP_MULT * 100) + '%</b> of the party rate.</div>';
+    html += '<div style="font-size:11px;color:var(--text-faint);margin-top:5px">Solo is tuned to <b>' + Math.round(DUNGEON_SOLO_DIFFICULTY * 100) + '%</b> of party difficulty; solo Blueprint drops roll at <b>' + Math.round(DUNGEON_SOLO_DROP_MULT * 100) + '%</b> of the party rate.</div>';
     // Open parties to join (multiplayer, server-authoritative shared fight) -- for this layer.
     if(chatClient && authUser){
       var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
@@ -26781,7 +26768,7 @@
     }
     html += '</div>';
     // Loot -- the Masterwork Blueprint table for this layer. Each slot rolls independently on a boss
-    // clear; the Blueprints are stored in the Blueprints tab and will forge endgame gear (coming soon).
+    // clear; the Blueprints are stored in the Blueprints tab and forge endgame gear in Mastercrafting.
     html += '<div class="inputs-line" style="margin-top:14px">Loot: Masterwork Blueprints (boss drop)</div>';
     html += '<div class="chance-line" style="margin-bottom:6px">Each ' + escapeHtml(boss.name) + ' clear rolls every slot below independently at its drop chance. Blueprints collect in <b>Resources &rarr; Blueprints</b>, ready to forge endgame <b>Masterwork</b> gear.</div>';
     html += '<div class="card-grid">';
@@ -40377,11 +40364,11 @@
     { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' }, { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'blueprints', label:'Blueprints' }, { id:'other', label:'Other' }
   ];
   // Item ids are keyed <prefix>_t<tier>, but the prefix isn't always the skill id (weaving->twine,
-  // papermaking->paper, gemcutting->gemcut, enchanting->enchant; baking->dough/pie; alchemy->coating,
+  // papermaking->paper, gemcutting->gemcut, enchanting->enchant; baking->dough/pie;
   // pyrotechnics->bomb/flash, inscription->scroll, bookbinding->tome). So we start from the skill-id sets
   // and add the alias prefixes.
   var MARKET_CONSUMABLE_SKILLS = {}; COOKING_SKILL_IDS.forEach(function(s){ MARKET_CONSUMABLE_SKILLS[s] = true; }); // food + drink (incl. teas via mixology)
-  ['dough','pie','coating','bomb','flash','scroll','tome'].forEach(function(p){ MARKET_CONSUMABLE_SKILLS[p] = true; }); // baking food, toxins, fire/flash bombs, scrolls, tomes (books)
+  ['dough','pie','draught','bomb','flash','scroll','tome'].forEach(function(p){ MARKET_CONSUMABLE_SKILLS[p] = true; }); // baking food, draughts, fire/flash bombs, scrolls, tomes (books)
   var MARKET_REFINED_SKILLS = {}; REFINING_SKILL_IDS.forEach(function(s){ MARKET_REFINED_SKILLS[s] = true; });        // metallurgy bars, tanning leather, glassblowing glass, ...
   ['twine','paper','gemcut','enchant'].forEach(function(p){ MARKET_REFINED_SKILLS[p] = true; });                     // weaving/papermaking/gemcutting/enchanting outputs
   function marketItemCategory(id){
@@ -44424,7 +44411,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.33';
+  var GAME_VERSION = '0.0.96.34';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44701,7 +44688,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem, applyChipDamage:applyChipDamage,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, legAccessoryLayerOf:legAccessoryLayerOf, wornLegendaryAccessoryKeys:wornLegendaryAccessoryKeys, itemSyncPayloadInventory:itemSyncPayloadInventory, reclaimPhantomAccessoryIds:reclaimPhantomAccessoryIds, unequipLegRing:unequipLegRing, unequipLegCloak:unequipLegCloak, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, legAccessoryLayerOf:legAccessoryLayerOf, wornLegendaryAccessoryKeys:wornLegendaryAccessoryKeys, itemSyncPayloadInventory:itemSyncPayloadInventory, reclaimPhantomAccessoryIds:reclaimPhantomAccessoryIds, unequipLegRing:unequipLegRing, unequipLegCloak:unequipLegCloak, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer, deathBlowChronicle:deathBlowChronicle,
       matchesSpecialCraft:matchesSpecialCraft,
@@ -44727,7 +44714,7 @@
       PY_FUEL_CRIT_MULT:PY_FUEL_CRIT_MULT, PY_BURN_RATE:PY_BURN_RATE, PY_BURN_RATE_L40:PY_BURN_RATE_L40, PY_TICK_PCT:PY_TICK_PCT,
       PY_BLAZE_DMG_PCT:PY_BLAZE_DMG_PCT, PY_COMBUST_FRAC:PY_COMBUST_FRAC, PY_COMBUST_PCT:PY_COMBUST_PCT,
       PY_FLASHOVER_PCT:PY_FLASHOVER_PCT, PY_FLASHOVER_FLOOR:PY_FLASHOVER_FLOOR, PY_FUEL_PER_STACK:PY_FUEL_PER_STACK,
-      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, legTombwallIncomingMult:legTombwallIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, executionerReapThreshold:executionerReapThreshold, enemyHpFrac:enemyHpFrac, EX_THRESH_FLOOR:EX_THRESH_FLOOR, EX_THRESH_FLOOR_D4:EX_THRESH_FLOOR_D4, EX_THRESH_CAP:EX_THRESH_CAP, EX_THRESH_PER_SEC:EX_THRESH_PER_SEC, EX_THRESH_PER_HIT:EX_THRESH_PER_HIT, EX_FALL_PCT:EX_FALL_PCT, EX_CULL_CARRY:EX_CULL_CARRY, EX_TALLY_PER:EX_TALLY_PER, EX_TALLY_MAX:EX_TALLY_MAX, EX_CULL_EXEC_FRAC:EX_CULL_EXEC_FRAC, EX_D1_RATE_MULT:EX_D1_RATE_MULT, EX_D1_FIRSTFALL_MULT:EX_D1_FIRSTFALL_MULT, EX_D3_FALL_MULT:EX_D3_FALL_MULT, EX_D3_RETAIN:EX_D3_RETAIN, EX_D4_AMP_MULT:EX_D4_AMP_MULT, LEG_SOULHARVESTER_PER:LEG_SOULHARVESTER_PER, LEG_SOULHARVESTER_MAX:LEG_SOULHARVESTER_MAX, LEG_EMBERWYRM_FALL_MULT:LEG_EMBERWYRM_FALL_MULT, EX_SWING_MULT:EX_SWING_MULT, _setExSwingMult:function(v){ EX_SWING_MULT = v; }, exThreshFloor:exThreshFloor, exThreshCap:exThreshCap, exClimbRateMult:exClimbRateMult, exThreshSeed:exThreshSeed, exFallFire:exFallFire, exFallCheck:exFallCheck, exFallOnHit:exFallOnHit, applyExFallTick:applyExFallTick, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LM_RAD_CAP:LM_RAD_CAP, LM_RAD_CAP_D4:LM_RAD_CAP_D4, LM_RAD_PER_HIT:LM_RAD_PER_HIT, LM_RAD_PER_SEC:LM_RAD_PER_SEC, LM_SPILL_PCT:LM_SPILL_PCT, LM_BRIM_MS:LM_BRIM_MS, LM_BRIM_MS_D3:LM_BRIM_MS_D3, LM_BRIM_PCT:LM_BRIM_PCT, LM_SUN_MULT:LM_SUN_MULT, LM_SUN_AT_FRAC_D4:LM_SUN_AT_FRAC_D4, LM_D1_RATE_MULT:LM_D1_RATE_MULT, LM_D2_SPILL_MULT:LM_D2_SPILL_MULT, LM_D2_WASH_PCT:LM_D2_WASH_PCT, LM_D3_BRIM_STRIKES:LM_D3_BRIM_STRIKES, LEG_GLOOMPIERCER_BRIM:LEG_GLOOMPIERCER_BRIM, LEG_DAWNBRAND_HIT_MULT:LEG_DAWNBRAND_HIT_MULT, LEG_GRAVELIGHT_SPILL:LEG_GRAVELIGHT_SPILL, LEG_DAWNWYRM_SWING:LEG_DAWNWYRM_SWING, LEG_GLIMMERWARD_MEND:LEG_GLIMMERWARD_MEND, LEG_LUMENVEIL_CAP:LEG_LUMENVEIL_CAP, LEG_GLEAMVEIL_BRIM:LEG_GLEAMVEIL_BRIM, LEG_DAWNSCALE_SUN:LEG_DAWNSCALE_SUN, LM_SWING_MULT:LM_SWING_MULT, _setLmSwingMult:function(v){ LM_SWING_MULT = v; }, lmRadCap:lmRadCap, lmRadiance:lmRadiance, lmRateMult:lmRateMult, lmRadianceAdd:lmRadianceAdd, lmOnHit:lmOnHit, lmSunAt:lmSunAt, lmSunBurning:lmSunBurning, lmPourMult:lmPourMult, lmSpillDps:lmSpillDps, lmBrimFire:lmBrimFire, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, toxinClockTick:toxinClockTick, toxinApply:toxinApply, potionSpendCharge:potionSpendCharge, draughtDamageReduction:draughtDamageReduction, POTION_TOXIN_CLOCK_MS:POTION_TOXIN_CLOCK_MS, POTION_MAX_CHARGES:POTION_MAX_CHARGES, RETIRED_ITEM_DEFS:RETIRED_ITEM_DEFS, parsePotionId:parsePotionId, firePotionOnAttack:firePotionOnAttack, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, legTombwallIncomingMult:legTombwallIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, executionerReapThreshold:executionerReapThreshold, enemyHpFrac:enemyHpFrac, EX_THRESH_FLOOR:EX_THRESH_FLOOR, EX_THRESH_FLOOR_D4:EX_THRESH_FLOOR_D4, EX_THRESH_CAP:EX_THRESH_CAP, EX_THRESH_PER_SEC:EX_THRESH_PER_SEC, EX_THRESH_PER_HIT:EX_THRESH_PER_HIT, EX_FALL_PCT:EX_FALL_PCT, EX_CULL_CARRY:EX_CULL_CARRY, EX_TALLY_PER:EX_TALLY_PER, EX_TALLY_MAX:EX_TALLY_MAX, EX_CULL_EXEC_FRAC:EX_CULL_EXEC_FRAC, EX_D1_RATE_MULT:EX_D1_RATE_MULT, EX_D1_FIRSTFALL_MULT:EX_D1_FIRSTFALL_MULT, EX_D3_FALL_MULT:EX_D3_FALL_MULT, EX_D3_RETAIN:EX_D3_RETAIN, EX_D4_AMP_MULT:EX_D4_AMP_MULT, LEG_SOULHARVESTER_PER:LEG_SOULHARVESTER_PER, LEG_SOULHARVESTER_MAX:LEG_SOULHARVESTER_MAX, LEG_EMBERWYRM_FALL_MULT:LEG_EMBERWYRM_FALL_MULT, EX_SWING_MULT:EX_SWING_MULT, _setExSwingMult:function(v){ EX_SWING_MULT = v; }, exThreshFloor:exThreshFloor, exThreshCap:exThreshCap, exClimbRateMult:exClimbRateMult, exThreshSeed:exThreshSeed, exFallFire:exFallFire, exFallCheck:exFallCheck, exFallOnHit:exFallOnHit, applyExFallTick:applyExFallTick, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LM_RAD_CAP:LM_RAD_CAP, LM_RAD_CAP_D4:LM_RAD_CAP_D4, LM_RAD_PER_HIT:LM_RAD_PER_HIT, LM_RAD_PER_SEC:LM_RAD_PER_SEC, LM_SPILL_PCT:LM_SPILL_PCT, LM_BRIM_MS:LM_BRIM_MS, LM_BRIM_MS_D3:LM_BRIM_MS_D3, LM_BRIM_PCT:LM_BRIM_PCT, LM_SUN_MULT:LM_SUN_MULT, LM_SUN_AT_FRAC_D4:LM_SUN_AT_FRAC_D4, LM_D1_RATE_MULT:LM_D1_RATE_MULT, LM_D2_SPILL_MULT:LM_D2_SPILL_MULT, LM_D2_WASH_PCT:LM_D2_WASH_PCT, LM_D3_BRIM_STRIKES:LM_D3_BRIM_STRIKES, LEG_GLOOMPIERCER_BRIM:LEG_GLOOMPIERCER_BRIM, LEG_DAWNBRAND_HIT_MULT:LEG_DAWNBRAND_HIT_MULT, LEG_GRAVELIGHT_SPILL:LEG_GRAVELIGHT_SPILL, LEG_DAWNWYRM_SWING:LEG_DAWNWYRM_SWING, LEG_GLIMMERWARD_MEND:LEG_GLIMMERWARD_MEND, LEG_LUMENVEIL_CAP:LEG_LUMENVEIL_CAP, LEG_GLEAMVEIL_BRIM:LEG_GLEAMVEIL_BRIM, LEG_DAWNSCALE_SUN:LEG_DAWNSCALE_SUN, LM_SWING_MULT:LM_SWING_MULT, _setLmSwingMult:function(v){ LM_SWING_MULT = v; }, lmRadCap:lmRadCap, lmRadiance:lmRadiance, lmRateMult:lmRateMult, lmRadianceAdd:lmRadianceAdd, lmOnHit:lmOnHit, lmSunAt:lmSunAt, lmSunBurning:lmSunBurning, lmPourMult:lmPourMult, lmSpillDps:lmSpillDps, lmBrimFire:lmBrimFire, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, toxinClockTick:toxinClockTick, toxinApply:toxinApply, potionSpendCharge:potionSpendCharge, draughtDamageReduction:draughtDamageReduction, POTION_TOXIN_CLOCK_MS:POTION_TOXIN_CLOCK_MS, POTION_MAX_CHARGES:POTION_MAX_CHARGES, parsePotionId:parsePotionId, firePotionOnAttack:firePotionOnAttack, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
@@ -44748,7 +44735,7 @@
       RG_CHAIN_CHANCE:RG_CHAIN_CHANCE, RG_BOND_PCT:RG_BOND_PCT, RG_BOND_D4_MULT:RG_BOND_D4_MULT,
       RG_HUNTERSMARK_PCT:RG_HUNTERSMARK_PCT, RG_THROATSEEKER_MULT:RG_THROATSEEKER_MULT, RG_WYRMSTALKER_PCT:RG_WYRMSTALKER_PCT,
       RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
-      maybeShowRarityPopup:maybeShowRarityPopup, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
+      maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
