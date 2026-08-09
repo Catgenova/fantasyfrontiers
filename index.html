@@ -6376,7 +6376,7 @@
     { key:'dawnbrand',  name:'Dawnbrand',  group:'arcane', slot:'mainhand', base:'wandLight', cls:'lumen',       desc:'Your swings gather light twice as fast.' },
     { key:'voidfang',   name:'Voidfang',   group:'arcane', slot:'mainhand', base:'wandDark',  cls:'nightblade',  desc:"Each Vulnerability stack lowers the foe's armour 3% (to −60%), and a Doom striking at max Vulnerability shatters it entirely for 4s." },
     { key:'sunbrand',   name:'Sunbrand',   group:'arcane', slot:'mainhand', base:'scepter',   cls:'templar',     desc:'When the Aegis verse ends, half the banked shield detonates at the foe as Light.' },
-    { key:'packbrand',  name:'Packbrand',  group:'arcane', slot:'mainhand', base:'staff',     cls:'summoner',    desc:"Each active familiar adds +10% to your Downbeat's familiar damage bonus." },
+    { key:'packbrand',  name:'Packbrand',  group:'arcane', slot:'mainhand', base:'staff',     cls:'summoner',    desc:"Your Crescendo grants +12% familiar damage per stack instead of +6%, and each active familiar adds +10% to the Downbeat bonus." },
     // Wards (offhand)
     { key:'emberveil',  name:'Emberveil',  group:'arcane', slot:'offhand', base:'wardFire',  cls:'pyromancer',  desc:'A quarter of the Blaze’s damage also builds a protective Barrier.' },
     { key:'stormveil',  name:'Stormveil',  group:'arcane', slot:'offhand', base:'wardEarth', cls:'thunderfury', desc:'Taking a hit while the Storm rages at max intensity discharges a free Thunderclap.' },
@@ -7269,7 +7269,7 @@
   // AND enchantable. Effects are wired per class behind setBonusActive(cls, 2|full).
   var D1_SET_DEFS = {
     summoner:      { cls:'summoner',      pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
-      b2:{ key:'maestrocap',    name:"Maestro's Poise", desc:'Your Crescendo can climb 2 stacks higher (+42% at full swell).' },
+      b2:{ key:'maestrotempo',  name:"Maestro's Tempo", desc:'Each connecting Downbeat builds 2 Crescendo stacks. The swell, and every Grand Finale, comes twice as fast.' },
       bf:{ key:'encore',        name:'Encore',          desc:'Grand Finale volley spells each cast twice.' } },
     duelist:       { cls:'duelist',       pieces:{ helmet:'chain', chest:'chain', gauntlets:'tailoring', boots:'tailoring' },
       b2:{ key:'riposte',       name:'Riposte',        desc:'Your primed Ripostes are guaranteed Critical Hits.' },
@@ -7351,7 +7351,7 @@
   // class's D1 set). Bonus effect functions live in their own block below and gate on set2D2/setFullD2.
   var D2_SET_BONUSES = {
     summoner:      { name:'Chorus of Fangs',       b2:{ key:'d2_choruspack',   name:'Pack Tactics',      desc:'Each active familiar boosts your familiars’ damage by +8%.' },
-                                                   bf:{ key:'d2_kindredfury',  name:'Kindred Fury',      desc:'Your familiars can land Critical Hits, using your own Critical stats.' } },
+                                                   bf:{ key:'d2_kindredfury',  name:'Kindred Fury',      desc:'Your familiars can land Critical Hits with your Critical chance, striking double.' } },
     duelist:       { name:"Bladedancer's Wrap",    b2:{ key:'d2_counterstance',name:'Counterstance',     desc:'For 2s after a Dodge, you take 35% less damage.' },
                                                    bf:{ key:'d2_engarde',      name:'En Garde',          desc:'+12% Dodge chance, and every real Dodge advances your Sidestep clock by half its period.' } },
     reaper:        { name:'Gravebinder Shroud',    b2:{ key:'d2_soulglut',     name:'Soul Glut',         desc:'Your Rot ticks heal 75% of their damage (up from 50%).' },
@@ -7570,6 +7570,11 @@
   // Block, an opening ailment) doing something rather than nothing.
   function dotBase(st){ st = st || state; var a = st.activity;
     return (a && a.type==='combat' && a.dotHitAvg) ? a.dotHitAvg : combatLevelEquivalent(st); }
+  // The recent FAMILIAR hit: banked on every landed familiar spell (post-multiplier, like dotHitAvg is
+  // for weapon swings). Wraith strikes pay a share of THIS, so summons scale with the pack that raised
+  // them; before the first familiar hit of a fight it falls back to the swing EMA.
+  function famHitBase(st){ st = st || state; var a = st.activity;
+    return (a && a.type==='combat' && a.famHitAvg) ? a.famHitAvg : dotBase(st); }
   // Decay is applied by roughly twenty different sources (Juggernaut D3, Nightblade, Sharpshooter D3, Lumen
   // D3, Sentinel D3, Frostwarden D3, and a dozen legendaries), and it lands on classes that are ALREADY
   // banded. So its coefficient is deliberately small: at the 10-stack cap it is worth ~6% of a hit per second,
@@ -7982,8 +7987,9 @@
   // staff's damage (weapon power + enchants) to all familiar attacks. Anyone with a staff sustains one
   // Downbeat; the Summoner's kit turns the beat into a rhythm:
   //   Lv 1  Downbeat    -- each swing hit builds a STACK of Downbeat (each its own 5s timer)
-  //   Lv 20 Crescendo   -- each connecting Downbeat: +6% familiar damage per stack (cap 5, +2 w/ D1 2pc);
-  //                        a missed swing drops a stack; leaving combat clears them
+  //   Lv 20 Crescendo   -- each connecting Downbeat: +6% familiar damage per stack (cap 5; the D1 2pc
+  //                        builds 2 per beat, Packbrand pays 12%/stack); a missed swing drops a stack;
+  //                        leaving combat clears them
   //   Lv 40 Syncopation -- familiar spells cast within 1.5s of a Downbeat are EMPOWERED: +40% damage
   //   Lv 60 Accelerando -- each connecting Downbeat advances all familiar cast timers 0.4s; at max
   //                        Crescendo familiars cast 15% faster
@@ -7992,9 +7998,13 @@
   var STAFF_DOWNBEAT_MS = 5000;
   var SUMMONER_SYNCOPATION_MS = 1500, SUMMONER_SYNCOPATION_MULT = 1.40;
   var SUMMONER_CRESCENDO_BASE_CAP = 5, SUMMONER_CRESCENDO_PER = 0.06;
+  var SUMMONER_MAESTRO_BUILD = 2;     // Maestro's Tempo (D1 2pc): each connecting Downbeat builds 2 Crescendo stacks (a rate axis; the old cap +2 INVERTED on this cycling meter, delaying every Finale)
+  var SUMMONER_FAM_CRIT_MULT = 2;     // Kindred Fury (D2 full): familiar crits strike a flat x2. Never the hero's crit-damage stack: at BiS that read as a permanent x2.8 and made D2 5x its sibling layers.
+  var PACKBRAND_CRESCENDO_PER = 0.12; // Packbrand: Crescendo grants +12% familiar damage per stack instead of +6% (the staff's Downbeat add alone is a flat raw-stat add, invisible at BiS)
+  var SU_FAM_MULT = 1.0;              // 'Conductor's Measure': the Summoner's whole-kit band knob, applied to familiar damage while the class is active (v0.0.96.21 owner-band campaign)
   var SUMMONER_ACCEL_ADVANCE_MS = 400, SUMMONER_ACCEL_MAX_CAST_MULT = 0.85;
   var SUMMONER_WRAITH_MS = 10000, SUMMONER_WRAITH_STRIKE_MS = 2500, GRAVECHOIR_SOULS_PER_WRAITH = 5;
-  var SUMMONER_WRAITH_HIT_PCT = 0.12;  // each Wraith strike = this share of the recent average hit
+  var SUMMONER_WRAITH_HIT_PCT = 0.35;  // each Wraith strike = this share of the recent average FAMILIAR hit (re-based v0.0.96.21; 0.12 of a staff swing was invisible)
   function staffDownbeatStacks(st){
     st = st || state; var arr = st.staffDownbeats;
     if(!Array.isArray(arr) || !arr.length) return 0;
@@ -8017,7 +8027,8 @@
     var enh = (st === state) ? mainhandEnhanceMult() : (function(){ var uid = st.equippedMainhandUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; })();
     return Math.max(0, Math.round(((w.dmgMin + w.dmgMax) / 2 + flat) * (1 + (ench.pctDamage||0)/100) * enh));
   }
-  function summonerCrescendoCap(st){ st = st || state; return SUMMONER_CRESCENDO_BASE_CAP + (set2('summoner', st) ? 2 : 0); } // Maestro's Raiment (D1 2pc): cap +2
+  function summonerCrescendoCap(st){ st = st || state; return SUMMONER_CRESCENDO_BASE_CAP; } // flat cap: Maestro's Tempo (D1 2pc) is a BUILD-rate axis now, never a cap raise (a higher cap delays the Finale)
+  function summonerFamBandMult(st){ return summonerBonus(1, st) ? SU_FAM_MULT : 1; } // Conductor's Measure: the band knob rides only a live Summoner's familiars; every other class's familiars are untouched
   function summonerCrescendo(st){ st = st || state; return Math.min(summonerCrescendoCap(st), st.summonerCrescendo||0); }
   function summonerSpellEmpowered(st){ st = st || state; return summonerBonus(40, st) && ((st.staffLastDownbeatAt||0) + SUMMONER_SYNCOPATION_MS) > Date.now(); }
   // Skeletal Wraiths (Necrocaller / Bone Cadence): summoned by a Grand Finale, each fights beside you
@@ -8040,7 +8051,10 @@
       if(w.until <= now){ arr.splice(i,1); continue; }
       if(w.nextAt <= now){
         w.nextAt = now + SUMMONER_WRAITH_STRIKE_MS;
-        var dmg = Math.max(1, Math.round(dotBase(state) * SUMMONER_WRAITH_HIT_PCT));
+        // The Wraith is the class's own summon: it strikes at a share of the recent FAMILIAR hit
+        // (act.famHitAvg, the channel that carries this class's real numbers). The staff-swing EMA
+        // it used to read made every Wraith invisible next to the familiars it fought beside.
+        var dmg = Math.max(1, Math.round(famHitBase(state) * SUMMONER_WRAITH_HIT_PCT));
         applyChipDamage(dmg); decayApply(act, 1);   // logs below as a dir:'fam' Necrotic Strike row
         if(!offlineCapture) spawnCombatFloat('Skeletal Wraith -'+fmt(dmg), 'ft-rare', true);
         var _wm = monsterById(act.monsterId);
@@ -8057,7 +8071,7 @@
     if(summonerBonus(1)) state.staffDownbeats.push(now + STAFF_DOWNBEAT_MS); // Downbeat (Lv1): stacks
     else state.staffDownbeats = [now + STAFF_DOWNBEAT_MS];                   // baseline staff: one refreshed stack
     state.staffLastDownbeatAt = now;                                          // Syncopation window anchor
-    if(summonerBonus(20)) state.summonerCrescendo = Math.min(summonerCrescendoCap(state), (state.summonerCrescendo||0) + 1);
+    if(summonerBonus(20)) state.summonerCrescendo = Math.min(summonerCrescendoCap(state), (state.summonerCrescendo||0) + (set2('summoner') ? SUMMONER_MAESTRO_BUILD : 1)); // Maestro's Tempo (D1 2pc): the swell comes twice as fast
     if(summonerBonus(60)){ // Accelerando: the beat advances every familiar's cast timer
       state.companionCast = state.companionCast || {};
       activeCompanionList(state).forEach(function(cid){ var cc = state.companionCast[cid]; if(cc) cc.accum += SUMMONER_ACCEL_ADVANCE_MS; });
@@ -11644,7 +11658,7 @@
       // keep pace at level 100 while preserving their historical relative strength; dps = total / duration.
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
       var _pdur = (spell.durationMs/1000) || 6;
-      var _ptotal = familiarHitDamageResting(level, spell.dps * _pdur) * (1 + catalystFamiliarBonus()) * familiarTranscendDamageMult(casterId);
+      var _ptotal = familiarHitDamageResting(level, spell.dps * _pdur) * (1 + catalystFamiliarBonus()) * familiarTranscendDamageMult(casterId) * summonerFamBandMult(state); // Conductor's Measure rides poison familiars too
       famBuffApply('poisonDps', 'poisonUntil', (_ptotal/_pdur)*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element), spell.durationMs*durMult);
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='regen'){
@@ -11672,10 +11686,11 @@
           * d4FamiliarElementMult(state, spell.element, cmon);          // Broodwyrm (Brood Heart +30% / Wyrd Resonance advantage)
         dmg *= _fElem;
         _fKit = summonerPackTacticsMult(state); // Chorus of Fangs (Summoner D2 2pc): +8% familiar damage per active familiar
-        if(summonerBonus(20)) _fKit *= (1 + SUMMONER_CRESCENDO_PER * summonerCrescendo(state)); // Crescendo (Lv20): +6% per stack
+        if(summonerBonus(20)) _fKit *= (1 + (legActive('packbrand') ? PACKBRAND_CRESCENDO_PER : SUMMONER_CRESCENDO_PER) * summonerCrescendo(state)); // Crescendo (Lv20): +6%/stack; Packbrand doubles the swell to +12%
         if(summonerSpellEmpowered(state)) _fKit *= SUMMONER_SYNCOPATION_MULT; // Syncopation (Lv40): spells on the beat are Empowered (+40%)
         // Wyrd Resonance (D4 full): a Downbeat-branded foe takes +15% from the staff's enchant elements.
         if(cact.wyrdBrandUntil > Date.now() && spell.element && cact.wyrdBrandElems && cact.wyrdBrandElems[spell.element]) _fKit *= 1.15;
+        _fKit *= summonerFamBandMult(state); // Conductor's Measure: the whole-kit band knob (class-gated)
         dmg *= _fKit;
         // DOWNBEAT: each active stack adds the staff's damage (power + enchants) to the attack.
         var _dbStacks = staffDownbeatStacks(state);
@@ -11686,15 +11701,21 @@
           dmg += _db;
         }
         dmg = Math.round(dmg);
-        // Kindred Fury (Summoner D2 full): familiars can crit, borrowing the hero's crit chance & crit damage.
+        // Kindred Fury (Summoner D2 full): familiars can crit on the hero's crit CHANCE, striking a flat
+        // x2 -- never the hero's crit-damage stack. Borrowed crit damage read as a permanent x2.8 at BiS
+        // (~100% chance at the capped multiplier plus the Eidolon's own critDmg buff) and made this one
+        // layer 5x its siblings. Flat-crit rule, instance twelve.
         var famName = (FAMILIAR_DATA[casterId] || {}).name || 'Familiar';
         var famCrit = false, famCritMult = 1;
         if(setFullD2('summoner') && Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance'))){
-          famCritMult = Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg');
+          famCritMult = SUMMONER_FAM_CRIT_MULT;
           dmg = Math.round(dmg * famCritMult);
           famCrit = true;
         }
         applyChipDamage(dmg);   // logs below as a dir:'fam' row carrying the familiar and spell names
+        // Bank the familiar-hit EMA (the Wraiths' base). Post-multiplier like dotHitAvg, so summons
+        // scale with what the pack actually lands, band knob included (the Wraith never re-applies it).
+        if(dmg > 0) cact.famHitAvg = cact.famHitAvg ? Math.round(cact.famHitAvg * 0.75 + dmg * 0.25) : dmg;
         if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
         // Familiar damage floats over the enemy on the combat card, tagged with the familiar's name.
         spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
@@ -19576,6 +19597,7 @@
     // class rather than a farming-chain class. Bonereaver is the one thing that carries it.
     act.rvCuts = 0; act.rvBank = 0; act.rvCutAccum = 0; act.rvBleedHitAvg = 0;
     act.dotHitAvg = 0;  // the shared DoT base is per-foe, like every other hit average
+    act.famHitAvg = 0;  // the familiar-hit EMA (the Wraiths' base) is per-foe too
     act.pyFuel = 0;     // a fresh foe is a cold Blaze (Ember Burst re-seeds it below)
     act.rgQuarry = 0; act.rgQuarryUntil = 0; // a fresh foe has not been run down yet
     act.pbSev = 0; act.pbUntil = 0; act.pbErupt = 0; // a fresh foe is uninfected (Pestilence re-seeds it below)
@@ -44343,7 +44365,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.20';
+  var GAME_VERSION = '0.0.96.21';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44691,7 +44713,7 @@
       PB_TICK_PCT:PB_TICK_PCT, PB_PLAGUE_MS:PB_PLAGUE_MS, PB_CONTAGION_PCT:PB_CONTAGION_PCT, PB_HEAL_PCT:PB_HEAL_PCT,
       PB_ERUPT_MS:PB_ERUPT_MS, PB_ERUPT_MS_WASTING:PB_ERUPT_MS_WASTING, PB_ERUPT_PCT:PB_ERUPT_PCT, PB_ERUPT_VENOMSCALE:PB_ERUPT_VENOMSCALE, PB_SWING_MULT:PB_SWING_MULT,
       dotBase:dotBase, RANGER_POISON_PCT:RANGER_POISON_PCT, PLAGUE_VIRULENCE_PCT:PLAGUE_VIRULENCE_PCT,
-      SUMMONER_WRAITH_HIT_PCT:SUMMONER_WRAITH_HIT_PCT, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
+      SUMMONER_WRAITH_HIT_PCT:SUMMONER_WRAITH_HIT_PCT, SUMMONER_MAESTRO_BUILD:SUMMONER_MAESTRO_BUILD, SUMMONER_FAM_CRIT_MULT:SUMMONER_FAM_CRIT_MULT, PACKBRAND_CRESCENDO_PER:PACKBRAND_CRESCENDO_PER, SU_FAM_MULT:SU_FAM_MULT, famHitBase:famHitBase, summonerFamBandMult:summonerFamBandMult, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
       reaverBonus:reaverBonus, rvCuts:rvCuts, rvBank:rvBank, rvCountCap:rvCountCap, rvCountMult:rvCountMult, rvHarvestAt:rvHarvestAt,
       rvHarvestArmed:rvHarvestArmed, rvHarvestDamage:rvHarvestDamage, rvCarveCuts:rvCarveCuts, rvHarvestFire:rvHarvestFire,
       rvHarvestHasteMult:rvHarvestHasteMult, applyReaverBleedTick:applyReaverBleedTick, reaverBleedCap:reaverBleedCap,

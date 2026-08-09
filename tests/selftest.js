@@ -8820,7 +8820,7 @@
       ok(d.b2 && d.b2.name && d.b2.desc && d.b2.key, id + ' has a named 2-piece bonus');
       ok(d.bf && d.bf.name && d.bf.desc && d.bf.key, id + ' has a named full-set bonus'); });
     // Spot-check a couple of the chosen bonuses landed.
-    eq(FF.D1_SET_DEFS.summoner.b2.name, "Maestro's Poise", "Summoner 2pc is Maestro's Poise (Crescendo cap +2)");
+    eq(FF.D1_SET_DEFS.summoner.b2.name, "Maestro's Tempo", "Summoner 2pc is Maestro's Tempo (double Crescendo build)");
     eq(FF.D1_SET_DEFS.reaver.bf.name, 'Feeding Frenzy', 'Reaver capstone is Feeding Frenzy');
     eq(FF.D1_SET_DEFS.nightblade.b2.name, 'Resistance Rot', 'Voidshadow (nightblade) 2pc is Resistance Rot');
     // Themed set names: every class has one, and pieces read "<Slot> of <SetName>".
@@ -10052,12 +10052,15 @@
     }
     var now = Date.now();
 
-    // Pack Tactics moved to the D2 set: D1 pieces alone no longer grant it (D1 is Maestro's Poise now).
+    // Pack Tactics moved to the D2 set: D1 pieces alone do not grant it (D1 is Maestro's Tempo now).
     var packSt = setSt('summoner', 2, { activeCompanions:['woodcutting'], familiars:{ woodcutting:{owned:true} } });
-    near(FF.summonerPackTacticsMult(packSt), 1, 'D1 pieces no longer grant Pack Tactics (it lives on the D2 Chorus of Fangs)');
-    // Maestro's Poise (D1 2pc): the Crescendo cap climbs from 5 to 7.
-    eq(FF.summonerCrescendoCap(packSt), 7, "Maestro's Poise: Crescendo cap 7 with the 2-piece");
+    near(FF.summonerPackTacticsMult(packSt), 1, 'D1 pieces do not grant Pack Tactics (it lives on the D2 Chorus of Fangs)');
+    // Maestro's Tempo (D1 2pc): a BUILD-rate axis. The old cap +2 inverted on this cycling meter
+    // (a higher cap delays every Grand Finale), so the cap is flat 5 for everyone now.
+    eq(FF.summonerCrescendoCap(packSt), 5, "Maestro's Tempo never raises the Crescendo cap");
     eq(FF.summonerCrescendoCap(setSt('summoner', 1, {})), 5, 'base Crescendo cap is 5');
+    ok(/Tempo/.test(FF.D1_SET_DEFS.summoner.b2.name), 'the Summoner D1 2pc is Maestro\'s Tempo (the double build lives in staffDownbeatHit, exercised in the Conductor suite)');
+    eq(FF.SUMMONER_MAESTRO_BUILD, 2, 'Maestro\'s Tempo builds 2 Crescendo stacks per connecting Downbeat');
 
     // Spellblade D1 re-axed (the Afterimage Train): Echo Chamber raises the RATIO; Resonant Depths
     // (the old Resonant Crit) deepens the train -- afterimages never re-roll a crit.
@@ -14053,7 +14056,8 @@
       var s = FF._state;
       var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, mhT:s.equippedMainhandTier, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity,
                    db:s.staffDownbeats, dba:s.staffLastDownbeatAt, cre:s.summonerCrescendo, wr:s.summonerWraiths,
-                   ac:s.activeCompanions, cc:s.companionCast, fam:s.familiars.forestry };
+                   ac:s.activeCompanions, cc:s.companionCast, fam:s.familiars.forestry,
+                   ui:s.uniqueItems, mhu:s.equippedMainhandUid, fb:s.familiarBuffs };
       try {
         s.equippedMainhand='staff'; s.equippedMainhandRarity='normal';
         s.bodyArmor={ helmet:cloth(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() };
@@ -14114,10 +14118,76 @@
         s.activity = null;
         FF.summonerWraithsTick();
         eq(s.summonerWraiths.length, 0, 'Wraiths disperse outside combat');
+
+        // ---- The v0.0.96.21 re-axis: Maestro's Tempo, Kindred Fury flat x2, Wraith famHitAvg, the band knob.
+        function clothSet(uid, layer){ return { uid:uid, material:'tailoring', tier:1, rarity:'normal' }; }
+        s.xp.summoner = FF.xpFloorForLevel(60); // Lv60: Crescendo live, Grand Finale (Lv80) never consumes mid-test
+        // Pin staves proficiency at Lv100: every familiar hit trains it, and a level crossed BETWEEN two
+        // compared casts moves familiarGearPotencyMult under the comparison.
+        var _svStaves = s.xp.staves; s.xp.staves = FF.xpFloorForLevel(100);
+        s.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:1e12 };
+        s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.summonerWraiths = []; s.activeCompanions = [];
+        // Maestro's Tempo (D1 2pc): each connecting Downbeat builds 2 stacks; the cap never moves.
+        s.uniqueItems = { t0:{ uid:'t0', set:'summoner' }, t1:{ uid:'t1', set:'summoner' } };
+        s.bodyArmor = { helmet:clothSet('t0'), chest:clothSet('t1'), gauntlets:cloth(), boots:cloth(), back:bare() };
+        eq(FF.activeClassId(s), 'summoner', 're-axis setup keeps the Summoner live');
+        eq(FF.summonerCrescendoCap(s), 5, "Maestro's Tempo never raises the cap (the old cap +2 delayed every Finale)");
+        FF.staffDownbeatHit();
+        eq(FF.summonerCrescendo(s), FF.SUMMONER_MAESTRO_BUILD, "Maestro's Tempo: one beat builds 2 Crescendo stacks");
+        s.summonerCrescendo = 4; FF.staffDownbeatHit();
+        eq(FF.summonerCrescendo(s), 5, 'the double build still clamps at the cap');
+        // Wraiths strike at a share of the recent FAMILIAR hit (seeded LARGE per the engine-tick rule:
+        // a low-tier real hit is smaller than the tolerance floor and the assertion could never fail).
+        s.activity.famHitAvg = 1e9;
+        s.summonerWraiths = [{ until: Date.now()+60000, nextAt: Date.now()-1 }];
+        var wHp0 = s.activity.monsterHp;
+        FF.summonerWraithsTick();
+        eq(wHp0 - s.activity.monsterHp, Math.round(1e9 * FF.SUMMONER_WRAITH_HIT_PCT), 'a Wraith strike = its share of the recent familiar hit');
+        eq(FF.famHitBase({ activity:{ type:'combat', dotHitAvg:777, famHitAvg:555 } }), 555, 'famHitBase prefers the familiar EMA');
+        eq(FF.famHitBase({ activity:{ type:'combat', dotHitAvg:777, famHitAvg:0 } }), 777, 'famHitBase falls back to the swing EMA before the first familiar hit');
+        s.summonerWraiths = [];
+        // Kindred Fury (D2 full): familiar crits strike a FLAT x2 on the hero's crit CHANCE -- never the
+        // hero's crit-damage stack (a seeded critDmg famBuff must not move the multiplier).
+        s.uniqueItems = { k0:{uid:'k0',set:'summoner',setLayer:'d2'}, k1:{uid:'k1',set:'summoner',setLayer:'d2'},
+                          k2:{uid:'k2',set:'summoner',setLayer:'d2'}, k3:{uid:'k3',set:'summoner',setLayer:'d2'} };
+        s.bodyArmor = { helmet:clothSet('k0'), chest:clothSet('k1'), gauntlets:clothSet('k2'), boots:clothSet('k3'), back:bare() };
+        s.familiarBuffs = { critDmgVal: 5, critDmgUntil: Date.now()+60000,          // the old disease read critDmg
+                            critChanceVal: 0.5, critChanceUntil: Date.now()+60000 }; // a known crit floor for the stubbed rolls
+        s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.activity.famHitAvg = 0;
+        var _svRnd2 = Math.random, famDmgA, famDmgB;
+        try {
+          Math.random = function(){ return 0.9999; };  // above any real crit chance: no crit
+          var hpA = s.activity.monsterHp;
+          FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'void', element:null, amount:10 }, 50, 'mining');
+          famDmgA = hpA - s.activity.monsterHp;
+          eq(s.activity.famHitAvg, famDmgA, 'a familiar hit banks the famHitAvg EMA');
+          Math.random = function(){ return 0; };       // under any crit chance: guaranteed crit
+          var hpB = s.activity.monsterHp;
+          FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'void', element:null, amount:10 }, 50, 'mining');
+          famDmgB = hpB - s.activity.monsterHp;
+          eq(famDmgB, famDmgA * FF.SUMMONER_FAM_CRIT_MULT, 'Kindred Fury strikes exactly double, immune to the crit-damage stack');
+          eq(s.activity.famHitAvg, Math.round(famDmgA * 0.75 + famDmgB * 0.25), 'the famHitAvg EMA follows every familiar hit');
+          // Conductor's Measure: the band knob rides a live Summoner's familiars and nobody else's.
+          eq(FF.summonerFamBandMult(s), FF.SU_FAM_MULT, 'a live Summoner carries the band knob');
+          eq(FF.summonerFamBandMult({ xp:{}, physique:{}, bodyArmor:{}, playerHp:1 }), 1, 'no class, no band knob');
+          near(famDmgA, Math.round(FF.familiarHitDamageResting(50, 10) * FF.SU_FAM_MULT), 'the cast pipeline applies the band knob (wiring, exact once the knob is not 1)', 2);
+          // Packbrand: the Crescendo swell pays +12% per stack instead of +6%.
+          Math.random = function(){ return 0.9999; };
+          s.summonerCrescendo = 3;
+          var hpC = s.activity.monsterHp;
+          FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'void', element:null, amount:10 }, 50, 'mining');
+          var famDmgC = hpC - s.activity.monsterHp;
+          s.uniqueItems.L = { uid:'L', leg:'packbrand', kind:'weapon', base:'stweapon_staff_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 };
+          s.equippedMainhandUid = 'L';
+          var hpD = s.activity.monsterHp;
+          FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'void', element:null, amount:10 }, 50, 'mining');
+          var famDmgD = hpD - s.activity.monsterHp;
+          near(famDmgD / famDmgC, (1 + FF.PACKBRAND_CRESCENDO_PER * 3) / (1 + FF.SUMMONER_CRESCENDO_PER * 3), 'Packbrand doubles the Crescendo swell (+12% per stack)', 0.02);
+        } finally { Math.random = _svRnd2; s.xp.staves = _svStaves; }
       } finally {
         s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandTier=snap.mhT; s.bodyArmor=snap.ba; s.xp.summoner=snap.xp; s.playerHp=snap.hp; s.activity=snap.act;
         s.staffDownbeats=snap.db; s.staffLastDownbeatAt=snap.dba; s.summonerCrescendo=snap.cre; s.summonerWraiths=snap.wr;
-        s.activeCompanions=snap.ac; s.companionCast=snap.cc;
+        s.activeCompanions=snap.ac; s.companionCast=snap.cc; s.uniqueItems=snap.ui; s.equippedMainhandUid=snap.mhu; s.familiarBuffs=snap.fb;
         if(snap.fam === undefined) delete s.familiars.forestry; else s.familiars.forestry = snap.fam;
       }
     })();
