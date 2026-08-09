@@ -1072,9 +1072,19 @@ both set A/Bs, and the legendary matrix is the tightest recorded for this class 
 Necrocaller from last to first). Band knob: SU_FAM_MULT ('Conductor's Measure') multiplies familiar
 hit/siphon/poison damage ONLY while the Summoner class is active, so no other staff-wielder's familiars
 move, and the familiar ANCHOR (raw weapon-tier curve) is untouched per the owner's never-re-base rule.
-Measured 1.81M and 1.49M at knob 1.0 (packs disagree ±10%, average 2-3 runs here) -> mean 1.65M -> knob
-**1.51**. NOTE: the knob does not scale the summoner's own staff swings, so whole-kit scaling is slightly
-sub-linear in it; the confirm pack is the check.
+Measured 1.81M and 1.49M at knob 1.0 (packs disagree ±10%, average 2-3 runs here) -> mean 1.65M.
+**THE PLACEMENT BUG THE FIRST CONFIRM CAUGHT (v0.0.96.25): a band knob must never sit upstream of an
+additive term.** The knob first shipped folded into _fKit, which multiplies the familiar hit BEFORE the
+Downbeat add -- and at BiS the add dominates the hit, so knob 1.51 moved the measured pack only ~1.1x (the
+tell: the set A/B cells read the SAME at knob 1.0 and 1.51). It now multiplies the whole hit as a final
+term, the wiring test seeds live Downbeat stacks so the pre-add placement fails it, and the advanced-log
+breakdown shows it as its own 'measure' factor. Re-measured at 1.51: 2.02M. Two clean points then give the
+model: the class carries **~0.92M of UNSCALED staff-swing damage** (staves auto-attack -- the standing
+noAttack item -- and no knob channels them) and ~0.73M that scales, so knob = (2.5 - 0.92) / 0.73 =
+**2.16**, confirmed at **2.22M vs 2.5M (-11%), HOLDS. All 24 classes are now banded; the campaign is
+closed end to end.** If the owner ever flips the staff noAttack flag, the 0.92M subsidy vanishes and this
+knob re-derives. Same-config legendary ordering shuffles run to run (necrocaller read top one pack, last
+the next) -- do not rank the staves.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
