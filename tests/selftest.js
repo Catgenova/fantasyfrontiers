@@ -8345,7 +8345,7 @@
   // (no longer a lever post-rarity-retune) onto its own channel. Pin the constants AND the wiring.
   suite('reband: the four new whole-kit band knobs', function(){
     near(FF.BZ_SWING_MULT, 0.68, 'Berserker channels to 68%');
-    near(FF.RP_SWING_MULT, 0.52, 'Reaper channels to 52%');
+    near(FF.RP_SWING_MULT, 0.49, 'Reaper channels to 49%');
     near(FF.QD_SWING_MULT, 0.90, 'Quickdraw channels to 90%');
     near(FF.HD_SWING_MULT, 0.52, 'Herald channels to 52%');
     near(FF.AS_SWING_MULT, 0.65, 'Assassin channels to 65% (first formal band, v0.0.96.17)');
