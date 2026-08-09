@@ -265,7 +265,7 @@
     // No tiered sell is exponentially large anymore: the max tiered non-rarity sell is 210 (was thousands).
     var maxTieredNormalSell = 0;
     Object.keys(S).forEach(function(id){ var it = S[id]; if(it && /_t\d/.test(id) && !it.rarity && typeof it.sell === 'number' && it.sell > maxTieredNormalSell) maxTieredNormalSell = it.sell; });
-    ok(maxTieredNormalSell <= 210, 'no tiered normal-rarity item sells above 210 -- got ' + maxTieredNormalSell);
+    ok(maxTieredNormalSell <= 220, 'no tiered normal-rarity item sells above 220 (the t21 Eternal Idol Totem is the ceiling) -- got ' + maxTieredNormalSell);
   });
 
   // ---- Settings: the opt-in automation toggles exist and default OFF ----------------------
@@ -907,13 +907,32 @@
     ok(FF.BUILDING_SKILL_IDS.indexOf('totems') !== -1, 'Totems is a Construction (Building) skill');
     var sk = FF.CRAFTING_SKILLS.totems;
     ok(sk && sk.label === 'Totems', 'the Totems craft skill exists');
-    eq(sk.recipes.length, 20, '20 Totem tiers (t1..t20; no +0 t0 totem)');
+    eq(sk.recipes.length, 21, '21 Totem tiers (t1..t21; no +0 t0 totem, the Eternal Idol Totem tops the ladder)');
     // The ladder starts at t1, so the Nth recipe takes the Nth level gate -- a fresh Totems skill (Lv 1)
     // must have its first recipe craftable or there is no way to earn any Totems XP at all.
     eq(sk.recipes[0].levelReq, 1, 'the first Totem (t1) is craftable at Totems Lv 1');
     eq(sk.recipes[1].levelReq, 5, 'the second Totem (t2) gates at Lv 5');
     eq(sk.recipes[19].levelReq, 95, 'the top Totem (t20) gates at Lv 95');
-    ok(!FF.ALL_SELLABLE.totem_t0 && !!FF.ALL_SELLABLE.totem_t1 && !!FF.ALL_SELLABLE.totem_t20, 'totem items register t1..t20 only');
+    ok(!FF.ALL_SELLABLE.totem_t0 && !!FF.ALL_SELLABLE.totem_t1 && !!FF.ALL_SELLABLE.totem_t20, 'totem items register from t1 (no t0)');
+    // The Eternal Idol Totem (v0.0.96.35): the ladder runs one past the wood ladder, so the t20 Eternal
+    // Idol woodcarving finally has a consumer.
+    var eit = FF.ALL_SELLABLE.totem_t21;
+    ok(!!eit && eit.name === 'Eternal Idol Totem', 'the t21 Eternal Idol Totem exists');
+    ok(!FF.ALL_SELLABLE.totem_t22, 'and the ladder stops there');
+    eq(eit.levelReq, FF.TIER_LEVELS[20], 'it gates at Totems Lv 100');
+    eq(eit.inputs.woodcarving_t20, 5, 'it consumes 5x Eternal Idol woodcarvings');
+    eq(eit.inputs.carpentry_t20, 10, 'plus 10x top planks');
+    // Placement: the t21 capstone stands on TOP-TIER pavement (no t21 pavement exists to demand).
+    (function(){
+      var S3 = FF._state, svInv = S3.inventory;
+      try {
+        S3.inventory = Object.assign({}, svInv, { totem_t21: 1 });
+        var list = FF.placeableTotemsFor({ type:'paved', paveTileId:'paving_t20' });
+        ok(list.some(function(r){ return r.id === 'totem_t21'; }), 'the Eternal Idol Totem is placeable on t20 pavement');
+        var low = FF.placeableTotemsFor({ type:'paved', paveTileId:'paving_t19' });
+        ok(!low.some(function(r){ return r.id === 'totem_t21'; }), 'but not on lower pavement');
+      } finally { S3.inventory = svInv; }
+    })();
     // Ticket-0124: the totem ladder starts one rank ABOVE the material ladder, so recipe N consumes and
     // is named after wood N-1 -- the half-shifted version (Lv 1 gate but t1 Birch inputs) left a fresh
     // Woodcarver unable to craft the recipe their level said they could.
@@ -925,7 +944,7 @@
     eq(r5.name, FF.FORESTRY_NAMES[4] + ' Totem', 'every totem name follows its material wood, not its bonus tier');
     ok(/ Totem$/.test(r5.name), 'totems are named after their wood ("' + r5.name + '")');
     var cat = FF.buildItemCatalog();
-    ok(cat.totem_t1 === 1 && cat.totem_t20 === 1, 'totems are tradeable in the server item catalog');
+    ok(cat.totem_t1 === 1 && cat.totem_t21 === 1, 'totems are tradeable in the server item catalog, the Eternal Idol Totem included');
     eq(FF.marketItemCategory('totem_t3'), 'other', 'totems browse under Other (estate placeables) on the market');
     // Placement plumbing: job kind 'totem' behaves like the other buildings.
     eq(FF.estateJobMaterials({ kind:'totem', totemId:'totem_t5' })[0][0], 'totem_t5', 'a totem job reserves the totem item');
