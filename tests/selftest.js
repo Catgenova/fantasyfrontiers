@@ -442,6 +442,33 @@
     for(var s = 5; s <= 20; s++){ eq(FF.bankSlotCost(s), Math.round(10000 * Math.pow(1.25, s - 5)), 'bankSlotCost matches 10000*1.25^(s-5) @' + s); }
   });
 
+  // ---- THE GUILD HALL (v0.0.97.0): the roster ladder and its treasury cost table ---------
+  // The cost ladder is DUPLICATED in the migration's guild_hall_cost (20260809120000_guild_hall.sql):
+  // change both sides or neither (the estate_job_duration_ms rule). Owner-pinned endpoints: Level 1
+  // costs 1M, Level 15 costs 15B, ~x1.99 per step between.
+  suite('guild hall: 15 levels, +1 roster slot each, 1M to 15B', function(){
+    eq(FF.GUILD_HALL_MAX_LEVEL, 15, 'the Hall tops out at Level 15');
+    eq(FF.GUILD_HALL_COSTS.length, 15, 'one cost per level');
+    eq(FF.guildHallCost(1), 1000000, 'Level 1 costs 1M (owner pin)');
+    eq(FF.guildHallCost(15), 15000000000, 'Level 15 costs 15B (owner pin)');
+    eq(FF.guildHallCost(0), null, 'no Level 0 cost');
+    eq(FF.guildHallCost(16), null, 'nothing past 15');
+    for(var n = 2; n <= 15; n++){
+      var r = FF.guildHallCost(n) / FF.guildHallCost(n - 1);
+      ok(r > 1.85 && r < 2.15, 'the ladder climbs ~x1.99 per step (got x' + (Math.round(r * 100) / 100) + ' at ' + n + ')');
+    }
+    // Roster math: base 10, one seat per level, clamped at 25 however large the column claims.
+    eq(FF.guildMaxMembers(null), 10, 'no guild row -> the base 10');
+    eq(FF.guildMaxMembers({}), 10, 'no hall_level -> the base 10');
+    eq(FF.guildMaxMembers({ hall_level: 1 }), 11, 'each level is one seat');
+    eq(FF.guildMaxMembers({ hall_level: 15 }), 25, 'a finished Hall holds 25');
+    eq(FF.guildMaxMembers({ hall_level: 99 }), 25, 'an over-range column clamps at 25');
+    eq(FF.guildMaxMembers({ hall_level: -3 }), 10, 'a negative column clamps at the base');
+    ok(FF.guildIsFull(10, {}), '10/10 is full with no Hall');
+    ok(!FF.guildIsFull(10, { hall_level: 1 }), 'one Hall level opens the 11th seat');
+    ok(FF.guildIsFull(25, { hall_level: 15 }), 'and 25/25 is full under a finished Hall');
+  });
+
   // ---- Estate expansion cost ------------------------------------------------------------
   // THE MULTIPLIER COMPOUNDS PER TILE, and a full estate is 300 tiles (5 rings of 44/52/60/68/76 around
   // the 10x10 core), so the exponent runs 0..299. Pinned at both ends and at the ring boundaries, because

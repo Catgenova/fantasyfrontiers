@@ -285,6 +285,14 @@ Deno.serve(async (req) => {
       await admin.from("guild_applications").delete().eq("id", app.id);
       return json({ ok: true });
     }
+    // THE ROSTER CAP LIVES HERE (v0.0.97.0): base 10 plus one slot per Guild Hall level. This check is
+    // NEW — the 10-member limit used to be client-only, so a modified client could accept without bound.
+    const { data: capRow } = await admin.from("guilds")
+      .select("member_count, hall_level").eq("id", me.guild_id).maybeSingle();
+    const rosterCap = 10 + Math.min(15, (capRow && (capRow as { hall_level?: number }).hall_level) || 0);
+    if (capRow && (capRow.member_count || 0) >= rosterCap) {
+      return json({ ok: false, error: `Your guild is full (${capRow.member_count}/${rosterCap}). Raise the Guild Hall for more room.` }, 409);
+    }
     // accept: add the member FIRST, then clear the application. Deleting the app before a
     // successful insert could strand the applicant (no member row AND no application).
     let existing = await loadMembership(admin, targetId);

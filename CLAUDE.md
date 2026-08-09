@@ -161,6 +161,22 @@ distinct mechanical job, and makes raising one a timed job instead of an instant
   writes them), so every effect above resolves its OWN estate's edge holder explicitly rather than reading
   whichever estate is on screen, the same rule `gridHasBuilding` follows for grids.
 
+## The Guild Hall (v0.0.97.0): the guild progression axis and the treasury gold sink
+
+`guilds.hall_level` (0..15), raised by the LEADER from the shared treasury; each level adds ONE roster
+slot on top of the base 10 (`guildMaxMembers`), so a finished Hall holds 25. The cost ladder runs 1M
+(Level 1) to 15B (Level 15), geometric ~x1.99/step, and is **duplicated as a hardcoded table on both
+sides** (`GUILD_HALL_COSTS` in index.html, `guild_hall_cost` in migration `20260809120000`) because SQL
+numeric power and JS doubles round differently -- the estate-border-duration rule: change both sides or
+neither; the selftest suite pins the client table and the migration's verify block pins the SQL. The
+upgrade RPC (`guild_hall_upgrade`) is self-authenticating (auth.uid() -> leader of own guild, row locked)
+and takes NO guild argument, so it is safe to expose to authenticated directly. **The roster cap is
+enforced server-side in guild_action's accept path (base 10 + hall_level) -- a check that did NOT exist
+before this feature: the 10-member limit was client-only.** Mortal guilds have no treasury, so their
+Hall deliberately stays at Level 0 (same rule as their bank). The Hall panel never gates its button on
+guildBankState (that figure only loads once the bank subtab has been opened); the RPC is the authority
+on 'poor' and returns the exact cost and balance for the error line.
+
 ## Conventions
 
 - **NO EM DASHES, EVER (owner rule, 2026-08-05).** Not in game copy, not in patch notes or

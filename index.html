@@ -39149,8 +39149,18 @@
   // `guild_action` edge function (service role), and reads come from RLS-guarded
   // tables. The client never trusts guild data from any player's save blob.
   var GUILD_CREATE_COST = 50000;
-  var GUILD_MAX_MEMBERS = 10;    // a guild is capped at this many members
-  function guildIsFull(count){ return (count||0) >= GUILD_MAX_MEMBERS; }
+  var GUILD_MAX_MEMBERS = 10;    // the BASE roster cap; the Guild Hall adds one slot per level
+  // THE GUILD HALL (v0.0.97.0): the guild's first progression axis, and a treasury gold sink. Each of
+  // its 15 levels adds ONE roster slot (10 -> 25). The cost ladder is DUPLICATED in the migration's
+  // guild_hall_cost (20260809120000_guild_hall.sql) -- the estate_job_duration_ms rule: change both
+  // sides or neither. Geometric ~x1.99/step, pinned at 1M (Level 1) and 15B (Level 15) by owner order.
+  var GUILD_HALL_MAX_LEVEL = 15;
+  var GUILD_HALL_COSTS = [1000000, 1990000, 3950000, 7850000, 15600000, 31000000, 61600000, 122000000,
+                          243000000, 484000000, 961000000, 1910000000, 3800000000, 7550000000, 15000000000];
+  function guildHallCost(level){ return (level >= 1 && level <= GUILD_HALL_MAX_LEVEL) ? GUILD_HALL_COSTS[level - 1] : null; } // cost of raising TO this level
+  function guildHallLevel(gd){ return Math.max(0, Math.min(GUILD_HALL_MAX_LEVEL, (gd && gd.hall_level) || 0)); }
+  function guildMaxMembers(gd){ return GUILD_MAX_MEMBERS + guildHallLevel(gd); }
+  function guildIsFull(count, gd){ return (count||0) >= guildMaxMembers(gd); }
   var GUILD_SUBS = [
     {id:'guilds', label:'Guilds', icon:svgIcon('compass','var(--cat-guild)')},
     {id:'roster', label:'Roster', icon:svgIcon('person','var(--cat-guild)')},
@@ -39165,7 +39175,7 @@
     if(!chatClient || guildDir.status==='loading') return;
     if(!force && guildDir.status==='ready') return;
     guildDir.status='loading';
-    chatClient.from('guilds').select('id,name,tag,description,member_count,mortal').order('member_count',{ascending:false}).limit(100).then(function(res){
+    chatClient.from('guilds').select('id,name,tag,description,member_count,mortal,hall_level').order('member_count',{ascending:false}).limit(100).then(function(res){
       guildDir.list = (res && res.data) || []; guildDir.status='ready';
       if(currentCategory==='guild') render();
     }, function(){ guildDir.status='error'; if(currentCategory==='guild') render(); });
@@ -39205,6 +39215,50 @@
     }, function(){ return { ok:false, error:'Network error.' }; });
   }
   function guildEnsureLoaded(){ if(guildState.status==='idle') guildReload(false); }
+  // THE GUILD HALL PANEL (v0.0.97.0): level, roster math, and the leader's Raise button. The banked
+  // figure comes from guildBankState when the bank has been opened this session; the button never
+  // gates on it (status 'idle' just means unknown), because the RPC is the authority on 'poor' and
+  // returns the exact cost and balance for the error line. A Mortal guild has no treasury, so its
+  // Hall stays at its foundations by design (the same rule as its bank).
+  function renderGuildHallPanel(){
+    var gd = guildState.guild; if(!gd) return '';
+    var lvl = guildHallLevel(gd), cap = guildMaxMembers(gd), isLeader = guildState.myRank === 'leader';
+    var html = '<div class="guild-section-title">Guild Hall <span class="item-meta">(Level '+lvl+'/'+GUILD_HALL_MAX_LEVEL+' &bull; roster '+cap+')</span></div>';
+    html += '<div class="guild-card">';
+    html += '<div class="item-meta">Every Hall level adds <b>one roster slot</b>: base '+GUILD_MAX_MEMBERS+', up to '+(GUILD_MAX_MEMBERS+GUILD_HALL_MAX_LEVEL)+' under a finished Hall. The leader raises it from the guild treasury.</div>';
+    if(lvl >= GUILD_HALL_MAX_LEVEL){
+      html += '<div class="physique-bonus" style="margin-top:6px;">The Hall stands complete. '+cap+' seats under one roof.</div>';
+    } else if(gd.mortal){
+      html += '<div class="empty-note" style="margin-top:6px;">A Mortal guild has no treasury, so its Hall stays at its foundations.</div>';
+    } else {
+      var cost = guildHallCost(lvl + 1);
+      var haveKnown = guildBankState.status === 'ready' && guildBankState.guildId === gd.id;
+      html += '<div class="inputs-line" style="margin-top:6px;">Next: Level '+(lvl+1)+' &bull; '+fmt(cost)+'g from the treasury'+(haveKnown ? ' ('+fmt(guildBankState.treasury||0)+'g banked)' : '')+'</div>';
+      if(isLeader) html += '<button class="action-btn" data-action="guildHallUpgrade" '+(guildState.busy?'disabled':'')+' style="margin-top:6px;">Raise the Hall to Level '+(lvl+1)+'</button>';
+      else html += '<div class="item-meta" style="margin-top:6px;">Only the leader may raise the Hall.</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function guildHallUpgrade(){
+    if(guildState.busy || !chatClient || !guildState.guild) return;
+    guildState.busy = true; guildState.error = '';
+    chatClient.rpc('guild_hall_upgrade').then(function(res){
+      guildState.busy = false;
+      var d = res && res.data;
+      if(!d || !d.ok){
+        guildState.error = (d && d.error === 'poor') ? ('The treasury needs ' + fmt(d.cost) + 'g to raise the Hall (it holds ' + fmt(d.treasury) + 'g).')
+          : (d && d.error === 'max') ? 'The Hall is already complete.'
+          : (d && d.error === 'leader_only') ? 'Only the leader may raise the Hall.'
+          : 'Could not raise the Hall.';
+        render(); return;
+      }
+      if(guildState.guild) guildState.guild.hall_level = d.hall_level;
+      guildBankState.treasury = Number(d.treasury) || 0;
+      addLog('The Guild Hall rises to Level ' + d.hall_level + '. The roster now holds ' + guildMaxMembers(guildState.guild) + ' members (' + fmt(d.cost) + 'g from the treasury).', 'important');
+      render();
+    }, function(){ guildState.busy = false; guildState.error = 'Could not raise the Hall.'; render(); });
+  }
   function guildReload(silent){
     if(!chatClient || !authUser || !authUser.id){ guildState.status='idle'; return; } // not ready yet; retry on next view
     if(!silent) guildState.status='loading';
@@ -39249,10 +39303,10 @@
     guildBrowseState.status='loading';
     // Mortals and Immortals never mix in guilds: a Mortal may only see (and join) Mortal guilds, and
     // vice versa. Filter on the shared `mortal` flag; fall back gracefully if the column isn't migrated.
-    var q = chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level,mortal').eq('open',true);
+    var q = chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level,mortal,hall_level').eq('open',true);
     q.eq('mortal', isMortal()).order('member_count',{ascending:false}).limit(50).then(function(res){
       if(res && res.error){ // column may not exist yet -> unfiltered fallback
-        chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level').eq('open',true).order('member_count',{ascending:false}).limit(50).then(function(r2){
+        chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level,hall_level').eq('open',true).order('member_count',{ascending:false}).limit(50).then(function(r2){
           guildBrowseState.list = (r2 && r2.data) || [];
           chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).limit(1).then(function(a){
             guildBrowseState.appliedTo = (a && a.data && a.data[0] && a.data[0].guild_id) || null;
@@ -39289,7 +39343,7 @@
   function guildApply(guildId){
     if(guildState.busy || !guildId) return;
     var gd=(guildBrowseState.list||[]).filter(function(x){ return x.id===guildId; })[0];
-    if(gd && guildIsFull(gd.member_count)){ guildState.error='That guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+').'; render(); return; }
+    if(gd && guildIsFull(gd.member_count, gd)){ guildState.error='That guild is full ('+gd.member_count+'/'+guildMaxMembers(gd)+').'; render(); return; }
     guildState.busy=true; guildState.error='';
     guildInvoke('apply', { guild_id:guildId, message:'', mortal:isMortal() }).then(function(res){
       guildState.busy=false;
@@ -39302,8 +39356,8 @@
   }
   function guildAct(action, targetId){
     if(guildState.busy) return;
-    if(action==='accept' && guildIsFull(guildState.members.length)){
-      guildState.error='Your guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+'). Remove a member before accepting a new one.'; render(); return;
+    if(action==='accept' && guildIsFull(guildState.members.length, guildState.guild)){
+      guildState.error='Your guild is full ('+guildState.members.length+'/'+guildMaxMembers(guildState.guild)+'). Raise the Guild Hall or remove a member before accepting a new one.'; render(); return;
     }
     guildState.busy=true; guildState.error='';
     var payload={}; if(targetId) payload.user_id=targetId;
@@ -39351,9 +39405,9 @@
     if(g.status==='idle'||g.status==='loading') return html+'<div class="empty-note">Loading guilds&hellip;</div>';
     if(!g.list.length) return html+'<div class="empty-note">No open guilds right now. Found the first one!</div>';
     g.list.forEach(function(gd){
-      var applied=g.appliedTo===gd.id, full=guildIsFull(gd.member_count);
+      var applied=g.appliedTo===gd.id, full=guildIsFull(gd.member_count, gd);
       html += '<div class="guild-card"><div class="guild-member-row" style="border:none;background:none;padding:0;margin:0;">';
-      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b><div class="item-meta">'+gd.member_count+'/'+GUILD_MAX_MEMBERS+' member'+(gd.member_count===1?'':'s')+(full?' &bull; <span style="color:var(--hp-bad);">Full</span>':'')+'</div></div>';
+      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b><div class="item-meta">'+gd.member_count+'/'+guildMaxMembers(gd)+' member'+(gd.member_count===1?'':'s')+(full?' &bull; <span style="color:var(--hp-bad);">Full</span>':'')+'</div></div>';
       if(applied) html += '<button class="action-btn stop" data-action="guildCancelApplication" style="width:auto;flex:0 0 auto;">Cancel application</button>';
       else if(full) html += '<button class="action-btn" disabled style="width:auto;flex:0 0 auto;">Full</button>';
       else html += '<button class="action-btn" data-action="guildApply" data-guild="'+gd.id+'" '+(guildState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Apply</button>';
@@ -39407,7 +39461,7 @@
     guildDir.list.forEach(function(gd){
       var mine = guildState.guild && guildState.guild.id===gd.id;
       html += '<button class="guild-card guild-dir-row" data-action="guildDirView" data-id="'+escapeHtml(String(gd.id))+'" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;cursor:pointer;">';
-      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b>'+(mine?' <span class="item-meta">(yours)</span>':'')+(gd.mortal?' '+svgIcon('hornedskull','#8a1f2c'):'')+'<div class="item-meta">'+gd.member_count+'/'+GUILD_MAX_MEMBERS+' member'+(gd.member_count===1?'':'s')+'</div></div>';
+      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b>'+(mine?' <span class="item-meta">(yours)</span>':'')+(gd.mortal?' '+svgIcon('hornedskull','#8a1f2c'):'')+'<div class="item-meta">'+gd.member_count+'/'+guildMaxMembers(gd)+' member'+(gd.member_count===1?'':'s')+'</div></div>';
       html += '<span class="item-meta">View &rsaquo;</span></button>';
     });
     return html;
@@ -39431,17 +39485,18 @@
   }
   function renderGuildRoster(){
     var html='', canManage=(guildState.myRank==='leader'||guildState.myRank==='officer'), isLeader=guildState.myRank==='leader';
-    var full=guildIsFull(guildState.members.length);
+    var full=guildIsFull(guildState.members.length, guildState.guild);
     if(canManage){
       html += '<div class="guild-section-title">Applications <span class="item-meta">('+guildState.applications.length+')</span></div>';
-      if(full && guildState.applications.length) html += '<div class="empty-note" style="margin-bottom:6px;color:var(--hp-bad);border-color:var(--hp-bad);">Your guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+'). Remove a member before you can accept anyone new.</div>';
+      if(full && guildState.applications.length) html += '<div class="empty-note" style="margin-bottom:6px;color:var(--hp-bad);border-color:var(--hp-bad);">Your guild is full ('+guildState.members.length+'/'+guildMaxMembers(guildState.guild)+'). Raise the Guild Hall or remove a member before you can accept anyone new.</div>';
       if(!guildState.applications.length) html += '<div class="empty-note" style="margin-bottom:6px;">No pending applications.</div>';
       else guildState.applications.forEach(function(a){
         var acceptDis=(guildState.busy||full)?'disabled':'';
         html += '<div class="guild-member-row"><div><b>'+escapeHtml(a.username)+'</b>'+(a.message?'<div class="item-meta">'+escapeHtml(a.message)+'</div>':'')+'</div><div class="guild-row-actions"><button class="mini-btn" data-action="guildAccept" data-id="'+a.user_id+'" '+acceptDis+'>Accept</button><button class="mini-btn danger" data-action="guildReject" data-id="'+a.user_id+'">Reject</button></div></div>';
       });
     }
-    html += '<div class="guild-section-title">Members <span class="item-meta">('+guildState.members.length+'/'+GUILD_MAX_MEMBERS+')</span></div>';
+    html += renderGuildHallPanel();
+    html += '<div class="guild-section-title">Members <span class="item-meta">('+guildState.members.length+'/'+guildMaxMembers(guildState.guild)+')</span></div>';
     guildState.members.forEach(function(m){
       var isMe=authUser&&m.user_id===authUser.id, ctl='';
       // Everyone can pull up any member's public profile (same card the leaderboard/chat show).
@@ -43409,6 +43464,7 @@
     guildApply: function(btn, e){ guildApply(btn.getAttribute('data-guild')); },
     guildCancelApplication: function(btn, e){ guildCancelApplication(); },
     guildAccept: function(btn, e){ guildAct('accept', btn.getAttribute('data-id')); },
+    guildHallUpgrade: function(btn, e){ guildHallUpgrade(); },
     guildReject: function(btn, e){ guildAct('reject', btn.getAttribute('data-id')); },
     guildPromote: function(btn, e){ guildAct('promote', btn.getAttribute('data-id')); },
     guildDemote: function(btn, e){ guildAct('demote', btn.getAttribute('data-id')); },
@@ -44416,7 +44472,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.37';
+  var GAME_VERSION = '0.0.97.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44597,7 +44653,7 @@
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
-      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
+      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_HALL_MAX_LEVEL:GUILD_HALL_MAX_LEVEL, GUILD_HALL_COSTS:GUILD_HALL_COSTS, guildHallCost:guildHallCost, guildHallLevel:guildHallLevel, guildMaxMembers:guildMaxMembers, renderGuildHallPanel:renderGuildHallPanel, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; }, renderEstateJobStatus:renderEstateJobStatus,
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
       navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },
