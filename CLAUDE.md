@@ -1044,6 +1044,19 @@ stands). All twenty knobs moved on the measured confirmed slopes in one batch, t
 first formal band and channel (AS_SWING_MULT 0.65, 'Lethal Precision'), and the Duelist -- 30% under
 2.0M with no knob -- got the channel as a BUFF (DL_SWING_MULT 1.42, 'Flourish'). The Knight measured
 1.96M and stays untouched inside the 2.0M band. Confirm packs follow the usual >20%-corrects rule.
+**Owner-band confirm results (v0.0.96.18-.20): THE CAMPAIGN IS CLOSED.** Every >15% knob move got a full
+confirm pack and all of them HOLD with zero further corrections (pack mean vs band): Assassin 0.65 at
+2.38M vs 2.5M, Duelist 1.42 at 2.19M, Treasure Hunter 1.19 at 2.06M / Berserker 0.68 pooled / Ranger
+0.36 at 1.99M (corrections shipped .18 after their first confirms missed), Reaper 0.49 at 1.80M
+(interpolated between bracketing packs, shipped .19), Lumen 0.42 at 1.60M vs 1.5M, Thunderfury 0.27 at 2.19M (+9.5%, its noise is ±25%), Executioner
+1.56 at 2.06M, Samurai 0.23 at 1.90M, Spellblade 0.88 at 2.45M vs 2.5M, Sentinel 0.24 at 1.58M vs 1.5M
+(D3-pinned per the method note), Quickdraw 0.90 at 2.13M, Herald 0.52 at 1.38M vs 1.5M. Sub-15% moves
+(Templar 0.71, Juggernaut 0.77, Pyromancer 0.32, Frostwarden 0.70, Plaguebearer 0.43, Voidshadow 0.70,
+Sharpshooter 0.29) trusted on measured linearity, not re-confirmed. Standing owner items unchanged:
+the SUMMONER (deliberately last, familiar raw-stat anchor), the Samurai D1+rate-katana saturation
+(reproduced AGAIN in this confirm: D1 won the A/B and the refund katana topped its matrix +32% over
+mean; fix lives in SM_FOCUS_PER_SEC/refunds), Goldgorge's gold subsidy (+26% over mean this pack),
+and the Widow cloak beating Ruin in six classes.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
