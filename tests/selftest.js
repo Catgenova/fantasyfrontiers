@@ -8220,8 +8220,11 @@
     near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.06, 'Signet of Scales: +6% Elemental Resistance (rare, base trimmed to 0.05)');
     // Signet of Wrath: +damage per Wrath stack (0.02 x2 = 0.04/stack).
     near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.012*5, 'Signet of Wrath: +1.2% damage per Wrath stack (rare, base trimmed to 0.01)');
-    // Signet of the Breath / Hoard: stat values (behaviour rides charge / kill hooks).
-    near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.30, 'Signet of the Breath: +30% Breath Power (rare)');
+    // Signet of the Breath, re-axed with the pillar's retirement: crits Scorch (behavioural, in the attack
+    // tick) and Scorched foes take +damage (0.10 x1.2 = +12% rare) via d4LegDmgMult.
+    near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.12, 'Signet of the Breath: +12% vs Scorched (rare, base re-set to 0.10)');
+    near(FF.d4LegDmgMult({}, ringSt('d4_breath', { activity:{type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.12, 'the Signet pays atop the shared Scorch amp');
+    near(FF.d4LegDmgMult({}, ringSt('d4_breath')), 1.0, 'the Signet is inert on an unscorched foe');
     near(FF.legendaryRingBonus('d4_hoard', ringSt('d4_hoard')), 0.60, 'Signet of the Hoard: +60% elemental-kill gold (rare)');
 
     // Shroud of Scales: elemental DR (0.12 x2 = 0.24 -> x0.76 incoming from an elemental foe).
@@ -8314,11 +8317,14 @@
     // M1 — Plaguebearer shield: D4 Venomscale (-30% -> x0.70) now beats D3 Immunize (-25% -> x0.75).
     var vs = FF.d4LegIncomingMult(legSt('venomscale','shieldSmall','offhand'), { element:'fire' }); // no poison -> inert here
     near(FF.d4LegIncomingMult({ uniqueItems:{L:{uid:'L',leg:'venomscale',kind:'offhand'}}, equippedOffhandUid:'L', activity:{type:'combat', playerSwungOnce:true,monsterHp:100,potionPoisonUntil:now+5000,potionPoisonDps:100} }, { element:'fire' }), 0.70, 'M1: Venomscale x0.70 < D3 Immunize x0.75 (D4 now wins)');
-    // M3 — Ranger bow: D4 Wyrmstalker now carries a damage bonus (+25% vs Scorched), beating D2 Trapmaster x1.20.
-    near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium')), 1.0, 'Wyrmstalker inert on an unscorched foe');
-    near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium', undefined) ), 1.0, 'Wyrmstalker baseline');
+    // M3 — Wyrmstalker's +25%-vs-Scorched retired (no Scorch applier could be equipped WITH a bow, so it
+    // never fired). Its second line is now the never-lapsing Quarry.
     var wsScorch = legSt('wyrmstalker','bowMedium'); wsScorch.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, scorchStacks:1, scorchUntil:now+4000 };
-    near(FF.d4LegDmgMult({}, wsScorch), (1+0.02) * 1.25, 'M3: Wyrmstalker +25% vs a Scorched foe (progresses past D2 Trapmaster x1.20)');
+    near(FF.d4LegDmgMult({}, wsScorch), (1+0.02), 'Wyrmstalker no longer amplifies vs Scorched (only the shared +2%/stack remains)');
+    var wsQ = legSt('wyrmstalker','bowMedium'); wsQ.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, rgQuarry:7, rgQuarryUntil: now - 1000 };
+    eq(FF.rgQuarry(wsQ), 7, 'Wyrmstalker Bow: the Quarry never lapses');
+    var noWs = legSt('magmacore','sledge'); noWs.activity = { type:'combat', playerSwungOnce:true, monsterHp:100, rgQuarry:7, rgQuarryUntil: now - 1000 };
+    eq(FF.rgQuarry(noWs), 0, 'without the bow, a lapsed Quarry still reads 0');
     // M4 — Magmacore base value is now x1.35 (> D2 Earthrender x1.30); gated on the juggernaut Wind-Up so inert here.
     near(FF.d4LegDmgMult({}, legSt('magmacore','sledge')), 1.0, 'M4: Magmacore inert without the juggernaut Wind-Up (value x1.35 when active)');
   });
@@ -8706,11 +8712,10 @@
     near(FF.d4LegDmgMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.0, 'Wyrmthorn Maul is inert while the hedge is not blooming');
     eq(FF.LEG_WYRMTHORNMAUL_SWING, 1.25, 'Wyrmthorn Maul: swings +25% while the hedge Blooms');
 
-    // Breathfang Bow: left the Breath pillar with the Quiverlord — it doubles the Blasthead as Fire now.
-    var bf = legSt('breathfang','bowShort');
-    eq(FF.d4BreathFullSet(bf), null, 'Breathfang Bow no longer fires the Dragon\'s Breath');
-    bf.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
-    eq(FF.d4BreathChargeOnHit(bf, false), 0, 'Breathfang no longer charges the Breath meter');
+    // The Dragon's Breath pillar is retired outright (v0.0.96.31): its machinery is gone from the seam.
+    eq(FF.d4BreathFullSet, undefined, 'd4BreathFullSet is gone (the Breath pillar is retired)');
+    eq(FF.d4BreathChargeOnHit, undefined, 'd4BreathChargeOnHit is gone');
+    eq(FF.d4BreathFire, undefined, 'd4BreathFire is gone');
 
     // Detection for all 7 (block/on-hit/Magmacore effects are behavioural).
     ['bastionbreaker','wyrmthornmaul','wrathscale','magmacore'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
@@ -9026,8 +9031,10 @@
     var now = Date.now();
     try {
       // Decay-tick multipliers (fulls).
+      // (The Ranger arm left with the stale Plague Hunter text: its D3 full is Blood in the Water, and
+      // the class has no Decay applier to amplify.)
       wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 };
-      near(FF.d3DecayTickMult(s), 1.40, 'Ranger Plague Hunter: Decay ticks +40%');
+      near(FF.d3DecayTickMult(s), 1.0, 'the Ranger full no longer amplifies Decay');
       wearFull('pyromancer'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500, burnUntil:now+4000, burnStacks:1 };
       near(FF.d3DecayTickMult(s), 1.50, 'Pyromancer Cremation: +50% Decay on a burning foe');
       s.activity = { type:'combat', playerSwungOnce:true, monsterHp:500 }; near(FF.d3DecayTickMult(s), 1.0, 'Cremation inert on an unburnt foe');
@@ -9198,15 +9205,9 @@
       near(FF.elementResistMult(s, 'fire'), (1 - FF.elementResistBonus(s,'fire')) * 0.85, 'Scaleward folds x0.85 into elementResistMult');
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4SetElementResist(s, 'fire'), 0, 'no Dragonscale set -> no D4 resist');
 
-      // --- Dragon's Breath charge meter ---
+      // (The Dragon's Breath charge meter is retired: its helpers left the file with the pillar.)
       s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000 };
-      eq(FF.d4BreathCharge(s), 0, 'a fresh fight starts with no Breath charge');
-      FF.d4BreathAdd(s.activity, 40); eq(FF.d4BreathCharge(s), 40, 'd4BreathAdd banks charge');
-      ok(!FF.d4BreathReady(s), '40/100 is not a ready Breath');
-      FF.d4BreathAdd(s.activity, 999); eq(FF.d4BreathCharge(s), FF.D4_BREATH_MAX, 'Breath charge caps at 100');
-      ok(FF.d4BreathReady(s), 'a full meter is a ready Breath');
-      near(FF.d4BreathPct(s), 1, 'a full meter reads 100%');
-      FF.d4BreathReset(s.activity); eq(FF.d4BreathCharge(s), 0, 'd4BreathReset empties the meter');
+      eq(FF.d4BreathCharge, undefined, 'the Breath charge meter is gone');
 
       // --- Wrath stacking buff ---
       FF.d4WrathReset(s); eq(FF.d4WrathStacks(s), 0, 'Wrath starts empty');
@@ -9370,59 +9371,37 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; s.knightStacks = sv.ks; }
   });
 
-  // ---- D4 sets: Batch Z — Dragon's Breath pillar (charge meter + breath weapon) -----------------------
-  suite('D4 sets: Batch Z — Dragon\'s Breath pillar', function(){
+  // ---- D4 sets: the Dragon's Breath pillar is RETIRED (v0.0.96.31) ------------------------------------
+  // Every class 2pc had already left the pillar and its last charger was if(false)-gated, so the meter
+  // could only be filled by Emberscale reflects while the only consumer was the Ranger full set: a loop no
+  // build could close. The machinery is gone; the set rows below carry the LIVE bonuses their classes
+  // actually implement (the old def-table text shipped two false tooltips, ticket-report v0.0.96.30).
+  suite('D4 sets: the Breath pillar is retired; Ranger rows match the live bonuses', function(){
     var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, hp:s.playerHp };
     function wearD4(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
       var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
       for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:uid }; } }
-    function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
-    var mhp = FF.maxHp(s);
     try {
-      // --- Charging (2pc) ---
-      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
-      wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Quickdraw left the Breath pillar (Heavy Heads instead)');
-      wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
-      eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Sharpshooter left the Breath pillar (Old Prey instead -- D4 de-themed, v0.0.82.0)');
-      eq(FF.D4_SET_DEFS.sharpshooter.b2.name, 'Old Prey', 'Sharpshooter D4 2pc is Old Prey now');
+      // The machinery is gone end to end.
+      ['d4BreathCharge','d4BreathPct','d4BreathReady','d4BreathAdd','d4BreathReset','d4BreathFire','d4BreathFullSet','d4BreathChargeOnHit','d4VenombreathApply','D4_BREATH_MAX','D4_BREATH_BURST_MULT']
+        .forEach(function(k){ eq(FF[k], undefined, k + ' left the file with the pillar'); });
+      // The Ranger D4/D3 rows now DESCRIBE the implemented bonuses (the stale text promised Breath charges
+      // and Decay procs that did not exist).
+      eq(FF.D4_SET_DEFS.ranger.b2.name, 'Alpha', 'Ranger D4 2pc is Alpha');
+      ok(/15 stacks/.test(FF.D4_SET_DEFS.ranger.b2.desc), 'Alpha describes the Quarry cap raise it implements');
+      eq(FF.D4_SET_DEFS.ranger.bf.name, 'Beast Within', 'Ranger D4 full is Beast Within');
+      ok(/Feral Bond/.test(FF.D4_SET_DEFS.ranger.bf.desc), 'Beast Within describes the Feral Bond amplifier it implements');
+      eq(FF.D3_SET_DEFS.ranger.b2.name, 'Throatseeker', 'Ranger D3 2pc is Throatseeker');
+      eq(FF.D3_SET_DEFS.ranger.bf.name, 'Blood in the Water', 'Ranger D3 full is Blood in the Water');
+      ok(/Decay/.test(FF.D3_SET_DEFS.ranger.b2.desc) === false && /Decay/.test(FF.D3_SET_DEFS.ranger.bf.desc) === false, 'the Ranger D3 text no longer promises Decay');
+      // Alpha's cap raise stays live.
+      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000 };
+      wearD4('ranger', 2); eq(FF.rgQuarryCap(s), FF.RG_QUARRY_MAX_D4, 'Alpha (D4 2pc): Quarry caps 50% higher');
+      // Neighbouring set rows kept their re-axed names.
+      eq(FF.D4_SET_DEFS.sharpshooter.b2.name, 'Old Prey', 'Sharpshooter D4 2pc is Old Prey');
       eq(FF.D4_SET_DEFS.sharpshooter.bf.name, 'Nothing Left', 'Sharpshooter D4 full is Nothing Left');
-      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (the Festerweave Shroud crits Rot instead)');
-      // Elemental Traps retired: the Ranger's D4 2pc is Alpha now -- it raises Quarry's cap and no longer
-      // charges Dragon's Breath at all.
-      wearD4('ranger', 2); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:0 };
-      eq(FF.d4BreathChargeOnHit(s, false), 0, 'Alpha does not charge the Breath');
-      s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 0, 'not even against an ailing foe');
-      eq(FF.rgQuarryCap(s), FF.RG_QUARRY_MAX_D4, 'Alpha (D4 2pc): Quarry caps 50% higher');
-
-      // --- Full-set selection ---
-      wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), null, 'the full Fusilier\'s Leathers fires no breath weapon (Runaway Quiver instead)');
-      wearFull('reaper'); eq(FF.d4BreathFullSet(s), null, 'the full Festerweave Shroud fires no breath weapon (Gangrene spreads Rot instead)');
-      wearD4('sharpshooter', 2); eq(FF.d4BreathFullSet(s), null, 'a 2-piece set does not fire a breath weapon');
-
-      // --- Firing (full) ---
-      // Not ready -> no fire. (The Ranger carries the pillar's generic burst test now.)
-      wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:50 };
-      eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the breath does not fire below full charge');
-      s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
-      var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
-      eq(FF.d4BreathFire(s, { element:'water' }, 1000), expBurst, 'Dragon\'s Breath bursts for 5x the strike (x Fire Attunement)');
-      eq(FF.d4BreathCharge(s), 0, 'firing resets the Breath meter');
-      // Piercing Breath retired (D4 de-themed, v0.0.82.0): a full Sharpshooter D4 set no longer owns a
-      // Breath variant at all -- Nothing Left doubles tears against a Bare foe instead.
-      wearFull('sharpshooter'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
-      var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
-      eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the Sharpshooter left the Breath pillar entirely (no variant, no fire)');
-      // (Spirit Breath retired: the Reaper's D4 is the Festerweave Shroud rot-crit set now.)
-      // Immolation Breath retired (D4 de-themed, v0.0.84.0): a full Executioner D4 no longer owns a
-      // Breath variant at all -- The Long Drop starts the blade at 40% instead.
-      wearFull('executioner'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:200, breathCharge:100 };
-      eq(FF.d4BreathFire(s, { isBoss:false, hp:1000 }, 10), 0, 'the Executioner left the Breath pillar entirely (no variant, no execute)');
-      eq(FF.D4_SET_DEFS.executioner.b2.name, 'Scent of Ruin', 'Executioner D4 2pc is Scent of Ruin now');
-      eq(FF.D4_SET_DEFS.executioner.bf.name, 'The Long Drop', 'Executioner D4 full is The Long Drop now');
-      // Ranger Venombreath: burst + apply your ailments (Chill / Decay / Curse).
-      wearFull('ranger'); s.activity = { type:'combat', playerSwungOnce:true, monsterHp:1000000, breathCharge:100 };
-      FF.d4BreathFire(s, { element:'water' }, 1000);
-      ok(FF.enemyChilled(s) && FF.enemyDecaying(s) && FF.enemyCursed(s), 'Venombreath applies Chill, Decay and a Curse');
+      eq(FF.D4_SET_DEFS.executioner.b2.name, 'Scent of Ruin', 'Executioner D4 2pc is Scent of Ruin');
+      eq(FF.D4_SET_DEFS.executioner.bf.name, 'The Long Drop', 'Executioner D4 full is The Long Drop');
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; }
   });
 
@@ -12741,9 +12720,9 @@
 
       // Decay: applied by ~20 sources and lands on already-banded classes, so its coefficient is deliberately
       // small -- at the 10-stack cap it is worth ~6% of a hit per second.
-      near(FF.DECAY_PCT, 0.006, 'Decay pays 0.6% of a hit per stack per second');
+      near(FF.DECAY_PCT, 0.010, 'Decay pays 1% of a hit per stack per second (retuned for the real applier count, v0.0.96.31)');
       eq(FF.DECAY_MAX_STACKS, 10, 'Decay caps at 10 stacks');
-      near(FF.DECAY_PCT * FF.DECAY_MAX_STACKS, 0.06, 'so a fully stacked Decay is ~6% of a hit per second');
+      near(FF.DECAY_PCT * FF.DECAY_MAX_STACKS, 0.10, 'so a fully stacked Decay is ~10% of a hit per second');
       // Rotshell's block-poison is incidental too, and scaled to match.
       near(FF.LEG_ROTSHELL_PCT, 0.03, 'Rotshell poisons for 3% of a hit per second');
 
