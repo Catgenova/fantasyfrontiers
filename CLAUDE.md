@@ -679,7 +679,7 @@ Reaver's Bleed were correct, both because their reworks re-based them. Everythin
 the fight's recent-hit EMA (`act.dotHitAvg`, banked on every landed main-hand hit, UNGATED by class because
 Decay/poison are consumed by far more classes than the one worn), with a fallback to the old level figure so
 a DoT applied before your first hit still does something. Coefficients were recalibrated BY ROLE, not 1:1:
-incidental/universal channels scaled down hard (Decay 0.03 -> **0.006**, i.e. ~6% of a hit/sec at its 10-stack
+incidental/universal channels scaled down hard (Decay 0.03 -> 0.006, retuned to **0.010** in v0.0.96.31 when six classes had left the pillar and its source count halved; ~10% of a hit/sec at its 10-stack
 cap, because ~20 sources apply it onto already-banded classes; toxin t20 0.10 -> 0.03; coating t20 0.14 ->
 0.045; Rotshell 0.15 -> 0.03), while identity channels kept their pct on the corrected base (Burn, Frostbite,
 Samurai/Ranger Bleeds) since their owning classes are un-reworked and get banded at their reworks.
@@ -879,7 +879,7 @@ height + missing health), flat crit (instance nine). Reap the Weak reads the bla
 carries half the climb between foes; The Cull (Lv80) executes a non-boss foe below 25% and carries the
 WHOLE climb; Headsman's Tally re-based to +8% Fall damage per Fall (Galvanize). D3/D4 de-themed (owner
 order) — **the Executioner leaves the Souls AND Dragon's Breath pillars** (the Breath's remaining clients:
-the Ranger, the Emberscale ward, the Signet of the Breath — flagged for wholesale retirement). Findings:
+the Ranger, the Emberscale ward, the Signet of the Breath — RETIRED WHOLESALE in v0.0.96.31: the ward Scorches now, the Signet is the universal crits-Scorch engine, and the Ranger D3/D4 rows carry their live bonuses). Findings:
 (1) **THE APPROVED PREMISE WAS FALSE, CAUGHT BEFORE A LINE WAS WRITTEN.** The design pitch claimed "the
 dummy's HP wanders 10–100% so crossings happen all run" — but the harness pins `enemyHpFrac` at 1.0
 (monsterHp 1e15 vs the Archdemon's real ~1.2M `monster.hp`, and the frac clamps), so the crossing trigger
