@@ -5772,7 +5772,7 @@
     eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
     eq(FF.pyromancerKindlingCritDmg(pyro), 0, 'Kindling Crits retired');
     // The wand chassis knob: the SECOND class on the x49 element-gear stack.
-    near(FF.PY_SWING_MULT, 0.079, 'the wand channels its raw swings (THE band knob)');
+    near(FF.PY_SWING_MULT, 0.31, 'the wand channels its raw swings (THE band knob, v0.0.96.11 reband)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerIgnite'; }), 'the Ignite channel is a named PLAYER_DMG_MODS row');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerBlaze'; }), 'and the Blaze multiplier is its own row');
     // Sharpshooter rework v2, "the Exposure Ladder": Expose (Lv1) / Patient Eye (Lv20) / Threadbare
@@ -12188,7 +12188,7 @@
     // The Bleed used to tick off summed proficiency LEVELS (a few hundred damage against ~1e11 hits), so the
     // class's identity was invisible at best-in-slot. It now ticks off the recent-hit EMA.
     near(FF.RV_BLEED_PCT, 0.06, 'a Bleed stack ticks for 6% of the recent average hit per second');
-    near(FF.RV_SWING_MULT, 0.184, 'the axe channels its raw swings to 18.4% -- the wounds do the killing (THE band knob)');
+    near(FF.RV_SWING_MULT, 0.29, 'the axe channels its raw swings to 29% -- the wounds do the killing (THE band knob, v0.0.96.11 reband)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'reaverFlensing'; }), 'the Flensing channel is a named PLAYER_DMG_MODS row');
 
     // Lv 20 The Count: +0.4% damage per Cut, capped, and it reads the FIGHT's tally off the activity.
@@ -14433,7 +14433,7 @@
     // The Bastion perk ladder: names in order; the reset-on-hit streak and the familiar-duration capstone are gone.
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Ironclad,Retort,Fortress,Unbreakable,Breach', 'Bastion perk names');
     near(FF.HERALD_IRONCLAD_PER_1K, 0.03, 'Ironclad: +3% damage per 1,000 Armor');
-    near(FF.HERALD_IRONCLAD_CAP, 0.72, 'Ironclad caps at +72% (BiS Armor pins it there, so the cap IS the knob)');
+    near(FF.HERALD_IRONCLAD_CAP, 0.36, 'Ironclad caps at +36% (BiS Armor pins it there, so the cap IS the knob, v0.0.96.11 reband)');
     eq(FF.HERALD_BRACE_MS, 5000, 'the Brace clock runs every 5s');
     near(FF.HERALD_BARRIER_CAP_PCT, 0.25, 'the Barrier caps at 25% of max Health');
     near(FF.HERALD_BREACH_PCT, 0.20, 'the Breach deals 20% of the recent average hit per 10% max HP banked');
@@ -14441,7 +14441,7 @@
     // Lv 1 Ironclad: the armour-to-damage conversion, gated on the class and capped.
     eq(FF.heraldIroncladMult(off), 1, 'no Herald -> no Ironclad conversion');
     ok(FF.heraldIroncladMult(leveled()) >= 1, 'Ironclad never reduces damage');
-    ok(FF.heraldIroncladMult(leveled()) <= 1 + FF.HERALD_IRONCLAD_CAP + 1e-9, 'Ironclad respects its +150% cap');
+    ok(FF.heraldIroncladMult(leveled()) <= 1 + FF.HERALD_IRONCLAD_CAP + 1e-9, 'Ironclad respects its cap');
 
     // Lv 60 Unbreakable: a blocked hit keeps 25% (-75%) instead of the usual 50%.
     eq(FF.heraldBlockMult(leveled()), 0.25, 'Unbreakable: blocked hit kept at 25%');
@@ -15377,7 +15377,7 @@
     near(FF.TH_STRIKE_TIER_PCT, 0.15, 'the Strike gains +15% per relic tier (a Lime relic is x2.4)');
     // The swing channel: the t20 scimitar's raw swings alone measured ~78B, over the 50B band this class is
     // tuned to, and raw weapon stats are never a balance lever -- so the class channels its own swings down.
-    near(FF.TH_SWING_MULT, 0.42, 'the Reliquary channels its raw swings to 42% (THE band knob)');
+    near(FF.TH_SWING_MULT, 0.77, 'the Reliquary channels its raw swings to 77% (THE band knob, v0.0.96.11 reband)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'treasureHunterDig'; }), 'the Dig channel is a named PLAYER_DMG_MODS row');
     near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
     near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');

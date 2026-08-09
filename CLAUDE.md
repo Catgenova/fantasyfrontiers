@@ -997,6 +997,28 @@ owner pass) also cut the ENHANCE ceiling: +15 now scales base + enchant stats x2
 and the staff's Downbeat lend all read it), and the pin suite holds 2.5. Re-measure any class before
 tuning against the numbers above, and expect owner re-banding to follow these retunes.
 
+**THE v0.0.96.11 REBAND (pass 1 of the post-retune campaign).** Every class was re-measured after the
+v0.0.96.3-.10 retunes (one full pack each, two for the Berserker; logs in the session scratchpad). Method:
+the KNIGHT is the anchor (its measured 1.96M pack mean sits exactly on its old 90B band under a uniform
+/46,030 conversion), every other class's target = its old owner band /46,030, and knobs moved only where
+the miss exceeded ~15%. Knobs retuned in this pass: SM 0.316->0.19, JG 1.067->0.64, EX 2.065->1.25,
+TPL 0.58->0.66, TF 0.32->0.21, NB 0.897->0.60, PY 0.079->0.31, RV 0.184->0.29, TH 0.42->0.77,
+LM 0.402->0.32, FW 0.744->0.62, HERALD_IRONCLAD_CAP 0.72->0.36. Unchanged: Knight, Spellblade, Ranger,
+Duelist, Sharpshooter, Plaguebearer (all within noise of their scaled bands). The reusable findings:
+(1) EMA/cycling engines came out 1.5-2.3x HOT (the recent-hit channels double-dip the surviving
+multipliers) while flat-multiplier kits held; (2) classes whose old tune choked a big chassis subsidy
+through a SMALL knob (PY 0.079, RV 0.184, TH 0.42, SN 0.146) fell COLD when the retunes deleted the
+subsidy under them -- knob size predicts retune fragility; (3) the SUMMONER read 6.3x hot because
+familiar damage anchors to raw weapon tier stats, not the gear stack -- it needs a design decision, not
+a knob; (4) the Widow (crit-damage) cloak now beats or ties Ruin in six classes (Ruin's flat line and
+crit-damage shrank together, but crit-heavy kits compound the latter); (5) Goldgorge's gold-funded
+charges grew RELATIVELY (gold rewards are economy numbers the retunes never touched). Still open after
+pass 1: confirm packs at the new knobs (correction batch if any lands >20% off), Berserker/Reaper/
+Quickdraw/Assassin need NEW whole-kit knobs wired in (they predate the pattern), the Assassin's band is
+an owner decision (it was never formally banded and sat at ~118B), the Sentinel needs a D3-pinned
+confirm before its knob (0.146 -> ~0.30), and the Samurai D1+Silkweaver saturation watch item re-tests
+at the new knob.
+
 The owner-approved best-in-slot rules (v0.0.57.11):
 
 - **Every slot filled, all fantastic**: class weapon (legendary effect per config), full
