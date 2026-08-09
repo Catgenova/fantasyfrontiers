@@ -10621,6 +10621,25 @@
     eq(chamQ.progress({ stats:{ gathered_herbalism_t0:30, gathered_herbalism_t3:100 } }), 30, 'Green of Thumb counts Chamomile (t0) only, not higher-tier herbs');
   });
 
+  // ---- Quest progress must survive counters past 2^31 (ticket-0167) --------------------------------
+  // questProgress coerced with |0, a SIGNED 32-BIT truncation: cb_dmg passes 2,147,483,647 in a couple
+  // of endgame swings (~1e11 each), the wrap usually lands negative, and Math.max pinned the display at
+  // "0 / 10,000,000,000,000" -- while any target above 2^31 (Ten Trillion = 1e13) could never latch.
+  suite('quests: progress survives counters past 2^31 (ticket-0167)', function(){
+    var s = FF._state, q = FF.questById('ten_trillion');
+    ok(q, 'the Ten Trillion quest exists');
+    ok(q.target > 2147483647, 'its target really does sit above the 32-bit line');
+    var svStats = s.stats, svQuests = s.quests;
+    try {
+      s.quests = { claimed:{}, completed:{} };
+      s.stats = Object.assign({}, svStats, { cb_dmg: 3000000000 });   // past 2^31, far under the target
+      eq(FF.questProgress(q), 3000000000, 'a 3B counter reads 3B, not a 32-bit wrap');
+      s.stats.cb_dmg = 10000000000000;
+      eq(FF.questProgress(q), q.target, 'ten trillion lifetime damage reaches the target');
+      ok(!!(s.quests.completed && s.quests.completed[q.id]), 'and the completion latches');
+    } finally { s.stats = svStats; s.quests = svQuests; }
+  });
+
   suite('quests: tower milestones + titles', function(){
     var s = FF._state;
     var savedTower = s.tower, savedQ = s.quests, savedTitles = s.titles, savedEq = s.equippedTitle;
