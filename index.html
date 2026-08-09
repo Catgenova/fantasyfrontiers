@@ -5507,10 +5507,24 @@
       state.popupBatchTotal = state.popupQueue.length;
     }
   }
+  // Offline catch-up caps how many DISTINCT rare/supreme kinds the consolidated screen tracks (each is a
+  // short string in saved state; the popup-queue balloon of v0.0.77.40 is the cautionary tale). Extra
+  // creations past the cap still count, as an "and N more" tally.
+  var OFFLINE_CRAFT_BATCH_KINDS_MAX = 40;
   function maybeShowRarityPopup(rarityId, itemName, icon){
     if(!rarityId || rarityId==='normal') return;
     var settingKey = 'popup' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1);
     if(!state.settings[settingKey]) return;
+    // Offline catch-up: rare and supreme creations consolidate into ONE "while you were away" screen
+    // (a mass-craft batch used to click through dozens of popups, one per roll). Fantastic keeps its
+    // own per-item fanfare, matching its feed/chat treatment.
+    if(offlineCapture && (rarityId==='rare' || rarityId==='supreme') && offlineCapture.rareCrafts){
+      var k = rarityId + '|' + itemName;
+      if(offlineCapture.rareCrafts[k]) offlineCapture.rareCrafts[k]++;
+      else if(Object.keys(offlineCapture.rareCrafts).length < OFFLINE_CRAFT_BATCH_KINDS_MAX) offlineCapture.rareCrafts[k] = 1;
+      else offlineCapture.rareCraftsOverflow = (offlineCapture.rareCraftsOverflow||0) + 1;
+      return;
+    }
     popupEnqueue({ type:'item', rarityId:rarityId, itemName:itemName, icon: icon || RARITY_POPUP_META[rarityId].icon });
     state.popupBatchTotal = (state.popupBatchTotal||0) + 1;
     needsRender = true;
@@ -8001,7 +8015,7 @@
   var SUMMONER_MAESTRO_BUILD = 2;     // Maestro's Tempo (D1 2pc): each connecting Downbeat builds 2 Crescendo stacks (a rate axis; the old cap +2 INVERTED on this cycling meter, delaying every Finale)
   var SUMMONER_FAM_CRIT_MULT = 2;     // Kindred Fury (D2 full): familiar crits strike a flat x2. Never the hero's crit-damage stack: at BiS that read as a permanent x2.8 and made D2 5x its sibling layers.
   var PACKBRAND_CRESCENDO_PER = 0.12; // Packbrand: Crescendo grants +12% familiar damage per stack instead of +6% (the staff's Downbeat add alone is a flat raw-stat add, invisible at BiS)
-  var SU_FAM_MULT = 1.0;              // 'Conductor's Measure': the Summoner's whole-kit band knob, applied to familiar damage while the class is active (v0.0.96.21 owner-band campaign)
+  var SU_FAM_MULT = 1.51;             // 'Conductor's Measure': the Summoner's whole-kit band knob, applied to familiar damage while the class is active. 1.51 = 2.5M owner band / 1.65M measured mean of two packs at 1.0 (v0.0.96.23)
   var SUMMONER_ACCEL_ADVANCE_MS = 400, SUMMONER_ACCEL_MAX_CAST_MULT = 0.85;
   var SUMMONER_WRAITH_MS = 10000, SUMMONER_WRAITH_STRIKE_MS = 2500, GRAVECHOIR_SOULS_PER_WRAITH = 5;
   var SUMMONER_WRAITH_HIT_PCT = 0.35;  // each Wraith strike = this share of the recent average FAMILIAR hit (re-based v0.0.96.21; 0.12 of a staff swing was invisible)
@@ -21102,7 +21116,7 @@
       state.playerHp += Math.min(regenTicks * (1 + enchantHpRegen(state)) + feastTicks * feastRegen5s, healRoom(state));
     }
     var goldBefore = state.gold;
-    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[] };
+    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[], rareCrafts:{}, rareCraftsOverflow:0 };
     // A primary activity whose item id was renamed/removed in an update must not throw here --
     // that would abort the whole offline pass (belt slots + peons included). Null it out instead.
     if(act && act.type === 'gather' && !ALL_GATHER_ITEMS[act.itemId]) state.activity = act = { type:null, tier:0 };
@@ -21301,6 +21315,8 @@
     // Familiars found offline ride along on the summary (shown as a second consolidated popup on Collect).
     // If there was no summary to show but familiars were still found, surface the consolidated popup directly.
     if(_sum.familiars && _sum.familiars.length && !offlineSummaryData){ queueFamiliarBatch(_sum.familiars); }
+    // Rare/supreme creations rolled offline get the same treatment: one consolidated screen.
+    if(_sum.rareCrafts && (Object.keys(_sum.rareCrafts).length || _sum.rareCraftsOverflow > 0) && !offlineSummaryData){ queueCraftBatch(_sum.rareCrafts, _sum.rareCraftsOverflow); }
   }
 
   async function initGame(){
@@ -29165,6 +29181,25 @@
     state.popupBatchTotal = (state.popupBatchTotal||0) + 1;
     needsRender = true;
   }
+  // The offline rare/supreme tally ({'rarity|name':count}) as a display list: supremes first, then by count.
+  function offlineCraftBatchList(map){
+    return Object.keys(map || {}).map(function(k){
+      var i = k.indexOf('|');
+      return { rarityId: k.slice(0, i), name: k.slice(i + 1), count: map[k] };
+    }).sort(function(a, b){
+      return ((b.rarityId==='supreme') - (a.rarityId==='supreme')) || (b.count - a.count) || (a.name < b.name ? -1 : 1);
+    });
+  }
+  // One consolidated popup for every rare/supreme creation rolled during an offline stretch, the
+  // familiarBatch treatment (a mass-craft batch used to click through one popup per roll).
+  function queueCraftBatch(map, overflow){
+    var list = offlineCraftBatchList(map);
+    if(!list.length && !(overflow > 0)) return;
+    if(!Array.isArray(state.popupQueue)) state.popupQueue = [];
+    popupEnqueue({ type:'craftBatch', crafts:list, more:overflow || 0 });
+    state.popupBatchTotal = (state.popupBatchTotal||0) + 1;
+    needsRender = true;
+  }
   function renderPopupQueue(){
     var overlay = document.getElementById('familiarPopupOverlay');
     var queue = state.popupQueue;
@@ -29218,6 +29253,27 @@
       });
       html += '</div>';
       html += '<button class="action-btn" data-action="dismissPopup">Wonderful!</button>';
+    } else if(pending.type==='craftBatch'){
+      var crafts = pending.crafts || [];
+      var rareN = 0, supN = 0;
+      crafts.forEach(function(c){ var n = c.count || 1; if(c.rarityId==='supreme') supN += n; else rareN += n; });
+      html += counterHtml;
+      html += '<div class="familiar-popup-title">Treasures Made While You Were Away</div>';
+      html += '<div class="familiar-popup-icon">'+svgIcon('starburst', supN > 0 ? 'var(--rarity-superior)' : 'var(--rarity-rare)')+'</div>';
+      var craftSub = [];
+      if(supN) craftSub.push(supN + ' Supreme creation' + (supN===1?'':'s'));
+      if(rareN) craftSub.push(rareN + ' Rare creation' + (rareN===1?'':'s'));
+      if(pending.more > 0) craftSub.push('and ' + pending.more + ' more');
+      html += '<div class="familiar-popup-meta">'+(craftSub.join(' &bull; ') || 'The forge was quiet')+'</div>';
+      html += '<div class="familiar-popup-spells">';
+      var craftShown = crafts.slice(0, 14);
+      craftShown.forEach(function(c){
+        var col = c.rarityId==='supreme' ? 'var(--rarity-superior)' : 'var(--rarity-rare)';
+        html += '<div><b style="color:'+col+'">'+escapeHtml(c.name)+'</b>'+((c.count||1) > 1 ? ' <span style="color:#c0b394">x'+c.count+'</span>' : '')+'</div>';
+      });
+      if(crafts.length > craftShown.length) html += '<div style="color:#c0b394">and '+(crafts.length - craftShown.length)+' more kind'+((crafts.length - craftShown.length)===1?'':'s')+'</div>';
+      html += '</div>';
+      html += '<button class="action-btn" data-action="dismissPopup">Excellent!</button>';
     } else if(pending.type==='towerShards'){
       html += counterHtml;
       html += '<div class="familiar-popup-title">Tower Cleared!</div>';
@@ -43301,8 +43357,11 @@
     amountModalCancel: function(btn, e){ closeAmountModal(); },
     closeOfflineSummary: function(btn, e){
       var _offFams = offlineSummaryData && offlineSummaryData.familiars;
+      var _offCrafts = offlineSummaryData && offlineSummaryData.rareCrafts;
+      var _offCraftsMore = (offlineSummaryData && offlineSummaryData.rareCraftsOverflow) || 0;
       offlineSummaryData = null;
       if(_offFams && _offFams.length) queueFamiliarBatch(_offFams); // second consolidated notification: all familiars found
+      if(_offCrafts && (Object.keys(_offCrafts).length || _offCraftsMore > 0)) queueCraftBatch(_offCrafts, _offCraftsMore); // third: every rare/supreme creation, one screen
     },
     closeSettings: function(btn, e){ settingsOpen = false; },
     setSettingsTab: function(btn, e){ settingsTab = btn.getAttribute('data-tab') || 'profile'; if(settingsTab==='moderation') chatModLoad().then(function(){ renderSettingsModal(); }); renderSettingsModal(); },
@@ -44365,7 +44424,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.21';
+  var GAME_VERSION = '0.0.96.22';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44689,6 +44748,8 @@
       RG_CHAIN_CHANCE:RG_CHAIN_CHANCE, RG_BOND_PCT:RG_BOND_PCT, RG_BOND_D4_MULT:RG_BOND_D4_MULT,
       RG_HUNTERSMARK_PCT:RG_HUNTERSMARK_PCT, RG_THROATSEEKER_MULT:RG_THROATSEEKER_MULT, RG_WYRMSTALKER_PCT:RG_WYRMSTALKER_PCT,
       RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
+      maybeShowRarityPopup:maybeShowRarityPopup, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
+      _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,

@@ -8350,6 +8350,7 @@
     near(FF.HD_SWING_MULT, 0.52, 'Herald channels to 52%');
     near(FF.AS_SWING_MULT, 0.65, 'Assassin channels to 65% (first formal band, v0.0.96.17)');
     near(FF.DL_SWING_MULT, 1.42, 'Duelist swings at 142% (the band channel as a buff)');
+    near(FF.SU_FAM_MULT, 1.51, "Summoner familiars carry 151% (Conductor's Measure, the band as a buff post-re-axis; wiring is exercised in the Conductor suite)");
     [['berserkerMeasure','Measured Fury'],['reaperHarvest','The Harvest'],
      ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance'],
      ['assassinPrecision','Lethal Precision'],['duelistFlourish','Flourish']].forEach(function(p){
@@ -17927,6 +17928,54 @@
       eq(S.popupQueue[0].itemName, 'Thing 40', 'the oldest entries were dropped');
       ok(S.popupBatchTotal <= FF.POPUP_QUEUE_MAX, 'the batch counter follows the trimmed queue');
     } finally { S.popupQueue = savedQ; S.popupBatchTotal = savedB; }
+  });
+
+  // ---- Offline rare/supreme crafts consolidate to ONE notification screen (owner request, v0.0.96.22).
+  // A mass-craft offline batch used to queue one click-through popup per rare/supreme roll ("Notification
+  // 45 of 51"). They now tally into the offline capture and surface as a single craftBatch screen;
+  // Fantastic keeps its per-item fanfare, matching its feed/chat treatment.
+  suite('popups: offline rare/supreme crafts consolidate to one screen', function(){
+    var S = FF._state, sv = { q:S.popupQueue, bt:S.popupBatchTotal, set:S.settings };
+    try {
+      S.settings = Object.assign({}, S.settings, { popupRare:true, popupSupreme:true, popupFantastic:true });
+      S.popupQueue = []; S.popupBatchTotal = 0;
+      // Live (no offline capture): a rare craft keeps its own screen.
+      FF._setOfflineCapture(null);
+      FF.maybeShowRarityPopup('rare', 'Rare Test Sword');
+      eq(S.popupQueue.length, 1, 'a live rare craft keeps its own popup');
+      eq(S.popupQueue[0].type, 'item', 'the live popup is the single-item screen');
+      S.popupQueue = []; S.popupBatchTotal = 0;
+      // Offline: rare and supreme rolls tally into the capture instead of the queue.
+      var cap = { rareCrafts:{}, rareCraftsOverflow:0 };
+      FF._setOfflineCapture(cap);
+      FF.maybeShowRarityPopup('rare', 'Rare Test Sword');
+      FF.maybeShowRarityPopup('rare', 'Rare Test Sword');
+      FF.maybeShowRarityPopup('supreme', 'Supreme Test Helm');
+      eq(S.popupQueue.length, 0, 'offline rare/supreme rolls queue no per-item popups');
+      eq(cap.rareCrafts['rare|Rare Test Sword'], 2, 'identical creations aggregate a count');
+      eq(cap.rareCrafts['supreme|Supreme Test Helm'], 1, 'supreme creations tally too');
+      // Fantastic keeps its own fanfare even offline.
+      FF.maybeShowRarityPopup('fantastic', 'Fantastic Test Blade');
+      eq(S.popupQueue.length, 1, 'a fantastic roll still pops its own screen offline');
+      // Distinct kinds are capped (short strings in saved state); extras count as overflow.
+      for(var i = 0; i < FF.OFFLINE_CRAFT_BATCH_KINDS_MAX + 5; i++) FF.maybeShowRarityPopup('rare', 'Filler ' + i);
+      eq(Object.keys(cap.rareCrafts).length, FF.OFFLINE_CRAFT_BATCH_KINDS_MAX, 'distinct kinds cap at the bound');
+      eq(cap.rareCraftsOverflow, 7, 'creations past the cap count in the overflow tally');
+      FF._setOfflineCapture(null);
+      // The consolidated screen: ONE queue entry, supremes first, counts and overflow carried.
+      S.popupQueue = []; S.popupBatchTotal = 0;
+      FF.queueCraftBatch({ 'rare|Rare Test Sword':2, 'supreme|Supreme Test Helm':1 }, 3);
+      eq(S.popupQueue.length, 1, 'the whole batch is ONE queue entry');
+      eq(S.popupQueue[0].type, 'craftBatch', 'the entry is the craftBatch screen');
+      eq(S.popupQueue[0].crafts[0].rarityId, 'supreme', 'supremes list first');
+      eq(S.popupQueue[0].crafts[1].count, 2, 'counts ride along');
+      eq(S.popupQueue[0].more, 3, 'the overflow tally rides along');
+      eq(S.popupBatchTotal, 1, 'one notification, however many creations');
+      // An empty tally queues nothing.
+      S.popupQueue = []; S.popupBatchTotal = 0;
+      FF.queueCraftBatch({}, 0);
+      eq(S.popupQueue.length, 0, 'no creations, no screen');
+    } finally { S.popupQueue = sv.q; S.popupBatchTotal = sv.bt; S.settings = sv.set; FF._setOfflineCapture(null); }
   });
 
   // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
