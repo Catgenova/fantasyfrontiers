@@ -1057,6 +1057,24 @@ the SUMMONER (deliberately last, familiar raw-stat anchor), the Samurai D1+rate-
 (reproduced AGAIN in this confirm: D1 won the A/B and the refund katana topped its matrix +32% over
 mean; fix lives in SM_FOCUS_PER_SEC/refunds), Goldgorge's gold subsidy (+26% over mean this pack),
 and the Widow cloak beating Ruin in six classes.
+**THE SUMMONER (v0.0.96.21-.23, the campaign's last class): owner band 2.5M, landed via a re-axis, not a
+knob alone.** The 6.3x-hot reading was ONE line: Kindred Fury (D2 full) let familiars borrow the hero's
+crit chance AND crit damage, a permanent ~x2.8 at BiS that made D2 read 5x its sibling layers (5.51M vs
+~1.1M). It is now a flat x2 on the hero's crit chance (flat-crit instance twelve). The rest of the
+treatment: Maestro's Poise (D1 2pc, Crescendo cap +2) was the Long Drop inversion on a cycling meter (a
+higher cap delays every Grand Finale) and became Maestro's Tempo (each Downbeat builds 2 stacks, cap flat
+5); Skeletal Wraiths (D3 full + Necrocaller) struck for 12% of the staff-swing EMA, invisible next to the
+familiars, and now pay 35% of a familiar-hit EMA (act.famHitAvg, per-foe, post-multiplier so the band knob
+rides in and the Wraith never re-applies it); Packbrand's flat Downbeat add was negligible at BiS so it
+also doubles the Crescendo swell (+12%/stack). Post-re-axis the engine is HEALTHY: D1 (the rate layer) won
+both set A/Bs, and the legendary matrix is the tightest recorded for this class (pack 1: necrocaller 1.99M
+/ rapidconjuring 1.84M / packbrand 1.77M / broodwyrm 1.66M, all four staves alive; the Wraith fix took
+Necrocaller from last to first). Band knob: SU_FAM_MULT ('Conductor's Measure') multiplies familiar
+hit/siphon/poison damage ONLY while the Summoner class is active, so no other staff-wielder's familiars
+move, and the familiar ANCHOR (raw weapon-tier curve) is untouched per the owner's never-re-base rule.
+Measured 1.81M and 1.49M at knob 1.0 (packs disagree ±10%, average 2-3 runs here) -> mean 1.65M -> knob
+**1.51**. NOTE: the knob does not scale the summoner's own staff swings, so whole-kit scaling is slightly
+sub-linear in it; the confirm pack is the check.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
