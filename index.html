@@ -11704,7 +11704,6 @@
         if(summonerSpellEmpowered(state)) _fKit *= SUMMONER_SYNCOPATION_MULT; // Syncopation (Lv40): spells on the beat are Empowered (+40%)
         // Wyrd Resonance (D4 full): a Downbeat-branded foe takes +15% from the staff's enchant elements.
         if(cact.wyrdBrandUntil > Date.now() && spell.element && cact.wyrdBrandElems && cact.wyrdBrandElems[spell.element]) _fKit *= 1.15;
-        _fKit *= summonerFamBandMult(state); // Conductor's Measure: the whole-kit band knob (class-gated)
         dmg *= _fKit;
         // DOWNBEAT: each active stack adds the staff's damage (power + enchants) to the attack.
         var _dbStacks = staffDownbeatStacks(state);
@@ -11714,7 +11713,12 @@
           _fDbAdd = _db;
           dmg += _db;
         }
-        dmg = Math.round(dmg);
+        // Conductor's Measure: the band knob multiplies the WHOLE familiar hit, Downbeat add included.
+        // It first shipped folded into _fKit, BEFORE the add -- and at BiS the add dominates the hit, so
+        // a 1.51 knob moved the measured pack ~1.1x (the confirm caught it: the set A/B cells read the
+        // same at knob 1.0 and 1.51). A band knob must never sit upstream of an additive term.
+        var _fBand = summonerFamBandMult(state);
+        dmg = Math.round(dmg * _fBand);
         // Kindred Fury (Summoner D2 full): familiars can crit on the hero's crit CHANCE, striking a flat
         // x2 -- never the hero's crit-damage stack. Borrowed crit damage read as a permanent x2.8 at BiS
         // (~100% chance at the capped multiplier plus the Eidolon's own critDmg buff) and made this one
@@ -11743,7 +11747,7 @@
         var _fDetail = advCombat()
           ? 'base ' + Math.round(_fBase) + (_fType!==1?' × type '+clRound(_fType):'') + (_fElem!==1?' × element '+clRound(_fElem):'')
             + (_fKit!==1?' × kit '+clRound(_fKit):'') + (_fDbAdd>0?' + Downbeat '+fmt(Math.round(_fDbAdd)):'')
-            + (famCrit?' × crit '+clRound(famCritMult):'') + ' = ' + fmt(dmg)
+            + (_fBand!==1?' × measure '+clRound(_fBand):'') + (famCrit?' × crit '+clRound(famCritMult):'') + ' = ' + fmt(dmg)
           : null;
         combatLogPush({ dir:'fam', fam:famName, spName:spell.name, dmg:dmg, crit:famCrit, heal:(_fStolen>0?_fStolen:undefined), target:(cmon&&cmon.name)||'', detail:_fDetail });
       }
@@ -44427,7 +44431,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.24';
+  var GAME_VERSION = '0.0.96.25';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

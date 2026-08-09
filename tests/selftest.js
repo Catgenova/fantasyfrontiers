@@ -14171,7 +14171,11 @@
         s.bodyArmor = { helmet:clothSet('k0'), chest:clothSet('k1'), gauntlets:clothSet('k2'), boots:clothSet('k3'), back:bare() };
         s.familiarBuffs = { critDmgVal: 5, critDmgUntil: Date.now()+60000,          // the old disease read critDmg
                             critChanceVal: 0.5, critChanceUntil: Date.now()+60000 }; // a known crit floor for the stubbed rolls
-        s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.activity.famHitAvg = 0;
+        // TWO live Downbeat stacks, seeded directly (staffDownbeatHit would open the Syncopation window):
+        // the band knob must multiply the WHOLE hit INCLUDING the Downbeat add. It first shipped upstream
+        // of the add, and at BiS the add dominates, so the knob barely moved the measured class.
+        s.equippedMainhandUid = null;
+        s.staffDownbeats = [Date.now()+4000, Date.now()+4000]; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.activity.famHitAvg = 0;
         var _svRnd2 = Math.random, famDmgA, famDmgB;
         try {
           Math.random = function(){ return 0.9999; };  // above any real crit chance: no crit
@@ -14188,10 +14192,12 @@
           // Conductor's Measure: the band knob rides a live Summoner's familiars and nobody else's.
           eq(FF.summonerFamBandMult(s), FF.SU_FAM_MULT, 'a live Summoner carries the band knob');
           eq(FF.summonerFamBandMult({ xp:{}, physique:{}, bodyArmor:{}, playerHp:1 }), 1, 'no class, no band knob');
-          near(famDmgA, Math.round(FF.familiarHitDamageResting(50, 10) * FF.SU_FAM_MULT), 'the cast pipeline applies the band knob (wiring, exact once the knob is not 1)', 2);
+          near(famDmgA, Math.round((FF.familiarHitDamageResting(50, 10) + FF.staffDownbeatPower(s) * 2) * FF.SU_FAM_MULT),
+               'the band knob multiplies the whole hit, Downbeat add included (wiring + placement)', 2);
           // Packbrand: the Crescendo swell pays +12% per stack instead of +6%.
+          // (Downbeat stacks cleared: the flat add would skew the pure kit ratio below.)
           Math.random = function(){ return 0.9999; };
-          s.summonerCrescendo = 3;
+          s.staffDownbeats = []; s.summonerCrescendo = 3;
           var hpC = s.activity.monsterHp;
           FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'void', element:null, amount:10 }, 50, 'mining');
           var famDmgC = hpC - s.activity.monsterHp;
