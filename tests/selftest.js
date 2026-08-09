@@ -8347,7 +8347,7 @@
     near(FF.BZ_SWING_MULT, 0.43, 'Berserker channels to 43%');
     near(FF.RP_SWING_MULT, 0.45, 'Reaper channels to 45%');
     near(FF.QD_SWING_MULT, 0.75, 'Quickdraw channels to 75%');
-    near(FF.HD_SWING_MULT, 0.58, 'Herald channels to 58%');
+    near(FF.HD_SWING_MULT, 0.44, 'Herald channels to 44%');
     [['berserkerMeasure','Measured Fury'],['reaperHarvest','The Harvest'],
      ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance']].forEach(function(p){
       ok(FF.PLAYER_DMG_MODS.some(function(m){ return m.name===p[0] && m.label===p[1]; }), p[0]+' is wired into the damage pipeline as "'+p[1]+'"');
