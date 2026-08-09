@@ -8344,8 +8344,8 @@
   // whole-kit channel (Berserker/Reaper/Quickdraw), and the Herald's band moves off the Ironclad cap
   // (no longer a lever post-rarity-retune) onto its own channel. Pin the constants AND the wiring.
   suite('reband: the four new whole-kit band knobs', function(){
-    near(FF.BZ_SWING_MULT, 0.77, 'Berserker channels to 77%');
-    near(FF.RP_SWING_MULT, 0.59, 'Reaper channels to 59%');
+    near(FF.BZ_SWING_MULT, 0.68, 'Berserker channels to 68%');
+    near(FF.RP_SWING_MULT, 0.52, 'Reaper channels to 52%');
     near(FF.QD_SWING_MULT, 0.90, 'Quickdraw channels to 90%');
     near(FF.HD_SWING_MULT, 0.52, 'Herald channels to 52%');
     near(FF.AS_SWING_MULT, 0.65, 'Assassin channels to 65% (first formal band, v0.0.96.17)');
@@ -9901,7 +9901,7 @@
     near(FF.rgStrikePct(rgD1), FF.RG_STRIKE_PCT * FF.RG_STRIKE_D1_MULT, 'Kennelborn (2pc): strikes hit 25% harder');
     near(FF.rgStrikePct(setSt('ranger',1)), FF.RG_STRIKE_PCT, '1 piece -> base strike');
     eq(FF.RG_STRIKES_D1_FULL, 2, 'Pack Leader (full): every command sends the beast in twice');
-    near(FF.RG_SWING_MULT, 0.40, 'the bow channels its raw swings -- the pack does the killing (THE band knob, v0.0.96.17 bands)');
+    near(FF.RG_SWING_MULT, 0.36, 'the bow channels its raw swings -- the pack does the killing (THE band knob, v0.0.96.18 correction)');
     near(FF.RG_CRIT_MULT, 2.0, "the beast's critical bite is a FLAT x2 (dotBase is already post-crit)");
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'rangerPack'; }), 'the Pack channel is a named PLAYER_DMG_MODS row');
     eq(FF.rangerProcChance(setSt('ranger',4)), 0, 'the arrow procs retired entirely');
@@ -15394,7 +15394,7 @@
     near(FF.TH_STRIKE_TIER_PCT, 0.15, 'the Strike gains +15% per relic tier (a Lime relic is x2.4)');
     // The swing channel: the t20 scimitar's raw swings alone measured ~78B, over the 50B band this class is
     // tuned to, and raw weapon stats are never a balance lever -- so the class channels its own swings down.
-    near(FF.TH_SWING_MULT, 1.40, 'the Reliquary swings at 140% (THE band knob; the farming class joined the standard band in v0.0.96.17)');
+    near(FF.TH_SWING_MULT, 1.19, 'the Reliquary swings at 119% (THE band knob; the farming class joined the standard band in v0.0.96.17)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'treasureHunterDig'; }), 'the Dig channel is a named PLAYER_DMG_MODS row');
     near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
     near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');
