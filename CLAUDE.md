@@ -1027,6 +1027,17 @@ retune cut BiS Armor ~4x and the heat lives in the EMA-fed Retort/Breach channel
 cap 0 cannot reach the band; it needs a Batch-2 lever. The SAMURAI saturation tell reproduced at the new
 knob (D1 + Silkweaver won again, +34%) -- the fix is SM_FOCUS_PER_SEC / the refunds, not the band knob.
 dpssim gained SIM_SET / SIM_CLOAK env pins for confirm runs whose probes are recorded artifacts.
+**Pass-2 results (v0.0.96.13-.15): every bandable class is now IN BAND.** The Sentinel landed at 1.26M
+on its D3-pinned confirm (SN 0.20). The four classes that predated the swing-mult pattern got the
+standard pipeline channel (v0.0.96.14): BZ_SWING_MULT 0.43 (confirmed 1.12M vs 1.19M), RP_SWING_MULT
+0.45 (1.52M vs 1.66M), QD_SWING_MULT 0.75 (1.66M vs 1.89M), and the Herald moved its band OFF the
+Ironclad cap (restored to its designed 0.72) onto HD_SWING_MULT, which needed one slope correction
+(0.58 read 1.62M -> 0.44 confirmed 1.26M vs 1.30M). Campaign remainder, all owner decisions: the
+ASSASSIN's band (keep its never-banded ~118B-era outlier position = knob ~0.67, or join the standard
+dps band = ~0.51; either wants the same new-knob wiring), the SUMMONER design item (6.3x hot via the
+familiar raw-stat anchor + a D2 layer reading ~5x its siblings), the Samurai D1+Silkweaver saturation
+fix (SM_FOCUS_PER_SEC / refunds, reproduced at two knob values), and the Goldgorge gold-subsidy check
+(read +49% then +26% over mean vs its designed 1.24x).
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
