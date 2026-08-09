@@ -8367,7 +8367,7 @@
     near(FF.HD_SWING_MULT, 0.52, 'Herald channels to 52%');
     near(FF.AS_SWING_MULT, 0.65, 'Assassin channels to 65% (first formal band, v0.0.96.17)');
     near(FF.DL_SWING_MULT, 1.42, 'Duelist swings at 142% (the band channel as a buff)');
-    near(FF.SU_FAM_MULT, 1.51, "Summoner familiars carry 151% (Conductor's Measure, the band as a buff post-re-axis; wiring is exercised in the Conductor suite)");
+    near(FF.SU_FAM_MULT, 2.16, "Summoner familiars carry 216% (Conductor's Measure; solved around the unscaled staff-swing share, wiring in the Conductor suite)");
     [['berserkerMeasure','Measured Fury'],['reaperHarvest','The Harvest'],
      ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance'],
      ['assassinPrecision','Lethal Precision'],['duelistFlourish','Flourish']].forEach(function(p){
