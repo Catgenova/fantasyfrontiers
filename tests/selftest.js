@@ -5772,7 +5772,7 @@
     eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
     eq(FF.pyromancerKindlingCritDmg(pyro), 0, 'Kindling Crits retired');
     // The wand chassis knob: the SECOND class on the x49 element-gear stack.
-    near(FF.PY_SWING_MULT, 0.31, 'the wand channels its raw swings (THE band knob, v0.0.96.11 reband)');
+    near(FF.PY_SWING_MULT, 0.32, 'the wand channels its raw swings (THE band knob, v0.0.96.17 bands)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerIgnite'; }), 'the Ignite channel is a named PLAYER_DMG_MODS row');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerBlaze'; }), 'and the Blaze multiplier is its own row');
     // Sharpshooter rework v2, "the Exposure Ladder": Expose (Lv1) / Patient Eye (Lv20) / Threadbare
@@ -8344,12 +8344,15 @@
   // whole-kit channel (Berserker/Reaper/Quickdraw), and the Herald's band moves off the Ironclad cap
   // (no longer a lever post-rarity-retune) onto its own channel. Pin the constants AND the wiring.
   suite('reband: the four new whole-kit band knobs', function(){
-    near(FF.BZ_SWING_MULT, 0.43, 'Berserker channels to 43%');
-    near(FF.RP_SWING_MULT, 0.45, 'Reaper channels to 45%');
-    near(FF.QD_SWING_MULT, 0.75, 'Quickdraw channels to 75%');
-    near(FF.HD_SWING_MULT, 0.44, 'Herald channels to 44%');
+    near(FF.BZ_SWING_MULT, 0.77, 'Berserker channels to 77%');
+    near(FF.RP_SWING_MULT, 0.59, 'Reaper channels to 59%');
+    near(FF.QD_SWING_MULT, 0.90, 'Quickdraw channels to 90%');
+    near(FF.HD_SWING_MULT, 0.52, 'Herald channels to 52%');
+    near(FF.AS_SWING_MULT, 0.65, 'Assassin channels to 65% (first formal band, v0.0.96.17)');
+    near(FF.DL_SWING_MULT, 1.42, 'Duelist swings at 142% (the band channel as a buff)');
     [['berserkerMeasure','Measured Fury'],['reaperHarvest','The Harvest'],
-     ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance']].forEach(function(p){
+     ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance'],
+     ['assassinPrecision','Lethal Precision'],['duelistFlourish','Flourish']].forEach(function(p){
       ok(FF.PLAYER_DMG_MODS.some(function(m){ return m.name===p[0] && m.label===p[1]; }), p[0]+' is wired into the damage pipeline as "'+p[1]+'"');
     });
   });
@@ -9898,7 +9901,7 @@
     near(FF.rgStrikePct(rgD1), FF.RG_STRIKE_PCT * FF.RG_STRIKE_D1_MULT, 'Kennelborn (2pc): strikes hit 25% harder');
     near(FF.rgStrikePct(setSt('ranger',1)), FF.RG_STRIKE_PCT, '1 piece -> base strike');
     eq(FF.RG_STRIKES_D1_FULL, 2, 'Pack Leader (full): every command sends the beast in twice');
-    near(FF.RG_SWING_MULT, 0.307, 'the bow channels its raw swings -- the pack does the killing (THE band knob)');
+    near(FF.RG_SWING_MULT, 0.40, 'the bow channels its raw swings -- the pack does the killing (THE band knob, v0.0.96.17 bands)');
     near(FF.RG_CRIT_MULT, 2.0, "the beast's critical bite is a FLAT x2 (dotBase is already post-crit)");
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'rangerPack'; }), 'the Pack channel is a named PLAYER_DMG_MODS row');
     eq(FF.rangerProcChance(setSt('ranger',4)), 0, 'the arrow procs retired entirely');
@@ -12202,7 +12205,7 @@
     // The Bleed used to tick off summed proficiency LEVELS (a few hundred damage against ~1e11 hits), so the
     // class's identity was invisible at best-in-slot. It now ticks off the recent-hit EMA.
     near(FF.RV_BLEED_PCT, 0.06, 'a Bleed stack ticks for 6% of the recent average hit per second');
-    near(FF.RV_SWING_MULT, 0.29, 'the axe channels its raw swings to 29% -- the wounds do the killing (THE band knob, v0.0.96.11 reband)');
+    near(FF.RV_SWING_MULT, 0.33, 'the axe channels its raw swings to 33% -- the wounds do the killing (THE band knob, v0.0.96.17 bands)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'reaverFlensing'; }), 'the Flensing channel is a named PLAYER_DMG_MODS row');
 
     // Lv 20 The Count: +0.4% damage per Cut, capped, and it reads the FIGHT's tally off the activity.
@@ -15391,7 +15394,7 @@
     near(FF.TH_STRIKE_TIER_PCT, 0.15, 'the Strike gains +15% per relic tier (a Lime relic is x2.4)');
     // The swing channel: the t20 scimitar's raw swings alone measured ~78B, over the 50B band this class is
     // tuned to, and raw weapon stats are never a balance lever -- so the class channels its own swings down.
-    near(FF.TH_SWING_MULT, 0.77, 'the Reliquary channels its raw swings to 77% (THE band knob, v0.0.96.11 reband)');
+    near(FF.TH_SWING_MULT, 1.40, 'the Reliquary swings at 140% (THE band knob; the farming class joined the standard band in v0.0.96.17)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'treasureHunterDig'; }), 'the Dig channel is a named PLAYER_DMG_MODS row');
     near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
     near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');

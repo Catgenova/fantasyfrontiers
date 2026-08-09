@@ -1038,6 +1038,12 @@ dps band = ~0.51; either wants the same new-knob wiring), the SUMMONER design it
 familiar raw-stat anchor + a D2 layer reading ~5x its siblings), the Samurai D1+Silkweaver saturation
 fix (SM_FOCUS_PER_SEC / refunds, reproduced at two knob values), and the Goldgorge gold-subsidy check
 (read +49% then +26% over mean vs its designed 1.24x).
+**THE OWNER BANDS (v0.0.96.17, replacing the scaled-old-band scheme):** Herald / Sentinel / Lumen 1.5M;
+Assassin / Spellblade 2.5M; every other class 2.0M; the SUMMONER is deliberately last (its design item
+stands). All twenty knobs moved on the measured confirmed slopes in one batch, the Assassin got its
+first formal band and channel (AS_SWING_MULT 0.65, 'Lethal Precision'), and the Duelist -- 30% under
+2.0M with no knob -- got the channel as a BUFF (DL_SWING_MULT 1.42, 'Flourish'). The Knight measured
+1.96M and stays untouched inside the 2.0M band. Confirm packs follow the usual >20%-corrects rule.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 

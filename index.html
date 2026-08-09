@@ -8120,6 +8120,9 @@
   var ENCHANT_HP_REGEN_CAP = 10;
   function enchantHpRegen(st){ st = st || state; return Math.min(ENCHANT_HP_REGEN_CAP, (equippedEnchantTotals(st).hpRegen || 0) * spellbladeEnchantBoost(st)); }
   function assassinBonus(reqLevel, st){ return classBonusActive('assassin', reqLevel, st); }
+  // v0.0.96.17 owner banding: the Assassin gets its first formal band (2.5M, the premium band with the
+  // Spellblade) and with it the standard whole-kit channel every other class carries.
+  var AS_SWING_MULT = 0.65;                  // THE band knob
   // Total persistent Dodge chance (gear + physiques + class); the temporary familiar 'dodge' buff is added
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
@@ -8193,7 +8196,7 @@
   var TF_CLAP_EVERY = 6, TF_CLAP_MULT = 2, TF_CLAP_STUN_MS = 1500, TF_CLAP_STUN_MS_D3 = 2500; // Static Web (D3 2pc)
   var TF_GALV_PER = 0.08, TF_GALV_MAX = 10, TF_GALV_MAX_SCALE = 15;    // Stormscale Ward
   var LEG_STORMWYRM_CRIT_BOLT = 1.5;         // Stormwyrm's Horn: critical Bolts +50%
-  var TF_STORM_SWING_MULT = 0.21;            // Stormseed (Lv1): while the Storm is raised, raw swings channel 68% less -- the sky carries the surplus (the wand chassis correction lives HERE per the owner rule: full-elemental swings ride a ~x49 element-gear stack at BiS)
+  var TF_STORM_SWING_MULT = 0.27;            // Stormseed (Lv1): while the Storm is raised, raw swings channel 68% less -- the sky carries the surplus (the wand chassis correction lives HERE per the owner rule: full-elemental swings ride a ~x49 element-gear stack at BiS)
   function tfStormCap(st){ st = st || state; return legActive('tempest', st) ? TF_STORM_MAX_GLOOM : (set2('thunderfury', st) ? TF_STORM_MAX_D1 : TF_STORM_MAX); }
   function tfStormIntensity(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(tfStormCap(st), st.tfStorm||0) : 0; }
   function tfStormSeed(n, st){ st = st || state; if(!thunderfuryBonus(1, st)) return 0;
@@ -8308,7 +8311,7 @@
   // Same chassis-correction pattern as TPL_LITANY_SWING_MULT (0.58) and TF_STORM_SWING_MULT (0.32): the t20
   // scimitar's RAW swing DPS alone measured ~78B, above the owner's 50B target for this class, and per the
   // owner rule a weapon's raw damage stats are never a balance lever -- so the correction lives here.
-  var TH_SWING_MULT = 0.77;            // THE band knob (whole-kit DPS is linear in it)
+  var TH_SWING_MULT = 1.40;            // THE band knob (whole-kit DPS is linear in it)
   var TH_STRIKE_MULT = 0.60;           // Grave Strike = this share of the channelled average hit ...
   var TH_STRIKE_TIER_PCT = 0.15;       // ... x (1 + this per relic tier): a Sand relic x0.6, a Lime relic x2.4
   var TH_DOWSE_CHANCE = 0.35;          // Grave Dowsing: odds a Strike unearths a relic of the foe's tier
@@ -8471,7 +8474,7 @@
   // v0.0.96.14 reband: the Ironclad cap is NO LONGER the whole-kit lever (the rarity retune collapsed
   // BiS Armor under it; halving the cap removed only ~20% of output), so the band moves to the standard
   // swing channel and the cap goes back to its designed value below.
-  var HD_SWING_MULT = 0.44;                  // THE band knob
+  var HD_SWING_MULT = 0.52;                  // THE band knob
   // --- Herald --- "The Bastion": his ARMOUR is the weapon. The wall he builds is the burst.
   //   Lv 1  Ironclad     -- +3% damage per 1,000 Armor rating (cap +150%); every 5s in combat he BRACES,
   //                         which counts as a Block for every effect; each Block/Brace banks Barrier
@@ -8690,9 +8693,12 @@
   }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, Math.round(amount * (1 + legendaryAmuletBonus('d2_veteran', state)))); } // Pendant of the Veteran (D2): +Class XP
   function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
+  // v0.0.96.17 owner banding: the Duelist sat 30% under its 2.0M band with no knob; the standard
+  // channel arrives as a BUFF (>1), like the Juggernaut's and Executioner's once were.
+  var DL_SWING_MULT = 1.42;                  // THE band knob
   function quickdrawBonus(reqLevel, st){ return classBonusActive('quickdraw', reqLevel, st); }
   // v0.0.96.14 reband: 1.33x hot in the post-retune sweep; standard whole-kit channel.
-  var QD_SWING_MULT = 0.75;                  // THE band knob
+  var QD_SWING_MULT = 0.90;                  // THE band knob
   // ================= DUELIST: "THE PHANTOM DANCER" =================
   // The class runs on Dodges and GENERATES her own: every 6s in combat she Sidesteps, and a Sidestep
   // counts as a Dodge for every effect in the game (class, legendaries, sets, D4 Firestorm). Real
@@ -8854,7 +8860,7 @@
   var TPL_GLORIA_PCT = 0.35;                         // Gloria: x recent average hit, PER Doxology stack
   var TPL_EMPOWERED_MULT = 1.5;                      // Amen: the next verse is Empowered
   var TPL_VERSE_POWER_D2 = 1.5;                      // Zealous Verse (D2 2pc): verse effects 50% stronger
-  var TPL_LITANY_SWING_MULT = 0.66;                  // The Litany (Lv1): while chanting, raw swings channel 42% less -- the verses, Doxology and the Amen carry the storm (replaces the reverted scepter item nerf; owner rule: balance lives in class perk variables, never weapon raw damage stats)
+  var TPL_LITANY_SWING_MULT = 0.71;                  // The Litany (Lv1): while chanting, raw swings channel 42% less -- the verses, Doxology and the Amen carry the storm (replaces the reverted scepter item nerf; owner rule: balance lives in class perk variables, never weapon raw damage stats)
   var LEG_SUNBRAND_END_PCT = 0.5;                    // Sunbrand: half the banked shield detonates when the Aegis verse ends
   var LEG_GLORIA_MULT = 1.5;                         // Vengeful Dawn: Gloria erupts +50% harder
   // The live verse (null out of combat / class inactive). The clock only runs in combat.
@@ -9033,7 +9039,7 @@
   }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
   // v0.0.96.14 reband: same treatment as the Berserker (the sweep read the Rot engine 2.25x hot).
-  var RP_SWING_MULT = 0.45;                  // THE band knob (Rot ticks ride the landed-hit EMA, so it scales the whole kit)
+  var RP_SWING_MULT = 0.59;                  // THE band knob (Rot ticks ride the landed-hit EMA, so it scales the whole kit)
   // --- Reaper --- "The Rotlord": the scythe's hits stack Rot on the foe; the Rot ticks are the class's
   // pressure damage AND its lifesteal, and the overheal banks the Siphon Shield. One meter, every payoff:
   //   Lv 1  Blight       -- landed hits stack Rot (cap 10); each stack ticks 8% of your recent avg hit /s
@@ -9186,7 +9192,7 @@
   // The Plague does the killing, so the hatchet's own swings channel down.
   // Measured 187B uncorrected at 45s, so the hatchet's swings channel well down: the Plague is most of this
   // class's output by design, and severity sits at its cap rather than cycling.
-  var PB_SWING_MULT = 0.454;            // THE band knob (whole-kit DPS is linear in it)
+  var PB_SWING_MULT = 0.43;            // THE band knob (whole-kit DPS is linear in it)
   function pbSevCap(st){ st = st || state;
     return Math.round(PB_SEV_MAX * (legActive('blightfang', st) ? PB_SEV_CAP_BLIGHTFANG : 1)); }
   function pbSeverity(st){ st = st || state; var a = st.activity;
@@ -9248,7 +9254,7 @@
   function berserkerBonus(reqLevel, st){ return classBonusActive('berserker', reqLevel, st); }
   // v0.0.96.14 reband: the Berserker predates the swing-mult pattern; the post-retune sweep read it
   // 2.3x over its scaled band (EMA-riding kit), so it gets the standard whole-kit channel.
-  var BZ_SWING_MULT = 0.43;                  // THE band knob (whole-kit DPS is ~linear in it)
+  var BZ_SWING_MULT = 0.77;                  // THE band knob (whole-kit DPS is ~linear in it)
   function sentinelBonus(reqLevel, st){ return classBonusActive('sentinel', reqLevel, st); }
   function spellbladeBonus(reqLevel, st){ return classBonusActive('spellblade', reqLevel, st); }
   // --- Frostwarden --- Reworked ladder: Permafrost (Lv1) / Time Dilation (Lv20) / Shatter (Lv40) /
@@ -9293,7 +9299,7 @@
   var FW_FREEZE_MS = 3000;                 // Deep Freeze window ...
   var FW_FREEZE_D2_MULT = 1.5;             // ... Flash Freeze (D2 full) and ...
   var FW_FREEZE_DEEPFREEZE_MULT = 1.5;     // ... Deepfreeze both lengthen it
-  var FW_SWING_MULT = 0.62;                 // THE band knob (whole-kit DPS is linear in it)
+  var FW_SWING_MULT = 0.70;                 // THE band knob (whole-kit DPS is linear in it)
   var FROST_CHILL_MAX_STACKS = 5;          // Permafrost: hits stack Chill up to this
   var FROST_CHILL_SLOW_PER_STACK = 0.10;   // enemy action-bar slow per stack (max 50%)
   var FROST_CHILL_MS = 5000;               // Chill duration, refreshed by each stacking hit
@@ -9488,7 +9494,7 @@
   var LEG_WYRMTHORNMAUL_SWING = 1.25;  // Wyrmthorn Maul: own swings while blooming
   var LEG_WYRMTHORNWALL_VOLLEY = 1.5;  // Wyrmthorn Wall: volleys +50% (its Snare deepen is in snSnareSlow)
   var LEG_TOMBWALL_INCOMING = 0.85;    // Tombwall: tangled foes deal -15% to you (the defensive shield)
-  var SN_SWING_MULT = 0.20;           // THE band knob (sim-tuned: pack 3's D3 matrix confirmed 60.7B at this value against the 60B tank target)
+  var SN_SWING_MULT = 0.24;           // THE band knob (sim-tuned: pack 3's D3 matrix confirmed 60.7B at this value against the 60B tank target)
   function snGrowCap(st){ return setFullD2('sentinel', st) ? SN_GROW_CAP_D2 : SN_GROW_CAP; }
   function snGrowth(st){ st = st || state; return Math.min(st.snGrowth||0, snGrowCap(st)); }
   function snTangled(st){ st = st || state; return snGrowth(st) >= snGrowCap(st) / 2; } // half-grown: Rending Barbs / Tombwall
@@ -9595,7 +9601,7 @@
   var SB_D4_PERFECT = 0.10, SB_D4_PERFECT_Q = 0.90; // Perfect Resonance (D4 full): 90%+ rolls hum
   var LEG_CAVERN_RATIO = 0.08;     // Cavern Echo: the ratio sword
   var LEG_RUNEGORGE_LINE = 1.25;   // Runegorge: damage enchant lines count a quarter again (1.5 read +33% over pack mean -- the Wyrmstalker trim)
-  var SB_SWING_MULT = 0.726;       // THE band knob (sim-tuned at the full-fantastic maxed-roll ceiling)
+  var SB_SWING_MULT = 0.88;       // THE band knob (sim-tuned at the full-fantastic maxed-roll ceiling)
   // Average rolled quality of every equipped enchant line, 0..1 against each line's own min..max range
   // (raw lines use their tier-scaled range). ~50 iterations at BiS, called ~1/s from the tick -- fine.
   function sbEnchantQuality(st){ st = st || state; var sum = 0, n = 0;
@@ -9704,7 +9710,7 @@
   var SS_SEAMS_LEARN = 3, SS_SEAMS_LEARN_D4 = 6; // a Bare kill teaches the species (Old Prey: 6)
   var LEG_GRAVESIGHT_HEADSTART = 2;              // Gravesight: a fresh foe starts 2 layers peeled
   var LEG_FARSTRIKE_TEAR = 1.40;                 // Farstrike: tears strike +40% harder
-  var SS_SWING_MULT = 0.328;                     // THE band knob (sim-tuned, mean of two packs): the arrow finds what the eye exposed
+  var SS_SWING_MULT = 0.29;                     // THE band knob (sim-tuned, mean of two packs): the arrow finds what the eye exposed
   function ssPeelCap(st){ st = st || state; return setFull('sharpshooter', st) ? SS_PEEL_CAP_D1 : SS_PEEL_CAP; }
   function ssBareAt(st){ st = st || state; return legActive('dragoneye', st) ? SS_BARE_AT_DRAGONEYE : SS_BARE_AT; }
   function ssPeel(st){ st = st || state; var a = st.activity; return (sharpshooterBonus(1, st) && a && a.type==='combat') ? Math.min(ssPeelCap(st), a.ssPeel||0) : 0; }
@@ -9802,7 +9808,7 @@
   var NB_SOULREND_BANK_MULT = 1.25, NB_SOULREND_MIN_WOES = 4; // Soulrend (D3 wand): 4+ woes -> hits seal a quarter more (1.5 read +30% over pack mean -- the 4-woe condition is permanent at BiS, the Throatseeker smell, so the multiplier pays as a flat bank feed and was trimmed like Wyrmstalker)
   var NB_WHISPER_CLOCK_MULT = 1.15; // Duskwyrm's Whisper (D4 wand): the clock runs 15% faster
   var LEG_VOIDFANG_SHATTER_MS = 4000; // Voidfang: a Doom striking at max Vulnerability shatters armour entirely
-  var NB_SWING_MULT = 0.65;      // THE band knob (sim-tuned, mean of two packs): the wand marks, the Doom kills
+  var NB_SWING_MULT = 0.70;      // THE band knob (sim-tuned, mean of two packs): the wand marks, the Doom kills
   function voidVulnStacks(st){ st = st || state; var a = st.activity; return (a && a.type==='combat' && (a.voidVulnUntil||0) > Date.now()) ? (a.voidVulnStacks||0) : 0; }
   // Marks of the Void's +damage-taken multiplier on the current foe (Resistance Rot deepens the bite).
   // The old Lv80 "flat +40% at max stacks" is retired -- Lv80 is Doomsday now.
@@ -9930,7 +9936,7 @@
   var EX_D4_AMP_MULT = 1.5;        // Scent of Ruin (D4 2pc): the height+missing amp counts half again
   var LEG_SOULHARVESTER_PER = 0.03, LEG_SOULHARVESTER_MAX = 10; // Soulharvester: each Fall hones the blade (+3% climb rate, cap +30%, session)
   var LEG_EMBERWYRM_FALL_MULT = 1.40; // Emberwyrm's Reaper: the axe falls from higher -- Falls +40%
-  var EX_SWING_MULT = 1.25;       // THE band knob (mean of two packs: 91.1B at 2.09 -> x90/91.1)
+  var EX_SWING_MULT = 1.56;       // THE band knob (mean of two packs: 91.1B at 2.09 -> x90/91.1)
   function exThreshFloor(st){ st = st || state; return setFullD4('executioner', st) ? EX_THRESH_FLOOR_D4 : EX_THRESH_FLOOR; }
   function exThreshCap(st){ return EX_THRESH_CAP; }
   function exClimbRateMult(st){ st = st || state; var m = 1;
@@ -10046,7 +10052,7 @@
   var RG_BONEVOLLEY_CHANCE = 0.25;    // Bonevolley: a strike can command again immediately
   // The pack does the killing, so the bow's own swings channel down. Measured 319B uncorrected: the commanded
   // strike fires on nearly every swing at BiS crit rates, so the pack is most of this class's output by design.
-  var RG_SWING_MULT = 0.307;          // THE band knob (whole-kit DPS is linear in it)
+  var RG_SWING_MULT = 0.40;          // THE band knob (whole-kit DPS is linear in it)
   function rgQuarryCap(st){ st = st || state; return set2D4('ranger', st) ? RG_QUARRY_MAX_D4 : RG_QUARRY_MAX; }
   function rgQuarry(st){ st = st || state; var a = st.activity;
     if(!a || a.type !== 'combat' || (a.rgQuarryUntil || 0) <= Date.now()) return 0;
@@ -10342,7 +10348,7 @@
   // treatment and the SECOND on the x49 wand chassis (two Fantastic +15 Rings of Fire alone are +4,800%
   // elemental damage) -- the Stormlord's TF_STORM_SWING_MULT is 0.32 for exactly this reason. Per the owner
   // rule the correction lives here, never in the wand's damage stats.
-  var PY_SWING_MULT = 0.31;                 // THE band knob (whole-kit DPS is linear in it)
+  var PY_SWING_MULT = 0.32;                 // THE band knob (whole-kit DPS is linear in it)
   var PYRO_BURN_MAX_STACKS = 5;             // pre-rework stack cap; still the floor for pyroBurnCap
   var PYRO_BURN_PCT = 0.05;                 // legacy per-stack share (other classes' Burn still uses it)
   var PYRO_BURN_MS = 4000;                  // Burn duration, refreshed while the Blaze lives
@@ -10463,7 +10469,7 @@
   var JG_EPICENTER_MULT = 1.40;              // Epicenter (D4 2pc): the Big One erupts +40% harder
   var LEG_EARTHRENDER_ECHO = 1.25;           // Earthrender: aftershocks pay +25% more
   var LEG_MAGMACORE_PER_ECHO = 0.12;         // Magmacore Sledge: +12% swing damage per echo still ringing
-  var JG_SWING_MULT = 0.75;                 // THE band knob (sim-tuned, mean of two packs): the sledge lands, the mountain answers
+  var JG_SWING_MULT = 0.77;                 // THE band knob (sim-tuned, mean of two packs): the sledge lands, the mountain answers
   function jgEchoMs(st){ st = st || state; return JG_ECHO_MS + (set2D2('juggernaut', st) ? JG_D2_ECHO_BONUS_MS : 0); }
   function jgEchoShare(st){ st = st || state; return JG_ECHO_PCT * (set2('juggernaut', st) ? 1.5 : 1) * (legActive('earthrender', st) ? LEG_EARTHRENDER_ECHO : 1); } // Heavy Hitter (D1 2pc) x Earthrender
   function jgResonancePer(st){ st = st || state; return set2D3('juggernaut', st) ? 0.15 : JG_RESONANCE_PER; } // Standing Stones (D3 2pc)
@@ -10570,7 +10576,7 @@
   var LEG_LUMENVEIL_CAP = 20;        // Lumenveil: the Radiance cap +20
   var LEG_GLEAMVEIL_BRIM = 1.5;      // Gleamveil: Brimover bursts +50%
   var LEG_DAWNSCALE_SUN = 10;        // Dawnscale Ward: the Second Sun ignites 10 Radiance sooner
-  var LM_SWING_MULT = 0.32;         // THE band knob (mean of two packs: 58.1B implied at 0.389 -> x60/58.1)
+  var LM_SWING_MULT = 0.42;         // THE band knob (mean of two packs: 58.1B implied at 0.389 -> x60/58.1)
   function lmRadCap(st){ st = st || state;
     return (set2D4('lumen', st) ? LM_RAD_CAP_D4 : LM_RAD_CAP) + (legActive('lumenveil', st) ? LEG_LUMENVEIL_CAP : 0); }
   function lmRadiance(st){ st = st || state; return Math.min(st.lmRadiance||0, lmRadCap(st)); }
@@ -10738,7 +10744,7 @@
   // the Bleed, the Count and the Harvest all scale off the channelled hit -- so this one number drives the
   // whole kit. Same chassis-correction pattern as TPL_LITANY_SWING_MULT / TF_STORM_SWING_MULT / TH_SWING_MULT,
   // and per the owner rule the correction lives in a class perk variable, never in the axe's damage stats.
-  var RV_SWING_MULT = 0.29;            // THE band knob (whole-kit DPS is linear in it)
+  var RV_SWING_MULT = 0.33;            // THE band knob (whole-kit DPS is linear in it)
   var LEG_MARROWSPLITTER_CUTS = 2;     // Marrowsplitter: each Cut counts double toward the Count
   var LEG_FRENZYSHELL_HARVEST_MS = 6000; // Frenzyshell: the post-Harvest speed window
   var LEG_FRENZYSHELL_HARVEST_PCT = 0.25; // ... worth this much attack speed
@@ -10852,7 +10858,7 @@
   // whole kit. Fifth chassis to need the treatment, after TPL_LITANY_SWING_MULT / TF_STORM_SWING_MULT /
   // TH_SWING_MULT / RV_SWING_MULT, and per the owner rule it lives in a class perk variable, never in the
   // katana's damage stats.
-  var SM_SWING_MULT = 0.19;                  // THE band knob (whole-kit DPS is linear in it)
+  var SM_SWING_MULT = 0.23;                  // THE band knob (whole-kit DPS is linear in it)
   var SM_CUT_MULT_D2 = 1.50;                  // Iaijutsu Mastery (D2 2pc): Draw-Cuts deal +50%
   var SM_CRIMSON_MULT_D2 = 1.60;              // Zanshin (D2 full): Crimson Edge rises to +60%
   var SM_BLEED_STACKS_D2 = 2;                 // ... and the Cut's Bleed lands at double depth
@@ -18833,6 +18839,8 @@
     { name:'reaperHarvest',         label:'The Harvest',        fn:function(c){ return (!c.isBonus && reaperBonus(1)) ? RP_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob
     { name:'quickdrawDeadeye',      label:'Deadeye',            fn:function(c){ return (!c.isBonus && quickdrawBonus(1)) ? QD_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob
     { name:'heraldTemperance',      label:'Temperance',         fn:function(c){ return (!c.isBonus && heraldBonus(1)) ? HD_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob (the Ironclad cap is not a lever any more)
+    { name:'assassinPrecision',     label:'Lethal Precision',   fn:function(c){ return (!c.isBonus && assassinBonus(1)) ? AS_SWING_MULT : 1; } }, // v0.0.96.17 banding: whole-kit band knob
+    { name:'duelistFlourish',       label:'Flourish',           fn:function(c){ return (!c.isBonus && duelistBonus(1)) ? DL_SWING_MULT : 1; } }, // v0.0.96.17 banding: whole-kit band knob (a buff)
     { name:'classMastery',          label:'Class Mastery',      fn:function(c){ return 1 + CLASS_MASTERY_DMG * classMasteryLevel(); } }, // +10% damage per over-100 level of the equipped class
     { name:'newClassPassives',      label:'Class passive',      fn:function(c){ return newClassDmgMult(c.monster); } },
     { name:'legendaryGear',         label:'Legendary weapon',   fn:function(c){ return legendaryDmgMult(c.monster); } },
@@ -44335,7 +44343,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.16';
+  var GAME_VERSION = '0.0.96.17';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44642,7 +44650,7 @@
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
-      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_SWING_MULT:SM_SWING_MULT, BZ_SWING_MULT:BZ_SWING_MULT, RP_SWING_MULT:RP_SWING_MULT, QD_SWING_MULT:QD_SWING_MULT, HD_SWING_MULT:HD_SWING_MULT,
+      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_SWING_MULT:SM_SWING_MULT, BZ_SWING_MULT:BZ_SWING_MULT, RP_SWING_MULT:RP_SWING_MULT, QD_SWING_MULT:QD_SWING_MULT, HD_SWING_MULT:HD_SWING_MULT, AS_SWING_MULT:AS_SWING_MULT, DL_SWING_MULT:DL_SWING_MULT,
       SM_CUT_MULT_D2:SM_CUT_MULT_D2, SM_CRIMSON_MULT_D2:SM_CRIMSON_MULT_D2, SM_BLEED_STACKS_D2:SM_BLEED_STACKS_D2,
       SM_FLOW_MS:SM_FLOW_MS, SM_FLOW_PCT:SM_FLOW_PCT, SM_SOULS_PER_CUT:SM_SOULS_PER_CUT,
       SM_FINALCUT_PER_SOUL:SM_FINALCUT_PER_SOUL, SAMURAI_FOCUS_MAX:SAMURAI_FOCUS_MAX,
