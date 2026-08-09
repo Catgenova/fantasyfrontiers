@@ -5202,8 +5202,9 @@
   WAND_TYPES.forEach(function(w){ WAND_TYPE_MAP[w.id] = w; });
   function isWandWeapon(typeId){ return !!WAND_TYPE_MAP[typeId]; }
   // ===== Staff (Arcanism two-handed support weapon) =====
-  // A Staff deals no damage and never auto-attacks (no attack speed). Instead it grants Block chance
-  // (5% at t0 -> 30% at t20) AND two additional active-familiar slots, so combat runs on your summons.
+  // A Staff SWINGS like any weapon (5s; each landed swing is the Summoner's Downbeat) and also grants
+  // Block chance (5% at t0 -> 30% at t20) AND two additional active-familiar slots. The Summoner's band
+  // knob is solved around this swing damage -- if staves ever stop swinging, SU_FAM_MULT re-derives.
   // Rarity gives MORE familiar slots (rare/supreme/fantastic = +1/+2/+3 beyond the base 2).
   var STAFF_BLOCK_MIN = 0.05, STAFF_BLOCK_MAX = 0.30;
   var STAFF_BASE_FAMILIAR_SLOTS = 2;
@@ -5224,7 +5225,7 @@
   STACKABLE_WEAPON_TYPES.forEach(function(w){ STACKABLE_WEAPON_TYPE_MAP[w.id] = w; });
   function isStackableWeapon(typeId){ return !!STACKABLE_WEAPON_TYPE_MAP[typeId]; }
 
-  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false, scepter:w.scepter||false, claw:w.claw||false}; });
+  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, scepter:w.scepter||false, claw:w.claw||false}; });
   // Claws: a fast dual-wieldable weapon. A second Claw may be worn in the off-hand, but ONLY while a
   // Claw is in the main hand. The off-hand Claw swings on its own, slower timer (+30%) for less (-70%) damage.
   function isClaw(typeId){ return typeId==='claw'; }
@@ -21153,7 +21154,6 @@
       var _monster = monsterById(act.monsterId);
       if(_pStyle && _monster){
         var _step = 500; // ms per sim step (covers the 12h cap in ~86k steps, well under the guard)
-        var _noAtk = !!_pStyle.noAttack; // a Staff never auto-attacks offline either
         var _passiveRegen5s = 1 + enchantHpRegen(state); // base +1/5s plus any HP Regen enchant, ticked per-step below
         var _feastRegen5s = (state.activeFeast && state.activeFeast.regenPer5s) || 0; // Gastronomy Feast heal-over-time
         var _feastActiveMs = feastOfflineActiveMs(capped);   // ticked per-step only while the feast is still running
@@ -21161,12 +21161,10 @@
         var _sim = 0, _pAcc = 0, _mAcc = 0, _offAcc = 0, _guard = 0;
         while(_sim < capped && state.activity.type==='combat' && _guard++ < 200000){
           var _chunk = Math.min(_step, capped - _sim); _sim += _chunk;
-          // Player swings (skipped for a Staff)
-          if(!_noAtk){
-            var _pInt = playerAttackIntervalMs();
-            _pAcc += _chunk;
-            while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = playerAttackIntervalMs(); }
-          }
+          // Player swings (a Staff swings too: it beats the Downbeat, exactly as it does live)
+          var _pInt = playerAttackIntervalMs();
+          _pAcc += _chunk;
+          while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = playerAttackIntervalMs(); }
           if(state.activity.type!=='combat') break;
           // Off-hand Claw swings on its own slower timer.
           if(hasOffhandClaw(state)){
@@ -23707,13 +23705,13 @@
     var pid = weaponEquipProfId(item.typeId); // wands/scepters -> shared proficiency; melee/bows -> per-type
     return { ok: meetsProficiencyRequirement(state.xp[pid], t), label:(SKILL_LABELS[pid]||pid), lvl:lvl };
   }
-  // A staff deals no damage (support weapon) -- show its block instead of a 0-0 dmg range.
+  // A staff shows BOTH its damage range and its block (its two live stats).
   function stackableWeaponStatLabel(item){ var _d = fmtRange(item.dmgMin, item.dmgMax, '-'); return isStaff(item.typeId) ? (_d+' dmg &bull; block '+Math.round((item.block||0)*100)+'%') : (_d+' dmg'); }
   // One equip candidate for a stackable weapon item.
   function weaponCandidate(id, current, curAvg){
     var item = STACKABLE_WEAPON_ITEMS[id];
     var gate = stackableEquipGate(item);
-    var noDmg = isStaff(item.typeId) && !item.dmgMax;    // staves deal no damage -- rank by block
+    var noDmg = isStaff(item.typeId) && !item.dmgMax;    // defensive only: staves carry real damage stats now
     var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
     var offClaw = isClaw(item.typeId) ? getEquippedOffhandClawItem(state) : null;
     return {
@@ -24136,7 +24134,7 @@
     var current = (state.equippedMainhand && isStaff(state.equippedMainhand) && state.equippedMainhandTier>0)
       ? STACKABLE_WEAPON_ITEMS['stweapon_staff_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
     var html = '<h3 style="margin-top:14px">Carve Staff</h3>';
-    html += '<div class="section-intro">A <b>Staff</b> is a two-handed weapon that deals no damage and never attacks. Instead it grants <b>Block</b> ('+Math.round(STAFF_BLOCK_MIN*100)+'% at Tier 1 up to '+Math.round(STAFF_BLOCK_MAX*100)+'% at the top tier) and <b>'+STAFF_BASE_FAMILIAR_SLOTS+' extra active-familiar slots</b>, so combat runs on your summons. Rarity grants even more slots: rare/supreme/fantastic = '+STAFF_RARITY_FAMILIAR_SLOTS.rare+'/'+STAFF_RARITY_FAMILIAR_SLOTS.supreme+'/'+STAFF_RARITY_FAMILIAR_SLOTS.fantastic+' slots. Staves share the <b>Staves</b> proficiency (familiar efficiency, +1% at Lv 1 up to +100% at Lv 100, trained by familiar damage).</div>';
+    html += '<div class="section-intro">A <b>Staff</b> is a two-handed weapon that swings every 5 seconds and lends its damage to your familiars through the Downbeat. It also grants <b>Block</b> ('+Math.round(STAFF_BLOCK_MIN*100)+'% at Tier 1 up to '+Math.round(STAFF_BLOCK_MAX*100)+'% at the top tier) and <b>'+STAFF_BASE_FAMILIAR_SLOTS+' extra active-familiar slots</b>, so combat runs on your summons. Rarity grants even more slots: rare/supreme/fantastic = '+STAFF_RARITY_FAMILIAR_SLOTS.rare+'/'+STAFF_RARITY_FAMILIAR_SLOTS.supreme+'/'+STAFF_RARITY_FAMILIAR_SLOTS.fantastic+' slots. Staves share the <b>Staves</b> proficiency (familiar efficiency, +1% at Lv 1 up to +100% at Lv 100, trained by familiar damage).</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">5s Downbeat swing &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
@@ -27159,23 +27157,17 @@
           + '<span class="ar2-sub">'+(_cdef ? escapeHtml(_cdef.name)+' &middot; Lv '+classDisplayLevel(state,_cid) : 'No class')+'</span>'
           + '</div></div>';
     html += '<div class="ar2-bars">';
-    if(weaponStyle.noAttack){
-      // A staff never swings, so there is no timer to show -- say so rather than render a bar that never moves.
-      html += '<div class="ar2-bar"><div class="trk"></div><img src="art/Square_merged (2).png" alt="">'
-            + '<div class="lbl"><span>Familiars fight for you</span></div></div>';
-    } else {
-      html += ar2Bar('ar2AtkMe', '', escapeHtml(weaponStyle.name || 'Attack'),
-                     playerAtkPct, (Math.round(playerAtkIntervalMs/100)/10)+'s');
-      if(hasOffhandClaw(state)){
-        var offAtkIntervalMs = offhandClawAttackIntervalMs();
-        html += ar2Bar('ar2AtkOff', 'off', svgIcon('claw','#e3aeb2')+' Off-hand',
-                       clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100),
-                       (Math.round(offAtkIntervalMs/100)/10)+'s');
-      }
+    html += ar2Bar('ar2AtkMe', '', escapeHtml(weaponStyle.name || 'Attack'),
+                   playerAtkPct, (Math.round(playerAtkIntervalMs/100)/10)+'s');
+    if(hasOffhandClaw(state)){
+      var offAtkIntervalMs = offhandClawAttackIntervalMs();
+      html += ar2Bar('ar2AtkOff', 'off', svgIcon('claw','#e3aeb2')+' Off-hand',
+                     clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100),
+                     (Math.round(offAtkIntervalMs/100)/10)+'s');
     }
     html += '</div>'; // ar2-bars
     // Bow ammo is a live counter, not a bar: it only matters when it runs out.
-    if(!weaponStyle.noAttack && weaponStyle.hand === 'bow'){
+    if(weaponStyle.hand === 'bow'){
       var _arrows = bowArrowsAvailable(state);
       html += '<div class="ar2-sub" style="margin-top:5px;text-align:inherit">'+svgIcon('arrow', _arrows>0?'#a8895c':'#e07a6a')
             + ' Arrows <b id="arenaPlayerArrows"'+(_arrows>0?'':' style="color:#e07a6a"')+'>'
@@ -43670,8 +43662,9 @@
         addLog('Your quarry is nowhere to be found. You retreat.', 'danger');
         stopActivity();
       } else {
-      // A Staff has no attack speed -- it never auto-attacks (combat runs on your familiars).
-      if(!getWeaponStyle(state.equippedMainhand).noAttack){
+      // Every weapon swings on its own clock -- a Staff included: its 5s swing IS the Downbeat that
+      // drives the Conductor's whole rhythm (the never-set noAttack flag left in v0.0.96.32).
+      {
         var attackIntervalMs = playerAttackIntervalMs();
         if(state.activity._swingIvMs && state.activity._swingIvMs !== attackIntervalMs){
           state.activity.tickAccum = swingRescaleAccum(state.activity.tickAccum||0, state.activity._swingIvMs, attackIntervalMs);
@@ -44412,7 +44405,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.31';
+  var GAME_VERSION = '0.0.96.32';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

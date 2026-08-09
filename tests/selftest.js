@@ -13961,7 +13961,7 @@
     ok(FF.isStaff('staff'), 'the staff is a staff');
     ok(!FF.isStaff('wandFire'), 'a wand is not a staff');
     eq(FF.STAFF_TYPE.hand, '2h', 'staff is two-handed');
-    ok(!FF.STAFF_TYPE.noAttack, 'the staff swings again (Conductor rework)');
+    eq(FF.STAFF_TYPE.noAttack, undefined, 'the noAttack flag is gone outright (staves swing; that IS the Downbeat, v0.0.96.32)');
     eq(FF.STAFF_TYPE.attackSpeed, 5, 'staff swings on a 5s Downbeat');
     ok(FF.STAFF_TYPE.staff, 'staff style carries the staff flag');
     eq(FF.STAFF_TYPE.skillId, 'arcanism', 'staff is crafted by arcanism');
