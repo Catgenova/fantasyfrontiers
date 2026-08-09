@@ -4795,6 +4795,23 @@
     ok(craftHalf.indexOf('data-skill="metallurgy"') !== -1, 'crafting workshops untouched');
   });
 
+  // ---- Architecture forge shows the craft success rate (ticket-0168) --------------------------------
+  // Workshops, Cottages and Estate Buildings all roll craftSuccessRate(state,'architecture') in
+  // completeSpecialCraft (a build can FAIL), but none of the three cards said the odds while every
+  // ordinary recipe card does. Each card now carries the standard Success Chance line.
+  suite('architecture forge: every card shows the success rate (ticket-0168)', function(){
+    var html = FF.renderWorkshopForge();
+    var pct = Math.round(FF.craftSuccessRate(FF._state, 'architecture') * 100);
+    var line = 'Success Chance: <b>' + pct + '%</b>';
+    var n = html.split(line).length - 1;
+    // At least one workshop card per group, the cottage card, and one building card all carry it.
+    ok(n >= 3, 'the Architecture cards carry the Success Chance line (found ' + n + ')');
+    var cottage = html.indexOf('Cottages'), buildings = html.indexOf('Estate Buildings');
+    ok(html.slice(cottage, buildings).indexOf(line) !== -1, 'the Cottage card shows it');
+    ok(html.slice(buildings).indexOf(line) !== -1, 'the Estate Building cards show it');
+    ok(html.slice(0, cottage).indexOf(line) !== -1, 'the Workshop cards show it');
+  });
+
   // ---- Modal cards: white marble on stone frames with stone buttons (owner request, v0.0.79.15) -----
   // Every dialog in the game is one of TWO cards (.familiar-popup-card / .skill-info-card), so this
   // covers settings, offline summary, loot/enhance/dungeon results, death report, transcend, estate
