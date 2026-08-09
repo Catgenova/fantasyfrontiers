@@ -545,9 +545,11 @@ async function runOne(name, cfg, ms) {
 }
 
 // Phase 1: set-layer A/B on the last-listed legendary (usually the capstone-synergy one).
+// SIM_SET / SIM_CLOAK pin a layer/cloak and skip that probe -- for confirm runs on classes whose
+// 45s probe is a recorded artifact (the Sentinel's D2 starvation) or whose probes flip in noise.
 const probeLeg = BUILD.legs[BUILD.legs.length - 1];
-let bestSet = BUILD.setLayers[0], bestDps = -1;
-if (BUILD.setLayers.length > 1) {
+let bestSet = process.env.SIM_SET || BUILD.setLayers[0], bestDps = -1;
+if (!process.env.SIM_SET && BUILD.setLayers.length > 1) {
   for (const layer of BUILD.setLayers) {
     const r = await runOne("set A/B: " + layer, { leg: probeLeg, setLayer: layer, cloakLeg: "d2_ruin" }, Math.min(DURATION_MS, 45000));
     if (r && r.dps > bestDps) { bestDps = r.dps; bestSet = layer; }
@@ -555,8 +557,8 @@ if (BUILD.setLayers.length > 1) {
   console.log("WINNING SET LAYER:", bestSet);
 }
 // Phase 2: cloak A/B (Ruin all-dmg / Warpack elemental / Widow crit-dmg).
-let bestCloak = "d2_ruin"; bestDps = -1;
-for (const c of ["d2_ruin", "d2_warpack", "critdmg"]) {
+let bestCloak = process.env.SIM_CLOAK || "d2_ruin"; bestDps = -1;
+for (const c of process.env.SIM_CLOAK ? [] : ["d2_ruin", "d2_warpack", "critdmg"]) {
   const r = await runOne("cloak A/B: " + c, { leg: probeLeg, setLayer: bestSet, cloakLeg: c }, Math.min(DURATION_MS, 45000));
   if (r && r.dps > bestDps) { bestDps = r.dps; bestCloak = c; }
 }

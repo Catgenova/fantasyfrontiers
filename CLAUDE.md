@@ -1018,6 +1018,15 @@ Quickdraw/Assassin need NEW whole-kit knobs wired in (they predate the pattern),
 an owner decision (it was never formally banded and sat at ~118B), the Sentinel needs a D3-pinned
 confirm before its knob (0.146 -> ~0.30), and the Samurai D1+Silkweaver saturation watch item re-tests
 at the new knob.
+**Pass-1 confirm results (v0.0.96.12):** nine knobs landed inside tolerance and HOLD (SM 0.19 at 1.65M,
+EX 1.25 at 1.60M, TPL 0.66 at 1.87M, TF 0.21 at 1.56M, PY 0.31 at 1.91M -- linear across a 3.9x move --
+RV 0.29 at 1.79M, TH 0.77 at 1.10M, LM 0.32 at 1.13M, FW 0.62 at 1.76M). Corrected from both packs'
+slopes: JG 0.64 -> 0.75, NB 0.60 -> 0.65. **The HERALD's cap is NO LONGER the whole-kit lever:** halving
+HERALD_IRONCLAD_CAP removed only ~20% of output (2.57M -> 2.06M vs a 1.30M target) because the rarity
+retune cut BiS Armor ~4x and the heat lives in the EMA-fed Retort/Breach channels now -- extrapolated,
+cap 0 cannot reach the band; it needs a Batch-2 lever. The SAMURAI saturation tell reproduced at the new
+knob (D1 + Silkweaver won again, +34%) -- the fix is SM_FOCUS_PER_SEC / the refunds, not the band knob.
+dpssim gained SIM_SET / SIM_CLOAK env pins for confirm runs whose probes are recorded artifacts.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 
