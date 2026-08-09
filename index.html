@@ -8468,6 +8468,10 @@
     }
     return dmg; }
   function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
+  // v0.0.96.14 reband: the Ironclad cap is NO LONGER the whole-kit lever (the rarity retune collapsed
+  // BiS Armor under it; halving the cap removed only ~20% of output), so the band moves to the standard
+  // swing channel and the cap goes back to its designed value below.
+  var HD_SWING_MULT = 0.58;                  // THE band knob
   // --- Herald --- "The Bastion": his ARMOUR is the weapon. The wall he builds is the burst.
   //   Lv 1  Ironclad     -- +3% damage per 1,000 Armor rating (cap +150%); every 5s in combat he BRACES,
   //                         which counts as a Block for every effect; each Block/Brace banks Barrier
@@ -8479,7 +8483,7 @@
   // is a multiplier per 1,000 Armor (never a flat addend, which would be dead at BiS) and the Breach
   // scales off the recent-average-hit EMA, the same channel the Bolt/Gloria/Decree engines use.
   var HERALD_IRONCLAD_PER_1K = 0.03;   // Ironclad: +3% damage per 1,000 Armor rating
-  var HERALD_IRONCLAD_CAP = 0.36;      // ... up to +72%. THE tuning knob: BiS Armor pins the conversion at this
+  var HERALD_IRONCLAD_CAP = 0.72;      // ... up to +72%. THE tuning knob: BiS Armor pins the conversion at this
                                        // cap (uncapped it would be x1,273), so PER_1K never binds at BiS. Whole-kit
                                        // DPS is linear in this multiplier (Retort/Breach ride the boosted hitAvg):
                                        // cap 1.00 measured ~70B, and the owner's tank target is ~60B.
@@ -8687,6 +8691,8 @@
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, Math.round(amount * (1 + legendaryAmuletBonus('d2_veteran', state)))); } // Pendant of the Veteran (D2): +Class XP
   function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
   function quickdrawBonus(reqLevel, st){ return classBonusActive('quickdraw', reqLevel, st); }
+  // v0.0.96.14 reband: 1.33x hot in the post-retune sweep; standard whole-kit channel.
+  var QD_SWING_MULT = 0.75;                  // THE band knob
   // ================= DUELIST: "THE PHANTOM DANCER" =================
   // The class runs on Dodges and GENERATES her own: every 6s in combat she Sidesteps, and a Sidestep
   // counts as a Dodge for every effect in the game (class, legendaries, sets, D4 Firestorm). Real
@@ -9026,6 +9032,8 @@
       state.activity.sidestepAccum = (state.activity.sidestepAccum||0) + duelistSidestepMs()/2;
   }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
+  // v0.0.96.14 reband: same treatment as the Berserker (the sweep read the Rot engine 2.25x hot).
+  var RP_SWING_MULT = 0.45;                  // THE band knob (Rot ticks ride the landed-hit EMA, so it scales the whole kit)
   // --- Reaper --- "The Rotlord": the scythe's hits stack Rot on the foe; the Rot ticks are the class's
   // pressure damage AND its lifesteal, and the overheal banks the Siphon Shield. One meter, every payoff:
   //   Lv 1  Blight       -- landed hits stack Rot (cap 10); each stack ticks 8% of your recent avg hit /s
@@ -9238,6 +9246,9 @@
       while(act.pbErupt >= _every){ act.pbErupt -= _every; if(!pbEruptFire(act, st)) break; }
     } }
   function berserkerBonus(reqLevel, st){ return classBonusActive('berserker', reqLevel, st); }
+  // v0.0.96.14 reband: the Berserker predates the swing-mult pattern; the post-retune sweep read it
+  // 2.3x over its scaled band (EMA-riding kit), so it gets the standard whole-kit channel.
+  var BZ_SWING_MULT = 0.43;                  // THE band knob (whole-kit DPS is ~linear in it)
   function sentinelBonus(reqLevel, st){ return classBonusActive('sentinel', reqLevel, st); }
   function spellbladeBonus(reqLevel, st){ return classBonusActive('spellblade', reqLevel, st); }
   // --- Frostwarden --- Reworked ladder: Permafrost (Lv1) / Time Dilation (Lv20) / Shatter (Lv40) /
@@ -18818,6 +18829,10 @@
     { name:'executionerFall',       label:'The Falling Axe',    fn:function(c){ return (!c.isBonus && executionerBonus(1)) ? EX_SWING_MULT : 1; } }, // the axe opens the neck, the Fall takes the head (band knob)
     { name:'sentinelBramble',       label:'The Bramble',        fn:function(c){ return (!c.isBonus && sentinelBonus(1)) ? SN_SWING_MULT : 1; } }, // the maul tends the hedge, the hedge does the tearing (band knob)
     { name:'lumenOverflow',         label:'The Overflow',       fn:function(c){ return (!c.isBonus && lumenBonus(1)) ? LM_SWING_MULT : 1; } }, // the wand gathers the light, the spill does the searing (band knob)
+    { name:'berserkerMeasure',      label:'Measured Fury',      fn:function(c){ return (!c.isBonus && berserkerBonus(1)) ? BZ_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob
+    { name:'reaperHarvest',         label:'The Harvest',        fn:function(c){ return (!c.isBonus && reaperBonus(1)) ? RP_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob
+    { name:'quickdrawDeadeye',      label:'Deadeye',            fn:function(c){ return (!c.isBonus && quickdrawBonus(1)) ? QD_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob
+    { name:'heraldTemperance',      label:'Temperance',         fn:function(c){ return (!c.isBonus && heraldBonus(1)) ? HD_SWING_MULT : 1; } }, // v0.0.96.14 reband: whole-kit band knob (the Ironclad cap is not a lever any more)
     { name:'classMastery',          label:'Class Mastery',      fn:function(c){ return 1 + CLASS_MASTERY_DMG * classMasteryLevel(); } }, // +10% damage per over-100 level of the equipped class
     { name:'newClassPassives',      label:'Class passive',      fn:function(c){ return newClassDmgMult(c.monster); } },
     { name:'legendaryGear',         label:'Legendary weapon',   fn:function(c){ return legendaryDmgMult(c.monster); } },
@@ -44320,7 +44335,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.13';
+  var GAME_VERSION = '0.0.96.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44627,7 +44642,7 @@
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
-      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_SWING_MULT:SM_SWING_MULT,
+      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_SWING_MULT:SM_SWING_MULT, BZ_SWING_MULT:BZ_SWING_MULT, RP_SWING_MULT:RP_SWING_MULT, QD_SWING_MULT:QD_SWING_MULT, HD_SWING_MULT:HD_SWING_MULT,
       SM_CUT_MULT_D2:SM_CUT_MULT_D2, SM_CRIMSON_MULT_D2:SM_CRIMSON_MULT_D2, SM_BLEED_STACKS_D2:SM_BLEED_STACKS_D2,
       SM_FLOW_MS:SM_FLOW_MS, SM_FLOW_PCT:SM_FLOW_PCT, SM_SOULS_PER_CUT:SM_SOULS_PER_CUT,
       SM_FINALCUT_PER_SOUL:SM_FINALCUT_PER_SOUL, SAMURAI_FOCUS_MAX:SAMURAI_FOCUS_MAX,

@@ -8340,6 +8340,20 @@
     ok(panel.indexOf('Damage Reduction Cap') !== -1 && panel.indexOf('at least 25%') !== -1, 'the Damage Reduction Cap row shows 75% and the 25% floor');
   });
 
+  // ---- v0.0.96.14 reband: the four classes that predate the swing-mult pattern get the standard
+  // whole-kit channel (Berserker/Reaper/Quickdraw), and the Herald's band moves off the Ironclad cap
+  // (no longer a lever post-rarity-retune) onto its own channel. Pin the constants AND the wiring.
+  suite('reband: the four new whole-kit band knobs', function(){
+    near(FF.BZ_SWING_MULT, 0.43, 'Berserker channels to 43%');
+    near(FF.RP_SWING_MULT, 0.45, 'Reaper channels to 45%');
+    near(FF.QD_SWING_MULT, 0.75, 'Quickdraw channels to 75%');
+    near(FF.HD_SWING_MULT, 0.58, 'Herald channels to 58%');
+    [['berserkerMeasure','Measured Fury'],['reaperHarvest','The Harvest'],
+     ['quickdrawDeadeye','Deadeye'],['heraldTemperance','Temperance']].forEach(function(p){
+      ok(FF.PLAYER_DMG_MODS.some(function(m){ return m.name===p[0] && m.label===p[1]; }), p[0]+' is wired into the damage pipeline as "'+p[1]+'"');
+    });
+  });
+
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
   suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);
@@ -14433,7 +14447,7 @@
     // The Bastion perk ladder: names in order; the reset-on-hit streak and the familiar-duration capstone are gone.
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Ironclad,Retort,Fortress,Unbreakable,Breach', 'Bastion perk names');
     near(FF.HERALD_IRONCLAD_PER_1K, 0.03, 'Ironclad: +3% damage per 1,000 Armor');
-    near(FF.HERALD_IRONCLAD_CAP, 0.36, 'Ironclad caps at +36% (BiS Armor pins it there, so the cap IS the knob, v0.0.96.11 reband)');
+    near(FF.HERALD_IRONCLAD_CAP, 0.72, 'Ironclad caps at +72% (back at its designed value: since v0.0.96.14 the band lives in HD_SWING_MULT, not this cap)');
     eq(FF.HERALD_BRACE_MS, 5000, 'the Brace clock runs every 5s');
     near(FF.HERALD_BARRIER_CAP_PCT, 0.25, 'the Barrier caps at 25% of max Health');
     near(FF.HERALD_BREACH_PCT, 0.20, 'the Breach deals 20% of the recent average hit per 10% max HP banked');
