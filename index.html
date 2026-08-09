@@ -28958,13 +28958,20 @@
     html += '<div class="guild-section-title" style="margin-top:4px;">' + escapeHtml(cat.label) + '</div>';
     if(!list.length) return html + '<div class="empty-note">More quests coming soon.</div>';
     if(catId === 'towerquests'){
+      // Ready-to-claim float to the VERY TOP of the tab, like every other quest category (ticket-0166:
+      // they used to surface only within their own entrance group, and a class entrance can sit a dozen
+      // groups down the page, so a Claim was easy to never see).
+      var twClaimable = list.filter(questClaimable).sort(function(a, b){ return a.towerFloor - b.towerFloor; });
+      if(twClaimable.length){
+        html += '<div class="quest-group-head quest-group-ready">★ Ready to Claim <span style="color:var(--gold);">• ' + twClaimable.length + '</span></div>';
+        twClaimable.forEach(function(q){ html += renderQuestAccordion(q); });
+      }
       // Grouped by entrance (All Classes first, then each class) so the long milestone list stays navigable.
       TOWER_ENTRANCES.forEach(function(en){
-        var qs = list.filter(function(q){ return q.towerEntrance === en.id; }).sort(function(a, b){ return a.towerFloor - b.towerFloor; });
+        var qs = list.filter(function(q){ return q.towerEntrance === en.id && !questClaimable(q); }).sort(function(a, b){ return a.towerFloor - b.towerFloor; });
         if(!qs.length) return;
-        var ready = qs.filter(questClaimable).length;
-        html += '<div class="quest-group-head">' + escapeHtml(en.label) + (ready ? ' <span style="color:var(--gold);">• ' + ready + ' to claim</span>' : '') + '</div>';
-        questsSorted(qs).forEach(function(q){ html += renderQuestAccordion(q); }); // ready-to-claim first, claimed sink to the bottom of each entrance
+        html += '<div class="quest-group-head">' + escapeHtml(en.label) + '</div>';
+        questsSorted(qs).forEach(function(q){ html += renderQuestAccordion(q); }); // in-progress first, claimed sink to the bottom of each entrance
       });
       return html;
     }
@@ -44435,7 +44442,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.27';
+  var GAME_VERSION = '0.0.96.28';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44617,7 +44624,7 @@
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
-      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
+      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; },
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
       navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,

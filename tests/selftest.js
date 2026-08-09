@@ -10640,6 +10640,27 @@
     } finally { s.stats = svStats; s.quests = svQuests; }
   });
 
+  // ---- Tower quests ready to claim float to the TOP of the tab (ticket-0166) -----------------------
+  // The tower tab sorted claimables only WITHIN their entrance group, and a class entrance can sit a
+  // dozen groups down the page. Now they get the same "Ready to Claim" section every other category has.
+  suite('quests: tower ready-to-claim floats to the top of the tab (ticket-0166)', function(){
+    var s = FF._state, svQuests = s.quests, svCat = FF.currentCategoryId();
+    try {
+      var q = FF.questById('tq_spellblade_f75');
+      ok(q, 'a class tower milestone exists (tq_spellblade_f75)');
+      s.quests = { claimed:{}, completed:{} };
+      s.quests.completed[q.id] = 1;   // latched -> claimable
+      FF._setCurrentCategory('towerquests');
+      var html = FF.renderQuestsTab();
+      var readyIdx = html.indexOf('Ready to Claim');
+      var cardIdx = html.indexOf('data-quest="' + q.id + '"');
+      var firstEntranceIdx = html.indexOf('All Classes');
+      ok(readyIdx !== -1, 'the tower tab renders a Ready to Claim section');
+      ok(cardIdx !== -1 && firstEntranceIdx !== -1 && cardIdx < firstEntranceIdx, 'the claimable milestone renders ABOVE the first entrance group');
+      ok(html.lastIndexOf('data-quest="' + q.id + '"') < firstEntranceIdx, 'and it no longer repeats inside its own entrance group');
+    } finally { s.quests = svQuests; FF._setCurrentCategory(svCat); }
+  });
+
   suite('quests: tower milestones + titles', function(){
     var s = FF._state;
     var savedTower = s.tower, savedQ = s.quests, savedTitles = s.titles, savedEq = s.equippedTitle;
