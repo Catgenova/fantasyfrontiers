@@ -665,6 +665,27 @@
     s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv; s.xp.paving = savedPaveXp;
   });
 
+  // ---- The Longhouse queue is VISIBLE under a running guild job (ticket-0165) ----
+  // The guild arm of the job-status panel appended only the other-members list, never the queue --
+  // and entries can only be ADDED while a job runs, so a member's queue could fill to QUEUE FULL
+  // without ever being seen (the reported "can't see the queue log / apparently queue full").
+  suite('guild estate: the Longhouse queue shows under a running job (ticket-0165)', function(){
+    var s = FF._state, ge = FF.guildEstate;
+    var saved = { grid:ge.grid, status:ge.status, job:ge.job, jobs:ge.jobs, q:s.guildEstateQueue };
+    try {
+      ge.grid = [[{ type:'paved', paveTileId:'paving_t1' }]]; ge.status = 'ready'; ge.jobs = [];
+      ge.job = { kind:'raise', x:0, y:0, startAt:Date.now()-1000, readyAt:Date.now()+60000 };
+      s.guildEstateQueue = [{ kind:'raise', x:0, y:0, localMs:60000, payload:{} }];
+      FF.estUse(true);
+      var html = FF.renderEstateJobStatus();
+      ok(html.indexOf('Action Queue') !== -1, 'the Longhouse queue renders under a RUNNING guild job (the only state where one exists)');
+      ok(html.indexOf('guildCancelQueued') !== -1, 'its Remove button routes to the guild cancel handler, never the personal one');
+    } finally {
+      FF.estUse(false);
+      ge.grid = saved.grid; ge.status = saved.status; ge.job = saved.job; ge.jobs = saved.jobs; s.guildEstateQueue = saved.q;
+    }
+  });
+
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
   suite('estate: upgrade workshop & cottage', function(){
     eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'the legacy plank price survives only for pre-patch in-flight jobs (matVer < 2)');

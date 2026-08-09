@@ -30693,7 +30693,12 @@
       var head = guildQueueArr()[0];
       var cell = guildEstate.grid[head.x] && guildEstate.grid[head.x][head.y];
       var v = estateQueuedJobValid(head, cell, guildEstate);
-      if(v.ok && estJobOnTile(head.x, head.y)) v = { ok:false, msg:'another member is working on that tile' };
+      // GUILD jobs specifically, never estJobOnTile: that helper reads the estate ON SCREEN (estActive /
+      // estIsGuild), and this advance runs view-independently from the tick -- from My Estate it would
+      // check the wrong grid entirely. My own job is null here (the advance gate), so every row is
+      // another member's.
+      var _gOccupied = (guildEstate.jobs || []).some(function(j){ return j.kind !== 'border' && j.x === head.x && j.y === head.y; });
+      if(v.ok && _gOccupied) v = { ok:false, msg:'another member is working on that tile' };
       if(v.ok) break;
       estateJobRefund(head);
       guildQueueArr().shift();
@@ -35444,7 +35449,10 @@
     html += '<div class="progress-track"><div class="progress-fill" id="estateJobFill" style="width:'+pct+'%"></div></div>';
     html += '<div class="estate-action-info" style="text-align:center;font-family:var(--font-mono);" id="estateJobTimer">Finishes in '+formatDuration(remaining)+'</div>';
     html += '</div>';
-    return html + (estIsGuild ? renderGuildOtherJobs() : renderEstateQueue());
+    // BOTH estates show their queue under the running job. The guild arm shipped without it, which made
+    // the Longhouse queue invisible in exactly the only state where one exists: entries can only be
+    // ADDED while a job runs, so a member's queue could fill to QUEUE FULL sight unseen (ticket-0165).
+    return html + (estIsGuild ? (renderEstateQueue() + renderGuildOtherJobs()) : renderEstateQueue());
   }
   // Head line + reward note for the active-job panel, one arm per kind. Extracted (v0.0.79.6) so a NEW
   // job kind with no arm is caught by a test instead of silently falling into the terraforming default --
@@ -44442,7 +44450,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.96.28';
+  var GAME_VERSION = '0.0.96.29';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44624,7 +44632,7 @@
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
-      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; },
+      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; }, renderEstateJobStatus:renderEstateJobStatus,
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
       navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
