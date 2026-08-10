@@ -10702,6 +10702,66 @@
     eq(chamQ.progress({ stats:{ gathered_herbalism_t0:30, gathered_herbalism_t3:100 } }), 30, 'Green of Thumb counts Chamomile (t0) only, not higher-tier herbs');
   });
 
+  // ---- Second Frontier questline (v0.0.98.0): 50 numbered + capstone, builds off First Frontier into t2 ----
+  suite('Second Frontier: structure, numbering, acts, rewards, progress', function(){
+    var sf = FF.QUESTS.filter(function(q){ return q.cat==='secondfrontier'; });
+    var numbered = sf.filter(function(q){ return !q.capstone; });
+    var caps = sf.filter(function(q){ return q.capstone; });
+    // Structure: exactly 50 numbered + 1 capstone, registered as a category.
+    eq(numbered.length, 50, 'Second Frontier has exactly 50 numbered quests');
+    eq(caps.length, 1, 'Second Frontier has exactly one capstone');
+    ok(FF.QUEST_CATEGORY_IDS.indexOf('secondfrontier') !== -1, 'secondfrontier is a registered quest category');
+    ok(FF.isQuestCategory('secondfrontier'), 'isQuestCategory knows secondfrontier');
+    // Stable 1..50 numbering, contiguous, capstone excluded.
+    var nums = numbered.map(function(q){ return FF.QUEST_ORDINAL[q.id]; }).sort(function(a,b){ return a-b; });
+    eq(nums[0], 1, 'numbering starts at 1');
+    eq(nums[nums.length-1], 50, 'numbering ends at 50');
+    var contiguous = nums.every(function(n,i){ return n === i+1; });
+    ok(contiguous, 'the 50 ordinals are 1..50 with no gaps or dupes');
+    ok(FF.QUEST_ORDINAL[caps[0].id] === undefined, 'the capstone carries no ordinal (it gets a star)');
+    // Every quest is well-formed: title, a callable progress, a positive target, and a nav destination.
+    var wellFormed = sf.every(function(q){ return q.title && typeof q.progress==='function' && (q.capstone || q.target>0) && q.nav; });
+    ok(wellFormed, 'every Second Frontier quest has title, progress fn, target, and nav');
+    // Every reward item id RESOLVES: questRewardLabel renders the item NAME, so the raw id must not survive.
+    var badId = null;
+    sf.forEach(function(q){
+      var ids = []; var r = q.reward || {};
+      if(r.itemId) ids.push(r.itemId);
+      if(r.items) r.items.forEach(function(it){ ids.push(it.itemId); });
+      var label = FF.questRewardLabel(q);
+      ids.forEach(function(id){ if(label.indexOf(id) !== -1) badId = q.id + ' -> ' + id; });
+    });
+    ok(!badId, 'every Second Frontier reward item id resolves in the catalog (' + (badId||'all clean') + ')');
+    // The capstone crowns the Trailblazer title and pays the 10 Barrier Shards the owner asked for.
+    var cap = FF.questById('trailblazer_of_the_second_frontier');
+    ok(cap && cap.reward.titleId === 'title_trailblazer', 'capstone grants the Trailblazer title');
+    var shard = (cap.reward.items||[]).filter(function(it){ return it.itemId==='barrier_shard'; })[0];
+    ok(shard && shard.qty === 10, 'capstone pays 10 Barrier Shards');
+    // SF_ACTS cover 1..50 with no gap or overlap (rendered grouping).
+    // (Read the acts through a quest whose ordinal each act should contain.)
+    var actSpan = [ [1,5],[6,12],[13,19],[20,26],[27,32],[33,38],[39,43],[44,47],[48,50] ];
+    var covered = {}; actSpan.forEach(function(a){ for(var n=a[0];n<=a[1];n++) covered[n]=(covered[n]||0)+1; });
+    var allOnce = true; for(var n2=1;n2<=50;n2++){ if(covered[n2]!==1) allOnce=false; }
+    ok(allOnce, 'the nine Acts partition ordinals 1..50 exactly once each');
+
+    // Progress closures read the intended counters (the load-bearing ones).
+    eq(FF.questById('answer_the_second_call').progress({ stats:{ login_days:2 } }), 2, 'the second-day quest reads login_days');
+    eq(FF.questById('strike_tin').progress({ stats:{ gathered_mining_t2:150 } }), 150, 'Strike Tin reads Tin ore (mining t2)');
+    eq(FF.questById('cast_the_bronze').progress({ stats:{ made_metallurgy_t1:150 } }), 150, 'Cast the Bronze reads Bronze bars (metallurgy t1)');
+    eq(FF.questById('into_tin').progress({ stats:{ made_metallurgy_t2:100 } }), 100, 'Into Tin reads Tin bars (metallurgy t2)');
+    eq(FF.questById('the_weaponsmith').progress({ stats:{ crafted_weaponsmithing:1 } }), 1, 'The Weaponsmith reads the special-forge crafted_weaponsmithing tally');
+    eq(FF.questById('the_arcane_spark').progress({ stats:{ crafted_arcanism:1 } }), 1, 'The Arcane Spark reads crafted_arcanism');
+    eq(FF.questById('bond_anew').progress({ familiars:{ mining:{ level:10 }, forestry:{ level:3 } } }), 10, 'Bond Anew reads the highest familiar level, capped at 10');
+    eq(FF.questById('shape_the_grounds').progress({ stats:{ est_raised:2, est_lowered:1 } }), 3, 'Shape the Grounds sums raise + lower (guild or own)');
+    eq(FF.questById('waters_of_the_estate').progress({ stats:{ building_built_aqueduct:1 } }), 1, 'Waters of the Estate reads the aqueduct build');
+    eq(FF.questById('climb_the_tower').progress({ tower:{ frontier:{ best:3 } } }), 1, 'Climb the Tower completes once any floor is cleared');
+    eq(FF.questById('pick_your_calling').progress({}), 0, 'Pick Your Calling reads activeClassId and is safe on an empty state');
+    // Capstone counts the 50 claimed siblings.
+    var cs = { quests:{ claimed:{} } };
+    numbered.forEach(function(q){ cs.quests.claimed[q.id] = 1; });
+    eq(cap.progress(cs), 50, 'the capstone reads 50 once every other Second Frontier quest is claimed');
+  });
+
   // ---- Quest progress must survive counters past 2^31 (ticket-0167) --------------------------------
   // questProgress coerced with |0, a SIGNED 32-BIT truncation: cb_dmg passes 2,147,483,647 in a couple
   // of endgame swings (~1e11 each), the wrap usually lands negative, and Math.max pinned the display at
@@ -10769,9 +10829,9 @@
     ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
-    // 116 tower + Frontier Hero + Warlord of the Frontier (the Combat capstone).
-    // 116 tower + three capstones: Frontier Hero, Lord of the Manor (Estate), Warlord (Combat).
-    eq(FF.TITLES.length, 119, 'the Titles registry has one entry per tower quest (116) plus the three capstones');
+    // 116 tower + four capstones: Frontier Hero (First Frontier), Lord of the Manor (Estate),
+    // Warlord of the Frontier (Combat), and Trailblazer of the Second Frontier (Second Frontier, v0.0.98.0).
+    eq(FF.TITLES.length, 120, 'the Titles registry has one entry per tower quest (116) plus the four capstones');
     // Registry order follows the QUESTS array, so the static capstones lead in the order they are defined:
     // First Frontier, then Estate, then Combat. Asserted by SET rather than fixed indices past the first,
     // so adding a fourth capstone does not fail here for the wrong reason.

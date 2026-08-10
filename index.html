@@ -14854,6 +14854,10 @@
         logForgeResult(rarity, tierData.name, rarity==='fantastic' ? discordItemStatsText(made.itemId) : '', made.itemId);
       }
       // Per-craft special-forge tallies (once per successful craft, rarity-agnostic), powering Quest progress.
+      // A generic per-skill tally matches the standard-craft `crafted_<skill>` key (line ~14972) so the
+      // special-forge skills (Weapon/Armor/Shieldsmithing, Arcanism, Runesmithing, Architecture, ...) get a
+      // completion counter too -- the Second Frontier smith quests read these.
+      if(skillId) bumpStat('crafted_' + skillId);
       if(act.craftKind==='belt') bumpStat('belt_made_' + act.tierIndex);                             // "Make 10 Rabbit Belts"
       else if(act.craftKind==='tool') bumpStat('tool_made_' + act.skillId + '_' + act.tierIndex);    // "Forge a Copper <skill> tool"
     } else {
@@ -15994,7 +15998,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['salvage','Salvage'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['secondfrontier','Second Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -21752,6 +21756,10 @@
     }catch(e){
       addLog('Welcome to Fantasy Frontiers! Gather, craft, fight and grow to become a legend.');
     }
+    // Count distinct calendar days the player boots the game (drives the Second Frontier "second day" quest).
+    // A UTC day index; the first boot of a new day ticks the tally over exactly once.
+    var _todayIdx = Math.floor(Date.now() / 86400000);
+    if(state.lastLoginDayIndex !== _todayIdx){ state.lastLoginDayIndex = _todayIdx; bumpStat('login_days', 1); }
     recomputePlacedWorkshops(); // build the workshop-bonus cache from the loaded estate
     recomputeAqueducts();       // ...and the aqueduct water-chain cache, same reason
     pruneOrphanFarmingPlots(state.farmingPlots, state.estate && state.estate.grid); // clear personal plots with no backing Field (self-heal a stuck Farming flash)
@@ -27807,6 +27815,7 @@
   // obtainable TITLES browser rather than a quest list (see renderTitlesTab).
   var QUEST_CATEGORIES = [
     { id:'gettingstarted', label:'First Frontier' },
+    { id:'secondfrontier', label:'Second Frontier' },
     { id:'combatquests', label:'Combat' },
     { id:'estatequests', label:'Estate' },
     { id:'towerquests', label:'Tower' },
@@ -28775,7 +28784,327 @@
       how:'Claim all 50 other Combat quests. Claiming this crowns you a Warlord of the Frontier.',
       target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='combatquests' && q.id!=='warlord_of_the_frontier' && c[q.id]) n++; }); return n; },
       nav:{ cat:'quests', sub:'combatquests' },
-      reward:{ titleId:'title_warlord_of_the_frontier', name:'Warlord of the Frontier', items:[ { itemId:'relic_t20_supreme', qty:1 } ], gold:1000000 } }
+      reward:{ titleId:'title_warlord_of_the_frontier', name:'Warlord of the Frontier', items:[ { itemId:'relic_t20_supreme', qty:1 } ], gold:1000000 } },
+
+    // ================= SECOND FRONTIER (secondfrontier): 50 numbered + capstone =================
+    // Builds off the First Frontier: the returning hero climbs Copper -> Bronze (t1) -> Tin (t2), opens the
+    // ~30 trades the first arc never touched, and reaches into Tier 2 across the board. Same instant-complete
+    // mechanics; ordinals 1-50 authored in array order (questRebuildDerived), grouped by SF_ACTS.
+    // ---- Act I: Return to the Frontier (1-5) ----
+    { id:'answer_the_second_call', cat:'secondfrontier', title:'Answer the Second Call',
+      desc:'The frontier remembers the ones who come back. A single day proves nothing; two says you mean to stay. Return on your second day and the land opens its second chapter to you.',
+      how:'Log in on your second day of play. The count ticks over at each new day.',
+      target:2, progress:function(st){ return (st.stats && st.stats['login_days']) || 0; },
+      nav:{ cat:'skills' },
+      reward:{ items:[ { itemId:'tool_forestry_t1_normal', qty:1 } ], gold:5000 } },
+    { id:'keep_your_edge', cat:'secondfrontier', title:'Keep Your Edge',
+      desc:'A +5 blade won the First Frontier. It will not win the Second. Take any piece back to the Improvement bench and drive it to +8, each strike keener and more dangerous than the last.',
+      how:'In Resources → Improvement, enhance any piece of gear to +8.',
+      target:8, progress:function(st){ return (st.stats && st.stats['enhance_best']) || 0; },
+      nav:{ cat:'improvement' },
+      reward:{ items:[ { itemId:'enchant_t1', qty:4 } ], gold:2000 } },
+    { id:'a_second_glyph', cat:'secondfrontier', title:'A Second Glyph',
+      desc:'One enchant wakes a piece of gear. Two begins to make it yours. Bind a second crystal and feel the numbers move again.',
+      how:'In Resources → Improvement, apply a second enchant (two enchants total across your gear).',
+      target:2, progress:function(st){ return (st.stats && st.stats['enchants_applied']) || 0; },
+      nav:{ cat:'improvement' },
+      reward:{ items:[ { itemId:'enchant_t1', qty:3 } ], gold:2000 } },
+    { id:'bond_anew', cat:'secondfrontier', title:'Bond Anew',
+      desc:'A companion that fought beside you through the First Frontier has more to give. Raise a familiar to Level 10 and it grows into the fights ahead.',
+      how:'In Battle → Menagerie, raise any familiar to Level 10.',
+      target:10, progress:function(st){ var m=0,f=st.familiars||{}; for(var k in f){ if(f[k] && f[k].level>m) m=f[k].level; } return Math.min(10,m); },
+      nav:{ cat:'menagerie' },
+      reward:{ items:[ { itemId:'critter_cache', qty:3 } ], gold:1000 } },
+    { id:'pick_your_calling', cat:'secondfrontier', title:'Pick Your Calling',
+      desc:'A generalist survives the frontier; a specialist tames it. Meet a Class’s requirements and take up its weapon, and the discipline is yours.',
+      how:'In Battle → Classes, activate any Class by meeting its requirements and equipping its weapon.',
+      target:1, progress:function(st){ return activeClassId(st) ? 1 : 0; },
+      nav:{ cat:'classes' },
+      reward:{ gold:5000 } },
+    // ---- Act II: The Bronze Age (6-12) ----
+    { id:'break_the_limestone', cat:'secondfrontier', title:'Break the Limestone',
+      desc:'Sand built your first floors; limestone builds walls that stand. Quarry the frontier’s first true building stone.',
+      how:'In Gathering → Mining, mine 200 Limestone (the Tier 1 stone).',
+      target:200, progress:function(st){ return (st.stats && st.stats['gathered_mining_t1']) || 0; },
+      nav:{ cat:'gathering', sub:'mining' },
+      reward:{ items:[ { itemId:'stonecutting_t1', qty:50 }, { itemId:'tool_metallurgy_t1_normal', qty:1 } ] } },
+    { id:'strike_tin', cat:'secondfrontier', title:'Strike Tin',
+      desc:'Copper is soft; alloyed with tin it becomes bronze, and bronze holds an edge. Pull the second half of the alloy from the seams.',
+      how:'In Gathering → Mining, mine 150 Tin ore (Tier 2).',
+      target:150, progress:function(st){ return (st.stats && st.stats['gathered_mining_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'mining' },
+      reward:{ items:[ { itemId:'coal', qty:150 } ], gold:2000 } },
+    { id:'cast_the_bronze', cat:'secondfrontier', title:'Cast the Bronze',
+      desc:'Copper and tin, fed together to the fire, come out as something neither could be alone. Smelt the bars the whole Bronze Age is beaten from.',
+      how:'In Resources → Refining → Metallurgy, smelt 150 Bronze Bars (Copper + Tin + Coal).',
+      target:150, progress:function(st){ return (st.stats && st.stats['made_metallurgy_t1']) || 0; },
+      nav:{ cat:'refining', sub:'metallurgy' },
+      reward:{ items:[ { itemId:'metallurgy_t1', qty:100 } ] } },
+    { id:'the_weaponsmith', cat:'secondfrontier', title:'The Weaponsmith',
+      desc:'A blade is not a bar. It is a bar with intent hammered into it. Take your bronze to the Weaponsmith and forge a weapon worthy of the name.',
+      how:'In Outfitting → Weaponsmithing, forge any Bronze (Tier 1) weapon.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_weaponsmithing']) || 0; },
+      nav:{ cat:'outfitting', sub:'weaponsmithing' },
+      reward:{ itemId:'stweapon_scimitar_t1_rare', qty:1 } },
+    { id:'the_armorer', cat:'secondfrontier', title:'The Armorer',
+      desc:'The frontier gives its wounds freely to the unarmored. Forge bronze plate at the Armorer and close another gap the wilds meant to use.',
+      how:'In Outfitting → Armorsmithing, forge any Bronze (Tier 1) plate piece.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_armorsmithing']) || 0; },
+      nav:{ cat:'outfitting', sub:'armorsmithing' },
+      reward:{ items:[ { itemId:'amulet_t2_normal', qty:1 } ], gold:5000 } },
+    { id:'the_shieldwright', cat:'secondfrontier', title:'The Shieldwright',
+      desc:'The best blow is the one that never lands. Forge a bronze shield at the Shieldwright and give the frontier something to break against.',
+      how:'In Outfitting → Shieldsmithing, forge any Bronze (Tier 1) shield.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_shieldsmithing']) || 0; },
+      nav:{ cat:'outfitting', sub:'shieldsmithing' },
+      reward:{ itemId:'stshield_shieldSmall_t1_rare', qty:1 } },
+    { id:'into_tin', cat:'secondfrontier', title:'Into Tin',
+      desc:'Bronze carried you here; pure Tin carries you past it. Smelt the Tier 2 bars and forge the finest edge on the frontier so far. This is the door into Tier 2, and you are through it.',
+      how:'In Resources → Refining → Metallurgy, smelt 100 Tin Bars (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['made_metallurgy_t2']) || 0; },
+      nav:{ cat:'refining', sub:'metallurgy' },
+      reward:{ items:[ { itemId:'relic_t2_normal', qty:1 } ], gold:5000 } },
+    // ---- Act III: Field, Grove & Hive (13-19) ----
+    { id:'finer_fibers', cat:'secondfrontier', title:'Finer Fibers',
+      desc:'Cotton clothed a novice. Jute, stronger and finer, clothes a settler. Farm it and weave the better bolt.',
+      how:'In Resources → Refining → Weaving, weave 20 Tier 2 cloth (from Jute).',
+      target:20, progress:function(st){ return (st.stats && st.stats['made_weaving_t2']) || 0; },
+      nav:{ cat:'refining', sub:'weaving' },
+      reward:{ items:[ { itemId:'weaving_t2', qty:30 }, { itemId:'tool_tailoring_t1_normal', qty:1 } ] } },
+    { id:'berry_picker', cat:'secondfrontier', title:'Berry Picker',
+      desc:'The hedgerows are a larder for anyone who looks. Take up Foraging and fill your basket with the frontier’s wild fruit.',
+      how:'In Gathering → Foraging, gather 150 Raspberries (Tier 2).',
+      target:150, progress:function(st){ return (st.stats && st.stats['gathered_foraging_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'foraging' },
+      reward:{ items:[ { itemId:'foraging_t2', qty:40 }, { itemId:'tool_botany_t1_normal', qty:1 } ] } },
+    { id:'the_spice_row', cat:'secondfrontier', title:'The Spice Row',
+      desc:'A pot without seasoning is punishment. Take up Botany and grow the spices that turn a meal into a feast to come.',
+      how:'In Gathering → Botany, gather 150 Garlic (Tier 2).',
+      target:150, progress:function(st){ return (st.stats && st.stats['gathered_botany_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'botany' },
+      reward:{ items:[ { itemId:'botany_t2', qty:40 }, { itemId:'tool_beekeeping_t1_normal', qty:1 } ] } },
+    { id:'bees_and_blossom', cat:'secondfrontier', title:'Bees and Blossom',
+      desc:'Where there are blossoms there is honey, for the hand patient enough to keep the hive. Take up Beekeeping and draw the sweetness out.',
+      how:'In Gathering → Beekeeping, harvest 100 Acacia Honey (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_beekeeping_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'beekeeping' },
+      reward:{ items:[ { itemId:'beekeeping_t2', qty:30 } ] } },
+    { id:'grain_of_the_field', cat:'secondfrontier', title:'Grain of the Field',
+      desc:'Fiber clothes you; grain feeds you. Sow and reap Rye, the bread-grain of every frontier winter.',
+      how:'In Lands → Farming, harvest 50 Rye (Tier 2 grain).',
+      target:50, progress:function(st){ return (st.stats && st.stats['harvested_grain_t2']) || 0; },
+      nav:{ cat:'farming' },
+      reward:{ items:[ { itemId:'grain_t2', qty:30 }, { itemId:'pie_t1', qty:20 } ] } },
+    { id:'feed_it_twice', cat:'secondfrontier', title:'Feed It Twice',
+      desc:'A crop that is fed gives twice what a crop left alone can. Mix the richer Tier 2 fertilizer and give your fields their due.',
+      how:'In Resources → Refining → Fertilizer, craft 10 Tier 2 Fertilizer.',
+      target:10, progress:function(st){ return (st.stats && st.stats['made_fertilizer_t2']) || 0; },
+      nav:{ cat:'refining', sub:'fertilizer' },
+      reward:{ items:[ { itemId:'fertilizer_t2', qty:20 } ] } },
+    { id:'the_deepening_craft', cat:'secondfrontier', title:'The Deepening Craft',
+      desc:'Chamomile was a first lesson. Dandelion is the next. Gather the Tier 2 herb the deeper draughts are built on.',
+      how:'In Gathering → Herbalism, gather 100 Dandelion (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_herbalism_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'herbalism' },
+      reward:{ items:[ { itemId:'elixir_t2', qty:10 } ] } },
+    // ---- Act IV: The Full Larder (20-26) ----
+    { id:'milk_and_churn', cat:'secondfrontier', title:'Milk and Churn',
+      desc:'A settled frontier keeps animals, and animals give more than meat. Draw the milk, work the churn, and press your first wheel of cheese.',
+      how:'In Cooking → Dairy, press a Cheese (milk comes from Ranching).',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_dairy']) || 0; },
+      nav:{ cat:'cooking', sub:'dairy' },
+      reward:{ items:[ { itemId:'tool_ranching_t1_normal', qty:1 } ], gold:2000 } },
+    { id:'the_mushroom_hunter', cat:'secondfrontier', title:'The Mushroom Hunter',
+      desc:'The forest floor hides a harvest for the eyes that know it. Take up Mycology and bring home the good caps, not the last ones.',
+      how:'In Gathering → Mycology, gather 100 Porcini (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_mycology_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'mycology' },
+      reward:{ items:[ { itemId:'mycology_t2', qty:30 }, { itemId:'tool_mycology_t1_normal', qty:1 } ] } },
+    { id:'coopered_oak', cat:'secondfrontier', title:'Coopered Oak',
+      desc:'You cannot brew what you cannot hold. Take up Cooperage and raise a barrel, staves bound tight against the pressure of a good ale.',
+      how:'In Resources → Refining → Cooperage, craft a barrel.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_cooperage']) || 0; },
+      nav:{ cat:'refining', sub:'cooperage' },
+      reward:{ gold:3000 } },
+    { id:'first_brew', cat:'secondfrontier', title:'First Brew',
+      desc:'With a barrel to hold it, the frontier finally gets to celebrate. Take up Brewing and lay down your first proper ale.',
+      how:'In Cooking → Brewing, brew 10 Amber Ale (Tier 2).',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_brewing']) || 0; },
+      nav:{ cat:'cooking', sub:'brewing' },
+      reward:{ gold:3000 } },
+    { id:'a_sweet_tooth', cat:'secondfrontier', title:'A Sweet Tooth',
+      desc:'Berries and honey are good apart and better together. Take up Confectionery and turn the harvest into something worth saving room for.',
+      how:'In Cooking → Confectionery, make 10 confections (Tier 2).',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_confectionery']) || 0; },
+      nav:{ cat:'cooking', sub:'confectionery' },
+      reward:{ gold:2000 } },
+    { id:'set_the_table', cat:'secondfrontier', title:'Set the Table',
+      desc:'A meal fills a belly; a feast lifts a company. Take up Gastronomy and lay a spread the whole party eats from.',
+      how:'In Cooking → Gastronomy, prepare a Cheese Board feast (Tier 2).',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_gastronomy']) || 0; },
+      nav:{ cat:'cooking', sub:'gastronomy' },
+      reward:{ gold:3000 } },
+    { id:'raise_a_toast', cat:'secondfrontier', title:'Raise a Toast',
+      desc:'A brew laid down is only half the point. Drink one, feel the frontier’s work quicken, and understand why anyone bothers to age it.',
+      how:'Drink one of your Brews to gain its bonus-output buff.',
+      target:1, progress:function(st){ return (st.stats && st.stats['brews_drunk']) || 0; },
+      nav:{ cat:'cooking', sub:'brewing' },
+      reward:{ gold:3000 } },
+    // ---- Act V: Prospector’s Luck (27-32) ----
+    { id:'pan_for_rough', cat:'secondfrontier', title:'Pan for Rough',
+      desc:'The frontier keeps its color in the gravel for the ones who sift. Take up Prospecting and find the rough stones worth cutting.',
+      how:'In Gathering → Prospecting, gather 100 Rough Jasper (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_prospecting_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'prospecting' },
+      reward:{ items:[ { itemId:'prospecting_t2', qty:20 }, { itemId:'tool_prospecting_t1_normal', qty:1 } ] } },
+    { id:'cut_and_polish', cat:'secondfrontier', title:'Cut and Polish',
+      desc:'A rough stone is a promise; a cut one is a jewel. Take up Gemcutting and coax the fire out of the gravel you panned.',
+      how:'In Resources → Refining → Gemcutting, cut 10 gems.',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_gemcutting']) || 0; },
+      nav:{ cat:'refining', sub:'gemcutting' },
+      reward:{ gold:3000 } },
+    { id:'set_in_gold', cat:'secondfrontier', title:'Set in Gold',
+      desc:'A cut gem wants a setting worthy of it. Take up Goldsmithing and ring your finger with carried strength.',
+      how:'In Resources → Refining → Goldsmithing, craft a gem-set ring.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_goldsmithing']) || 0; },
+      nav:{ cat:'refining', sub:'goldsmithing' },
+      reward:{ items:[ { itemId:'amulet_t2_rare', qty:1 } ], gold:3000 } },
+    { id:'the_deep_dark', cat:'secondfrontier', title:'The Deep Dark',
+      desc:'Below the seams the frontier grows crystals in the black. Take up Spelunking and bring the deep light back up.',
+      how:'In Gathering → Spelunking, gather 100 Gypsum Crystals (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_spelunking_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'spelunking' },
+      reward:{ items:[ { itemId:'spelunking_t2', qty:20 }, { itemId:'tool_spelunking_t1_normal', qty:1 } ] } },
+    { id:'pearl_diver', cat:'secondfrontier', title:'Pearl Diver',
+      desc:'The shallows hold a slower treasure for the ones who hold their breath. Take up Diving and open the shells the tide left behind.',
+      how:'In Gathering → Diving, gather 50 Freshwater Pearls (Tier 2).',
+      target:50, progress:function(st){ return (st.stats && st.stats['gathered_diving_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'diving' },
+      reward:{ items:[ { itemId:'diving_t2', qty:15 }, { itemId:'tool_diving_t1_normal', qty:1 } ] } },
+    { id:'tap_the_grove', cat:'secondfrontier', title:'Tap the Grove',
+      desc:'A tree bleeds sweetness for the one who taps it kindly. Take up Tapping and draw the syrup the frontier hides in its bark.',
+      how:'In Gathering → Tapping, collect 100 Maple Syrup (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_tapping_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'tapping' },
+      reward:{ items:[ { itemId:'tapping_t2', qty:30 }, { itemId:'tool_tapping_t1_normal', qty:1 } ] } },
+    // ---- Act VI: The Arcane Trades (33-38) ----
+    { id:'motes_of_aether', cat:'secondfrontier', title:'Motes of Aether',
+      desc:'When an elemental shatters, it leaves its spark behind. Take up Essence Harvesting and gather the raw stuff of magic.',
+      how:'In Gathering → Essence Harvesting, gather 100 Pale Wisps (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_essence_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'essence' },
+      reward:{ items:[ { itemId:'essence_t2', qty:30 }, { itemId:'tool_essence_t1_normal', qty:1 } ] } },
+    { id:'scribe_a_sigil', cat:'secondfrontier', title:'Scribe a Sigil',
+      desc:'Magic held still on a page is a tool anyone can carry. Take up Inscription and scribe your first warding sigils.',
+      how:'In Resources → Refining → Inscription, inscribe 5 scrolls.',
+      target:5, progress:function(st){ return (st.stats && st.stats['crafted_inscription']) || 0; },
+      nav:{ cat:'refining', sub:'inscription' },
+      reward:{ gold:3000 } },
+    { id:'the_arcane_spark', cat:'secondfrontier', title:'The Arcane Spark',
+      desc:'Steel is not the only way to strike. Take up Arcanism and shape a wand, staff, or scepter that answers to a word instead of a swing.',
+      how:'In Outfitting → Arcanism, craft a wand, staff, or scepter.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_arcanism']) || 0; },
+      nav:{ cat:'outfitting', sub:'arcanism' },
+      reward:{ itemId:'stweapon_wandFire_t2_rare', qty:1 } },
+    { id:'blow_the_glass', cat:'secondfrontier', title:'Blow the Glass',
+      desc:'Vials for the alchemist, lenses for the scribe, panes for the hall. Take up Glassblowing and give the frontier its clarity.',
+      how:'In Resources → Refining → Glassblowing, blow 20 Glass Panes (Tier 2).',
+      target:20, progress:function(st){ return (st.stats && st.stats['crafted_glassblowing']) || 0; },
+      nav:{ cat:'refining', sub:'glassblowing' },
+      reward:{ gold:2000 } },
+    { id:'paper_and_binding', cat:'secondfrontier', title:'Paper and Binding',
+      desc:'Knowledge unbound scatters; bound, it lasts. Take up Papermaking and Bookbinding and put a proper Almanac on your shelf.',
+      how:'In Resources → Refining → Bookbinding, bind an Almanac (Tier 2 Tome).',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_bookbinding']) || 0; },
+      nav:{ cat:'refining', sub:'bookbinding' },
+      reward:{ items:[ { itemId:'tome_t2', qty:3 } ] } },
+    { id:'ward_reforged', cat:'secondfrontier', title:'Ward Reforged',
+      desc:'A ward turns an enemy’s own element against them. Take up Runesmithing again and inscribe one worthy of Tier 2 foes.',
+      how:'In Outfitting → Runesmithing, inscribe a Tier 2 Ward.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_runesmithing']) || 0; },
+      nav:{ cat:'outfitting', sub:'runesmithing' },
+      reward:{ items:[ { itemId:'stward_wardFire_t1_rare', qty:1 } ], gold:3000 } },
+    // ---- Act VII: Powder & Parts (39-43) ----
+    { id:'pick_the_scrap', cat:'secondfrontier', title:'Pick the Scrap',
+      desc:'One settler’s ruin is another’s raw material. Take up Salvaging and pull the useful bones out of the wreckage.',
+      how:'In Gathering → Salvaging, salvage 100 Broken Cogs (Tier 2).',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_salvaging_t2']) || 0; },
+      nav:{ cat:'gathering', sub:'salvaging' },
+      reward:{ items:[ { itemId:'salvaging_t2', qty:30 }, { itemId:'tool_salvaging_t1_normal', qty:1 } ] } },
+    { id:'the_tinkers_bench', cat:'secondfrontier', title:'The Tinker’s Bench',
+      desc:'Scrap in a pile is junk; scrap in the right order is a machine. Take up Tinkering and build something clever out of the salvage.',
+      how:'In Resources → Refining → Tinkering, assemble a gadget.',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_tinkering']) || 0; },
+      nav:{ cat:'refining', sub:'tinkering' },
+      reward:{ gold:2000 } },
+    { id:'light_the_fuse', cat:'secondfrontier', title:'Light the Fuse',
+      desc:'Some frontier problems are best solved loudly. Take up Pyrotechnics and pack both a bomb and a blinding flash.',
+      how:'In Resources → Refining → Pyrotechnics, craft 2 explosives (a bomb and a flash).',
+      target:2, progress:function(st){ return (st.stats && st.stats['crafted_pyrotechnics']) || 0; },
+      nav:{ cat:'refining', sub:'pyrotechnics' },
+      reward:{ gold:3000 } },
+    { id:'the_apothecary', cat:'secondfrontier', title:'The Apothecary',
+      desc:'Poison is a blade you drink. Take up the Apothecary and brew the draughts that keep you standing when the fight turns.',
+      how:'In Resources → Refining → Apothecary, brew 5 Draughts (Tier 2).',
+      target:5, progress:function(st){ return (st.stats && st.stats['crafted_apothecary']) || 0; },
+      nav:{ cat:'refining', sub:'apothecary' },
+      reward:{ gold:3000 } },
+    { id:'fire_the_kiln', cat:'secondfrontier', title:'Fire the Kiln',
+      desc:'The smelter and the glassblower both need a vessel that will not crack. Take up Pottery and throw the crucibles the other crafts depend on.',
+      how:'In Resources → Refining → Pottery, throw 10 Crucibles (Tier 2).',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_pottery']) || 0; },
+      nav:{ cat:'refining', sub:'pottery' },
+      reward:{ gold:3000 } },
+    // ---- Act VIII: Walls & Waterworks (44-47) ----
+    { id:'raise_the_curb', cat:'secondfrontier', title:'Raise the Curb',
+      desc:'A worked estate deserves an edge. Take up Masonry and raise your first border, the line that says this ground is claimed.',
+      how:'On any estate, raise a border (Curb, Fence, or Wall) to completion.',
+      target:1, progress:function(st){ return (st.stats && st.stats['borders_built']) || 0; },
+      nav:{ cat:'building', sub:'masonry' },
+      reward:{ gold:4000 } },
+    { id:'ring_the_estate', cat:'secondfrontier', title:'Ring the Estate',
+      desc:'One border is a start; a ring of them is a wall. Fence your fields and wall your ground until the estate holds its own shape.',
+      how:'Raise 8 borders in all across your estate (Curbs, Fences, and Walls).',
+      target:8, progress:function(st){ return (st.stats && st.stats['borders_built']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:5000 } },
+    { id:'waters_of_the_estate', cat:'secondfrontier', title:'Waters of the Estate',
+      desc:'Fields drink or they wither. Build an Aqueduct and let the water walk to the crops instead of you.',
+      how:'On any estate, build an Aqueduct.',
+      target:1, progress:function(st){ return (st.stats && st.stats['building_built_aqueduct']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'fertilizer_t2', qty:30 } ] } },
+    { id:'carve_the_idol', cat:'secondfrontier', title:'Carve the Idol',
+      desc:'Wood is not only for walls. Take up Woodcarving and shape an idol worth setting on your land.',
+      how:'In Construction → Woodcarving, carve a Carved Idol (Tier 2).',
+      target:1, progress:function(st){ return (st.stats && st.stats['crafted_woodcarving']) || 0; },
+      nav:{ cat:'building', sub:'woodcarving' },
+      reward:{ gold:3000 } },
+    // ---- Act IX: Fellowship & Fortune (48-50) ----
+    { id:'shape_the_grounds', cat:'secondfrontier', title:'Shape the Grounds',
+      desc:'Ground that will hold a hall has to be made to agree. Raise and lower the land until it lies the way you mean it to, on the guild’s estate or your own.',
+      how:'Change the terrain 3 times (raise or lower tiles) on your guild estate or your own.',
+      target:3, progress:function(st){ return ((st.stats && st.stats['est_raised']) || 0) + ((st.stats && st.stats['est_lowered']) || 0); },
+      nav:{ cat:'estate' },
+      reward:{ gold:5000 } },
+    { id:'pave_the_grounds', cat:'secondfrontier', title:'Pave the Grounds',
+      desc:'A muddy hall is no hall at all. Lay stone underfoot until the ground is fit to cross in good boots, on the guild’s estate or your own.',
+      how:'Pave 3 tiles on your guild estate or your own.',
+      target:3, progress:function(st){ return (st.stats && st.stats['paved_estate']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:5000 } },
+    { id:'climb_the_tower', cat:'secondfrontier', title:'Climb the Tower',
+      desc:'The frontier goes up as well as out. Enter the Tower and clear its first floor, mortal or immortal, the climb takes all comers.',
+      how:'In Battle → The Tower, clear the first floor of any entrance.',
+      target:1, progress:function(st){ var m=0,t=st.tower||{}; for(var k in t){ if(t[k] && t[k].best>m) m=t[k].best; } return Math.min(1,m); },
+      nav:{ cat:'tower' },
+      reward:{ items:[ { itemId:'relic_t2_rare', qty:1 } ], gold:10000 } },
+    { id:'trailblazer_of_the_second_frontier', cat:'secondfrontier', title:'Trailblazer of the Second Frontier', capstone:true,
+      desc:'You came back to a frontier you had already tamed once, and you tamed it again a layer deeper: copper to bronze to tin, a hive and a herd and a still, gems cut and glass blown and powder packed, walls raised and water walked to your fields. There is no basic trade left that your hands have not learned and no First-Frontier ceiling you have not broken. Take the shards; the third layer is waiting.',
+      how:'Complete all 50 other Second Frontier quests. Claiming this crowns you a Trailblazer of the Second Frontier.',
+      target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='secondfrontier' && q.id!=='trailblazer_of_the_second_frontier' && c[q.id]) n++; }); return n; },
+      nav:{ cat:'secondfrontier' },
+      reward:{ titleId:'title_trailblazer', name:'Trailblazer of the Second Frontier', items:[ { itemId:'barrier_shard', qty:10 } ] } }
   ];
   // ---- Tower quests (generated): a Floor-milestone quest per entrance, each rewarding a unique TITLE.
   // Every entrance gets 25/50/75/100; the All Classes entrance climbs on to 500 (grand titles). Progress
@@ -28823,6 +29152,8 @@
     QUESTS.forEach(function(q){ if(q.cat==='estatequests' && !q.capstone){ _en++; QUEST_ORDINAL[q.id] = _en; } });
     var _cn = 0;   // Combat numbers its own 1..50 independently of First Frontier
     QUESTS.forEach(function(q){ if(q.cat==='combatquests' && !q.capstone){ _cn++; QUEST_ORDINAL[q.id] = _cn; } });
+    var _sn = 0;   // Second Frontier numbers its own 1..50 independently
+    QUESTS.forEach(function(q){ if(q.cat==='secondfrontier' && !q.capstone){ _sn++; QUEST_ORDINAL[q.id] = _sn; } });
     TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.titleId; })
       .map(function(q){ return { id: q.reward.titleId, name: q.reward.name, how: q.how || q.desc, questId: q.id }; });
     TITLE_BY_ID = {}; TITLES.forEach(function(t){ TITLE_BY_ID[t.id] = t; });
@@ -28910,6 +29241,17 @@
     { title:'Act VIII · Faith & Flask',    from:39, to:41 },
     { title:'Act IX · Adornment',          from:42, to:45 },
     { title:'Act X · Legacy',              from:46, to:50 }
+  ];
+  var SF_ACTS = [
+    { title:'Act I · Return to the Frontier',  from:1,  to:5  },
+    { title:'Act II · The Bronze Age',         from:6,  to:12 },
+    { title:'Act III · Field, Grove & Hive',   from:13, to:19 },
+    { title:'Act IV · The Full Larder',        from:20, to:26 },
+    { title:'Act V · Prospector’s Luck',       from:27, to:32 },
+    { title:'Act VI · The Arcane Trades',      from:33, to:38 },
+    { title:'Act VII · Powder & Parts',        from:39, to:43 },
+    { title:'Act VIII · Walls & Waterworks',   from:44, to:47 },
+    { title:'Act IX · Fellowship & Fortune',   from:48, to:50 }
   ];
   function questClaimableInCat(catId){ return QUESTS.some(function(q){ return q.cat===catId && questClaimable(q); }); }
   function questAnyClaimable(){ return QUESTS.some(questClaimable); }
@@ -29058,8 +29400,8 @@
       });
       return html;
     }
-    if(catId === 'gettingstarted' || catId === 'combatquests' || catId === 'estatequests'){
-      var ACTS = (catId === 'combatquests') ? CB_ACTS : (catId === 'estatequests') ? EST_ACTS : FF_ACTS;
+    if(catId === 'gettingstarted' || catId === 'combatquests' || catId === 'estatequests' || catId === 'secondfrontier'){
+      var ACTS = (catId === 'combatquests') ? CB_ACTS : (catId === 'estatequests') ? EST_ACTS : (catId === 'secondfrontier') ? SF_ACTS : FF_ACTS;
       // Ready-to-claim float to the very top; in-progress quests group under their narrative Act; claimed sink.
       var claimableQs = list.filter(questClaimable), claimedQs = list.filter(questClaimed);
       if(claimableQs.length){
@@ -44637,7 +44979,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.97.8';
+  var GAME_VERSION = '0.0.98.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
