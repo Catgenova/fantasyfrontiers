@@ -19291,6 +19291,50 @@
     s.mortal = sv;
   });
 
+  // ---- Start Over as a Mortal (Settings > Account, v0.0.97.3): three-confirm restart flow ------------
+  suite('start over as a Mortal (three confirmations)', function(){
+    var s = FF._state;
+    // The fresh state is pure day-one with the Mortal path pre-chosen; interface/QoL settings ride
+    // across (they are preferences, not progress). Tested via the PURE builder: the real execute swaps
+    // the live state object out from under the FF seam, so it must never run inside the suite.
+    var savedSetting = s.settings.autoHarvest;
+    s.settings.autoHarvest = true;
+    var f = FF.mortalRestartFreshState();
+    eq(f.mortal, true, 'a restart adopts the Mortal path directly (no Choose Your Path gate)');
+    eq(f.gold, 25, 'the fresh state starts at day-one gold');
+    ok(Object.keys(f.xp).every(function(k){ return f.xp[k] === 0; }), 'every skill starts back at zero');
+    ok(Object.keys(f.inventory || {}).length === 0, 'the fresh inventory is empty');
+    eq(f.settings.autoHarvest, true, 'interface/QoL preferences ride across the wipe');
+    ok(f !== s && f.settings !== s.settings, 'the fresh state shares nothing with the live one (settings deep-copied)');
+    s.settings.autoHarvest = savedSetting;
+    // Three DISTINCT confirmations, walked strictly in order, and only the last can execute.
+    ok(Array.isArray(FF.MORTAL_RESTART_STEPS) && FF.MORTAL_RESTART_STEPS.length === 3, 'exactly three confirmation steps');
+    ok(new Set(FF.MORTAL_RESTART_STEPS.map(function(d){ return d.title; })).size === 3, 'each confirmation is its own modal with its own title');
+    ok(FF.MORTAL_RESTART_STEPS.every(function(d){ return d.body.length > 40 && d.confirm; }), 'every step carries real warning copy and its own confirm label');
+    FF.openMortalRestart();
+    eq(FF.mortalRestartStepNow(), 1, 'opening starts at confirmation 1');
+    var ov = document.getElementById('mortalRestartOverlay');
+    ok(ov && /Confirmation 1 of 3/.test(ov.textContent), 'modal 1 shows its step counter');
+    ok(!!ov.querySelector('[data-action="mortalRestartNext"]') && !ov.querySelector('[data-action="mortalRestartConfirm"]'), 'modal 1 can only advance, never execute');
+    ok(!!ov.querySelector('[data-action="mortalRestartCancel"]'), 'modal 1 offers Cancel');
+    FF.mortalRestartAdvance();
+    eq(FF.mortalRestartStepNow(), 2, 'confirming modal 1 opens confirmation 2');
+    ok(/Confirmation 2 of 3/.test(ov.textContent), 'modal 2 shows its step counter');
+    ok(!!ov.querySelector('[data-action="mortalRestartNext"]') && !ov.querySelector('[data-action="mortalRestartConfirm"]'), 'modal 2 can only advance, never execute');
+    FF.mortalRestartAdvance();
+    eq(FF.mortalRestartStepNow(), 3, 'confirming modal 2 opens confirmation 3');
+    ok(/Confirmation 3 of 3/.test(ov.textContent), 'modal 3 shows its step counter');
+    ok(!ov.querySelector('[data-action="mortalRestartNext"]') && !!ov.querySelector('[data-action="mortalRestartConfirm"]'), 'ONLY the third modal carries the execute action');
+    FF.mortalRestartAdvance();
+    eq(FF.mortalRestartStepNow(), 3, 'the flow cannot advance past the final confirmation');
+    FF.closeMortalRestart();
+    eq(FF.mortalRestartStepNow(), 0, 'cancel closes the whole flow');
+    ok(!document.getElementById('mortalRestartOverlay').className, 'the overlay is cleared on cancel');
+    FF.openMortalRestart();
+    eq(FF.mortalRestartStepNow(), 1, 'reopening always starts over at confirmation 1 (no resuming half a flow)');
+    FF.closeMortalRestart();
+  });
+
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
   suite('blacksmithing forge groups', function(){
     ok(Array.isArray(FF.TOOL_TYPES) && FF.TOOL_TYPES.length > 0, 'TOOL_TYPES exported');

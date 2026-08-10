@@ -16180,6 +16180,93 @@
     if(cb) cb(n);
   }
 
+  // ---- Start Over as a Mortal (Settings > Account, v0.0.97.3) ---------------------------------------
+  // A full, deliberate progress wipe that restarts the account at day one on the Mortal path. THREE
+  // separate confirmation modals, each with its own explicit confirm (owner order): a wipe reached
+  // through one mis-click would be the worst support ticket the game can generate, so the player walks
+  // 1 -> 2 -> 3 with Cancel (and backdrop/Escape) bailing out of the whole flow at every step, and only
+  // the THIRD modal carries the execute action at all. Every server surface already handles a deliberate
+  // reset: save_game accepts a forced regression (its force flag exists for exactly this), the wallet
+  // clamps its balance to the reported (now lower) gold, submit_profile always allows decreases, and the
+  // item ledger's reconcile can only remove items. Guild membership is an account property, not
+  // progress, so it survives the wipe untouched.
+  var mortalRestartStep = 0;   // 0 = closed, 1..3 = which of the three confirmations is showing
+  var MORTAL_RESTART_STEPS = [
+    { title:'Start Over as a Mortal?',
+      body:'This erases EVERYTHING on this account: every skill and level, all gold, your inventory and gear, familiars, estate, quests and titles. You begin again from nothing on the Mortal path: a single life, all or nothing.',
+      confirm:'Continue' },
+    { title:'Your progress will be wiped',
+      body:'There is no backup and no undo. The moment you confirm the final step, your cloud save is overwritten and your old character is gone forever. Support cannot restore wiped progress.',
+      confirm:'I am certain, continue' },
+    { title:'Final confirmation',
+      body:'Last chance. Confirming now permanently erases all progress and starts you over at the very beginning as a Mortal. There is no going back.',
+      confirm:'Erase everything. Begin as a Mortal' }
+  ];
+  function mortalRestartStepNow(){ return mortalRestartStep; }
+  function openMortalRestart(){ mortalRestartStep = 1; renderMortalRestartModal(); }
+  function closeMortalRestart(){
+    mortalRestartStep = 0;
+    var ov = document.getElementById('mortalRestartOverlay');
+    if(ov){ ov.innerHTML = ''; ov.className = ''; }
+  }
+  function mortalRestartAdvance(){
+    if(mortalRestartStep < 1 || mortalRestartStep >= 3) return;   // only 1 -> 2 -> 3; never a skip, never past the end
+    mortalRestartStep += 1;
+    renderMortalRestartModal();
+  }
+  function renderMortalRestartModal(){
+    var def = MORTAL_RESTART_STEPS[mortalRestartStep - 1];
+    if(!def){ closeMortalRestart(); return; }
+    var ov = document.getElementById('mortalRestartOverlay');
+    if(!ov){
+      ov = document.createElement('div'); ov.id = 'mortalRestartOverlay'; ov.className = 'familiar-popup-overlay';
+      ov.style.zIndex = '10008';   // above the settings modal and the amount modal
+      document.getElementById('app').appendChild(ov);
+      ov.addEventListener('click', function(e){ if(e.target === ov) closeMortalRestart(); });   // backdrop tap = cancel the whole flow
+      ov.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeMortalRestart(); });
+    }
+    var isFinal = mortalRestartStep === 3;
+    var h = '<div class="familiar-popup-card" data-action="noop" style="max-width:400px;width:100%;">';
+    h += '<div class="familiar-popup-title" style="color:var(--hp-bad);">' + escapeHtml(def.title) + '</div>';
+    h += '<div class="settings-row-desc" style="text-align:center;margin:0 0 6px;color:var(--gold);">Confirmation ' + mortalRestartStep + ' of 3</div>';
+    h += '<div class="settings-row-desc" style="text-align:center;margin:0 0 14px;">' + escapeHtml(def.body) + '</div>';
+    h += '<div style="display:flex;gap:8px;">';
+    h += '<button id="mortalRestartCancelBtn" class="action-btn" data-action="mortalRestartCancel" style="flex:1;">Cancel</button>';
+    h += '<button class="action-btn stop" data-action="' + (isFinal ? 'mortalRestartConfirm' : 'mortalRestartNext') + '" style="flex:1;">' + escapeHtml(def.confirm) + '</button>';
+    h += '</div></div>';
+    ov.innerHTML = h;
+    ov.className = 'familiar-popup-overlay';
+    // Focus the SAFE button so a stray Enter can never confirm, and Escape cancels from anywhere inside.
+    var cb = document.getElementById('mortalRestartCancelBtn');
+    if(cb) setTimeout(function(){ try{ cb.focus(); }catch(e){} }, 0);
+  }
+  // The fresh state a restart adopts. PURE (no swap, no saves) so the selftest suite can exercise it
+  // without replacing the live state object the FF seam holds a direct reference to. Interface/QoL
+  // preferences are NOT progress, so they ride across; everything else is newGame()'s day-one state,
+  // with the Mortal path pre-chosen (the button IS the choice, so no Choose Your Path gate on reboot).
+  function mortalRestartFreshState(){
+    var s = newGame();
+    s.mortal = true;
+    try{ s.settings = JSON.parse(JSON.stringify(state.settings)); }catch(e){}
+    return s;
+  }
+  function mortalRestartExecute(){
+    closeMortalRestart();
+    // Release any active server-side estate job row (fire-and-forget). The wiped save no longer knows
+    // the job exists; left alone it would complete against an empty estate and refund materials the
+    // fresh character never paid. Personal jobs only: guild estate jobs belong to the guild, not you.
+    try{ if(chatClient && authUser && authUser.id) chatClient.rpc('estate_job_cancel').then(function(){}, function(){}); }catch(e){}
+    state = mortalRestartFreshState();
+    currentCategory = 'gathering'; currentSub = 'digging';
+    addLog('Your old life fades away. You set out again upon the Mortal path. A single life, all or nothing.', 'important');
+    saveGame();
+    cloudSave(true);   // forced: a deliberate reset LOWERS progress past the forward-only guard (the resetGame pattern)
+    try{ profileSync(true); }catch(e){}   // republish the leaderboard row (decreases are always accepted)
+    try{ walletSync(true); }catch(e){}    // clamp the server wallet down to day-one gold now, not on the next tick
+    needsRender = true;
+    render();
+  }
+
   var floatingTextCount = 0;
   // Global floating text (XP ticks, task-row reward floats, combat numbers over the orbs) is on.
   // The old per-task result popups that jittered over the action-bar card (spawnFloatingText, gated on an
@@ -29743,6 +29830,10 @@
       html += renderRecoverySettings();
       html += renderDiscordSettings();
       html += renderServerBuffSettings();
+      // Danger zone: the full restart. Three separate confirmations stand between this button and the
+      // wipe, but it still reads as what it is from the very first glance.
+      html += '<div class="settings-row"><div><div class="settings-row-label" style="color:var(--hp-bad);">Start over as a Mortal</div><div class="settings-row-desc">Erase ALL progress on this account and begin again from nothing on the Mortal path. Three confirmations, then there is no going back.</div></div>';
+      html += '<button class="action-btn stop" data-action="mortalRestartOpen" style="width:auto;flex:0 0 auto;">Start Over</button></div>';
     } else if(settingsTab==='profile'){
       var _eqTitle = state.equippedTitle && TITLE_BY_ID[state.equippedTitle];
       html += '<div class="settings-row"><div><div class="settings-row-label">Current title</div><div class="settings-row-desc">'
@@ -43445,6 +43536,11 @@
       if(_offCrafts && (Object.keys(_offCrafts).length || _offCraftsMore > 0)) queueCraftBatch(_offCrafts, _offCraftsMore); // third: every rare/supreme creation, one screen
     },
     closeSettings: function(btn, e){ settingsOpen = false; },
+    // Start Over as a Mortal: the three-confirm restart flow (Settings > Account danger row).
+    mortalRestartOpen: function(btn, e){ settingsOpen = false; renderSettingsModal(); openMortalRestart(); },
+    mortalRestartCancel: function(btn, e){ closeMortalRestart(); },
+    mortalRestartNext: function(btn, e){ mortalRestartAdvance(); },
+    mortalRestartConfirm: function(btn, e){ mortalRestartExecute(); },
     setSettingsTab: function(btn, e){ settingsTab = btn.getAttribute('data-tab') || 'profile'; if(settingsTab==='moderation') chatModLoad().then(function(){ renderSettingsModal(); }); renderSettingsModal(); },
     chatModAppoint: function(btn, e){ chatModAppoint(); },
     chatModRemove: function(btn, e){ chatModAct('chat_set_role', { p_target: btn.getAttribute('data-uid'), p_role:'none' }); },
@@ -44507,7 +44603,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.97.2';
+  var GAME_VERSION = '0.0.97.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44628,6 +44724,7 @@
       _startLoop: function(){ if(!gameStarted){ gameStarted = true; lastTick = Date.now(); requestAnimationFrame(loop); } },
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, jewelrySuccessRate:jewelrySuccessRate, craftSuccessRate:craftSuccessRate, grossMotorCraftSuccessBonus:grossMotorCraftSuccessBonus, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
+      MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost, ESTATE_EXPANSION_ORDER:ESTATE_EXPANSION_ORDER, estateExpand:estateExpand,
       ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
