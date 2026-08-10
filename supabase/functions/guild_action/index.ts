@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
             await admin.from("guild_messages").insert({
               guild_id: me.guild_id, user_id: heir.user_id, username: "Guild",
               body: "\u{1F451} " + heir.username + " is now guild leader" +
-                (leaderRow ? " — " + leaderRow.username + " has been away " + days + "+ days." : "."),
+                (leaderRow ? ". " + leaderRow.username + " has been away " + days + "+ days." : "."),
             });
             // Reflect the handoff in THIS response so the viewer never sees the stale roster.
             if (leaderRow) leaderRow.rank = "officer";
