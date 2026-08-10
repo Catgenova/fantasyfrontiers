@@ -15703,22 +15703,24 @@
   var ESTATE_CORE_OFFSET = 5; // core spans indices 5..14 inclusive within the 20x20 grid
   var ESTATE_MAX_HEIGHT = 20;
   var ESTATE_BASE_HEIGHT = 8;
-  // ---- EXPANSION COST: 1000g on the first tile, +10% per tile bought (owner change, v0.0.95.1) --------
+  // ---- EXPANSION COST: 1000g on the first tile, 2.5B on the 300th and last (owner change, v0.0.97.8) --
   // THE MULTIPLIER COMPOUNDS PER TILE, NOT PER RING, and the rings are 44 to 76 tiles each, so the
-  // exponent runs 0..299 over a full estate. That is what made the old 1.25 unreachable: it doubles every
-  // 3.1 tiles, so the last tile of ring 1 cost 14.7M, ring 2 opened at 18.4M, and the final tile priced at
-  // 9.5e31 gold. In practice nobody left ring 1.
+  // exponent runs 0..299 over a full estate. The curve is now DEFINED BY ITS TWO ENDPOINTS: the
+  // multiplier is derived from "tile 1 costs BASE, tile 300 costs FINAL" rather than stated directly,
+  // so the design anchors are the literals and the per-tile rate (~1.0505, doubling every ~14 tiles)
+  // follows from them. Ring totals: ring 1 (12x12) 153k, ring 2 (14x14) 2.07M, ring 3 (16x16) 40.9M,
+  // ring 4 (18x18) 1.19B, ring 5 (20x20) 50.8B; the whole 300-tile estate sums to ~52B gold.
   //
-  // At 1.10 it doubles every 7.3 tiles instead. Completing ring 1 (12x12) drops from 73.5M to 653k, ring 2
-  // (14x14) lands at 94M and ring 3 (16x16) at 28.7B. The full 20x20 is still 26 quadrillion and therefore
-  // still out of reach: 300 compounding purchases run away at any multiplier much above 1.02, so the
-  // reachable ceiling moved from ring 1 into ring 2/3 rather than to the edge of the grid. That is the
-  // intended shape -- expansion is a long curve, not a completable checklist.
+  // This replaces v0.0.95.1's flat 1.10, whose final tile priced at 2.38e15 gold: that curve kept the
+  // reachable ceiling at ring 2/3 by design. The owner's change here makes the full 20x20 a completable
+  // long-term goal instead, with rings 4-5 carrying 98% of the total cost.
   //
   // No migration and no refund: the cost is computed from expansionsPurchased at click time, so a player
   // who already bought tiles simply finds every remaining tile cheaper.
   var ESTATE_EXPANSION_BASE_COST = 1000;
-  var ESTATE_EXPANSION_MULT = 1.10;
+  var ESTATE_EXPANSION_FINAL_COST = 2.5e9;
+  var ESTATE_EXPANSION_TILE_COUNT = ESTATE_GRID_SIZE*ESTATE_GRID_SIZE - ESTATE_CORE_SIZE*ESTATE_CORE_SIZE; // 300
+  var ESTATE_EXPANSION_MULT = Math.pow(ESTATE_EXPANSION_FINAL_COST / ESTATE_EXPANSION_BASE_COST, 1 / (ESTATE_EXPANSION_TILE_COUNT - 1));
   function estateIsCoreTile(x, y){
     return x>=ESTATE_CORE_OFFSET && x<ESTATE_CORE_OFFSET+ESTATE_CORE_SIZE &&
            y>=ESTATE_CORE_OFFSET && y<ESTATE_CORE_OFFSET+ESTATE_CORE_SIZE;
@@ -44758,7 +44760,7 @@
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState, mortalRestartLeavesGuild:mortalRestartLeavesGuild,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost, ESTATE_EXPANSION_ORDER:ESTATE_EXPANSION_ORDER, estateExpand:estateExpand,
-      ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST,
+      ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST, ESTATE_EXPANSION_FINAL_COST:ESTATE_EXPANSION_FINAL_COST, ESTATE_EXPANSION_TILE_COUNT:ESTATE_EXPANSION_TILE_COUNT,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, applySbEchoTick:applySbEchoTick, spellbladeBonus:spellbladeBonus, effectGateOpen:effectGateOpen, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
