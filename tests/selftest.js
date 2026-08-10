@@ -10749,8 +10749,20 @@
     eq(FF.questById('strike_tin').progress({ stats:{ gathered_mining_t2:150 } }), 150, 'Strike Tin reads Tin ore (mining t2)');
     eq(FF.questById('cast_the_bronze').progress({ stats:{ made_metallurgy_t1:150 } }), 150, 'Cast the Bronze reads Bronze bars (metallurgy t1)');
     eq(FF.questById('into_tin').progress({ stats:{ made_metallurgy_t2:100 } }), 100, 'Into Tin reads Tin bars (metallurgy t2)');
-    eq(FF.questById('the_weaponsmith').progress({ stats:{ crafted_weaponsmithing:1 } }), 1, 'The Weaponsmith reads the special-forge crafted_weaponsmithing tally');
-    eq(FF.questById('the_arcane_spark').progress({ stats:{ crafted_arcanism:1 } }), 1, 'The Arcane Spark reads crafted_arcanism');
+    // The smith quests name a TIER in their text ("Bronze (Tier 1)"), so they must gate on the tier-specific
+    // made_<skill>_t1 counter -- NOT the tier-agnostic crafted_<skill> (ticket-0174: a Tungsten/t20 plate
+    // wrongly completed "The Armorer", which asks for Bronze/t1).
+    eq(FF.questById('the_weaponsmith').progress({ stats:{ made_weaponsmithing_t1:1 } }), 1, 'The Weaponsmith reads Bronze (armorsmithing t1) crafts');
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t1:1 } }), 1, 'The Armorer reads a Bronze (t1) plate forge');
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1, crafted_armorsmithing:9 } }), 0, 'The Armorer does NOT complete on a Tungsten (t20) forge (the ticket)');
+    eq(FF.questById('the_shieldwright').progress({ stats:{ made_shieldsmithing_t1:1 } }), 1, 'The Shieldwright reads a Bronze (t1) shield forge');
+    // Every Second Frontier craft quest whose text names a Tier 2 now gates on the t2 counter, not any-tier.
+    eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t2:1 } }), 1, 'Ward Reforged reads a Tier 2 ward');
+    eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t5:1 } }), 0, 'Ward Reforged ignores a higher-tier ward');
+    eq(FF.questById('first_brew').progress({ stats:{ made_brewing_t2:10 } }), 10, 'First Brew reads Tier 2 Amber Ale');
+    eq(FF.questById('carve_the_idol').progress({ stats:{ made_woodcarving_t2:1 } }), 1, 'Carve the Idol reads a Tier 2 carving');
+    // Quests whose text names NO tier stay tier-agnostic (any-tier craft is correct there).
+    eq(FF.questById('the_arcane_spark').progress({ stats:{ crafted_arcanism:1 } }), 1, 'The Arcane Spark (no tier in text) stays any-tier');
     eq(FF.questById('bond_anew').progress({ familiars:{ mining:{ level:10 }, forestry:{ level:3 } } }), 10, 'Bond Anew reads the highest familiar level, capped at 10');
     eq(FF.questById('shape_the_grounds').progress({ stats:{ est_raised:2, est_lowered:1 } }), 3, 'Shape the Grounds sums raise + lower (guild or own)');
     eq(FF.questById('waters_of_the_estate').progress({ stats:{ building_built_aqueduct:1 } }), 1, 'Waters of the Estate reads the aqueduct build');
