@@ -10762,6 +10762,55 @@
     eq(cap.progress(cs), 50, 'the capstone reads 50 once every other Second Frontier quest is claimed');
   });
 
+  // ---- Frontier generator (v0.0.99.0): Third/Fourth/Fifth Frontiers, one template at t3/t4/t5 ----
+  suite('Frontier system: generated Third/Fourth/Fifth questlines', function(){
+    var specs = [ {id:'thirdfrontier',tier:3,ord:3,shards:15,title:'title_pathfinder'},
+                  {id:'fourthfrontier',tier:4,ord:4,shards:20,title:'title_vanguard'},
+                  {id:'fifthfrontier',tier:5,ord:5,shards:25,title:'title_pioneer'} ];
+    specs.forEach(function(spec){
+      var all = FF.QUESTS.filter(function(q){ return q.cat===spec.id; });
+      var body = all.filter(function(q){ return !q.capstone; });
+      var caps = all.filter(function(q){ return q.capstone; });
+      ok(body.length >= 30, spec.id+' generated a full questline ('+body.length+' quests)');
+      eq(caps.length, 1, spec.id+' has exactly one capstone');
+      ok(FF.isQuestCategory(spec.id), spec.id+' is a registered quest category');
+      // 1..N contiguous ordinals, capstone excluded.
+      var nums = body.map(function(q){ return FF.QUEST_ORDINAL[q.id]; }).sort(function(a,b){ return a-b; });
+      var contig = nums[0]===1 && nums.every(function(n,i){ return n===i+1; });
+      ok(contig, spec.id+' ordinals are 1..'+body.length+' with no gaps');
+      ok(FF.QUEST_ORDINAL[caps[0].id] === undefined, spec.id+' capstone carries no ordinal');
+      // The opener is an n-day login reading login_days, target = the frontier ordinal.
+      var opener = FF.questById(spec.id+'_arrival');
+      ok(opener && opener.target===spec.ord, spec.id+' opens on day '+spec.ord);
+      eq(opener.progress({ stats:{ login_days:spec.ord } }), spec.ord, spec.id+' opener reads login_days');
+      // Every reward id resolves (questRewardLabel renders the name, so the raw id must not survive).
+      var bad=null;
+      all.forEach(function(q){ var ids=[],r=q.reward||{}; if(r.itemId)ids.push(r.itemId); if(r.items)r.items.forEach(function(it){ ids.push(it.itemId); });
+        var label=FF.questRewardLabel(q); ids.forEach(function(id){ if(label.indexOf(id)!==-1) bad=q.id+' -> '+id; }); });
+      ok(!bad, spec.id+' every reward id resolves ('+(bad||'clean')+')');
+      // Capstone crowns its title and pays its Barrier Shards.
+      var cap = caps[0];
+      eq(cap.reward.titleId, spec.title, spec.id+' capstone grants '+spec.title);
+      var shard = (cap.reward.items||[]).filter(function(it){ return it.itemId==='barrier_shard'; })[0];
+      ok(shard && shard.qty===spec.shards, spec.id+' capstone pays '+spec.shards+' Barrier Shards');
+      // A tier-gated craft quest reads the uniform made_<skill>_t<tier> counter.
+      var metal = FF.questById(spec.id+'_r_metallurgy');
+      if(metal){ var k='made_metallurgy_t'+spec.tier, s={stats:{}}; s.stats[k]=10;
+        eq(metal.progress(s), 10, spec.id+' metallurgy quest reads made_metallurgy_t'+spec.tier); }
+      // A gather quest reads gathered_<skill>_t<tier>.
+      var mine = FF.questById(spec.id+'_g_mining');
+      if(mine){ var mk='gathered_mining_t'+spec.tier, ms={stats:{}}; ms.stats[mk]=100;
+        eq(mine.progress(ms), 100, spec.id+' mining quest reads gathered_mining_t'+spec.tier); }
+      // Capstone counts its body once all are claimed.
+      var cs={quests:{claimed:{}}}; body.forEach(function(q){ cs.quests.claimed[q.id]=1; });
+      eq(cap.progress(cs), body.length, spec.id+' capstone completes when the body is claimed');
+    });
+    // The three frontiers escalate the shard payout (15 -> 20 -> 25).
+    var pay = specs.map(function(s){ var c=FF.QUESTS.filter(function(q){return q.cat===s.id&&q.capstone;})[0];
+      return (c.reward.items||[]).filter(function(it){return it.itemId==='barrier_shard';})[0].qty; });
+    ok(pay[0]<pay[1] && pay[1]<pay[2], 'Barrier Shard payout escalates across the three frontiers');
+  });
+
   // ---- Quest progress must survive counters past 2^31 (ticket-0167) --------------------------------
   // questProgress coerced with |0, a SIGNED 32-BIT truncation: cb_dmg passes 2,147,483,647 in a couple
   // of endgame swings (~1e11 each), the wrap usually lands negative, and Math.max pinned the display at
@@ -10829,9 +10878,10 @@
     ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
-    // 116 tower + four capstones: Frontier Hero (First Frontier), Lord of the Manor (Estate),
-    // Warlord of the Frontier (Combat), and Trailblazer of the Second Frontier (Second Frontier, v0.0.98.0).
-    eq(FF.TITLES.length, 120, 'the Titles registry has one entry per tower quest (116) plus the four capstones');
+    // 116 tower + seven capstones: Frontier Hero (First), Lord of the Manor (Estate), Warlord (Combat),
+    // Trailblazer (Second, v0.0.98.0), and Pathfinder/Vanguard/Pioneer (the generated Third/Fourth/Fifth
+    // Frontiers, v0.0.99.0).
+    eq(FF.TITLES.length, 123, 'the Titles registry has one entry per tower quest (116) plus the seven capstones');
     // Registry order follows the QUESTS array, so the static capstones lead in the order they are defined:
     // First Frontier, then Estate, then Combat. Asserted by SET rather than fixed indices past the first,
     // so adding a fourth capstone does not fail here for the wrong reason.
@@ -10839,13 +10889,15 @@
     var _capIds = FF.TITLES.slice(0, 3).map(function(t){ return t.id; }).sort();
     eq(_capIds.join(','), 'title_frontier_hero,title_lord_of_the_manor,title_warlord_of_the_frontier',
        'the three capstone titles lead the registry');
-    // Order: the whole All Classes ladder (25..500 = 20 titles) comes next, then the per-class titles.
-    // Indexed from the count of static capstone titles rather than a hardcoded 1, so adding a third capstone
-    // moves this by itself instead of failing here.
-    var _statics = FF.TITLES.filter(function(t){ return !/^title_all_f/.test(t.id) && !/^title_.*_f\d+$/.test(t.id); }).length;
-    var _allTitles = FF.TITLES.slice(_statics, _statics + 20);
+    // Order: the whole All Classes ladder (25..500 = 20 titles) leads the tower block, then per-class titles.
+    // Capstone titles bracket the tower block (the hand-authored ones lead the registry; the GENERATED Frontier
+    // capstones are pushed last and trail it), so locate the tower ladder by scanning for its first entry
+    // rather than counting statics -- that stays correct however many capstones are added on either side.
+    var _firstTower = 0;
+    while(_firstTower < FF.TITLES.length && !/^title_all_f/.test(FF.TITLES[_firstTower].id) && !/_f\d+$/.test(FF.TITLES[_firstTower].id)) _firstTower++;
+    var _allTitles = FF.TITLES.slice(_firstTower, _firstTower + 20);
     ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 tower titles are the full All Classes ladder (25-500)');
-    ok(!/^title_all_f/.test(FF.TITLES[_statics + 20].id), 'the individual class titles follow the All Classes block');
+    ok(!/^title_all_f/.test(FF.TITLES[_firstTower + 20].id), 'the individual class titles follow the All Classes block');
     ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
     ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
     // Equip system: only earned titles equip; toggling / unequip clears.
