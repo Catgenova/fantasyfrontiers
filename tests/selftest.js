@@ -18586,6 +18586,23 @@
     // counted ONCE (via pending), landing at 1200 -- not double-counted to 1400. This is the regression
     // guard for the phantom-gold loop (gold bouncing up ~20M/hr, dragging save + wallet with it).
     eq(R(1200, 1000, 1200, 1000, 1000, 1000), 1200, 'mid-request earn is counted once, not doubled');
+    // ---- Mortal-reset gold recovery (bug: reset accounts keep resetting to 0) --------------------
+    var A = FF.walletReanchorEarned;
+    ok(typeof A === 'function', 'walletReanchorEarned exported');
+    // A normal player LEADS the server (the server never credits ahead of what the client reported), so the
+    // re-anchor is a no-op and never disturbs a healthy account.
+    eq(A(5000000, 3000000), 5000000, 'a normal player (local >= server) keeps its own anchor');
+    eq(A(5000000, 5000000), 5000000, 'equal anchors are unchanged');
+    // A Mortal reset restarts goldEarnedTotal near 0 while the server keeps the OLD character's monotonic
+    // earned_total -> the account adopts the server floor so fresh earnings become real deltas again.
+    eq(A(25, 50000000), 50000000, 'a reset account adopts the server earned floor');
+    // End-to-end: WITHOUT the re-anchor, an earn after reset is clamped to 0 forever. Server keeps
+    // earned=50M/gold=0; the player earns 1000, so local earned is only 1025 -> pending = max(0,1025-50M)=0
+    // -> reconcile returns 0. This is exactly the reported "keeps resetting to 0".
+    eq(R(1000, 1000, 1025, 1025, 0, 50000000), 0, 'without re-anchor, post-reset earnings clamp to 0 (the bug)');
+    // WITH the re-anchor, the prior sync lifted local earned to 50M; a fresh 1000 makes it 50,001,000, the
+    // server credits the 1000 delta, and gold lands at 1000 like any normal earn.
+    eq(R(1000, 1000, 50001000, 50001000, 1000, 50001000), 1000, 'with re-anchor, post-reset earnings credit normally');
     // Treasure-chest gold is banked exempt via wallet.earn_chest (server-verified by an item_debit),
     // credited in full to the server balance outside the token bucket -- so it reconciles like any
     // already-credited gold and is never throttled/clamped. Its credit does NOT flow through

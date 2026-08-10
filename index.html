@@ -16202,6 +16202,10 @@
   // clamps its balance to the reported (now lower) gold, submit_profile always allows decreases, and the
   // item ledger's reconcile can only remove items. Guild membership is an account property, not
   // progress, so it survives the wipe untouched.
+  // WALLET CAVEAT (bug fixed v0.0.99.1): the wallet's earned_total is MONOTONIC and survives the wipe, so
+  // the fresh save's near-zero goldEarnedTotal has to be re-anchored UP to it on sync (walletReanchorEarned)
+  // -- otherwise the earn delta stays <=0, nothing is ever credited, and the sync-clamp keeps wiping gold to
+  // 0. That recovery is self-healing, so it also un-sticks accounts that reset before this fix.
   var mortalRestartStep = 0;   // 0 = closed, 1..3 = which of the three confirmations is showing
   var MORTAL_RESTART_STEPS = [
     { title:'Start Over as a Mortal?',
@@ -39246,6 +39250,20 @@
     var nonEarnDrift = goldDelta - earnedDelta; // spends (and any non-earn change); earns flow via pending
     return Math.max(0, Math.floor(serverGold) + pending + nonEarnDrift);
   }
+  // Re-anchor the local lifetime-earned floor UP to the server's authoritative value. Normally the client
+  // LEADS (local goldEarnedTotal >= server earned_total): the server only ever credits against what the
+  // client reported, so it can never run ahead. "Start Over as a Mortal" is the one case that inverts it --
+  // the fresh save restarts goldEarnedTotal near 0 while the server keeps the OLD character's MONOTONIC
+  // earned_total. Left alone, every later sync computes delta = reportedEarned - serverEarned <= 0, so no
+  // new earning is ever credited and the sync-clamp drags gold back to 0 forever (the reported bug: gold on
+  // a Mortal-reset account keeps resetting to 0). Adopting the server's floor makes the new character's
+  // earnings register as real deltas again. Self-healing: it fixes an already-stuck account on its next
+  // sync with no reset re-run. For a non-reset player it is a no-op, and it grants no exploit -- the anchor
+  // only bounds how much the rate-limited server will credit; it never mints gold.
+  function walletReanchorEarned(localEarned, serverEarned){
+    return (typeof serverEarned === 'number' && isFinite(serverEarned) && Math.floor(serverEarned) > (localEarned||0))
+      ? Math.floor(serverEarned) : Math.floor(localEarned||0);
+  }
   async function walletSync(force){
     if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
     if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never credit this tab's gold to it
@@ -39266,6 +39284,11 @@
         var cv = document.getElementById('ffCoinVal'); if(cv) cv.textContent = fmt(state.gold);
         var hg = document.getElementById('hdrGold'); if(hg) hg.textContent = fmt(state.gold);
       }
+      // AFTER reconciling this tick, lift the local earned anchor to the server's if it fell behind (a Mortal
+      // reset). This changes only FUTURE syncs' reported earned_total, so fresh earnings credit again instead
+      // of the sync-clamp wiping them to 0 every tick. Done here (not before reconcile) so it never distorts
+      // this tick's spend/earn drift math.
+      state.goldEarnedTotal = walletReanchorEarned(state.goldEarnedTotal, d.earned);
     }catch(e){}
   }
   var CHEST_MAX_GOLD = 5000; // per-chest gold ceiling -- used by openTreasureChests' roll + must match the server (wallet earn_chest)
@@ -45115,7 +45138,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.0';
+  var GAME_VERSION = '0.0.99.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45272,7 +45295,7 @@
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletReanchorEarned:walletReanchorEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
