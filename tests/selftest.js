@@ -4016,6 +4016,28 @@
     eq(FF.DISCORD_ENHANCE_MIN, 15, 'the Discord enhance blast fires only at +15');
   });
 
+  // ---- Mortal-death blasts (v0.0.97.2): chronicle body + persisted reload + chat wiring --------------
+  suite('mortal death blasts', function(){
+    // The shared broadcast body: self-contained after the fallen player's name, carries the slayer
+    // and the Total Level, and stays well inside chronicleBroadcast's 120-char truncation so the
+    // Total Level can never be the part that falls off.
+    var body = FF.mortalDeathBody({ name:'Archdemon' });
+    ok(/^has fallen! Slain by the Archdemon at Total Level [\d,]+\.$/.test(body), 'body names the slayer + Total Level');
+    ok(body.length <= 120, 'body fits the chronicle 120-char limit (' + body.length + ' chars)');
+    // The party-dungeon death path calls mortalDeath(null): no single foe struck the blow.
+    ok(/Slain by the Dungeon Depths/.test(FF.mortalDeathBody(null)), 'a party-run death (null monster) is slain by the Dungeon Depths');
+    // A LONG monster name still leaves the Total Level inside the truncation window.
+    var longBody = FF.mortalDeathBody({ name:'Ancient Broodmother of the Sunken Necropolis Depths' });
+    ok(longBody.length <= 120 && /Total Level [\d,]+\.$/.test(longBody), 'even a long slayer name keeps the Total Level inside 120 chars');
+    // Persisted 'mortal_death' chronicle rows reload into global chat as fantastic system messages,
+    // the same treatment supreme/fantastic crafts and +15 enhances get.
+    var m = FF.chronicleMortalToSystemMsg({ id:9, username:'Nyx', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'2026-08-10T00:00:00Z' });
+    ok(m && m.system === true && m.rarity === 'fantastic', 'a mortal_death row -> a fantastic system message');
+    ok(m.id === 'sys-9' && m.username === null && /Nyx has fallen! Slain by the Rabbit at Total Level 42\./.test(m.body), 'blast carries the fallen player + slayer + Total Level');
+    ok(FF.chronicleMortalToSystemMsg({ id:10, username:'A', body:'', created_at:'x' }) === null, 'an empty mortal_death body -> no blast');
+    ok(/has fallen/.test(FF.chronicleRowToSystemMsg({ kind:'mortal_death', id:3, username:'A', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'x' }).body), 'row dispatcher handles mortal_death rows');
+  });
+
   // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
   suite('tips ticker', function(){
     var T = FF.TICKER_TIPS;

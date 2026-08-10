@@ -144,8 +144,9 @@ Deno.serve(async (req) => {
   const offline = body.offline === true;
   if (!name) return json({ ok: false, error: "Invalid event." }, 400);
 
-  // item_key is OPTIONAL, and this is a real limitation rather than an oversight. Three of the four feed
-  // events carry a catalogued inventory key, but two do not exist as inventory items at all: typed weapons
+  // item_key is OPTIONAL, and this is a real limitation rather than an oversight. Three of the five feed
+  // events carry a catalogued inventory key (mortal_death names a monster, not an item), but two of the
+  // item events do not exist as inventory items at all: typed weapons
   // (state.weaponTiers, keyed by typeId) and minted set pieces / legendaries (uniques keyed by uid). So a
   // missing key cannot be treated as an error without dropping those posts.
   //
@@ -168,7 +169,7 @@ Deno.serve(async (req) => {
 
   // ---- Compose the message SERVER-SIDE -----------------------------------------------------------
   // The client sends no prose. Every template below is fixed here, so the set of shapes a post can take
-  // is closed: an attacker with a valid JWT can pick one of four sentences about a real item, nothing more.
+  // is closed: an attacker with a valid JWT can pick one of five fixed sentences, nothing more.
   const tail = stats ? " (" + stats + ")" : "";
   const offlineTag = offline ? " *(offline catch-up)*" : "";
   let content = "";
@@ -188,6 +189,13 @@ Deno.serve(async (req) => {
     const enh = Math.floor(Number(body.enhance));
     if (!isFinite(enh) || enh < ENHANCE_MIN || enh > ENHANCE_MAX) return json({ ok: false, error: "Invalid enhance." }, 400);
     content = "⚒️ " + bold(author) + " enhanced their " + bold(name) + " to " + bold("+" + enh) + "!" + tail + offlineTag;
+  } else if (kind === "mortal_death") {
+    // A Mortal's permadeath (v0.0.97.2). No item and no rarity: `name` is the slayer (a monster
+    // display name from the client's own tables, or "Dungeon Depths" for a party-run death where no
+    // single foe struck the blow) and the stats tail carries the fallen hero's Total Level. Like
+    // `enhance`, this is CLAIMED, not proven -- the server never simulates combat -- so the JWT,
+    // rate limit and server-owned template are what bound abuse here too.
+    content = "💀 " + bold(author) + " has fallen! Slain by the " + bold(name) + "." + tail + " Their mortal life is over." + offlineTag;
   } else {
     return json({ ok: false, error: "Unknown event." }, 400);
   }

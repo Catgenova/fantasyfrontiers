@@ -20506,9 +20506,28 @@
   // A Mortal's death is final: their profile becomes Immortal and continues on into standard play,
   // and they are cast out of any Mortal guild (a Mortal guild would no longer accept them). The gear,
   // gold, and skills all remain -- only the Mortal condition ends.
+  // The one broadcast body every channel shares (chronicle insert, other clients' chat blasts, the
+  // persisted reload, and the local echo). Self-contained after the fallen player's name -- the same
+  // contract 'buff' bodies follow -- and deliberately short: chronicleBroadcast truncates at 120 chars,
+  // so the Total Level must never be the part that falls off. A null monster is the party-dungeon death
+  // path (mortalDeath(null) in the group-run watcher), where no single foe struck the blow.
+  function mortalDeathBody(monster){
+    var slayer = (monster && monster.name) || 'Dungeon Depths';
+    return 'has fallen! Slain by the ' + slayer + ' at Total Level ' + fmt(playerTotalLevel()) + '.';
+  }
   function mortalDeath(monster){
     state.mortal = false;
     addLog('The ' + (monster ? monster.name : 'foe') + ' has slain you. Your mortal life is over. Your soul passes into the immortal realm, and you continue on as an Immortal.', 'danger');
+    // Blast the death everywhere a Fantastic craft goes: the Discord Rarest Items feed (structured
+    // event; the server owns the template, mirrors forge/enhance) and global game chat via the
+    // chronicle broadcast (kind 'mortal_death' -- in the table's kind CHECK since migration
+    // 20260810120000; a kind missing from that constraint is inserted and SILENTLY rejected, so only
+    // the dying player would ever see it). chronicleOnIncoming skips your own broadcast, hence the
+    // direct local echo; signed-out play simply doesn't broadcast (both helpers guard on auth).
+    var mdBody = mortalDeathBody(monster);
+    chronicleBroadcast('mortal_death', mdBody);
+    pushChatSystemMessage((chatName() || 'A Mortal') + ' ' + mdBody, 'fantastic');
+    discordFeedPost({ kind:'mortal_death', name:(monster && monster.name) || 'Dungeon Depths', stats:'Total Level ' + fmt(playerTotalLevel()) });
     // Leave a Mortal guild (banks and mortal-only membership no longer apply to you). A leader can't
     // just leave, so hand the guild to the next member first -- or disband it if they were the last one.
     try{
@@ -37759,6 +37778,12 @@
     else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
     else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
     else if(ev.kind === 'buff') msg = name + ' ' + body;   // body is self-contained (server-buff event)
+    else if(ev.kind === 'mortal_death'){
+      // A Mortal's final death: Chronicle line plus a global-chat system blast for everyone online
+      // (the dying player already pushed their own copy locally in mortalDeath).
+      msg = name + ' ' + body;   // body is self-contained ("has fallen! Slain by the X at Total Level N.")
+      pushChatSystemMessage((ev.username || 'Someone') + ' ' + String(ev.body||''), 'fantastic');
+    }
     else return;
     // addLog refreshes the Chronicle log on its own (via logVersion in updateDynamic). Do NOT
     // set needsRender here -- a full render per incoming event rebuilds #content and slams shut
@@ -37785,7 +37810,7 @@
       try{
         var chron = await chatClient.from('chronicle')
           .select('id,created_at,username,body,kind')
-          .in('kind', ['craft','enhance'])
+          .in('kind', ['craft','enhance','mortal_death'])
           .order('created_at', { ascending:false })
           .limit(80);
         var sysMsgs = ((chron && chron.data) || []).map(chronicleRowToSystemMsg).filter(Boolean);
@@ -38005,11 +38030,21 @@
     if(!body) return null;
     return { id:'sys-'+c.id, username:null, body:(c.username||'Someone')+' enhanced their '+body+'!', rarity:enhanceBodyRarity(body), created_at:c.created_at, system:true };
   }
+  // Map a persisted 'mortal_death' chronicle row to a global-chat system message, so a Mortal's fall
+  // reloads on refresh like the craft/enhance blasts do. The body is self-contained after the name
+  // (written by mortalDeathBody), and the tint is always fantastic -- permadeath is the rarest event
+  // the feed carries.
+  function chronicleMortalToSystemMsg(c){
+    var body = String((c && c.body) || '');
+    if(!body) return null;
+    return { id:'sys-'+c.id, username:null, body:(c.username||'Someone')+' '+body, rarity:'fantastic', created_at:c.created_at, system:true };
+  }
   // Dispatch a persisted chronicle row to the right system-message synthesizer by kind (null if it isn't
   // a globally-blasted event -- level/familiar/buff events live only in the Chronicle feed).
   function chronicleRowToSystemMsg(c){
     if(!c) return null;
     if(c.kind === 'enhance') return chronicleEnhanceToSystemMsg(c);
+    if(c.kind === 'mortal_death') return chronicleMortalToSystemMsg(c);
     return chronicleCraftToSystemMsg(c); // 'craft' (default): only supreme/fantastic map to a blast
   }
   // Inject a client-side system announcement into global chat (ephemeral -- not persisted to the
@@ -44472,7 +44507,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.97.1';
+  var GAME_VERSION = '0.0.97.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44735,7 +44770,7 @@
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
-      craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, famBuffApply:famBuffApply, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
+      craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, chronicleMortalToSystemMsg:chronicleMortalToSystemMsg, mortalDeathBody:mortalDeathBody, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, famBuffApply:famBuffApply, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
