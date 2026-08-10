@@ -4841,8 +4841,8 @@
     try {
       eq(getComputedStyle(probe.querySelector('#pbGold')).color, 'rgb(232, 220, 192)',
         'inline var(--gold) text INSIDE a card re-inks as parchment (the variable override)');
-      eq(getComputedStyle(probe.querySelector('#pbGoldOut')).color, 'rgb(74, 107, 44)',
-        'outside a card the same inline style keeps the tan-page green');
+      eq(getComputedStyle(probe.querySelector('#pbGoldOut')).color, 'rgb(61, 90, 34)',
+        'outside a card the same inline style keeps the tan-page green (deepened to #3d5a22 for AA contrast)');
       var chip = getComputedStyle(probe.querySelector('.unique-ench-chip'));
       eq(chip.color, 'rgb(232, 220, 192)', 'enchant chips read in parchment ink');
       eq(chip.borderTopColor, 'rgb(107, 90, 56)', 'on the quiet dark-table border');

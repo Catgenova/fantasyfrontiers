@@ -44,7 +44,7 @@
        arena's ivy_stretch stone; the landing was its last holdout) */
     --border:#141210;         /* ink — borders are dark on nearly everything */
     --border-light:#a98f5e;   /* muted tan / dashed borders */
-    --gold:#4a6b2c;          /* primary accent = green */
+    --gold:#3d5a22;          /* primary accent = green (a11y: deepened from #4a6b2c so small green text clears 4.5:1 on light marble) */
     --gold-bright:#6f9538;   /* bright green */
     --green-deep:#3c5a24;
     --coin:#e0b84a;          /* currency / faith / rare-loot highlight only */
@@ -56,7 +56,7 @@
     --input-fill:#f5eecf;
     --text:#2a2114;
     --text-dim:#6b5a38;
-    --text-faint:#8a7850;
+    --text-faint:#5f5230;    /* a11y: darkened from #8a7850 so faint notes clear 4.5:1 on the light page base / islands (dark surfaces re-scope this to a light tone) */
 
     --hp-good:#5c8a3c;
     --hp-mid:#c0891d;
@@ -160,7 +160,7 @@
   .ff-buffchip{display:flex;flex-direction:column;gap:3px;font-size:11px;color:#d7c9a6;white-space:nowrap;min-width:98px;}
   .ff-buffchip-top{display:flex;align-items:center;gap:6px;}
   .ff-buffchip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-  .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;margin-left:auto;}
+  .ff-buffchip .t{font-family:var(--font-mono);color:#c0b394;margin-left:auto;}
   .ff-buffchip-sub{color:#9a8a63;font-size:10px;}
   .ff-buffbar{height:3px;border-radius:2px;background:#000;border:1px solid #48432f;overflow:hidden;}
   .ff-buffbar-fill{display:block;height:100%;border-radius:2px;}
@@ -692,7 +692,7 @@
     border:12px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
     max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:14px; text-align:center; box-shadow:0 12px 34px rgba(20,14,4,0.5);
   }
-  .mc-result-banner{display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-display); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px; color:#e6c24a; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed var(--border-light);}
+  .mc-result-banner{display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-display); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px; color:#6e5210; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed var(--border-light);}  /* a11y: bright gold #e6c24a read 1.26:1 on the cream modal marble; darkened to a legible amber */
   .mc-result-banner .game-icon{width:20px; height:20px;}
   .mc-result-where{margin-top:12px; font-size:12px; line-height:1.5; color:var(--text-dim);}
   /* A recovered Masterwork Blueprint is a jackpot, so it gets the Mastercraft celebration treatment
@@ -708,6 +708,11 @@
     background-size:700px 249px; background-clip:padding-box;
     border:12px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
     max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:14px; text-align:center; box-shadow:0 12px 34px rgba(20,14,4,0.5);}
+  /* a11y: the WHITE-marble islands keep the light palette, but two of its inks were too light ON the
+     cream marble -- --gold (#4a6b2c green) read 4.49:1 on titles/labels and --text-faint (#8a7850) read
+     3.15:1 on notes. Re-scope BOTH down on the light islands only (dark chips inside re-scope themselves
+     back via the sweep, so this never darkens light-on-dark text). Mirrors the dark sweep's mechanism. */
+  .skill-info-card, .familiar-popup-card, .settings-card{ --gold:#3d5a22; --text-faint:#5f5230; }
   /* Modal buttons: the green-primary override retired in v0.0.86.7 -- the BASE .action-btn is now the
      stone frame over black marble everywhere (with .stop red and disabled slate), so modals need no
      scoped button rules at all. */
@@ -841,7 +846,7 @@
      resolves its VARIABLE at the element, so overriding the variable re-inks every one of them (and every
      future one) as parchment -- hue-free, ~13:1, lightness-coded, the most colorblind-robust choice.
      Anything inside a card that used var(--gold) for a NON-text job is pinned to its literal below. */
-  .item-card{--gold:#e8dcc0;}
+  .item-card{--gold:#e8dcc0;--hp-bad:#e0736a;}
   .item-card .progress-fill{background:linear-gradient(90deg,#4a6b2c,#6f9538);} /* pin: the fill stays green, not parchment */
   .item-card.active-item{box-shadow:0 0 0 2px rgba(111,149,56,.6), 0 0 16px rgba(111,149,56,0.30), 0 4px 12px rgba(20,18,16,.26);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
@@ -29849,8 +29854,8 @@
       html += '<button class="action-btn" data-action="authLogout" style="width:auto;flex:0 0 auto;">Log out</button></div>';
       html += '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
       html += '<div class="settings-row-label">Change password</div>';
-      html += '<input id="newPassword" class="chat-input" type="password" placeholder="New password" autocomplete="new-password">';
-      html += '<input id="newPasswordConfirm" class="chat-input" type="password" placeholder="Confirm new password" autocomplete="new-password">';
+      html += '<input id="newPassword" class="chat-input" aria-label="New password" type="password" placeholder="New password" autocomplete="new-password">';
+      html += '<input id="newPasswordConfirm" class="chat-input" aria-label="Confirm new password" type="password" placeholder="Confirm new password" autocomplete="new-password">';
       if(pwChangeMsg){ html += '<div style="font-size:12px;'+(pwChangeOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(pwChangeMsg)+'</div>'; }
       html += '<button class="action-btn" data-action="changePassword"'+(pwChangeBusy?' disabled':'')+'>'+(pwChangeBusy?'Saving…':'Update password')+'</button>';
       html += '</div>';
@@ -37442,9 +37447,9 @@
     var isReg = authMode==='register';
     var html = '<div class="auth-card">';
     html += '<div class="auth-tabs"><button class="auth-tab'+(isReg?' on':'')+'" data-action="authMode" data-mode="register">Register</button><button class="auth-tab'+(!isReg?' on':'')+'" data-action="authMode" data-mode="login">Log In</button></div>';
-    html += '<input id="authUsername" class="chat-input" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(authUsernameDraft)+'">';
-    html += '<input id="authPassword" class="chat-input" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'" value="'+escapeHtml(authPasswordDraft)+'">';
-    if(isReg) html += '<input id="authConfirm" class="chat-input" type="password" placeholder="Confirm password" autocomplete="new-password">';
+    html += '<input id="authUsername" class="chat-input" aria-label="Username" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(authUsernameDraft)+'">';
+    html += '<input id="authPassword" class="chat-input" aria-label="Password" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'" value="'+escapeHtml(authPasswordDraft)+'">';
+    if(isReg) html += '<input id="authConfirm" class="chat-input" aria-label="Confirm password" type="password" placeholder="Confirm password" autocomplete="new-password">';
     // "Remember username" / "auto-login" only apply when signing back in, so they're login-only.
     if(!isReg){
       html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:4px 2px 0;"><input type="checkbox" data-action="authToggleRemember"'+(authRememberUser?' checked':'')+'> Remember my username</label>';
@@ -44243,8 +44248,8 @@
       + '.ff-wm b{color:var(--gold);font-weight:600;}'
       + '@media (max-width:1160px){.ff-land-rail{display:none;}}'
       + '.ff-land{max-width:1000px;width:100%;margin:0 auto;text-align:center;position:relative;z-index:1;}'
-      + '.ff-land-title{font-family:var(--font-display);font-weight:700;font-size:36px;color:var(--gold);letter-spacing:2px;line-height:1.05;}'
-      + '.ff-land-sub{color:var(--text-dim);font-size:14px;max-width:660px;margin:8px auto 18px;line-height:1.55;}'
+      + '.ff-land-title{font-family:var(--font-display);font-weight:700;font-size:36px;color:var(--gold);letter-spacing:2px;line-height:1.05;margin:0;}'
+      + '.ff-land-sub{color:#463914;font-size:14px;max-width:660px;margin:8px auto 18px;line-height:1.55;}'   /* a11y: text-dim (#6b5a38) failed 3.5:1 on the tan body; darkened to ~5.5:1 */
       + '.ff-land-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:22px;}'
       + '.ff-land-chip{background-color:#141109;background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url("art/marble_dark.png");background-size:cover;background-position:center;background-clip:padding-box;border:6px solid transparent;border-image:url("art/ivy_stretch.png") 37 32 39 32 round;border-radius:0;padding:7px 13px;min-width:92px;}'
       + '.ff-land-chip b{display:block;font-family:var(--font-display);font-size:23px;color:#ddbb66;line-height:1;}'
@@ -44253,18 +44258,18 @@
       + '.ff-land-feat{display:grid;grid-template-columns:1fr 1fr;gap:12px;}'
       + '.ff-land-card{background-color:#141109;background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url("art/marble_dark.png");background-size:cover;background-position:center;background-clip:padding-box;border:12px solid transparent;border-image:url("art/ivy_stretch.png") 37 32 39 32 round;border-radius:0;padding:5px 11px 11px;box-shadow:0 4px 12px rgba(20,18,16,.24);}'
       + '.ff-land-card-ico svg{width:26px;height:26px;margin-bottom:6px;}'
-      + '.ff-land-card-t{font-weight:700;color:#ddbb66;font-size:13px;margin-bottom:3px;}'
+      + '.ff-land-card-t{font-weight:700;color:#ddbb66;font-size:13px;margin:0 0 3px;}'
       + '.ff-land-card-b{font-size:12px;color:#c0b394;line-height:1.45;}'
       + '.ff-land-auth{background-color:#efece6;background-image:url("art/ivy_field.png");background-repeat:repeat;background-size:700px 249px;background-clip:padding-box;border:12px solid transparent;border-image:url("art/ivy_stretch.png") 37 32 39 32 round;border-radius:0;padding:8px 13px 13px;box-shadow:0 8px 28px rgba(20,14,4,.22);}'
-      + '.ff-land-auth-h{font-family:var(--font-display);font-size:15px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;text-align:center;}'
+      + '.ff-land-auth-h{font-family:var(--font-display);font-size:15px;font-weight:400;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;text-align:center;}'
       + '.ff-land-show{margin-top:24px;}'
       + '.ff-land-estate{margin-top:26px;}'
       + '.ff-land-estate .estate-canvas-wrap{max-width:620px;margin:0 auto;}'
-      + '.ff-land-show-t{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px;}'
+      + '.ff-land-show-t{font-size:11px;font-weight:400;color:#4d4019;text-transform:uppercase;letter-spacing:1.2px;margin:0 0 9px;}'   /* a11y: text-faint failed 2.2:1 on the tan body; darkened to pass */
       + '.ff-land-ports{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}'
       + '.ff-land-port{width:46px;height:46px;border-radius:50%;overflow:hidden;border:1px solid var(--border);flex:0 0 auto;}'
       + '.ff-land-port svg{width:46px;height:46px;display:block;}'
-      + '.ff-land-foot{color:var(--text-faint);font-size:11px;margin-top:18px;}'
+      + '.ff-land-foot{color:#4d4019;font-size:11px;margin-top:18px;}'   /* a11y: text-faint failed 2.2:1 on the tan body; darkened to pass */
       // --- "watch a fight" preview: the REAL combat stage, scaled down (v0.0.86.19) ---
       // The old CSS-only vignette (two bobbing portraits + keyframed damage numbers) is retired: the
       // preview now mounts renderArena() itself into #ffPrevArena and a demo loop drives it, so what a
@@ -44496,7 +44501,7 @@
       app.appendChild(gate);
     }
     function chip(n, l){ return '<div class="ff-land-chip"><b>'+n+'</b><span>'+l+'</span></div>'; }
-    function feat(icon, t, b){ return '<div class="ff-land-card"><div class="ff-land-card-ico">'+icon+'</div><div class="ff-land-card-t">'+t+'</div><div class="ff-land-card-b">'+b+'</div></div>'; }
+    function feat(icon, t, b){ return '<div class="ff-land-card"><div class="ff-land-card-ico">'+icon+'</div><h3 class="ff-land-card-t">'+t+'</h3><div class="ff-land-card-b">'+b+'</div></div>'; }
     var features = ''
       + feat(svgIcon('brain','#7a5aa8'), '170+ Skills to Master', 'Gathering, crafting, combat, farming and faith. Over 170 skills, each with its own levels and rewards.')
       + feat(svgIcon('crossedswords','#c9a227'), '24 Hero Classes', 'Wear the right gear and you <b>become</b> a Class (Samurai, Pyromancer, Frostwarden and more), each with five tiered passives and a signature familiar.')
@@ -44535,16 +44540,16 @@
              + '<div class="ff-land-rail right" aria-hidden="true">' + wmRight + '</div>';
     }
     gate.innerHTML = bgWall + '<div class="ff-land">'
-      + '<div class="ff-land-title">Fantasy Frontiers</div>'
+      + '<h1 class="ff-land-title">Fantasy Frontiers</h1>'
       + '<div class="ff-land-sub">A living idle RPG. Master over 170 skills, take on 24 hero Classes, raise a menagerie of familiars, and delve synchronous co-op dungeons, then come home to an estate you and your guild build together.</div>'
       + '<div class="ff-land-chips">' + chip('170+','Skills') + chip('24','Classes') + chip('100+','Familiars') + chip('1&ndash;4','Co-op PvE') + '</div>'
       + preview
       + '<div class="ff-land-row">'
         + '<div class="ff-land-feat">' + features + '</div>'
-        + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div>' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
+        + '<div class="ff-land-auth"><h2 class="ff-land-auth-h">Play Free</h2>' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
       + '</div>'
       // Interactive estate preview -- a blank plot potential players can drag/zoom/rotate.
-      + '<div class="ff-land-estate"><div class="ff-land-show-t">Your estate awaits. Drag to look around, zoom &amp; rotate</div>'
+      + '<div class="ff-land-estate"><h2 class="ff-land-show-t">Your estate awaits. Drag to look around, zoom &amp; rotate</h2>'
         + '<div class="estate-canvas-wrap">'
           + '<button class="estate-zoom-btn estate-zoom-out" data-action="landingEstZoom" data-d="-0.15" data-tip="Zoom out" aria-label="Zoom out">−</button>'
           + '<button class="estate-rotate-btn estate-rotate-left" data-action="landingEstRotate" data-d="-1" data-tip="Rotate left" aria-label="Rotate left">↺</button>'
@@ -44553,8 +44558,8 @@
           + '<button class="estate-rotate-btn estate-rotate-right" data-action="landingEstRotate" data-d="1" data-tip="Rotate right" aria-label="Rotate right">↻</button>'
           + '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="landingEstToggle" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'
         + '</div></div>'
-      + (ports ? '<div class="ff-land-show"><div class="ff-land-show-t">All 24 Classes</div><div class="ff-land-ports">' + ports + '</div></div>' : '')
-      + '<div style="display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:22px;"><div class="ff-land-show-t" style="margin:0;">Join the community</div>' + discordLinkHtml('Fantasy Frontiers Discord') + '</div>'
+      + (ports ? '<div class="ff-land-show"><h2 class="ff-land-show-t">All 24 Classes</h2><div class="ff-land-ports">' + ports + '</div></div>' : '')
+      + '<div style="display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:22px;"><h2 class="ff-land-show-t" style="margin:0;">Join the community</h2>' + discordLinkHtml('Fantasy Frontiers Discord') + '</div>'
       + '<div class="ff-land-foot">Free to play &bull; your progress saves to your account and follows you across every device. &bull; v'+GAME_VERSION+'</div>'
       + '</div>';
     landingEstateActivate(); // point estActive at the preview estate + bind pan/zoom/rotate + draw
@@ -44630,7 +44635,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.97.7';
+  var GAME_VERSION = '0.0.97.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
