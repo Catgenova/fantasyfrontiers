@@ -16075,7 +16075,7 @@
   var skillGroupExpanded = {};
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
-  var menagerieSearch = '';   // Menagerie search: matches by familiar name, skill, or spell name
+  var menagerieSearch = '';   // Menagerie search: matches by familiar name, skill, spell name, or spell effect
   var settingsOpen = false;
   var settingsTab = 'profile';      // which Settings tab is showing (account/profile/interface/qol)
   var _lastSettingsTab = null;      // so a tab switch resets the scroll box instead of carrying it
@@ -30481,7 +30481,15 @@
     var owned = state.familiars[skillId] && state.familiars[skillId].owned;
     if(owned){
       if((fam.name||'').toLowerCase().indexOf(q) !== -1) return true;
-      if((fam.spells||[]).some(function(sp){ return (sp.name||'').toLowerCase().indexOf(q) !== -1; })) return true;
+      // Match the spell NAME and its EFFECT text (what the card shows via describeSpell), so a Summoner can
+      // search by what a spell DOES -- "crit", "dodge", "armor", "slows", "heal", "poison", an element, etc.
+      // Level-scaled numbers vary but the effect KEYWORDS don't, so any level reads the same terms.
+      var _lvl = (state.familiars[skillId] && state.familiars[skillId].level) || 1;
+      if((fam.spells||[]).some(function(sp){
+        if((sp.name||'').toLowerCase().indexOf(q) !== -1) return true;
+        var eff = ''; try{ eff = describeSpell(sp, _lvl) || ''; }catch(e){}
+        return eff.toLowerCase().indexOf(q) !== -1;
+      })) return true;
     }
     return false;
   }
@@ -30535,7 +30543,7 @@
     html += renderActiveCompanionsSection();
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency. Each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 1.2x/1.5x/2x (Rare +6%, Supreme +7.5%, Fantastic +10%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
-    html += '<input type="text" id="menagerieSearchInput" class="inv-search" style="margin-top:10px;" placeholder="Search familiars by name, skill, or spell…" value="'+menagerieSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
+    html += '<input type="text" id="menagerieSearchInput" class="inv-search" style="margin-top:10px;" placeholder="Search familiars by name, skill, spell, or effect…" value="'+menagerieSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
     html += '<div id="menagerieList">'+renderMenagerieList()+'</div>';
     return html;
   }
@@ -45151,7 +45159,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.4';
+  var GAME_VERSION = '0.0.99.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

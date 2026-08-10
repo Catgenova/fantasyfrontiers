@@ -11251,6 +11251,21 @@
     ok(FF.familiarMatchesSearch(A, A.toLowerCase().slice(0,3)), 'matches by skill-id fragment');
     ok(FF.familiarMatchesSearch(A, (famA.name||'').toLowerCase()), 'matches an owned familiar by name');
     if(famA.spells && famA.spells[0]) ok(FF.familiarMatchesSearch(A, famA.spells[0].name.toLowerCase()), 'matches an owned familiar by spell name');
+    // Match by spell EFFECT text (Summoner QoL, v0.0.99.5): pull a keyword from what the card shows via
+    // describeSpell that is NOT in the skill id / name / any spell name, so a hit proves the EFFECT matched.
+    var _effWord = null;
+    (famA.spells||[]).forEach(function(sp){
+      if(_effWord) return;
+      var eff = (FF.describeSpell(sp, 100) || '').toLowerCase();
+      (eff.match(/[a-z]{4,}/g) || []).forEach(function(w){
+        if(_effWord) return;
+        var inSkill = A.toLowerCase().indexOf(w) !== -1;
+        var inName = (famA.name||'').toLowerCase().indexOf(w) !== -1;
+        var inSpell = (famA.spells||[]).some(function(s2){ return (s2.name||'').toLowerCase().indexOf(w) !== -1; });
+        if(!inSkill && !inName && !inSpell) _effWord = w;
+      });
+    });
+    if(_effWord) ok(FF.familiarMatchesSearch(A, _effWord), 'matches an owned familiar by its spell EFFECT ("'+_effWord+'")');
     eq(FF.familiarMatchesSearch(A, 'zzq-not-a-thing'), false, 'a non-matching query returns false');
     delete S.familiars[B];
     ok(FF.familiarMatchesSearch(B, B.toLowerCase().slice(0,3)), 'an unsummoned familiar is still findable by its skill');
