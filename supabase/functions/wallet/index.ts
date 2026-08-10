@@ -380,5 +380,19 @@ Deno.serve(async (req) => {
     return json({ ok: true, gold: clamped, earned: earnedTotal, credited: stuckCredit });
   }
 
+  // Deliberate account wipe ("Start Over as a Mortal"). The client has zeroed its own save; make the wallet
+  // match at the SOURCE. Without this, the wallet's MONOTONIC earned_total survives the wipe, so the fresh
+  // character's low goldEarnedTotal leaves every earn delta <=0 and the sync-clamp keeps dragging gold to 0
+  // (bug: a Mortal-reset account's earned gold -- e.g. a 200k quest reward -- never sticks). Zeroing gold +
+  // earned_total here removes the mismatch, and back-dating updated_at starts the bucket FULL so the fresh
+  // character's first legit earn isn't throttled. Self-authenticating (uid from the token) and it only ever
+  // LOWERS this account's OWN wallet to 0 -- there is nothing to gain by calling it, so it is safe to expose
+  // to authenticated. Idempotent.
+  if (action === "reset") {
+    const backdated = new Date(Date.now() - BUCKET_FILL_MS).toISOString();
+    await admin.from("player_wallet").upsert({ user_id: userId, gold: 0, earned_total: 0, updated_at: backdated, seeded: true });
+    return json({ ok: true, gold: 0, earned: 0 });
+  }
+
   return json({ ok: false, error: "Unknown action." }, 400);
 });

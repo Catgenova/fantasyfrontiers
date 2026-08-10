@@ -18615,6 +18615,26 @@
     eq(R(50000, 50000, 0, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
+  // ---- Regression: a big quest reward survives on a Mortal-reset account (ticket: Deathless 200k not paid)
+  suite('wallet: a 200k quest reward is preserved on a Mortal-reset account', function(){
+    var isRec = FF.walletIsResetRecovery, recE = FF.walletRecoveredEarned, R = FF.walletReconcileGold;
+    // The account reset to Mortal: local goldEarnedTotal restarted near 0 while the server kept the old
+    // high-level character's monotonic earned_total (say 50M). The first sync recognizes the reset and lifts
+    // the anchor to the server's earned PLUS whatever gold is currently held (here 1,499, matching the ticket).
+    ok(isRec(25, 50000000), 'the reset signature is recognized (server earned above local)');
+    var anchor = recE(50000000, 1499);
+    eq(anchor, 50001499, 'the recovery anchor keeps the 1,499 already held');
+    // Player claims the Deathless capstone: +200,000 gold, and earnGold bumps the (now recovered) anchor too.
+    var heldGold = 1499 + 200000;          // 201,499
+    var localEarned = anchor + 200000;     // 50,201,499
+    // Next sync: the server credits only the low-level daily allowance this tick (say 5,000), but the reconcile
+    // must KEEP the rest via pending -- so local gold stays the full 201,499, NOT the 5,000 the server banked.
+    var serverGold = 5000, serverEarned = 50000000 + 5000;
+    ok(!isRec(localEarned, serverEarned), 'once the anchor leads the server, it is no longer a recovery');
+    eq(R(heldGold, heldGold, localEarned, localEarned, serverGold, serverEarned), 201499,
+       'the full 200k Deathless reward is preserved locally while the server credits it under the daily rate');
+  });
+
   // ---- Bows: slower draw hits harder (Short 1x / Medium 1.25x / Long 1.5x base damage) -----
   suite('bows: damage scales with draw', function(){
     var T = 15; // a high tier keeps rounding error tiny for the ratio check

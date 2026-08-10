@@ -16281,6 +16281,12 @@
     // escrow and the proceeds inbox is their unclaimed settlement, so both are deleted server-side,
     // never refunded into the fresh save. Fire-and-forget: marketInvoke never rejects.
     try{ marketInvoke('reset_wipe', {}).then(function(){}, function(){}); }catch(e){}
+    // Reset the server-side wallet to day one (gold + the MONOTONIC earned_total anchor, full bucket). Without
+    // this the retained earned_total starves the fresh character's gold credits and the sync-clamp keeps
+    // wiping earned gold to 0 (the "200k quest reward didn't pay out on a Mortal-reset account" ticket). The
+    // client-side recovery (walletIsResetRecovery) already un-sticks accounts that predate the wallet `reset`
+    // action, so this is safe to ship ahead of the edge-function deploy. Fire-and-forget.
+    try{ if(chatClient && authUser && authUser.id) chatClient.functions.invoke('wallet', { body:{ action:'reset' } }).then(function(){}, function(){}); }catch(e){}
     // Cast out of an IMMORTAL guild (owner order): a day-one restart keeps no seat in its old guild.
     // A Mortal guild is kept: the restarted character is a Mortal again. Leader succession mirrors
     // mortalDeath: hand the guild to the next member first, or disband it if they were the last one.
@@ -45145,7 +45151,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.2';
+  var GAME_VERSION = '0.0.99.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
