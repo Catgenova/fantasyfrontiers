@@ -213,13 +213,21 @@ Deno.serve(async (req) => {
     claimedXp(GATHER_SKILLS) <= statN("gathered") * MAX_XP_PER_GATHER &&
     claimedXp(CRAFT_SKILLS) <= statN("crafted") * MAX_XP_PER_CRAFT;
 
-  // A too-fast jump (submitted > allowance) clamps the ranking total AND holds the per-skill map, so a burst
-  // can't flash fake per-skill levels while the total is clamped. An INCONSISTENT submission (levels whose
-  // XP the lifetime activity can't support) holds EVERYTHING -- total, skills, and mastery -- publishing
-  // nothing new, so injected levels never reach the leaderboard even if the account has aged into a bucket.
-  const clamped = allowedTotal < totalLevel;
+  // The ranking total is rate-clamped (allowedTotal) to bound how fast the leaderboard can climb; an
+  // INCONSISTENT submission (levels whose XP the lifetime activity can't support) holds EVERYTHING --
+  // total, skills, and mastery -- publishing nothing new, so injected levels never reach the leaderboard.
+  //
+  // THE PER-SKILL MAP FOLLOWS `consistent` ALONE, NOT `consistent && !clamped` (fix, v0.0.97.6). The old
+  // code held the whole skills map whenever the total was clamped, to stop a burst flashing fake per-skill
+  // levels -- but the total keeps ratcheting up 200/hr while clamped, so a legitimately fast-climbing
+  // account's total_level marched upward while its skills map stayed FROZEN at an early (often all-level-1)
+  // snapshot. The result was a profile showing a huge Total Level over all-"1" skill badges, with the
+  // stored sum(skills) no longer equal to total_level -- the exact invariant the input check on line ~128
+  // enforces. The rank is still protected by the total clamp, and the ECONOMY-relevant gather/craft skills
+  // are still gated by the consistency check; only cosmetic combat/weapon per-skill display can briefly run
+  // ahead of the catching-up total, which is rank-neutral. So store the submitted map whenever consistent.
   const finalTotal = consistent ? allowedTotal : prevTotal;
-  const storedSkills = (consistent && !clamped) ? skills : (prev?.skills ?? {});
+  const storedSkills = consistent ? skills : (prev?.skills ?? {});
   const storedMastery = (consistent && masteryOk) ? mastery : ((prev?.mastery as Record<string, number> | null) ?? null);
   const consumedLevels = consistent ? (baseConsumed + (masteryOk ? masteryGrow : 0)) : 0;
   // Advance the bucket clock ONLY by what was consumed (so unused allowance persists; a burst of writes
