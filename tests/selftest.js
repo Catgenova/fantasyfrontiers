@@ -19333,6 +19333,14 @@
     FF.openMortalRestart();
     eq(FF.mortalRestartStepNow(), 1, 'reopening always starts over at confirmation 1 (no resuming half a flow)');
     FF.closeMortalRestart();
+    // The wipe's server reach (v0.0.97.4): the marketplace presence goes and IMMORTAL guilds are left.
+    // The guild decision is a pure helper (the execute path routes through it): Immortal guilds are
+    // left, Mortal guilds are kept (the restarted character is a Mortal again), no guild is a no-op.
+    eq(FF.mortalRestartLeavesGuild({ mortal:false }), true, 'a restart leaves an Immortal guild');
+    eq(FF.mortalRestartLeavesGuild({ mortal:true }), false, 'a restart keeps a Mortal guild (membership stays consistent)');
+    eq(FF.mortalRestartLeavesGuild(null), false, 'no guild -> nothing to leave');
+    // The first confirmation must actually WARN about both server-side removals.
+    ok(/marketplace/i.test(FF.MORTAL_RESTART_STEPS[0].body) && /guild/i.test(FF.MORTAL_RESTART_STEPS[0].body), 'modal 1 warns about the marketplace wipe and the guild exit');
   });
 
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------

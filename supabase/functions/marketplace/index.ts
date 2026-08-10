@@ -16,6 +16,7 @@
 //   place   { side, item_key, unit_price, qty }    -> match + rest; returns { filled, rest, refund, order_id }
 //   cancel  { order_id }                           -> delete caller's order; returns escrow to re-credit
 //   collect                                        -> drain proceeds; returns { gold, items:[{item_key,amount}] }
+//   reset_wipe                                     -> Start Over restart: delete ALL the caller's orders + proceeds, no refunds
 //
 // Verify JWT must be OFF (publishable key isn't a JWT; token validated internally).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -103,6 +104,18 @@ Deno.serve(async (req) => {
       else items.push({ item_key: p.item_key as string, amount: Number(p.amount) });
     }
     return json({ ok: true, orders: orders || [], proceeds: { gold, items } });
+  }
+
+  if (action === "reset_wipe") {
+    // Start Over as a Mortal (v0.0.97.4): a deliberate full-account restart discards the caller's
+    // whole market presence. Their resting orders ARE the escrow (the items/gold were removed
+    // client-side at placement) and the proceeds inbox is unclaimed settlement belonging to the old
+    // character -- a wiped account keeps neither, so both are DELETED outright, never refunded.
+    // Strictly scoped to the authenticated caller; nothing else in the shared book moves.
+    const { error: e1 } = await admin.from("market_orders").delete().eq("user_id", user.id);
+    const { error: e2 } = await admin.from("market_proceeds").delete().eq("user_id", user.id);
+    if (e1 || e2) return json({ ok: false, error: "Wipe failed." }, 500);
+    return json({ ok: true });
   }
 
   if (action === "place") {

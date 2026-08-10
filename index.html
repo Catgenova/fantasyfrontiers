@@ -16193,7 +16193,7 @@
   var mortalRestartStep = 0;   // 0 = closed, 1..3 = which of the three confirmations is showing
   var MORTAL_RESTART_STEPS = [
     { title:'Start Over as a Mortal?',
-      body:'This erases EVERYTHING on this account: every skill and level, all gold, your inventory and gear, familiars, estate, quests and titles. You begin again from nothing on the Mortal path: a single life, all or nothing.',
+      body:'This erases EVERYTHING on this account: every skill and level, all gold, your inventory and gear, familiars, estate, quests and titles. Your marketplace listings and uncollected proceeds are removed, and you leave any Immortal guild. You begin again from nothing on the Mortal path: a single life, all or nothing.',
       confirm:'Continue' },
     { title:'Your progress will be wiped',
       body:'There is no backup and no undo. The moment you confirm the final step, your cloud save is overwritten and your old character is gone forever. Support cannot restore wiped progress.',
@@ -16250,12 +16250,39 @@
     try{ s.settings = JSON.parse(JSON.stringify(state.settings)); }catch(e){}
     return s;
   }
+  // Whether a restart casts the player out of their guild. IMMORTAL guilds only (owner order): the
+  // restarted character is a fresh Mortal, so a Mortal guild's membership stays consistent and is kept.
+  function mortalRestartLeavesGuild(gd){ return !!(gd && !gd.mortal); }
   function mortalRestartExecute(){
     closeMortalRestart();
     // Release any active server-side estate job row (fire-and-forget). The wiped save no longer knows
     // the job exists; left alone it would complete against an empty estate and refund materials the
     // fresh character never paid. Personal jobs only: guild estate jobs belong to the guild, not you.
     try{ if(chatClient && authUser && authUser.id) chatClient.rpc('estate_job_cancel').then(function(){}, function(){}); }catch(e){}
+    // Discard the whole marketplace presence (owner order): resting orders are the old character's
+    // escrow and the proceeds inbox is their unclaimed settlement, so both are deleted server-side,
+    // never refunded into the fresh save. Fire-and-forget: marketInvoke never rejects.
+    try{ marketInvoke('reset_wipe', {}).then(function(){}, function(){}); }catch(e){}
+    // Cast out of an IMMORTAL guild (owner order): a day-one restart keeps no seat in its old guild.
+    // A Mortal guild is kept: the restarted character is a Mortal again. Leader succession mirrors
+    // mortalDeath: hand the guild to the next member first, or disband it if they were the last one.
+    try{
+      if(guildState && mortalRestartLeavesGuild(guildState.guild) && authUser){
+        var myId = authUser.id;
+        if(guildState.myRank === 'leader'){
+          var heirs = (guildState.members||[]).filter(function(m){ return m.user_id !== myId; });
+          if(heirs.length){
+            guildInvoke('transfer', { user_id: heirs[0].user_id })
+              .then(function(){ return guildInvoke('leave', {}); })
+              .then(function(){ guildReload(true); });
+          } else {
+            guildInvoke('disband', {}).then(function(){ guildReload(true); });
+          }
+        } else {
+          guildInvoke('leave', {}).then(function(){ guildReload(true); });
+        }
+      }
+    }catch(e){}
     state = mortalRestartFreshState();
     currentCategory = 'gathering'; currentSub = 'digging';
     addLog('Your old life fades away. You set out again upon the Mortal path. A single life, all or nothing.', 'important');
@@ -44603,7 +44630,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.97.3';
+  var GAME_VERSION = '0.0.97.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -44724,7 +44751,7 @@
       _startLoop: function(){ if(!gameStarted){ gameStarted = true; lastTick = Date.now(); requestAnimationFrame(loop); } },
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, jewelrySuccessRate:jewelrySuccessRate, craftSuccessRate:craftSuccessRate, grossMotorCraftSuccessBonus:grossMotorCraftSuccessBonus, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
-      MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState,
+      MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState, mortalRestartLeavesGuild:mortalRestartLeavesGuild,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost, ESTATE_EXPANSION_ORDER:ESTATE_EXPANSION_ORDER, estateExpand:estateExpand,
       ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
