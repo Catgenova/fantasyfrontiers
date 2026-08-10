@@ -471,28 +471,33 @@
 
   // ---- Estate expansion cost ------------------------------------------------------------
   // THE MULTIPLIER COMPOUNDS PER TILE, and a full estate is 300 tiles (5 rings of 44/52/60/68/76 around
-  // the 10x10 core), so the exponent runs 0..299. Pinned at both ends and at the ring boundaries, because
-  // the reachable size of an estate is entirely this one number: at the old 1.25 the last tile of ring 1
-  // cost 14.7M and the final tile 9.5e31, so nobody left 12x12.
+  // the 10x10 core), so the exponent runs 0..299. Since v0.0.97.8 the curve is defined by its two
+  // ENDPOINTS (tile 1 costs 1000, tile 300 costs 2.5B) and the multiplier is derived from them, so both
+  // anchors are pinned as literals here. Pinned at every ring boundary too, because the reachable size
+  // of an estate is entirely this one curve: at the original 1.25 the final tile priced at 9.5e31 and
+  // nobody left 12x12; at v0.0.95.1's 1.10 it was 2.38e15 and the ceiling sat at ring 2/3.
   suite('getEstateExpansionCost', function(){
     eq(FF.getEstateExpansionCost(0), 1000, 'expansion base cost');
-    eq(FF.getEstateExpansionCost(1), 1100, 'expansion +10% per tile (owner change, v0.0.95.1)');
-    eq(FF.getEstateExpansionCost(2), 1210, 'and it compounds rather than adding a flat 100');
+    eq(FF.getEstateExpansionCost(1), 1051, 'expansion ~+5.05% per tile (derived from the 1000-to-2.5B anchors, owner change, v0.0.97.8)');
+    eq(FF.getEstateExpansionCost(2), 1104, 'and it compounds rather than adding a flat amount');
     var pc = 0;
     for(var i = 0; i < 20; i++){ var c = FF.getEstateExpansionCost(i); ok(c >= pc, 'expansion cost non-decreasing @' + i); pc = c; }
+    // The multiplier is the derived value, not a retyped decimal: this fails if either anchor moves.
+    eq(FF.ESTATE_EXPANSION_TILE_COUNT, 300, 'the derivation runs over 300 purchasable tiles');
+    eq(FF.ESTATE_EXPANSION_MULT, Math.pow(2.5e9 / 1000, 1 / 299), 'the multiplier is derived from the two endpoint anchors');
     // The ring boundaries, which are the figures a player actually meets. Recomputed from the formula
     // rather than retyped, so this cannot drift from the constant while still looking authoritative.
-    var B = 1000, M = 1.10;
+    var B = 1000, M = FF.ESTATE_EXPANSION_MULT;
     function want(i){ return Math.round(B * Math.pow(M, i)); }
     [0, 43, 44, 95, 96, 155, 156, 223, 224, 299].forEach(function(i){
       eq(FF.getEstateExpansionCost(i), want(i), 'cost at purchase index ' + i);
     });
-    eq(FF.getEstateExpansionCost(43), 60240, 'the last tile of ring 1 (12x12) is 60,240g, not the old 14.7M');
-    eq(FF.getEstateExpansionCost(299), 2379100905625876, 'and the 300th and final tile is 2.38e15g');
+    eq(FF.getEstateExpansionCost(43), 8320, 'the last tile of ring 1 (12x12) is 8,320g');
+    eq(FF.getEstateExpansionCost(299), 2500000000, 'and the 300th and final tile is exactly the 2.5B anchor');
     // Ring 1 in full: the number that decides whether an ordinary player ever expands at all.
     var ring1 = 0;
     for(var r = 0; r < 44; r++) ring1 += FF.getEstateExpansionCost(r);
-    eq(ring1, 652639, 'completing ring 1 (12x12) costs 652,639g in total');
+    eq(ring1, 153250, 'completing ring 1 (12x12) costs 153,250g in total');
     // 300 purchasable tiles, and the order refuses to run past them.
     eq(FF.ESTATE_EXPANSION_ORDER.length, 300, 'there are exactly 300 purchasable tiles (100 core + 300 = 20x20)');
   });
