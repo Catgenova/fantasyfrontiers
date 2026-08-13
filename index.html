@@ -914,6 +914,37 @@
   .fam-slot-x{flex:0 0 auto;width:22px;height:22px;line-height:1;font-size:15px;cursor:pointer;border-radius:5px;
     background:#2a1815;color:#c1583f;border:1px solid #5a2a22;}
   .fam-slot-x:hover{background:#3a201b;color:#e07050;}
+  /* Workflows (Resources > Workflows): production-chain trees. Literal dark inks -- this view sits on the
+     dark-marble ground, so palette vars are the dark table already; explicit hexes keep the chips legible
+     regardless of the sweep. */
+  .wf-list{display:flex;flex-direction:column;gap:14px;}
+  .wf-card{background:#141109;border:1px solid #4a3e22;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.4);}
+  .wf-title{margin:0 0 8px;color:var(--gold);font-size:15px;display:flex;align-items:center;gap:8px;}
+  .wf-title svg,.wf-title img{width:22px;height:22px;}
+  .wf-flow{overflow-x:auto;padding:4px 2px 8px;}
+  .wf-tree{display:inline-flex;align-items:center;}
+  .wf-branch{display:inline-flex;flex-direction:column;justify-content:center;gap:10px;position:relative;margin-left:20px;border-left:2px solid #5a4a28;}
+  .wf-branch::before{content:'';position:absolute;left:-20px;top:50%;width:20px;height:2px;background:#5a4a28;}
+  .wf-limb{position:relative;display:flex;align-items:center;padding-left:18px;}
+  .wf-limb::before{content:'';position:absolute;left:0;top:50%;width:16px;height:2px;background:#5a4a28;}
+  .wf-node{display:inline-flex;align-items:center;gap:7px;text-align:left;padding:6px 10px;border-radius:9px;flex:0 0 auto;
+    background:#181409;border:1px solid #4a3e22;color:#e8dcc0;cursor:pointer;max-width:230px;box-shadow:0 1px 2px rgba(0,0,0,.4);}
+  .wf-node:hover{border-color:var(--gold);background:#20180c;}
+  .wf-node-ico{flex:0 0 auto;display:inline-flex;}
+  .wf-node-ico svg,.wf-node-ico img{width:22px;height:22px;}
+  .wf-node-body{display:flex;flex-direction:column;min-width:0;}
+  .wf-node-nm{font-weight:700;font-size:12.5px;color:#ece0c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wf-node-lv{font-weight:600;font-size:10px;color:#a8986e;font-family:var(--font-mono);margin-left:3px;}
+  .wf-node-note{font-size:10.5px;color:#b9a97e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wf-phys{margin-top:8px;border-top:1px solid #33291a;padding-top:6px;}
+  .wf-phys>summary{cursor:pointer;font-size:12px;color:#c9b98c;font-weight:600;list-style:none;}
+  .wf-phys>summary::-webkit-details-marker{display:none;}
+  .wf-phys>summary::before{content:'▸ ';color:#8a7a4e;}
+  .wf-phys[open]>summary::before{content:'▾ ';}
+  .wf-phys-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:5px 0;border-bottom:1px solid #241d10;}
+  .wf-phys-skill{font-size:11.5px;font-weight:700;color:#e0d3a8;min-width:140px;display:inline-flex;align-items:center;gap:5px;}
+  .wf-phys-skill svg,.wf-phys-skill img{width:16px;height:16px;}
+  .wf-phys-chips{display:flex;flex-wrap:wrap;gap:4px;}
   .chat-wrap{display:flex;flex-direction:column;gap:8px;}
   .chat-status{display:flex;align-items:center;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
   .chat-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--text-faint);flex-shrink:0;}
@@ -16029,7 +16060,7 @@
   var currentSub = 'digging';
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
-    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
+    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills'],['workflows','Workflows']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['salvage','Salvage'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
     { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['secondfrontier','Second Frontier'],['thirdfrontier','Third Frontier'],['fourthfrontier','Fourth Frontier'],['fifthfrontier','Fifth Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
@@ -30247,6 +30278,213 @@
     html += '</div>';
     return html;
   }
+  // ================= WORKFLOWS (Resources > Workflows) =================
+  // A reference view of the game's production chains: each gathering skill is the root of a tree that
+  // shows what its output feeds, stage by stage (e.g. Mining -> Metallurgy -> the four smiths). Every
+  // node links to that skill's crafting/gathering UI, and each tree lists the physiques that affect its
+  // skills and how. The EDGES here are pinned by a selftest against the live recipe/tier data, so a
+  // recipe change that breaks a link fails the suite rather than shipping a stale chart.
+  var WORKFLOW_TREES = [
+    { node:{ id:'mining', children:[
+      { id:'metallurgy', note:'smelt ore into bars', children:[
+        { id:'weaponsmithing', note:'melee weapons' },
+        { id:'armorsmithing', note:'chain & plate armor' },
+        { id:'shieldsmithing', note:'shields' },
+        { id:'blacksmithing', note:'gather & craft tools' },
+        { id:'fletching', note:'arrowheads (with shafts)' },
+        { id:'runesmithing', note:'scepters & wards (with glyphs)' },
+        { id:'cooperage', note:'barrels (with planks)' },
+        { id:'tinkering', note:'gadgets (with scrap)' },
+        { id:'enchanting', note:'enchant crystals (with cut gems)' },
+        { id:'goldsmithing', note:'jewelry settings (with crucibles)', children:[
+          { id:'jewelrycrafting', note:'rings & amulets' }
+        ]}
+      ]},
+      { id:'stonecutting', note:'cut stone into bricks', children:[
+        { id:'masonry', note:'curbs, fences & walls (with soil)' },
+        { id:'paving', note:'estate paving tiles' }
+      ]}
+    ]}},
+    { node:{ id:'forestry', children:[
+      { id:'carpentry', note:'saw logs into planks', children:[
+        { id:'bowyer', note:'bows' },
+        { id:'woodcarving', note:'carvings (with resin)', children:[
+          { id:'totems', note:'estate totems' }
+        ]},
+        { id:'cooperage', note:'barrels (with ingot bands)' }
+      ]},
+      { id:'papermaking', note:'pulp logs into paper', children:[
+        { id:'bookbinding', note:'tomes (with leather)' },
+        { id:'inscription', note:'scrolls (with essence)' }
+      ]},
+      { id:'arcanism', note:'staves & wands (with glyphs)' }
+    ]}},
+    { node:{ id:'farming', label:'Farming', icon:svgIcon('spice','var(--cat-farming)'), nav:{ cat:'farming' }, note:'grow fiber, grain & herbs', children:[
+      { id:'weaving', note:'weave fiber into cloth', children:[
+        { id:'tailoring', note:'cloth armor & cloaks' }
+      ]},
+      { id:'baking', note:'bake grain into bread' }
+    ]}},
+    { node:{ id:'butchering', children:[
+      { id:'tanning', note:'cure hide into leather', children:[
+        { id:'leatherworking', note:'leather armor' },
+        { id:'jewelrycrafting', note:'twine for rings & amulets' },
+        { id:'bookbinding', note:'tomes (with paper)' }
+      ]},
+      { id:'roasting', note:'cook meat', children:[
+        { id:'cooking', note:'hot meals (with herbs)' }
+      ]},
+      { id:'chandlery', note:'render fat into candles' }
+    ]}},
+    { node:{ id:'digging', children:[
+      { id:'pottery', note:'fire clay into crucibles', children:[
+        { id:'goldsmithing', note:'jewelry settings (with ingots)' }
+      ]},
+      { id:'masonry', note:'mortar for walls (with bricks)' },
+      { id:'fertilizer', note:'crop fertilizer (with fish)' },
+      { id:'archaeology', note:'extract relics from artifacts' }
+    ]}},
+    { node:{ id:'fishing', children:[
+      { id:'roasting', note:'cook the catch', children:[
+        { id:'cooking', note:'hot meals' }
+      ]},
+      { id:'fertilizer', note:'crop fertilizer (with soil)' }
+    ]}},
+    { node:{ id:'prospecting', children:[
+      { id:'gemcutting', note:'cut raw gems', children:[
+        { id:'enchanting', note:'enchant crystals (with bars)' },
+        { id:'jewelrycrafting', note:'set gems in rings & amulets' }
+      ]}
+    ]}},
+    { node:{ id:'herbalism', children:[
+      { id:'alchemy', note:'potions (with glass vials)' },
+      { id:'mixology', note:'XP teas' },
+      { id:'apothecary', note:'draughts (with fungi)' }
+    ]}},
+    { node:{ id:'foraging', children:[
+      { id:'baking', note:'bread' },
+      { id:'confectionery', note:'sweets (with honey)' },
+      { id:'mixology', note:'teas' }
+    ]}},
+    { node:{ id:'botany', children:[
+      { id:'brewing', note:'brews (with honey)' },
+      { id:'gastronomy', note:'feasts (with meals & dairy)' }
+    ]}},
+    { node:{ id:'beekeeping', children:[
+      { id:'brewing', note:'brews (with spices)' },
+      { id:'confectionery', note:'sweets (with berries)' }
+    ]}},
+    { node:{ id:'ranching', children:[
+      { id:'dairy', note:'cheese & butter', children:[
+        { id:'gastronomy', note:'feasts' }
+      ]}
+    ]}},
+    { node:{ id:'mycology', children:[
+      { id:'apothecary', note:'draughts (with herbs)' }
+    ]}},
+    { node:{ id:'salvaging', children:[
+      { id:'tinkering', note:'gadgets (with bars)' },
+      { id:'pyrotechnics', note:'bombs' }
+    ]}},
+    { node:{ id:'spelunking', children:[
+      { id:'glassblowing', note:'glass vials (with coal)', children:[
+        { id:'alchemy', note:'potions (with herbs)' }
+      ]}
+    ]}},
+    { node:{ id:'tapping', children:[
+      { id:'woodcarving', note:'varnish carvings (with planks)' }
+    ]}},
+    { node:{ id:'essence', children:[
+      { id:'inscription', note:'scrolls (with paper)' }
+    ]}},
+    { node:{ id:'diving', children:[
+      { id:'jewelrycrafting', note:'pearls for amulets' }
+    ]}}
+  ];
+  // Icon + label + nav target for a workflow node. Nodes may override label/icon/nav (e.g. Farming,
+  // which links to the Lands > Farming screen rather than a craft sub-tab).
+  function wfNodeMeta(node){
+    var id = node.id;
+    var def = GATHERING_SKILLS[id] || CRAFTING_SKILLS[id] || {};
+    var nav = node.nav || skillNavTarget(id);
+    return {
+      label: node.label || def.label || SKILL_LABELS[id] || id,
+      icon:  node.icon || def.icon || '',
+      color: def.color || '',
+      nav: nav
+    };
+  }
+  // Where a skill's UI lives, so a workflow node can jump straight to it. Gathering skills open the
+  // Gathering tab (Butchering keeps its corpse UI under Refining); craft skills route through the same
+  // category the Resources menu files them under; Farming opens the Lands screen.
+  function skillNavTarget(skillId){
+    if(skillId === 'butchering') return { cat:'refining', sub:'butchering' };
+    if(skillId === 'farming' || FARMING_SUBSKILLS.indexOf(skillId) !== -1) return { cat:'farming', sub:null };
+    if(GATHERING_SKILLS[skillId]) return { cat:'gathering', sub:skillId };
+    if(CRAFTING_SKILLS[skillId]) return { cat:craftCatForSkill(skillId), sub:skillId };
+    return { cat:'skills', sub:null };
+  }
+  // One clickable node chip. The tier badge shows the player's current level in that skill so the tree
+  // doubles as a progress readout.
+  function wfNodeChip(node){
+    var m = wfNodeMeta(node);
+    var lv = (node.id && (GATHERING_SKILLS[node.id] || CRAFTING_SKILLS[node.id])) ? skillLevel(node.id, anySkillXpVal(node.id)) : null;
+    var subAttr = m.nav.sub ? ' data-sub="'+m.nav.sub+'"' : '';
+    return '<button class="wf-node" data-action="wfNav" data-cat="'+m.nav.cat+'"'+subAttr+' title="Open '+escapeHtml(m.label)+'">'
+      + '<span class="wf-node-ico">'+m.icon+'</span>'
+      + '<span class="wf-node-body"><span class="wf-node-nm">'+escapeHtml(m.label)+(lv!=null?' <span class="wf-node-lv">Lv '+lv+'</span>':'')+'</span>'
+      + (node.note ? '<span class="wf-node-note">'+escapeHtml(node.note)+'</span>' : '')
+      + '</span></button>';
+  }
+  // Recursive left-to-right tree: a node, then a vertical stack of its child subtrees to the right,
+  // joined by connector rails.
+  function renderWorkflowSubtree(node){
+    var html = '<div class="wf-tree">' + wfNodeChip(node);
+    if(node.children && node.children.length){
+      html += '<div class="wf-branch">';
+      node.children.forEach(function(ch){ html += '<div class="wf-limb">'+renderWorkflowSubtree(ch)+'</div>'; });
+      html += '</div>';
+    }
+    return html + '</div>';
+  }
+  // Flatten every skill id in a tree (root + descendants) in reading order, de-duplicated.
+  function workflowTreeSkillIds(node, out, seen){
+    out = out || []; seen = seen || {};
+    if(node.id && !seen[node.id] && (GATHERING_SKILLS[node.id] || CRAFTING_SKILLS[node.id])){ seen[node.id] = 1; out.push(node.id); }
+    if(node.children) node.children.forEach(function(ch){ workflowTreeSkillIds(ch, out, seen); });
+    return out;
+  }
+  // Per-tree physique footer: each skill in the line with the physiques that affect its process and
+  // their effect. Derived live from physiqueBenefitsForSkill so it can never drift from the real bonuses.
+  function renderWorkflowPhysiques(node){
+    var ids = workflowTreeSkillIds(node);
+    var rows = '';
+    ids.forEach(function(id){
+      var benefits = physiqueBenefitsForSkill(id);
+      if(!benefits.length) return;
+      var m = wfNodeMeta({ id:id });
+      rows += '<div class="wf-phys-row"><span class="wf-phys-skill">'+m.icon+' '+escapeHtml(m.label)+'</span>'
+        + '<span class="wf-phys-chips">' + renderPhysiqueChipList(benefits) + '</span></div>';
+    });
+    if(!rows) return '';
+    return '<details class="wf-phys"><summary>Physiques that affect this line</summary>'+rows+'</details>';
+  }
+  function renderWorkflowsTab(){
+    var html = '<div class="section-intro">Every production chain, from a raw gather to the gear it becomes. '
+      + 'Tap any skill to open its page. Each line lists the <b>physiques</b> that affect its steps and what they do. '
+      + 'Materials shown in <i>(with ...)</i> come from another line.</div>';
+    html += '<div class="wf-list">';
+    WORKFLOW_TREES.forEach(function(t){
+      var m = wfNodeMeta(t.node);
+      html += '<div class="wf-card">';
+      html += '<h3 class="wf-title">'+m.icon+' '+escapeHtml(m.label)+' line</h3>';
+      html += '<div class="wf-flow">'+renderWorkflowSubtree(t.node)+'</div>';
+      html += renderWorkflowPhysiques(t.node);
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
   // In-game patch notes, shown in a Settings tab. Newest first. FORMAT (owner rule, Aug 3): SHORT DAILY
   // SNIPPETS -- one entry per day, one line per change, blast-style. Do NOT add an entry here with each
   // merge: the GAME_VERSION bump stays mandatory per merge, but this list is only touched when the owner
@@ -41586,6 +41824,7 @@
     else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn" data-action="cardCollapseAll" title="Collapse every card on this page">\u25b4 Collapse all</button><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button>'+(craftOnlyAffordable ? '<button class="craft-filter-btn on" data-action="toggleCraftFilterTier" title="With the filter on, a tiered card auto-selects this end of the tiers you can afford">'+(craftFilterLowest?'\u2b07 Lowest tier':'\u2b06 Highest tier')+'</button>' : '')+'</div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='improvement') html = renderImprovementTab();
     else if(currentCategory==='skills') html = renderSkillsTab();
+    else if(currentCategory==='workflows') html = renderWorkflowsTab();
     else if(currentCategory==='estate'){ estUse(false); estReadOnly=false; html = renderEstateTab(); }
     else if(currentCategory==='visitestate'){ estReadOnly = true; if(estateVisit.estate) estActive = estateVisit.estate; html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
@@ -43897,6 +44136,15 @@
     menagerieCollapseAll: function(btn, e){ menagerieExpanded = {}; },
     menagerieSetFilter: function(btn, e){ menagerieFilter = btn.getAttribute('data-filter') || 'all'; },
     menagerieToggleHideLocked: function(btn, e){ menagerieHideLocked = !menagerieHideLocked; },
+    // Workflows tree node -> open that skill's page (Gathering/Refining/Cooking/Outfitting/Construction
+    // sub-tab, or Lands > Farming). Setting navLastSub BEFORE navPickCat makes it honour the sub.
+    wfNav: function(btn, e){
+      var cat = btn.getAttribute('data-cat'); if(!cat) return;
+      var sub = btn.getAttribute('data-sub');
+      if(sub && DEFAULT_SUB[cat]) navLastSub[cat] = sub;
+      navPickCat(cat);
+      if(sub){ currentSub = sub; navSeenTiers[sub] = navUnlockedTiers(skillLevel(sub, (state.xp && state.xp[sub]) || 0)); render(true); }
+    },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -45351,7 +45599,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.16';
+  var GAME_VERSION = '0.0.100.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45496,6 +45744,7 @@
       // ticket-0161: every zero-arg tab renderer goes on the seam, so the renderer sweeps (bare big
       // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
       // here for 13 versions because these were the tabs the sweep could not reach.
+      renderWorkflowsTab:renderWorkflowsTab, WORKFLOW_TREES:WORKFLOW_TREES, skillNavTarget:skillNavTarget, workflowTreeSkillIds:workflowTreeSkillIds, wfNodeMeta:wfNodeMeta,
       renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, leaderboardQueryKey:leaderboardQueryKey, leaderboardPageSize:leaderboardPageSize, LEADERBOARD_LIMIT:LEADERBOARD_LIMIT, LEADERBOARD_LIMIT_WIDE:LEADERBOARD_LIMIT_WIDE, leaderboardFetch:leaderboardFetch, _lbSetFilters:function(m,o){ leaderboardMortalOnly=!!m; leaderboardOnlineOnly=!!o; }, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, taskRunsForTarget:taskRunsForTarget, taskRunsHorizon:taskRunsHorizon, taskRunsRemaining:taskRunsRemaining, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,

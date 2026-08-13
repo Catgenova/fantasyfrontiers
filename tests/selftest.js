@@ -5226,6 +5226,56 @@
     } finally { FF.navPickCat(prevCat); }
   });
 
+  // Workflows tab (v0.0.100.0): production-chain trees under Resources > Workflows. Every node must
+  // link to a real category, the canonical Mining->Metallurgy->smiths chain must render, and the spine
+  // edges must match the live recipe data so a recipe change breaks the suite, not the chart.
+  suite('ui: workflows production trees, nav targets and spine edges', function(){
+    // The category is wired into the Resources area.
+    var res = FF.AREAS.filter(function(a){ return a.id==='resources'; })[0];
+    ok(res && res.subs.some(function(s){ return s[0]==='workflows'; }), 'Workflows is a Resources sub-tab');
+
+    var html = FF.renderWorkflowsTab();
+    // The owner's canonical example renders as clickable nodes.
+    ok(/data-action="wfNav"[^>]*data-sub="mining"/.test(html), 'Mining is a clickable workflow node');
+    ok(/data-sub="metallurgy"/.test(html) && /data-sub="armorsmithing"/.test(html) && /data-sub="weaponsmithing"/.test(html) && /data-sub="shieldsmithing"/.test(html) && /data-sub="blacksmithing"/.test(html),
+      'the Mining line shows Metallurgy feeding the smiths');
+    ok(/Physiques that affect this line/.test(html), 'each line carries a physique footer');
+
+    // Every node in every tree resolves to a category the nav actually has (or Farming/Lands).
+    var validCats = {}; FF.AREAS.forEach(function(a){ a.subs.forEach(function(s){ validCats[s[0]] = 1; }); });
+    var bad = [];
+    FF.WORKFLOW_TREES.forEach(function(t){
+      FF.workflowTreeSkillIds(t.node).forEach(function(id){
+        var nav = FF.skillNavTarget(id);
+        if(!nav || !nav.cat || !validCats[nav.cat]) bad.push(id + '->' + (nav && nav.cat));
+      });
+    });
+    eq(bad.join(','), '', 'every workflow node points at a real category');
+
+    // Spine-edge integrity: the raw material of each root really is consumed by its first refiner. Build
+    // an item-key -> producing-skill index the same way the game's inventory bucketing does, then assert.
+    function producerOf(key){
+      // gather item?
+      var gs = FF.GATHERING_SKILLS;
+      for(var sk in gs){ if((gs[sk].items||[]).some(function(it){ return (it.id||it) === key; })) return sk; }
+      var m = /^(.*)_t\d+$/.exec(key); if(!m) return null;
+      // recipe output id prefix == producing skill?
+      var cs = FF.CRAFTING_SKILLS;
+      for(var ck in cs){ if((cs[ck].recipes||[]).some(function(rc){ return rc.id === key; })) return ck; }
+      return null;
+    }
+    function consumesFrom(childSkill, parentSkill){
+      var recs = (FF.CRAFTING_SKILLS[childSkill] || {}).recipes || [];
+      return recs.some(function(rc){ return Object.keys(rc.inputs||{}).some(function(k){ return producerOf(k) === parentSkill; }); });
+    }
+    // These four refiners have their recipes in ALL_CRAFT_RECIPES (unlike smiths, which build via
+    // tier-data functions), so their inputs are checkable here.
+    ok(consumesFrom('metallurgy','mining'),   'Metallurgy consumes Mining ore (spine edge)');
+    ok(consumesFrom('carpentry','forestry'),  'Carpentry consumes Forestry logs (spine edge)');
+    ok(consumesFrom('tanning','butchering'),  'Tanning consumes Butchering hide (spine edge)');
+    ok(consumesFrom('pottery','digging'),     'Pottery consumes Digging clay (spine edge)');
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
