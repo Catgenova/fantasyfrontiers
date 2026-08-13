@@ -22795,16 +22795,29 @@
   // recipe. Capped at the selection, the card instead lands on the next BUILDABLE LINK at-or-below it.
   // Detected from the recipe itself (an input that is the ladder's own t-1), so every chained card --
   // current and future -- is covered without opting in, and pure-material cards keep the designed jump.
+  // Is input key `k` the chain ladder's "previous link" for tier t (the prior tier's own piece)?
+  function craftTierChainKey(k, t){
+    if(t <= 0) return false;
+    var m = k.match(/_t(\d+)_normal$/);            // rarity ladders (incl. tools, whose card tier is offset by 1)
+    if(m && (+m[1] === t-1 || +m[1] === t)) return true;
+    if(k === 'cottage_t'+(t-1)) return true;        // the two suffix-less chains
+    if(k.indexOf('workshop_') === 0 && k.slice(-('_t'+(t-1)).length) === '_t'+(t-1)) return true;
+    return false;
+  }
   function craftTierChainInput(inputs, t){
     if(t <= 0 || !inputs) return false;
-    for(var k in inputs){
-      if(!inputs.hasOwnProperty(k)) continue;
-      var m = k.match(/_t(\d+)_normal$/);            // rarity ladders (incl. tools, whose card tier is offset by 1)
-      if(m && (+m[1] === t-1 || +m[1] === t)) return true;
-      if(k === 'cottage_t'+(t-1)) return true;        // the two suffix-less chains
-      if(k.indexOf('workshop_') === 0 && k.slice(-('_t'+(t-1)).length) === '_t'+(t-1)) return true;
-    }
+    for(var k in inputs){ if(inputs.hasOwnProperty(k) && craftTierChainKey(k, t)) return true; }
     return false;
+  }
+  // A chain-ladder tier's inputs MINUS its previous link -- the raw material only. The filter's last-resort
+  // fallback uses this so a player holding the material but not the intermediate link still sees the card at
+  // the tier their material fits (with the missing link flagged red in the Needs line), instead of stranded
+  // at the top default that quotes a material they don't have (ticket-0178).
+  function craftTierBaseInputs(inputs, t){
+    if(!inputs || t <= 0) return inputs || {};
+    var out = {};
+    for(var k in inputs){ if(inputs.hasOwnProperty(k) && !craftTierChainKey(k, t)) out[k] = inputs[k]; }
+    return out;
   }
   function craftFilterTier(sel, maxTier, getInputs, isActiveAt){
     if(!craftOnlyAffordable) return sel;
@@ -22819,6 +22832,18 @@
       var capSel = Math.max(0, Math.min(sel, maxTier));
       var top = craftTierChainInput(getInputs(Math.max(1, capSel)), Math.max(1, capSel)) ? capSel : maxTier;
       for(t=top; t>=0; t--){ if(hasInputs(getInputs(t))) return t; }
+    }
+    // Nothing is FULLY craftable. On a chain ladder, still surface the tier whose RAW MATERIAL you hold --
+    // the missing piece is the prior-tier link, and the Needs line flags it -- instead of stranding the
+    // card at the top default that quotes a material you don't have (ticket-0178). Capped at the selection
+    // like the main search, so this never reseats ABOVE it (the anti-auto-climb rule that keeps a
+    // freshly-farmed link from being consumed). Non-chain cards have no separate base set
+    // (craftTierChainInput is false at every tier), so this leaves them at `sel` as before.
+    var capBase = Math.max(0, Math.min(sel, maxTier));
+    for(var i=0; i<=capBase; i++){
+      t = craftFilterLowest ? i : capBase - i;
+      var gi = getInputs(t);
+      if(craftTierChainInput(gi, t) && hasInputs(craftTierBaseInputs(gi, t))) return t;
     }
     return sel;
   }
@@ -45192,7 +45217,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.10';
+  var GAME_VERSION = '0.0.99.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45331,7 +45356,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
-      craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
+      craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,
       // ticket-0161: every zero-arg tab renderer goes on the seam, so the renderer sweeps (bare big

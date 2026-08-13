@@ -5172,6 +5172,17 @@
       // (b) The rare-roll / failed-craft case: chain fully broken, only t0 affordable -> t0 (not above sel).
       S.inventory = { tanning_t0: 2 };
       eq(FF.craftFilterTier(8, 20, beltInputs), 0, 'a fully broken chain falls to t0, never above the selection');
+      // ticket-0178: NOTHING is fully craftable (the prior-tier link is missing), but the player HOLDS the
+      // raw material for t5. The card now surfaces t5 -- so the Needs line shows the missing link in red --
+      // instead of stranding at the top-tier selection quoting a material the player doesn't have.
+      S.inventory = { tanning_t5: 999 };
+      eq(FF.craftFilterTier(8, 20, beltInputs), 5, 'a chain card with raw material but no link surfaces the material tier, not the stranded selection');
+      var bi5 = FF.craftTierBaseInputs(beltInputs(5), 5);
+      ok(!Object.keys(bi5).some(function(k){ return /belt_t\d+_normal/.test(k); }), 'base inputs drop the prior-tier chain link');
+      ok(Object.keys(bi5).some(function(k){ return k.indexOf('tanning_') === 0; }), 'base inputs keep the raw material');
+      // No material at ANY tier -> unchanged: the card stays at the selection.
+      S.inventory = {};
+      eq(FF.craftFilterTier(8, 20, beltInputs), 8, 'with no material anywhere the card stays at the selection, as before');
       // Pure-material cards keep the designed jump-to-highest.
       var matInputs = function(t){ var o = {}; o['tanning_t'+t] = 1; return o; };
       S.inventory = { tanning_t9: 1 };
