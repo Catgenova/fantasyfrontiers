@@ -41394,13 +41394,13 @@
       return marketState.selectedItem ? marketInvoke('book', { item_key: marketState.selectedItem }) : null;
     }).then(function(bres){
       if(bres && bres.ok){ marketState.book = bres; marketState.bookItem = marketState.selectedItem; }
-      if(currentCategory==='market') render();
+      if(currentCategory==='market') softRender(); // softRender, not render: this async poll must not rebuild #content mid-click (ticket-0018)
     });
   }
   function marketLoadBook(item){
     return marketInvoke('book', { item_key:item }).then(function(res){
       if(res && res.ok){ marketState.book = res; marketState.bookItem = item; }
-      if(currentCategory==='market') render();
+      if(currentCategory==='market') softRender(); // softRender: an order-book response landing mid-click must not eat the Sell click
     });
   }
   function marketPickItem(item){ marketState.selectedItem = item; marketState.sellMsg = ''; marketState.book = null; marketState.bookItem = null; render(); marketLoadBook(item); }
@@ -44658,7 +44658,7 @@
     // rest of the UI rebuilds at 10fps is the whole reason the physics state lives outside the DOM. It
     // no-ops in a few microseconds when the stage is not on screen (the canvas lookup misses).
     orbTick();
-    if(needsRender && !isEditingField() && (Date.now() - _lastRenderAt) >= RENDER_MIN_MS){
+    if(needsRender && !isEditingField() && !_pointerHeld && (Date.now() - _lastRenderAt) >= RENDER_MIN_MS){
       needsRender = false;
       var _pr = PERF_ON ? performance.now() : 0;
       render();
@@ -44731,12 +44731,22 @@
     var t = ae.tagName;
     return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT';
   }
-  // Repaint now UNLESS the player is mid-interaction with a focused field -- a full render() rebuilds
-  // #content and, on iOS especially, slams shut any open native <select> picker (the guild-bank deposit
-  // dropdown) or drops a text input's keyboard. In that case defer: mark needsRender so the main loop
-  // flushes the repaint the instant the field blurs. Use this for BACKGROUND polls (guild/bank live
-  // ticks) that fire on a timer while the player may be picking something.
-  function softRender(){ if(isEditingField()) needsRender = true; else render(); }
+  // A full render() rebuilds #content, so one that lands between a button's press and release replaces the
+  // button mid-click and the click is LOST -- the marketplace "had to hit Sell two or three times" bug
+  // (ticket-0018): a background order-book poll's async render fired while the player was clicking Place
+  // Sell Order. Track whether a pointer is currently pressed so softRender() and the loop's flush both
+  // defer while it is. Cleared on release: the click dispatches right after pointerup, before any rAF, so
+  // the (un-rebuilt) button is still there to receive it. `blur` clears a gesture that left the window.
+  var _pointerHeld = false;
+  window.addEventListener('pointerdown', function(){ _pointerHeld = true; }, true);
+  ['pointerup','pointercancel','blur'].forEach(function(ev){ window.addEventListener(ev, function(){ _pointerHeld = false; }, true); });
+  // Repaint now UNLESS the player is mid-interaction with a focused field or mid-click -- a full render()
+  // rebuilds #content and, on iOS especially, slams shut any open native <select> picker (the guild-bank
+  // deposit dropdown) or drops a text input's keyboard, and it eats an in-flight click (above). In that
+  // case defer: mark needsRender so the main loop flushes the repaint the instant the field blurs / the
+  // pointer lifts. Use this for BACKGROUND polls (guild/bank/market live ticks) that fire on a timer while
+  // the player may be picking or clicking something.
+  function softRender(){ if(isEditingField() || _pointerHeld) needsRender = true; else render(); }
 
   // pagehide fires on hard refresh / close / navigate (more reliably than beforeunload, and works with
   // bfcache); the keepalive beacon carries the latest state to Supabase so nothing recent is lost.
@@ -45217,7 +45227,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.13';
+  var GAME_VERSION = '0.0.99.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45400,7 +45410,7 @@
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_HALL_MAX_LEVEL:GUILD_HALL_MAX_LEVEL, GUILD_HALL_COSTS:GUILD_HALL_COSTS, guildHallCost:guildHallCost, guildHallLevel:guildHallLevel, guildMaxMembers:guildMaxMembers, renderGuildHallPanel:renderGuildHallPanel, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
-      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; }, renderEstateJobStatus:renderEstateJobStatus,
+      render:render, softRender:softRender, _setPointerHeld:function(v){ _pointerHeld = !!v; }, _needsRender:function(){ return needsRender; }, _setNeedsRender:function(v){ needsRender = !!v; }, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; }, renderEstateJobStatus:renderEstateJobStatus,
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
       navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,

@@ -5201,6 +5201,20 @@
     } finally { S.inventory = savedInv; FF._setCraftOnlyAffordable(false); FF._setCraftFilterLowest(false); }
   });
 
+  // A full render() rebuilds #content, so a background poll's async render landing between a button's
+  // press and release replaces the button mid-click and the click is lost (the marketplace "hit Sell 2-3
+  // times" bug, ticket-0018). softRender() -- which the market's async callbacks now use -- must DEFER
+  // while a pointer is held (and while a field is focused), so the click always lands on the live button.
+  suite('ui: a background render defers mid-click so it cannot eat the click (ticket-0018)', function(){
+    var wasNeeds = FF._needsRender();
+    try {
+      FF._setNeedsRender(false); FF._setPointerHeld(true);
+      FF.softRender();
+      ok(FF._needsRender(), 'softRender defers (marks needsRender) while a pointer is pressed');
+      FF._setPointerHeld(false);
+    } finally { FF._setPointerHeld(false); FF._setNeedsRender(!!wasNeeds); }
+  });
+
   // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
   suite('skills: beekeeping / brewing / confectionery', function(){
     // Registered as real skills in the right groups.
