@@ -35995,37 +35995,40 @@
       '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'\u25a6 2D':'\u25c8 3D')+'</button>'+
       '</div>';
     html += '<div class="estate-hover-info" id="estateHoverInfo">Hover a tile or its borders to inspect it. Drag to pan, +/- to zoom, arrows to rotate.</div>';
-    html += '<div class="estate-options-panel">';
-    html += '<h3 style="margin-top:0">Estate Size &bull; '+tilesOwned+' tiles owned</h3>';
+    // The per-tile detail panel leads; the estate-wide Size / Terraforming / Action-Queue panel follows it
+    // (owner request -- the tile actions are what a player clicks moment to moment, so they read first).
+    html += (estateSelectedEdge ? renderEstateEdgeOptions() : renderEstateTileOptions());
+    var sizeHtml = '<div class="estate-options-panel">';
+    sizeHtml += '<h3 style="margin-top:0">Estate Size &bull; '+tilesOwned+' tiles owned</h3>';
     if(fullyExpanded){
-      html += '<div class="estate-action-info">'+(estIsGuild?'The guild estate':'Your estate')+' is fully expanded.</div>';
+      sizeHtml += '<div class="estate-action-info">'+(estIsGuild?'The guild estate':'Your estate')+' is fully expanded.</div>';
     } else {
-      html += '<div class="estate-action-row">';
+      sizeHtml += '<div class="estate-action-row">';
       var expandNote = guildFromTreasury
         ? ' <b>Paid from the guild treasury</b> ('+fmt(guildBankState.treasury||0)+'g). Officers &amp; the leader only.'
         : (estIsGuild ? ' <b>Paid from your own gold</b> ('+fmt(state.gold||0)+'g). A Mortal guild has no treasury, so any member can grow the shared estate.' : '');
-      html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.'+expandNote+'</div>';
+      sizeHtml += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.'+expandNote+'</div>';
       var expandLabel = canAfford ? ('Expand: '+fmt(nextCost)+'g'+(guildFromTreasury?' from treasury':'')) : (guildFromTreasury && !canManageGuild ? 'Officers only' : fmt(nextCost)+'g Req.');
-      html += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+expandLabel+'</button>';
-      html += '</div>';
+      sizeHtml += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+expandLabel+'</button>';
+      sizeHtml += '</div>';
     }
     if(estIsGuild){
       // Leader-set demolition permission: the minimum rank allowed to remove buildings / tear up pavement.
       var _isLeader = guildState.myRank==='leader';
       var _curRole = guildDestroyMinRole();
       var _roleLbl = { leader:'Leader only', officer:'Officers+', member:'Any member' };
-      html += '<div class="estate-action-row" style="margin-top:8px">';
-      html += '<div class="estate-action-info"><b>Demolition permission</b><br>Who may remove a building or tear up pavement on the guild estate.'+(_isLeader?'':' <span style="color:var(--text-faint)">Only the guild leader can change this.</span>')+'</div>';
-      html += '<div style="display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0">';
+      sizeHtml += '<div class="estate-action-row" style="margin-top:8px">';
+      sizeHtml += '<div class="estate-action-info"><b>Demolition permission</b><br>Who may remove a building or tear up pavement on the guild estate.'+(_isLeader?'':' <span style="color:var(--text-faint)">Only the guild leader can change this.</span>')+'</div>';
+      sizeHtml += '<div style="display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0">';
       ['leader','officer','member'].forEach(function(r){
         var on = _curRole===r;
-        html += '<button class="action-btn" data-action="guildSetDestroyRole" data-role="'+r+'" style="width:auto;padding:6px 10px'+(on?';outline:2px solid var(--gold);outline-offset:1px':'')+'" '+((on||!_isLeader)?'disabled':'')+'>'+_roleLbl[r]+'</button>';
+        sizeHtml += '<button class="action-btn" data-action="guildSetDestroyRole" data-role="'+r+'" style="width:auto;padding:6px 10px'+(on?';outline:2px solid var(--gold);outline-offset:1px':'')+'" '+((on||!_isLeader)?'disabled':'')+'>'+_roleLbl[r]+'</button>';
       });
-      html += '</div></div>';
+      sizeHtml += '</div></div>';
     }
-    html += renderEstateJobStatus();
-    html += '</div>';
-    html += (estateSelectedEdge ? renderEstateEdgeOptions() : renderEstateTileOptions());
+    sizeHtml += renderEstateJobStatus();
+    sizeHtml += '</div>';
+    html += sizeHtml;
     html += renderEstateBuildingsPanel();
     return html;
   }
@@ -45185,7 +45188,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.8';
+  var GAME_VERSION = '0.0.99.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
