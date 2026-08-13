@@ -18274,8 +18274,14 @@
     eq(B(8*H, null), 8*H, 'no server data (offline wake, pre-migration backend) -> the wall figure stands');
     eq(B(8*H, NaN), 8*H, 'garbage server data fails open');
     eq(B(8*H, -5), 8*H, 'a negative witness fails open');
-    eq(B(0, 999), 0, 'zero away is zero credit');
-    eq(B(-100, 999), 0, 'a negative wall claim (backward clock step) credits nothing');
+    // Device transition (v0.0.99.7): loaded.lastSaved is ANOTHER device's clock, so a returning device
+    // whose clock lags reads a zero/negative wall. The server witness is skew-free -> credit IT, not 0
+    // (the old return-0 was the "nothing restored, refresh does not help" bug on device transitions).
+    eq(B(0, 2*H), 2*H, 'zero wall with a server witness credits the witnessed absence (cross-device clock skew)');
+    eq(B(-100, 2*H), 2*H, 'a negative wall (returning device clock behind the last one) credits the server witness');
+    eq(B(0, 0), 0, 'zero wall and zero witness is zero credit (a genuine quick refresh)');
+    eq(B(0, null), 0, 'zero wall with NO server witness stays zero (nothing trustworthy to credit)');
+    eq(B(-100, null), 0, 'a negative wall with no witness credits nothing (unchanged: cannot trust anything)');
     // The write hold: while a wake reconcile is in flight, cloud pushes must wait -- otherwise the
     // resumed loop's 4s cadence can push this tab's stale memory before the peek resolves.
     ok(FF.CLOUD_WAKE_HOLD_MAX_MS >= 10000 && FF.CLOUD_WAKE_HOLD_MAX_MS <= 60000, 'the hold backstop releases well before the watchdog banner would fire');

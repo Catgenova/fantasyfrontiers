@@ -37517,15 +37517,26 @@
   }
   // Server-witnessed bound on any offline credit (offline-catchup audit, v0.0.77.32). The saves row's
   // updated_at was stamped by the SERVER at our own last accepted push -- at or before this tab went
-  // dark -- so (server_now - updated_at) >= the true absence, always. min() can therefore only strip
-  // INFLATION (a client wall clock that jumped while the tab slept: a brand-new player was handed the
-  // full 12h catch-up cap off one tab flick, most likely NTP correcting a fresh device's slow clock),
-  // never legitimate credit. Null serverAway = no server data (offline wake, pre-migration backend) ->
-  // the wall figure stands, exactly as before.
+  // dark -- so (server_now - updated_at) >= the true absence, always. When the wall figure is positive,
+  // min() can only strip INFLATION (a client wall clock that jumped while the tab slept: a brand-new
+  // player was handed the full 12h catch-up cap off one tab flick, most likely NTP correcting a fresh
+  // device's slow clock), never legitimate credit. Null serverAway = no server data (offline wake,
+  // pre-migration backend) -> the wall figure stands, exactly as before.
+  //
+  // NON-POSITIVE WALL: the credit path used to return 0 here, which silently BROKE device transitions
+  // (v0.0.99.7). loaded.lastSaved is a client stamp written by whichever device saved last; a player
+  // moving to a SECOND device reads that other clock, so a returning device whose clock lags reads a
+  // zero-or-NEGATIVE wall (their absence can't really be negative -- it's cross-device skew, and a
+  // device that was asleep/off commonly boots behind before NTP). It credited NOTHING, and every refresh
+  // recomputed the same negative gap, so nothing ever restored. The server witness is a SINGLE skew-free
+  // clock and >= the true absence, so when the wall is non-positive it is the only trustworthy signal:
+  // credit it. This cannot inflate (server_now - updated_at is server-computed off the player's own row;
+  // a large value means a real long absence) and applyOfflineProgress still caps the result at 12h.
   var OFFLINE_BOUND_SLACK_MS = 60000;
   function offlineCreditBound(wallMs, serverAwayMs){
-    if(!(wallMs > 0)) return 0;
-    if(serverAwayMs == null || !isFinite(serverAwayMs) || serverAwayMs < 0) return wallMs;
+    var hasWitness = (serverAwayMs != null && isFinite(serverAwayMs) && serverAwayMs >= 0);
+    if(!(wallMs > 0)) return hasWitness ? serverAwayMs : 0; // client clock unreliable -> trust the server-witnessed absence
+    if(!hasWitness) return wallMs;
     return Math.min(wallMs, serverAwayMs + OFFLINE_BOUND_SLACK_MS);
   }
   // While a wake reconcile is deciding whose save is the truth, EVERY cloud write holds -- otherwise the
@@ -45159,7 +45170,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.6';
+  var GAME_VERSION = '0.0.99.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
