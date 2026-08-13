@@ -5356,6 +5356,60 @@
     ok(/skill-phys-aff/.test(FF.renderSkillsGrid()), 'physique rows show their effect inline');
   });
 
+  // Early-game flow batch (v0.0.99.20): First Frontier auto-guide, Gathering beginner nudge, path-select
+  // guard copy, gentler grind targets, and beginner ticker starters.
+  suite('onboarding: frontier guide, gather nudge, path guard, ticker starters', function(){
+    var s = FF._state;
+    var savedTracked = (s.trackedQuests || []).slice(), savedGuide = s.frontierGuide, savedClaimed = s.quests;
+
+    // The auto-guide pins the earliest unclaimed First Frontier quest so a new player's tracker is never empty.
+    s.quests = { claimed:{} }; s.trackedQuests = []; s.frontierGuide = true;
+    FF.frontierGuideSync();
+    ok(s.trackedQuests.indexOf('answer_the_call') !== -1, 'a fresh player auto-tracks the first First Frontier objective');
+    // Claiming the first advances the guide to the next objective.
+    s.quests.claimed['answer_the_call'] = true; s.trackedQuests = [];
+    FF.frontierGuideSync();
+    ok(s.trackedQuests.length === 1 && s.trackedQuests[0] !== 'answer_the_call', 'the guide advances to the next unclaimed objective after a claim');
+    // Untracking a First Frontier quest turns the guide off (player took over) so it stops re-pinning.
+    FF.questUntrack(s.trackedQuests[0]);
+    eq(s.frontierGuide, false, 'manually untracking a First Frontier quest stops the auto-guide');
+    FF.frontierGuideSync();
+    eq(s.trackedQuests.length, 0, 'with the guide off, nothing is re-pinned');
+    // Once the whole line is claimed, the guide retires itself.
+    s.frontierGuide = true; s.quests = { claimed:{} };
+    FF.QUESTS.forEach(function(q){ if(q.cat === 'gettingstarted') s.quests.claimed[q.id] = true; });
+    FF.frontierGuideSync();
+    eq(s.frontierGuide, false, 'a finished First Frontier line retires the guide');
+    ok(FF.firstFrontierComplete(), 'firstFrontierComplete() is true when every objective is claimed');
+
+    // Gathering beginner nudge: shown while the line is unfinished, hidden once done, and only on gather skills.
+    s.quests = { claimed:{} };
+    ok(/Start/.test(FF.gatheringBeginnerNudge('digging')) && /First Frontier/.test(FF.gatheringBeginnerNudge('digging')), 'a new player sees a start-here nudge on Gathering');
+    eq(FF.gatheringBeginnerNudge('butchering'), '', 'Butchering (its own UI) shows no gather nudge');
+    FF.QUESTS.forEach(function(q){ if(q.cat === 'gettingstarted') s.quests.claimed[q.id] = true; });
+    eq(FF.gatheringBeginnerNudge('digging'), '', 'a veteran (line done) sees no nudge');
+    // The "Start here" badge marks the first startable card for an untrained newcomer.
+    s.quests = { claimed:{} }; var savedXp = s.xp.digging; s.xp.digging = 0;
+    ok(/start-here/.test(FF.renderGatherTab('digging')), 'the first Digging card is flagged Start here for a newcomer');
+    s.xp.digging = savedXp;
+
+    // Path-select guard: Immortal recommended, Mortal advanced, and a permanence warning.
+    var imm = FF.PATH_CHOICES.filter(function(p){ return p.id === 'immortal'; })[0];
+    var mor = FF.PATH_CHOICES.filter(function(p){ return p.id === 'mortal'; })[0];
+    ok(imm && imm.recommended, 'Immortal is flagged recommended');
+    ok(mor && mor.advanced, 'Mortal is flagged advanced');
+
+    // Grind cliff softened: the three early 100-counts are now 40.
+    eq(FF.questById('break_ground').target, 40, 'Break Ground now asks for 40 Sand');
+    eq(FF.questById('strike_the_vein').target, 40, 'Strike the Vein now asks for 40 Copper');
+    eq(FF.questById('fire_the_forge').target, 40, 'Fire the Forge now asks for 40 Bars');
+
+    // Ticker has sequenced beginner starters.
+    ok(FF.TICKER_STARTER_TIPS.length >= 3 && /First Frontier/.test(FF.TICKER_STARTER_TIPS[0]), 'beginner starter tips exist and point at First Frontier');
+
+    s.trackedQuests = savedTracked; s.frontierGuide = savedGuide; s.quests = savedClaimed;
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
@@ -11905,7 +11959,7 @@
     // ---- Quest 11: "Break Ground" -- dig 100 Sand -> 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush ----
     var q11 = FF.questById('break_ground');
     ok(!!q11 && q11.cat==='gettingstarted', 'Break Ground lives in Getting Started');
-    eq(q11.target, 100, 'its target is 100 Sand dug');
+    eq(q11.target, 40, 'its target is 40 Sand dug');
     eq(q11.reward.kind, 'items', 'it grants a multi-item reward');
     var r11 = q11.reward.items.map(function(it){ return it.itemId; });
     ok(r11.indexOf('digging_t0')!==-1 && r11.indexOf('muddyartifact_t0')!==-1 && r11.indexOf('tool_archaeology_t0_normal')!==-1, 'reward is 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush');
@@ -11918,8 +11972,8 @@
     eq(FF.questProgress(q11), 0, 'no Sand dug -> 0 progress');
     s.stats['gathered_digging_t1'] = 100; // a different soil must not count
     eq(FF.questProgress(q11), 0, 'digging other soil does not advance the Sand tally');
-    s.stats['gathered_digging_t0'] = 100;
-    ok(FF.questComplete(q11) && FF.questClaimable(q11), '100 Sand completes + arms the quest');
+    s.stats['gathered_digging_t0'] = 40;
+    ok(FF.questComplete(q11) && FF.questClaimable(q11), '40 Sand completes + arms the quest');
     var r11Before = r11.map(function(id){ return s.inventory[id]||0; });
     ok(FF.claimQuest('break_ground'), 'claim succeeds');
     eq((s.inventory['digging_t0']||0) - r11Before[0], 200, 'claim grants 200 Sand');
@@ -12000,7 +12054,7 @@
     // ---- Quest 16: "Strike the Vein" -- mine 100 Copper -> 100 Coal + a Copper Bellows ----
     var q16 = FF.questById('strike_the_vein');
     ok(!!q16 && q16.cat==='gettingstarted', 'Strike the Vein lives in Getting Started');
-    eq(q16.target, 100, 'its target is 100 Copper mined');
+    eq(q16.target, 40, 'its target is 40 Copper mined');
     var r16 = q16.reward.items.map(function(it){ return it.itemId; });
     ok(r16.indexOf('coal')!==-1 && r16.indexOf('tool_metallurgy_t0_normal')!==-1, 'reward is 100 Coal + a Copper Metallurgy tool');
     ok(/Bellows/.test(FF.questRewardLabel(q16)), 'the reward line names the Copper Bellows');
@@ -12009,8 +12063,8 @@
     s.quests = { claimed:{} }; s.stats = {};
     s.stats['gathered_mining_t1'] = 100; // a different ore must not count
     eq(FF.questProgress(q16), 0, 'mining other ore does not advance the Copper tally');
-    s.stats['gathered_mining_t0'] = 100;
-    ok(FF.questComplete(q16) && FF.questClaimable(q16), '100 Copper completes + arms the quest');
+    s.stats['gathered_mining_t0'] = 40;
+    ok(FF.questComplete(q16) && FF.questClaimable(q16), '40 Copper completes + arms the quest');
     var r16Before = r16.map(function(id){ return s.inventory[id]||0; });
     ok(FF.claimQuest('strike_the_vein'), 'claim succeeds');
     eq((s.inventory['coal']||0) - r16Before[0], 100, 'claim grants 100 Coal');
@@ -12020,7 +12074,7 @@
     // ---- Quest 17: "Fire the Forge" -- smelt 100 Copper Bars -> 100 Copper Bars ----
     var q17 = FF.questById('fire_the_forge');
     ok(!!q17 && q17.cat==='gettingstarted', 'Fire the Forge lives in Getting Started');
-    eq(q17.target, 100, 'its target is 100 smelted bars');
+    eq(q17.target, 40, 'its target is 40 smelted bars');
     ok(q17.reward.kind==='item' && q17.reward.itemId==='metallurgy_t0' && q17.reward.qty===100, 'reward is 100 Copper Bars (metallurgy_t0)');
     eq(FF.ALL_SELLABLE['metallurgy_t0'].name, 'Copper Bar', 'tier-0 metallurgy is a Copper Bar');
     eq(q17.nav.sub, 'metallurgy', 'the Go destination drills into Metallurgy');
@@ -12028,8 +12082,8 @@
     s.quests = { claimed:{} }; s.stats = {};
     s.stats['made_metallurgy_t1'] = 100; // a different bar must not count
     eq(FF.questProgress(q17), 0, 'smelting other bars does not advance the Copper-bar tally');
-    s.stats['made_metallurgy_t0'] = 100;
-    ok(FF.questComplete(q17) && FF.questClaimable(q17), '100 Copper Bars completes + arms the quest');
+    s.stats['made_metallurgy_t0'] = 40;
+    ok(FF.questComplete(q17) && FF.questClaimable(q17), '40 Copper Bars completes + arms the quest');
     var barsBefore = s.inventory['metallurgy_t0'] || 0;
     ok(FF.claimQuest('fire_the_forge'), 'claim succeeds');
     eq((s.inventory['metallurgy_t0']||0) - barsBefore, 100, 'claim grants 100 Copper Bars');

@@ -976,6 +976,14 @@
   .wf-use{font-size:9.5px;padding:1px 6px;border-radius:7px;border:1px dashed #5a4a28;background:#12100a;color:#c2b184;cursor:pointer;line-height:1.5;}
   .wf-use:hover{border-color:var(--gold);border-style:solid;color:#ece0c4;}
   .wf-use-plain{cursor:default;opacity:.8;}
+  /* New-player onboarding: gather nudge + "start here" card, path-select badges + warning */
+  .beginner-intro{border-left:3px solid var(--gold);padding-left:10px;}
+  .item-card.beginner-card{box-shadow:0 0 0 2px rgba(216,178,74,.55),0 0 12px rgba(216,178,74,.25);}
+  .start-here{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#1a1206;background:var(--gold);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
+  .path-badge{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;border-radius:6px;padding:2px 7px;margin-left:8px;}
+  .path-badge.rec{color:#1a1206;background:var(--gold);}
+  .path-badge.adv{color:#e6b3ba;background:rgba(138,31,44,.35);border:1px solid #8a1f2c;}
+  .path-warn{color:var(--danger,#d06a5a);font-size:12px;line-height:1.45;margin-top:14px;max-width:560px;margin-left:auto;margin-right:auto;}
   /* Skills page controls + collapsible groups + clickable rows */
   .skills-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 2px;}
   .skills-controls .inv-search{flex:1;min-width:170px;}
@@ -16084,6 +16092,7 @@
       estateClears: 0,           // count of estate obstacles cleared (Quest progress source)
       quests: { claimed: {}, completed: {} },   // quest progression: { claimed:{questId:true}, completed:{questId:true} } (completed latches a reached target so a momentary condition reversing can't un-arm the claim)
       trackedQuests: [],         // quest ids pinned to the persistent tracker card (above the action bar)
+      frontierGuide: true,       // new players: auto-track the current First Frontier objective so the tracker is never empty at the start; cleared once the line is done or the player takes over tracking (see frontierGuideSync)
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
       equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
       tower: {},                 // The Tower: per-entrance progress { <entranceId>: { floor, best } }
@@ -22193,7 +22202,15 @@
   // Pre-alpha disclaimer: shown in red on the ticker with a much higher chance than any single tip.
   var TICKER_DISCLAIMER = '<span style="color:#ff6b6b;font-weight:700">The current state of the game is Active Development Pre-Alpha. Please expect bugs, frequent changes, and future progress wipes. Thank you and excited for your feedback!</span>';
   var TICKER_DISCLAIMER_CHANCE = 0.30; // ~30% of marquee cycles land on the disclaimer
-  function nextTickerHtml(order, i){ return Math.random() < TICKER_DISCLAIMER_CHANCE ? TICKER_DISCLAIMER : order[i]; }
+  var TICKER_DISCLAIMER_GRACE = 6;     // ...but not for the first few cycles, so a new player's opening tips read clean
+  // Sequenced "do this first" tips shown at the very start of a new player's session, before the random pool.
+  var TICKER_STARTER_TIPS = [
+    "<b>New here?</b> Your current goal is pinned in the tracker just above the task bar. Open <b>Quests &rarr; First Frontier</b> for a guided path through the whole game.",
+    "<b>Start by gathering:</b> press <b>Start</b> on a resource under <b>Gathering</b> (Digging Sand is a fine first move). Actions keep running on their own, even while you are away.",
+    "<b>Make your own gear:</b> gather raw goods, refine them (Metallurgy, Tanning), then craft tools, weapons and armor and equip them on the <b>Equipment &amp; Stats</b> screen.",
+    "<b>Fight to grow:</b> choose a foe on the <b>Enemies</b> tab and the battle plays out on the Combat screen. Kills, crafts and gathers all build your Total Level."
+  ];
+  function nextTickerHtml(order, i, cycle){ return (cycle >= TICKER_DISCLAIMER_GRACE && Math.random() < TICKER_DISCLAIMER_CHANCE) ? TICKER_DISCLAIMER : order[i]; }
   var _tickerStarted = false;
   function startTicker(){
     var el = document.getElementById('ffTickerText');
@@ -22201,9 +22218,11 @@
     _tickerStarted = true;
     var order = TICKER_TIPS.slice();
     for(var k=order.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)); var t=order[k]; order[k]=order[j]; order[j]=t; } // shuffle so the sequence differs each session
-    var i = 0;
-    el.innerHTML = nextTickerHtml(order, 0);
-    el.addEventListener('animationiteration', function(){ i = (i+1) % order.length; el.innerHTML = nextTickerHtml(order, i); });
+    // A player still on the First Frontier line opens with the ordered starter tips before the shuffled pool.
+    var full = (!firstFrontierComplete() ? TICKER_STARTER_TIPS.slice() : []).concat(order);
+    var i = 0, cycle = 0;
+    el.innerHTML = nextTickerHtml(full, 0, 0);
+    el.addEventListener('animationiteration', function(){ cycle++; i = (i+1) % full.length; el.innerHTML = nextTickerHtml(full, i, cycle); });
   }
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
@@ -22628,7 +22647,19 @@
   }
 
   // ================= RENDER: GATHERING =================
-  function renderGatherTab(skillKey){ return renderGatherTabBody(skillKey) + renderToolCardFor(skillKey); }
+  // True once every non-capstone First Frontier quest is claimed -- used to stop showing beginner nudges.
+  function firstFrontierComplete(){
+    for(var i = 0; i < QUESTS.length; i++){ var q = QUESTS[i]; if(q.cat === 'gettingstarted' && !q.capstone && !questClaimed(q)) return false; }
+    return true;
+  }
+  // A one-line "start here" nudge on the Gathering tabs, shown only while the player is still working the
+  // First Frontier line (veterans never see it). The earliest tabs had no self-explanation at all.
+  function gatheringBeginnerNudge(skillKey){
+    if(GATHERING_TAB_SKILL_IDS.indexOf(skillKey) === -1) return ''; // gathering skills only (Butchering has its own UI)
+    if(firstFrontierComplete()) return '';
+    return '<div class="section-intro beginner-intro">New here? Press <b>Start</b> on a resource below to begin gathering (the first tier is always ready at Level 1). Your <b>current objective</b> is pinned in the tracker above, and <b>Quests &rarr; First Frontier</b> walks you through the whole game, step by step.</div>';
+  }
+  function renderGatherTab(skillKey){ return gatheringBeginnerNudge(skillKey) + renderGatherTabBody(skillKey) + renderToolCardFor(skillKey); }
   function renderGatherTabBody(skillKey){
     var skill = GATHERING_SKILLS[skillKey];
     var lvl = getLevel(state.xp[skillKey]);
@@ -22641,14 +22672,18 @@
     }
     html += renderSkillProgressBar(skillKey);
     html += '<div class="card-grid">';
+    // Point a brand-new player (untrained skill, First Frontier unfinished) at the first startable card.
+    var beginner = !firstFrontierComplete() && (state.xp[skillKey] || 0) === 0, hintPlaced = false;
     skill.items.forEach(function(item){
       var locked = lvl < item.levelReq;
       var gslot = findActiveGatherSlot(skillKey, item.id);
       var isActive = !!gslot;
+      var startHint = beginner && !locked && !isActive && !hintPlaced;
+      if(startHint) hintPlaced = true;
       var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, skillKey)*(PHYS_LONG_GATHER.indexOf(skillKey)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
       var pct = isActive ? clamp((gslot.act.progress||0)/effTime*100,0,100) : 0;
-      html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+item.icon+'</div><div><div class="item-name">'+item.name+'</div><div class="item-meta">Req. Lv '+item.levelReq+'</div></div></div>';
+      html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+(startHint?' beginner-card':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+item.icon+'</div><div style="flex:1;min-width:0"><div class="item-name">'+item.name+(startHint?' <span class="start-here">Start here</span>':'')+'</div><div class="item-meta">Req. Lv '+item.levelReq+'</div></div></div>';
       html += '<div class="item-stats">'+xpStat(skillKey, item.xp, 'gather', item)+'<span>'+item.time+'s</span><span>'+item.sell+'g each</span></div>';
       if(skillKey==='digging'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(diggingMainChance(state)*100)+'%</b> &nbsp;|&nbsp; Bonus: Coal (1-5x) <b>'+Math.round(diggingCoalChance(state)*100)+'%</b>, Artifact <b>'+Math.round(diggingArtifactChance(state)*100)+'%</b></div>';
@@ -28066,9 +28101,9 @@
       nav:{ cat:'character' },
       reward:{ kind:'item', itemId:'tool_digging_t0_normal', qty:1 } },
     { id:'break_ground', cat:'gettingstarted', title:'Break Ground',
-      desc:'A spade earns its keep in the sandpits. Turn a hundred loads of sand and the earth gives up more than grit. Buried among it, the odd knot of caked artifact, waiting for a patient hand to lift it free. Dig deep; the frontier keeps its oldest secrets close to the surface here.',
-      how:'In Gathering → Digging, dig up 100 Sand.',
-      target:100, progress:function(st){ return (st.stats && st.stats['gathered_digging_t0']) || 0; },
+      desc:'A spade earns its keep in the sandpits. Turn forty loads of sand and the earth gives up more than grit. Buried among it, the odd knot of caked artifact, waiting for a patient hand to lift it free. Dig deep; the frontier keeps its oldest secrets close to the surface here.',
+      how:'In Gathering → Digging, dig up 40 Sand.',
+      target:40, progress:function(st){ return (st.stats && st.stats['gathered_digging_t0']) || 0; },
       nav:{ cat:'gathering', sub:'digging' },
       reward:{ kind:'items', items:[
         { itemId:'digging_t0', qty:200 },
@@ -28100,18 +28135,18 @@
       nav:{ cat:'estate' },
       reward:{ kind:'item', itemId:'tool_mining_t0_normal', qty:1 } },
     { id:'strike_the_vein', cat:'gettingstarted', title:'Strike the Vein',
-      desc:'Copper is the frontier’s first true metal. Soft, honest, and everywhere the rock runs green. Set your Pickaxe to the seams and pull a hundred loads of ore from the dark. Every strike is stock for the forge, and every forge is a step from scavenger to smith.',
-      how:'In Gathering → Mining, mine 100 Copper ore.',
-      target:100, progress:function(st){ return (st.stats && st.stats['gathered_mining_t0']) || 0; },
+      desc:'Copper is the frontier’s first true metal. Soft, honest, and everywhere the rock runs green. Set your Pickaxe to the seams and pull forty loads of ore from the dark. Every strike is stock for the forge, and every forge is a step from scavenger to smith.',
+      how:'In Gathering → Mining, mine 40 Copper ore.',
+      target:40, progress:function(st){ return (st.stats && st.stats['gathered_mining_t0']) || 0; },
       nav:{ cat:'gathering', sub:'mining' },
       reward:{ kind:'items', items:[
         { itemId:'coal', qty:100 },
         { itemId:'tool_metallurgy_t0_normal', qty:1 }
       ] } },
     { id:'fire_the_forge', cat:'gettingstarted', title:'Fire the Forge',
-      desc:'Ore is only a promise; the bar is the payment. Feed copper and coal to the roaring bellows and smelt a hundred honest ingots. The raw stock every tool, blade, and buckle is beaten from. Learn the fire now and there is little on the frontier your hands can’t make.',
-      how:'In Crafting → Metallurgy, smelt 100 Copper Bars from your ore and coal.',
-      target:100, progress:function(st){ return (st.stats && st.stats['made_metallurgy_t0']) || 0; },
+      desc:'Ore is only a promise; the bar is the payment. Feed copper and coal to the roaring bellows and smelt forty honest ingots. The raw stock every tool, blade, and buckle is beaten from. Learn the fire now and there is little on the frontier your hands can’t make.',
+      how:'In Crafting → Metallurgy, smelt 40 Copper Bars from your ore and coal.',
+      target:40, progress:function(st){ return (st.stats && st.stats['made_metallurgy_t0']) || 0; },
       nav:{ cat:'crafting', sub:'metallurgy' },
       reward:{ kind:'item', itemId:'metallurgy_t0', qty:100 } },
     { id:'forge_your_tools', cat:'gettingstarted', title:'Forge Your Tools',
@@ -29583,14 +29618,31 @@
   function questToggleExpand(id){ if(id) questExpanded[id] = !questExpanded[id]; }
   // ---- Quest tracker: pin an unclaimed quest to the persistent card above the action bar ----
   function questTracked(id){ return !!(state.trackedQuests && state.trackedQuests.indexOf(id) !== -1); }
-  function questUntrack(id){ if(!state.trackedQuests) return; var i = state.trackedQuests.indexOf(id); if(i !== -1){ state.trackedQuests.splice(i, 1); saveGame(); render(); } }
+  // A player untracking a First Frontier quest is taking over their own tracking -- stop the auto-guide so
+  // it never fights them by re-pinning the objective they just dismissed.
+  function frontierGuideStopIfManual(id){ var q = questById(id); if(state.frontierGuide && q && q.cat === 'gettingstarted') state.frontierGuide = false; }
+  function questUntrack(id){ if(!state.trackedQuests) return; var i = state.trackedQuests.indexOf(id); if(i !== -1){ frontierGuideStopIfManual(id); state.trackedQuests.splice(i, 1); saveGame(); render(); } }
   function questToggleTrack(id){
     var q = questById(id); if(!q) return;
     if(!Array.isArray(state.trackedQuests)) state.trackedQuests = [];
     var i = state.trackedQuests.indexOf(id);
-    if(i !== -1){ state.trackedQuests.splice(i, 1); }
+    if(i !== -1){ frontierGuideStopIfManual(id); state.trackedQuests.splice(i, 1); }
     else if(!questClaimed(q)){ state.trackedQuests.push(id); } // a claimed quest is done -- nothing to track
     saveGame(); render();
+  }
+  // New-player guidance: keep the earliest unclaimed First Frontier quest pinned to the tracker so a
+  // newcomer always has a visible "do this next" objective from turn one, advancing automatically as each
+  // is claimed. Retires itself once the whole line is claimed, or the moment the player manually untracks
+  // a First Frontier quest (frontierGuideStopIfManual). Only new games opt in (state.frontierGuide); old
+  // saves leave it undefined and are untouched.
+  function frontierGuideSync(){
+    if(!state.frontierGuide) return;
+    var next = null;
+    for(var i = 0; i < QUESTS.length; i++){ var q = QUESTS[i]; if(q.cat === 'gettingstarted' && !q.capstone && !questClaimed(q)){ next = q; break; } }
+    if(!next){ state.frontierGuide = false; return; } // whole First Frontier line claimed -> guide retires
+    if(!Array.isArray(state.trackedQuests)) state.trackedQuests = [];
+    var hasFrontierTracked = state.trackedQuests.some(function(id){ var tq = questById(id); return tq && tq.cat === 'gettingstarted'; });
+    if(!hasFrontierTracked && state.trackedQuests.indexOf(next.id) === -1) state.trackedQuests.push(next.id);
   }
   // Per-monster kill tally (Quest progress). Called from defeatMonster on every non-dungeon kill.
   function bumpMonsterKill(id){ if(!id) return; if(!state.monsterKills) state.monsterKills = {}; state.monsterKills[id] = (state.monsterKills[id]||0) + 1; }
@@ -43197,6 +43249,7 @@
   var questTrackerSig = null;
   function renderQuestTracker(){
     var el = document.getElementById('questTracker'); if(!el) return;
+    frontierGuideSync(); // new players: pin the current First Frontier objective before drawing
     var ids = (state.trackedQuests || []).filter(function(id){ var q = questById(id); return q && !questClaimed(q); });
     if(ids.length !== (state.trackedQuests || []).length) state.trackedQuests = ids; // self-heal claimed/stale ids
     var sig = ids.map(function(id){ var q = questById(id); return id + ':' + questProgress(q) + '/' + q.target + ':' + (questClaimable(q) ? 'c' : ''); }).join('|');
@@ -45789,12 +45842,12 @@
   // ---- Path selection: shown once, right after a brand-new account first loads (state.mortal is
   // null until chosen). The player commits to Immortal (standard) or Mortal (permadeath) play. ----
   var PATH_CHOICES = [
-    { id:'immortal', name:'Immortal', accent:'var(--gold)',
+    { id:'immortal', name:'Immortal', accent:'var(--gold)', recommended:true,
       icon:svgIcon('crown','#c9a84a'),
-      desc:'The standard path. Death has no lasting cost, when you fall in battle you simply retreat to recover, keeping all your progress. Full access to the Auction House, guild banks, and every guild. Experience is earned at the normal rate.' },
-    { id:'mortal', name:'Mortal', accent:'#8a1f2c',
+      desc:'The standard path, and the right choice for a first run. Death has no lasting cost, when you fall in battle you simply retreat to recover, keeping all your progress. Full access to the Auction House, guild banks, and every guild. Experience is earned at the normal rate.' },
+    { id:'mortal', name:'Mortal', accent:'#8a1f2c', advanced:true,
       icon:svgIcon('hornedskull','#8a1f2c'),
-      desc:'A single, fragile life. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>half</b> the rate, cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
+      desc:'A single, fragile life for players who want the hardest challenge. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>half</b> the rate, cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
   ];
   var pathSelectBusy = false;
   function pathSelectNeeded(){ return CHAT_ENABLED && authUser && state.mortal === null; }
@@ -45809,7 +45862,8 @@
     }
     var cards = PATH_CHOICES.map(function(c){
       return '<button class="path-card" data-action="choosePath" data-path="'+c.id+'"'+(pathSelectBusy?' disabled':'')+' style="--path-accent:'+c.accent+';">'
-        + '<div class="path-card-head"><span class="path-card-icon">'+c.icon+'</span><span class="path-card-name">'+c.name+'</span></div>'
+        + '<div class="path-card-head"><span class="path-card-icon">'+c.icon+'</span><span class="path-card-name">'+c.name+'</span>'
+        + (c.recommended?'<span class="path-badge rec">Recommended</span>':'')+(c.advanced?'<span class="path-badge adv">Advanced</span>':'')+'</div>'
         + '<div class="path-card-desc">'+c.desc+'</div>'
         + '<div class="path-card-cta">Choose '+c.name+'</div>'
         + '</button>';
@@ -45818,6 +45872,7 @@
       + '<div style="font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--gold);letter-spacing:1.5px;margin-bottom:4px;">Choose Your Path</div>'
       + '<div style="color:var(--text-dim);font-size:13px;margin-bottom:18px;">This choice is made once, now, as you set out. It shapes how you live, and how you can die.</div>'
       + '<div class="path-card-row">' + cards + '</div>'
+      + '<div class="path-warn">Your path is <b>permanent</b>. An Immortal can only become Mortal by erasing all progress and starting over; a Mortal turns Immortal only by dying. New here? <b style="color:var(--gold)">Immortal</b> is the safe choice, and you can always dare a Mortal life on a future run.</div>'
       + '</div>';
   }
   function removePathSelect(){
@@ -45850,7 +45905,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.19';
+  var GAME_VERSION = '0.0.99.20';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46006,7 +46061,7 @@
       cardCollapseKey:cardCollapseKey, cardCollapsed:cardCollapsed, cardCollapseToggle:cardCollapseToggle, decorateCollapsibleCards:decorateCollapsibleCards, ensureLandingStyle:ensureLandingStyle,
       landingFightActive:landingFightActive, landingFightSeed:landingFightSeed, landingFightMount:landingFightMount, landingFightScale:landingFightScale, landingFightStop:landingFightStop, LANDING_FOES:LANDING_FOES,
       fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables, trayConsumStatusText:trayConsumStatusText, trayFoldBtn:trayFoldBtn,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, frontierGuideSync:frontierGuideSync, firstFrontierComplete:firstFrontierComplete, gatheringBeginnerNudge:gatheringBeginnerNudge, renderGatherTab:renderGatherTab, TICKER_STARTER_TIPS:TICKER_STARTER_TIPS, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
