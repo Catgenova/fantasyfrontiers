@@ -5426,21 +5426,31 @@
       var r = FF.ALL_CRAFT_RECIPES[id];
       if(r) ok(typeof FF.recipeTier(r, id) === 'number' && !isNaN(FF.recipeTier(r, id)), id + ' resolves a real tier via recipeTier');
     });
-    // The Frontier "Work the Alchemy" quest reads a made_alchemy_t<T> key and advances when it is bumped;
-    // the old made_alchemy_tundefined tally does nothing.
-    var q = FF.QUESTS.filter(function(x){ return /_r_alchemy$/.test(x.id); })[0];
-    if(q){
-      eq(q.target, 10, 'a "Work the Alchemy" Frontier quest exists (craft 10)');
-      var savedQ = s.quests, savedStats = s.stats;
-      try {
-        s.quests = { claimed:{} };
-        s.stats = { made_alchemy_tundefined: 10 };
-        eq(FF.questProgress(q), 0, 'the old made_alchemy_tundefined tally leaves it at 0');
+    // Every generated-frontier refine/cook quest (Third=t3, Fourth=t4, Fifth=t5) must advance from the craft
+    // its skill actually makes. For each, find the tier the quest wants, then confirm the skill's recipe at
+    // that tier resolves the SAME made_<skill>_t<tier> key -- and that the old made_<skill>_tundefined does
+    // nothing. Covers Alchemy/Gemcutting/Apothecary/Inscription/Papermaking/Baking (id != skill name) plus
+    // the id-matched skills, across all three frontiers.
+    var savedQ = s.quests, savedStats = s.stats, checked = 0;
+    try {
+      FF.QUESTS.filter(function(x){ return /(?:third|fourth|fifth)frontier_[rc]_/.test(x.id) && x.target === 10; }).forEach(function(q){
+        var skill = q.id.split(/_[rc]_/)[1];
+        var recs = (FF.CRAFTING_SKILLS[skill] || {}).recipes || []; if(!recs.length) return;
+        // Find the tier the quest reads via questPROGRESS (not questComplete: reaching the target LATCHES
+        // completed, after which progress reports the target regardless of stats).
         var tier = null;
-        for(var n = 0; n <= 20; n++){ s.stats = {}; s.stats['made_alchemy_t' + n] = 10; if(FF.questComplete(q)){ tier = n; break; } }
-        ok(tier !== null, 'the quest completes once made_alchemy_t<its tier> reaches 10 (tier ' + tier + ')');
-      } finally { s.quests = savedQ; s.stats = savedStats; }
-    }
+        for(var n = 0; n <= 20; n++){ s.quests = { claimed:{} }; s.stats = {}; s.stats['made_' + skill + '_t' + n] = 1; if(FF.questProgress(q) > 0){ tier = n; break; } }
+        if(tier === null) return; // not a made_<skill>_t quest
+        // The old bug: the undefined key never advanced it. Fresh quests so no latch leaks in.
+        s.quests = { claimed:{} }; s.stats = {}; s.stats['made_' + skill + '_tundefined'] = 10;
+        eq(FF.questProgress(q), 0, q.id + ': the old made_' + skill + '_tundefined tally does nothing');
+        // The recipe this skill crafts at that tier now resolves the SAME made_<skill>_t<tier> key.
+        var rec = recs.filter(function(r){ return FF.recipeTier(r, r.id) === tier; })[0];
+        ok(rec, q.id + ': a ' + skill + ' recipe exists at tier ' + tier);
+        if(rec){ eq('made_' + skill + '_t' + FF.recipeTier(rec, rec.id), 'made_' + skill + '_t' + tier, q.id + ': crafting it tallies made_' + skill + '_t' + tier); checked++; }
+      });
+    } finally { s.quests = savedQ; s.stats = savedStats; }
+    ok(checked >= 30, 'verified the refine/cook Frontier quests across the 3rd/4th/5th frontiers (' + checked + ' checked)');
   });
 
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
