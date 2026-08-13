@@ -1397,7 +1397,7 @@
   // would flip estateIsWater false and strip the waterside crop bonus from every neighbouring Field, so a
   // fishery would quietly damage the farm beside it.
   suite('estate buildings: the Fishing Weir stands in water without draining it', function(){
-    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.fishing;
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedXp = s.xp.fishing, savedArch = s.xp.architecture;
     var g = [];
     for(var x=0; x<8; x++){ g[x] = []; for(var y=0; y<8; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
     s.estate.grid = g; s.inventory = {}; FF.estUse(false);
@@ -1421,6 +1421,16 @@
       g[4][4].buildingId = 'weir_t3';
       eq(FF.waterYieldBonusAt('personal','4,5'), FF.WATER_YIELD_BONUS, 'and KEEPS it with a Weir standing in the water');
       ok(FF.estateIsWater(g[4][4]), 'because the Weir never paves its tile');
+      // ticket-0170: the Weir's UPGRADE tier is bounded by Architecture alone, not by pavement (the water
+      // tile has none: pavementTierOf is -1). Capping by pavement pinned the button to "Pave higher first"
+      // on a Weir you can never pave. buildingUpgradeCap is the single source the UI gate reads.
+      s.xp.architecture = 1e9;                                   // Architecture cap = top tier
+      eq(FF.pavementTierOf(g[4][4]), -1, 'the water tile has no pavement tier (the trap input)');
+      eq(FF.buildingUpgradeCap(g[4][4]), FF.TIER_COUNT-1, 'a Weir on water can upgrade all the way up on Architecture alone');
+      // A paved building on the SAME grid is still pavement-capped (the fix is water-specific).
+      g[6][6].buildingId = 'apiary_t3'; g[6][6].paveTileId = 'paving_t5';
+      eq(FF.buildingUpgradeCap(g[6][6]), 5, 'a land building stays capped by its pavement tier');
+      g[6][6].buildingId = null;
       // Being raised out of the water would strand it, so the raise is refused at dispatch as well as
       // at the button (a raise can be queued before the Weir is placed).
       var rv = FF.estateQueuedJobValid({ kind:'raise' }, g[4][4]);
@@ -1447,7 +1457,7 @@
       g[4][4].apiaryAt = Date.now() - 365*24*3600*1000;
       FF.processProducers();
       eq(s.inventory.fishing_t3 || 0, Math.floor(FF.ESTATE_APIARY_CAP_MS / per), 'and a year away pays only the capped window');
-    } finally { s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.fishing = savedXp; FF.recomputeAqueducts(); }
+    } finally { s.estate.grid = savedGrid; s.inventory = savedInv; s.xp.fishing = savedXp; s.xp.architecture = savedArch; FF.recomputeAqueducts(); }
   });
 
   // ---- BATCH B: the Salvage Yard ------------------------------------------------------------------

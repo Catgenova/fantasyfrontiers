@@ -32438,6 +32438,16 @@
   function workshopSpeedBonus(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopSpeedPct(p); if(g!==undefined) s+=workshopSpeedPct(g); return s; }
   function workshopDoubleChance(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return Math.min(0.95, s); }
   function pavementTierOf(cell){ if(!cell || cell.type!=='paved' || !cell.paveTileId) return -1; var m=/paving_t(\d+)/.exec(cell.paveTileId); return m ? parseInt(m[1],10) : -1; }
+  // Highest tier the building on this cell can upgrade to: Architecture-capped, and pavement-capped only
+  // for land buildings. A WATER building (Fishing Weir) stands in the water, not on pavement, and
+  // pavementTierOf is -1 on a water tile -- capping by it pinned the Weir's upgrade button to
+  // "Pave higher first" on a tile it can never pave (ticket-0170). estateUpgradeBuilding already exempts
+  // water; this is the single source the UI gate reads so the two cannot drift.
+  function buildingUpgradeCap(cell){
+    if(!cell || !cell.buildingId) return -1;
+    var water = buildingSurface(buildingKeyOf(cell.buildingId)) === 'water';
+    return Math.min(water ? TIER_COUNT-1 : pavementTierOf(cell), estateArchitectureTierCap(), TIER_COUNT-1);
+  }
   function estWorkshopMap(){ return estIsGuild ? guildPlacedWorkshops : placedWorkshops; } // "one per skill" set for the active estate
   // Workshops owned in inventory whose tier fits on this tile's pavement and whose skill
   // isn't already placed elsewhere on this estate (one per skill).
@@ -35481,12 +35491,17 @@
                   ((estIsGuild ? guildAqueductFed : aqueductFed)[x+','+y] ? 'Carrying water' : 'Dry: it must chain back to a water tile within '+aqueductRange(bTierHere)+' tiles. A Curb on the border between two Aqueducts crosses free and costs none of that range')+'</span>') : '')+'</div>';
         h += '<button class="action-btn stop" data-action="estateRemoveBuilding" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         h += '</div>';
-        var bbCur = bTierHere|0, bbPaveT = pavementTierOf(cell), bbArchCap = estateArchitectureTierCap();
-        var bbMax = Math.min(bbPaveT, bbArchCap, TIER_COUNT-1);
+        // A water building (Fishing Weir) stands in the water, not on pavement, so its upgrade tier is
+        // bounded by Architecture alone -- pavementTierOf is -1 on a water tile and would pin the button to
+        // "Pave higher first" on a Weir you can never pave (ticket-0170). estateUpgradeBuilding already
+        // exempts water from the pavement check; this mirrors that exemption in the UI gate.
+        var bbCur = bTierHere|0;
+        var bbWater = buildingSurface(buildingKeyOf(cell.buildingId)) === 'water';
+        var bbMax = buildingUpgradeCap(cell);
         if(bbCur < TIER_COUNT-1 && bDefHere){
           var bbCanAny = bbMax > bbCur;
-          h += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade '+escapeHtml(bLabel)+'</b><br>Jump to any tier your pavement <i>and</i> Architecture support'+(bbMax>=0?' (up to '+escapeHtml(FORESTRY_NAMES[bbMax])+')':'')+' &bull; pays the built target, the old one comes back</div>';
-          h += '<button class="action-btn" data-action="estateToggleBuildingUpgradeMenu" '+((bbCanAny&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(bbCanAny?(estateBuildingUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher first'))+'</button></div>';
+          h += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade '+escapeHtml(bLabel)+'</b><br>Jump to any tier your '+(bbWater?'Architecture supports':'pavement <i>and</i> Architecture support')+(bbMax>=0?' (up to '+escapeHtml(FORESTRY_NAMES[bbMax])+')':'')+' &bull; pays the built target, the old one comes back</div>';
+          h += '<button class="action-btn" data-action="estateToggleBuildingUpgradeMenu" '+((bbCanAny&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(bbCanAny?(estateBuildingUpgradeMenuOpen?'Close List':'Choose Tier'):(bbWater?'Raise Architecture':'Pave higher first')))+'</button></div>';
           if(estateBuildingUpgradeMenuOpen && bbCanAny){
             h += '<div class="estate-paving-library">';
             for(var bbt=bbCur+1; bbt<=bbMax; bbt++){
@@ -45170,7 +45185,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.7';
+  var GAME_VERSION = '0.0.99.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45359,7 +45374,7 @@
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
-      pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
+      pavementTierOf:pavementTierOf, buildingUpgradeCap:buildingUpgradeCap, formatDuration:formatDuration, getRarity:getRarity,
       RARITY_TIERS:RARITY_TIERS, TOOL_RARITY_MULT:TOOL_RARITY_MULT, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, SACRIFICE_RARITY_MULT:SACRIFICE_RARITY_MULT, SELL_RARITY_MULT:SELL_RARITY_MULT,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk, estateJobFieldsFrom:estateJobFieldsFrom, estateQueueClaimOutcome:estateQueueClaimOutcome,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
