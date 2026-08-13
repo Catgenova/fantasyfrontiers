@@ -5226,6 +5226,50 @@
     } finally { FF.navPickCat(prevCat); }
   });
 
+  // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
+  // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
+  suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
+    var s = FF._state;
+    // Classify every familiar from its own spell list; find one that CAN fight and one that cannot.
+    var dmgId = null, nonDmgId = null;
+    Object.keys(FF.FAMILIAR_DATA).forEach(function(id){
+      if(FF.familiarIsCombatCapable(id)){ if(!dmgId) dmgId = id; }
+      else if(!nonDmgId) nonDmgId = id;
+    });
+    ok(dmgId, 'at least one familiar has a damage spell (combat-capable)');
+    // familiarRoleInfo agrees with the spell types on the damage familiar.
+    var info = FF.familiarRoleInfo(dmgId);
+    eq(info.damage, true, 'a familiar with a hit/siphon/poison spell classifies as Damage');
+    eq(info.count, (FF.FAMILIAR_DATA[dmgId].spells||[]).length, 'role info counts every spell');
+    // The at-a-glance badge row carries a Damage tag + a spell count for a combat familiar.
+    var badge = FF.familiarBadgeHtml(dmgId);
+    ok(/fam-tag dmg/.test(badge), 'the badge row shows a Damage tag');
+    ok(/fam-spellct/.test(badge), 'the badge row shows a spell count');
+    if(nonDmgId){ eq(FF.familiarRoleInfo(nonDmgId).damage, false, 'a familiar with no attack spell is NOT combat-capable'); }
+    // The controls exist on the tab: filter chips, sort <select>, hide-unsummoned toggle.
+    var tab = FF.renderMenagerieTab();
+    ok(/data-action="menagerieSetFilter" data-filter="damage"/.test(tab), 'a Damage filter chip is offered');
+    ok(/data-action="menagerieSetFilter" data-filter="companions"/.test(tab), 'a Companions filter chip is offered');
+    ok(/id="menagerieSortSel"/.test(tab), 'a Sort dropdown is offered');
+    ok(/data-action="menagerieToggleHideLocked"/.test(tab), 'a Hide-unsummoned toggle is offered');
+    // The Damage filter drops non-damage familiars from the list. Own the two exemplars, then filter.
+    if(nonDmgId){
+      var svFam = { d:s.familiars[dmgId], n:s.familiars[nonDmgId] };
+      try {
+        s.familiars[dmgId] = { owned:true, level:5, stars:0 };
+        s.familiars[nonDmgId] = { owned:true, level:5, stars:0 };
+        FF._setMenagerieHideLocked(true);
+        FF._setMenagerieFilter('damage');
+        var list = FF.renderMenagerieList();
+        ok(list.indexOf('data-skill="'+dmgId+'"') !== -1, 'the Damage filter keeps a combat familiar ('+dmgId+')');
+        ok(list.indexOf('data-skill="'+nonDmgId+'"') === -1, 'the Damage filter hides a non-combat familiar ('+nonDmgId+')');
+      } finally {
+        FF._setMenagerieFilter('all'); FF._setMenagerieHideLocked(true); FF._setMenagerieSort('default');
+        s.familiars[dmgId] = svFam.d; s.familiars[nonDmgId] = svFam.n;
+      }
+    }
+  });
+
   // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
   suite('skills: beekeeping / brewing / confectionery', function(){
     // Registered as real skills in the right groups.
