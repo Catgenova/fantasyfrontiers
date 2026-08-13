@@ -15271,7 +15271,7 @@
       extraInputs: function(inputs, t){ inputs['carpentry_t'+t] = 20; inputs['twine_t'+t] = 15; },
       noStone: true,
       gateSkill: 'fishing',
-      produces: { prefix:'fishing_t', xpSkill:'fishing', label:'fish' },
+      produces: { prefix:'fishing_t', label:'fish' }, // no xpSkill: the Weir banks fish but grants NO Fishing XP (owner rule)
       blurb: function(t){ return 'Stands in the water and traps ' + (ALL_GATHER_ITEMS[('fishing_t'+t)] ? ALL_GATHER_ITEMS['fishing_t'+t].name : 'fish') + ' on its own. The tile still counts as water for neighbouring Fields.'; }
     },
     leyfont: {
@@ -32063,7 +32063,7 @@
         var units = Math.floor(elapsed / per);
         cell.apiaryAt = (now - (elapsed - units * per));   // keep the remainder, never the whole overhang
         addItem(itemId, units);
-        addXp(def.produces.xpSkill, units * 10 * (tier + 1));
+        if(def.produces.xpSkill) addXp(def.produces.xpSkill, units * 10 * (tier + 1)); // a producer with no xpSkill (the Weir) banks its item but trains nothing
         var b = byKey[key] || (byKey[key] = { n:0, itemId:itemId, def:def });
         b.n += units; b.itemId = itemId;
       }
@@ -45217,7 +45217,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.11';
+  var GAME_VERSION = '0.0.99.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

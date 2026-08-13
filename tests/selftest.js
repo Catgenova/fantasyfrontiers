@@ -1450,8 +1450,10 @@
       s.inventory = {};
       var per = FF.apiaryIntervalMs(3);
       g[4][4].apiaryAt = Date.now() - (4*per + 500);
+      var fishXpBefore = s.xp.fishing || 0;
       FF.processProducers();
       eq(s.inventory.fishing_t3 || 0, 4, 'four elapsed intervals bank four fish');
+      eq(s.xp.fishing || 0, fishXpBefore, 'the Weir banks fish but grants NO Fishing XP (owner rule)');
       // The offline cap is the shared one, so the Weir inherits it rather than needing its own.
       s.inventory = {};
       g[4][4].apiaryAt = Date.now() - 365*24*3600*1000;
