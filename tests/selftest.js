@@ -5226,7 +5226,7 @@
     } finally { FF.navPickCat(prevCat); }
   });
 
-  // Workflows tab (v0.0.100.0): production-chain trees under Resources > Workflows. Every node must
+  // Workflows tab (v0.0.99.17): production-chain trees under Resources > Workflows. Every node must
   // link to a real category, the canonical Mining->Metallurgy->smiths chain must render, and the spine
   // edges must match the live recipe data so a recipe change breaks the suite, not the chart.
   suite('ui: workflows production trees, nav targets and spine edges', function(){
