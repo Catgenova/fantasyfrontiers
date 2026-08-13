@@ -945,6 +945,21 @@
   .wf-phys-skill{font-size:11.5px;font-weight:700;color:#e0d3a8;min-width:140px;display:inline-flex;align-items:center;gap:5px;}
   .wf-phys-skill svg,.wf-phys-skill img{width:16px;height:16px;}
   .wf-phys-chips{display:flex;flex-wrap:wrap;gap:4px;}
+  /* Skills page controls + collapsible groups + clickable rows */
+  .skills-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 2px;}
+  .skills-controls .inv-search{flex:1;min-width:170px;}
+  .skills-sort{font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+  .skills-sort select{font-size:12px;padding:5px 8px;border-radius:7px;background:#181409;color:#e8dcc0;border:1px solid #4a3e22;}
+  .skill-grp-head{cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;}
+  .skill-grp-chev{font-size:10px;color:var(--text-faint);width:11px;flex:0 0 auto;}
+  .skill-grp-sub{margin-left:auto;font-family:var(--font-mono);font-size:10px;font-weight:400;letter-spacing:0;color:var(--text-faint);}
+  .skill-entry{padding:0;}
+  .skill-entry.skill-row-nav{cursor:pointer;border-radius:6px;margin:0 -6px;padding:0 6px;}
+  .skill-entry.skill-row-nav:hover{background:rgba(216,178,74,.08);}
+  .skill-entry.skill-row-nav:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+  .skill-row-busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hp-good);margin-right:5px;vertical-align:middle;box-shadow:0 0 4px var(--hp-good);}
+  .skill-bar-lbl{font-family:var(--font-mono);font-size:9px;color:var(--text-faint);text-align:right;margin:0 0 6px;}
+  .skill-phys-aff{font-size:10.5px;color:var(--text-dim);margin:0 0 6px;line-height:1.3;}
   .chat-wrap{display:flex;flex-direction:column;gap:8px;}
   .chat-status{display:flex;align-items:center;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
   .chat-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--text-faint);flex-shrink:0;}
@@ -16136,7 +16151,9 @@
   var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
   var equipAccOpen = {};            // equip-picker accordion group key -> open? (persists across renders)
   var equipHideLocked = false;      // hide proficiency-locked candidates you can't use yet in the equip pickers
-  var skillGroupExpanded = {};
+  var skillGroupExpanded = {};   // Skills page: group label -> true means COLLAPSED (default open)
+  var skillsSearch = '';         // Skills page live filter (matches skill label)
+  var skillsSort = 'default';    // default (group order) | level | progress (closest to level-up) | az
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
   var menagerieSearch = '';   // Menagerie search: matches by familiar name, skill, spell name, or spell effect
@@ -30257,25 +30274,87 @@
   function anySkillLevel(id){ return skillLevel(id, anySkillXpVal(id)); }
   function anySkillProgress(id){ return skillLevelProgress(id, anySkillXpVal(id)); }
   // Resources > Skills tab: same grouped list as Settings, but every skill also gets a live progress bar.
+  // Where a Skills-page row jumps to when tapped, or null if the skill has no page of its own (combat
+  // proficiencies and physiques train through play, not a screen). Gather/craft/farming route through
+  // skillNavTarget; classes and faith open their area tab.
+  function skillsRowNav(id){
+    if(GATHERING_SKILLS[id] || CRAFTING_SKILLS[id] || id === 'farming' || FARMING_SUBSKILLS.indexOf(id) !== -1){
+      var t = skillNavTarget(id); return (t && t.cat !== 'skills') ? t : null;
+    }
+    if(CLASS_SKILL_IDS.indexOf(id) !== -1) return { cat:'classes', sub:null };
+    if(FAITH_SKILL_IDS.indexOf(id) !== -1) return { cat:'faith', sub:null };
+    return null;
+  }
+  function skillsGroupStats(ids){
+    var maxed = 0, sum = 0;
+    ids.forEach(function(id){ var lv = skillLevel(id, anySkillXpVal(id)); sum += lv; if(lv >= MAX_SKILL_LEVEL) maxed++; });
+    return { count:ids.length, maxed:maxed, avg: ids.length ? Math.round(sum/ids.length) : 0 };
+  }
+  function skillsSortIds(ids){
+    if(skillsSort === 'default' || ids.length < 2) return ids;
+    function lbl(id){ return (SKILL_LABELS[id] || id).toLowerCase(); }
+    function byLbl(a, b){ return lbl(a) < lbl(b) ? -1 : lbl(a) > lbl(b) ? 1 : 0; }
+    var arr = ids.slice();
+    if(skillsSort === 'az') arr.sort(byLbl);
+    else if(skillsSort === 'level') arr.sort(function(a, b){ return skillLevel(b, anySkillXpVal(b)) - skillLevel(a, anySkillXpVal(a)) || byLbl(a, b); });
+    else if(skillsSort === 'progress') arr.sort(function(a, b){ return skillLevelProgress(b, anySkillXpVal(b)) - skillLevelProgress(a, anySkillXpVal(a)) || byLbl(a, b); });
+    return arr;
+  }
+  function skillRowHtml(id, busy){
+    var info = (SKILL_INFO[id] || PHYSIQUE_SKILL_MAP[id]) ? ' '+skillInfoBtn(id) : '';
+    var _xp = anySkillXpVal(id), _lv = skillLevel(id, _xp);
+    var _tag = _lv > MAX_SKILL_LEVEL ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.5px">✦</span>' : '';
+    var label = SKILL_LABELS[id] || id;
+    var dot = busy[id] ? '<span class="skill-row-busy" title="Training now"></span>' : '';
+    var nav = skillsRowNav(id);
+    var wrap = nav
+      ? '<div class="skill-entry skill-row-nav" data-action="wfNav" data-cat="'+nav.cat+'"'+(nav.sub?' data-sub="'+nav.sub+'"':'')+' role="button" tabindex="0" title="Open '+escapeHtml(label)+'">'
+      : '<div class="skill-entry">';
+    var h = wrap;
+    h += '<div class="settings-skill-row"><span>'+dot+escapeHtml(label)+info+'</span><b>Lv '+_lv+_tag+'</b></div>';
+    h += '<div class="progress-track" style="height:5px;margin:0 0 1px;"><div class="progress-fill" style="width:'+skillLevelProgress(id, _xp)+'%"></div></div>';
+    h += '<div class="skill-bar-lbl">'+skillBarRightLabel(id, _xp)+'</div>';
+    var aff = PHYSIQUE_SKILL_MAP[id] && PHYSIQUE_SKILL_MAP[id].affects;
+    if(aff) h += '<div class="skill-phys-aff">'+escapeHtml(aff)+'</div>';
+    return h + '</div>';
+  }
+  // The grid alone (columns), rebuilt on its own when the search box changes so typing keeps focus.
+  function renderSkillsGrid(){
+    var busy = navBusySkills();
+    var q = (skillsSearch || '').trim().toLowerCase();
+    var html = '<div class="settings-grid">';
+    SKILL_GROUPS.forEach(function(g){
+      var stats = skillsGroupStats(g.skills); // stats reflect the WHOLE group, not the filtered view
+      var shown = g.skills.filter(function(id){ return !q || (SKILL_LABELS[id] || id).toLowerCase().indexOf(q) !== -1; });
+      if(q && !shown.length) return; // hide groups with no match while searching
+      shown = skillsSortIds(shown);
+      var collapsed = !q && !!skillGroupExpanded[g.label]; // a search always expands so matches are visible
+      html += '<div class="settings-col">';
+      html += '<h4 class="skill-grp-head" data-action="toggleSkillGroup" data-group="'+escapeHtml(g.label)+'" style="color:'+g.color+'">'
+        + '<span class="skill-grp-chev">'+(collapsed?'▸':'▾')+'</span>'+escapeHtml(g.label)
+        + '<span class="skill-grp-sub">'+stats.maxed+'/'+stats.count+' max · avg '+stats.avg+'</span></h4>';
+      if(!collapsed) shown.forEach(function(id){ html += skillRowHtml(id, busy); });
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
   function renderSkillsTab(){
     var total = 0;
     ALL_MAIN_SKILL_IDS.forEach(function(id){ total += getLevel((state.xp && state.xp[id]) || 0); });
     PHYSIQUE_SKILLS.forEach(function(p){ total += getLevel((state.physique && state.physique[p.id]) || 0); });
-    var html = '<div class="section-intro">Every skill you can train, with its current level and progress. Tap a skill\'s <b>?</b> for what trains it and what it affects. <b>Total Level '+fmt(total)+'</b> (skills, proficiencies, classes &amp; physiques).</div>';
-    html += '<div class="settings-grid">';
-    SKILL_GROUPS.forEach(function(g){
-      html += '<div class="settings-col"><h4 style="color:'+g.color+'">'+escapeHtml(g.label)+'</h4>';
-      g.skills.forEach(function(id){
-        var info = (SKILL_INFO[id] || PHYSIQUE_SKILL_MAP[id]) ? ' '+skillInfoBtn(id) : '';
-        var _xp = anySkillXpVal(id), _lv = skillLevel(id, _xp);
-        var _tag = _lv > MAX_SKILL_LEVEL ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.5px">✦</span>' : '';
-        html += '<div class="settings-skill-row"><span>'+escapeHtml(SKILL_LABELS[id]||id)+info+'</span><b>Lv '+_lv+_tag+'</b></div>';
-        html += '<div class="progress-track" style="height:5px;margin:0 0 1px;"><div class="progress-fill" style="width:'+skillLevelProgress(id, _xp)+'%"></div></div>';
-        html += '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-faint);text-align:right;margin:0 0 6px">'+skillBarRightLabel(id, _xp)+'</div>';
-      });
-      html += '</div>';
-    });
+    var html = '<div class="section-intro">Every skill you can train, with its current level and progress. Tap a gather or craft skill to open its page, or its <b>?</b> for what trains it and what it affects. <b>Total Level '+fmt(total)+'</b> (skills, proficiencies, classes &amp; physiques).</div>';
+    html += '<div class="skills-controls">';
+    html += '<input type="text" id="skillsSearchInput" class="inv-search" placeholder="Search skills..." value="'+skillsSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
+    html += '<label class="skills-sort">Sort <select id="skillsSortSel">'
+      + '<option value="default"'+(skillsSort==='default'?' selected':'')+'>Group order</option>'
+      + '<option value="level"'+(skillsSort==='level'?' selected':'')+'>Level</option>'
+      + '<option value="progress"'+(skillsSort==='progress'?' selected':'')+'>Closest to level-up</option>'
+      + '<option value="az"'+(skillsSort==='az'?' selected':'')+'>A to Z</option>'
+      + '</select></label>';
+    html += '<button class="craft-filter-btn" data-action="skillsCollapseAll" title="Fold every group column">▴ Collapse all</button>';
     html += '</div>';
+    html += '<div id="skillsGrid">'+renderSkillsGrid()+'</div>';
     return html;
   }
   // ================= WORKFLOWS (Resources > Workflows) =================
@@ -44393,6 +44472,7 @@
       var groupKey = btn.getAttribute('data-group');
       skillGroupExpanded[groupKey] = !skillGroupExpanded[groupKey];
     },
+    skillsCollapseAll: function(btn, e){ SKILL_GROUPS.forEach(function(g){ skillGroupExpanded[g.label] = true; }); },
     togglePhysiquePanel: function(btn, e){ physiquePanelExpanded = !physiquePanelExpanded; },
     invFilterCat: function(btn, e){ inventoryFilterCat = btn.getAttribute('data-cat'); },
     invAccToggle: function(btn, e){ var g = btn.getAttribute('data-group'); if(g) inventoryAccOpen[g] = (inventoryAccOpen[g] === false); }, // default-open -> collapse on first tap
@@ -44702,6 +44782,9 @@
     if(e.target.id === 'invSearchInput'){
       inventorySearchQuery = e.target.value;
       renderInventoryPanel();
+    } else if(e.target.id === 'skillsSearchInput'){
+      skillsSearch = e.target.value;
+      var _sg = document.getElementById('skillsGrid'); if(_sg) _sg.innerHTML = renderSkillsGrid(); // rebuild only the grid so the search box keeps focus
     } else if(e.target.id === 'menagerieSearchInput'){
       menagerieSearch = e.target.value;
       var _ml = document.getElementById('menagerieList'); if(_ml) _ml.innerHTML = renderMenagerieList(); // update only the list so the search box keeps focus
@@ -44741,6 +44824,9 @@
     }
     if(e.target && e.target.id === 'menagerieSortSel'){
       menagerieSort = e.target.value; render(true); return;   // select is focused at change -> force the rebuild
+    }
+    if(e.target && e.target.id === 'skillsSortSel'){
+      skillsSort = e.target.value; render(true); return;      // select is focused at change -> force the rebuild
     }
     if(e.target && e.target.id === 'sacTierSelect'){
       sacFilterTier = e.target.value; render(true); return;
@@ -45599,7 +45685,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.17';
+  var GAME_VERSION = '0.0.99.18';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45745,6 +45831,7 @@
       // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
       // here for 13 versions because these were the tabs the sweep could not reach.
       renderWorkflowsTab:renderWorkflowsTab, WORKFLOW_TREES:WORKFLOW_TREES, skillNavTarget:skillNavTarget, workflowTreeSkillIds:workflowTreeSkillIds, wfNodeMeta:wfNodeMeta,
+      renderSkillsGrid:renderSkillsGrid, skillsRowNav:skillsRowNav, skillsGroupStats:skillsGroupStats, _setSkillsSearch:function(v){ skillsSearch = v||''; }, _setSkillsSort:function(v){ skillsSort = v||'default'; }, _setSkillGroupCollapsed:function(k,v){ skillGroupExpanded[k] = !!v; },
       renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, leaderboardQueryKey:leaderboardQueryKey, leaderboardPageSize:leaderboardPageSize, LEADERBOARD_LIMIT:LEADERBOARD_LIMIT, LEADERBOARD_LIMIT_WIDE:LEADERBOARD_LIMIT_WIDE, leaderboardFetch:leaderboardFetch, _lbSetFilters:function(m,o){ leaderboardMortalOnly=!!m; leaderboardOnlineOnly=!!o; }, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, taskRunsForTarget:taskRunsForTarget, taskRunsHorizon:taskRunsHorizon, taskRunsRemaining:taskRunsRemaining, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,

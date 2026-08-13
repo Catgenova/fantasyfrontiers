@@ -5276,6 +5276,47 @@
     ok(consumesFrom('pottery','digging'),     'Pottery consumes Digging clay (spine edge)');
   });
 
+  // Skills page batch (v0.0.99.18): search, sort, click-to-open, busy dots, group subtotals,
+  // collapsible columns + collapse-all, and physique effects inline.
+  suite('ui: skills page search / sort / nav / collapse', function(){
+    // Controls exist on the tab.
+    var tab = FF.renderSkillsTab();
+    ok(/id="skillsSearchInput"/.test(tab), 'a Search box is offered');
+    ok(/id="skillsSortSel"/.test(tab), 'a Sort dropdown is offered');
+    ok(/data-action="skillsCollapseAll"/.test(tab), 'a Collapse all button is offered');
+    ok(/data-action="toggleSkillGroup"/.test(tab), 'group headers are collapse toggles');
+
+    // Click-to-open: a gather/craft skill routes to its page; a physique does not.
+    var mineNav = FF.skillsRowNav('mining');
+    ok(mineNav && mineNav.cat === 'gathering' && mineNav.sub === 'mining', 'Mining row opens the Gathering tab');
+    var metalNav = FF.skillsRowNav('metallurgy');
+    ok(metalNav && metalNav.cat === 'refining', 'Metallurgy row opens its craft tab');
+    eq(FF.skillsRowNav('bodyStrength'), null, 'a physique has no page to open');
+    // The grid emits the wfNav action on a craft-skill row.
+    ok(/data-action="wfNav"[^>]*data-sub="metallurgy"/.test(FF.renderSkillsGrid()), 'a craft-skill row is a clickable nav target');
+
+    // Search narrows the grid to matching skills; a non-match drops out.
+    FF._setSkillsSearch('metallurgy');
+    var g = FF.renderSkillsGrid();
+    ok(/data-sub="metallurgy"/.test(g), 'search keeps a matching skill');
+    ok(g.indexOf('data-sub="tailoring"') === -1, 'search drops a non-matching skill');
+    FF._setSkillsSearch('');
+
+    // Collapse: a collapsed group hides its rows but keeps the header; search overrides collapse.
+    FF._setSkillGroupCollapsed('Gathering', true);
+    var gc = FF.renderSkillsGrid();
+    ok(/data-group="Gathering"/.test(gc), 'a collapsed group still shows its header');
+    ok(gc.indexOf('data-sub="mining"') === -1, 'a collapsed group hides its skill rows');
+    FF._setSkillsSearch('mining');
+    ok(/data-sub="mining"/.test(FF.renderSkillsGrid()), 'a search overrides the collapsed state');
+    FF._setSkillsSearch(''); FF._setSkillGroupCollapsed('Gathering', false);
+
+    // Group subtotals and the physique-effect subline.
+    var stats = FF.skillsGroupStats(['mining','metallurgy']);
+    ok(stats.count === 2 && typeof stats.maxed === 'number' && typeof stats.avg === 'number', 'group stats report count/maxed/avg');
+    ok(/skill-phys-aff/.test(FF.renderSkillsGrid()), 'physique rows show their effect inline');
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
