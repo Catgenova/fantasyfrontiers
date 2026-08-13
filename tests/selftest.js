@@ -1454,6 +1454,11 @@
       FF.processProducers();
       eq(s.inventory.fishing_t3 || 0, 4, 'four elapsed intervals bank four fish');
       eq(s.xp.fishing || 0, fishXpBefore, 'the Weir banks fish but grants NO Fishing XP (owner rule)');
+      // Every estate producer is passive: it banks its item but trains no skill (owner rule, v0.0.99.13).
+      Object.keys(FF.ESTATE_BUILDING_DEFS).forEach(function(k){
+        var p = FF.ESTATE_BUILDING_DEFS[k].produces;
+        if(p) ok(!p.xpSkill, 'the ' + k + ' producer grants no player XP');
+      });
       // The offline cap is the shared one, so the Weir inherits it rather than needing its own.
       s.inventory = {};
       g[4][4].apiaryAt = Date.now() - 365*24*3600*1000;
