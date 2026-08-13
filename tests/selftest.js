@@ -11463,6 +11463,14 @@
       eq(FF.familiarAnyCanTranscend(), true, 'a maxed owned familiar makes Transcend available');
       eq(FF.railSubFlash('menagerie'), true, 'the Menagerie flashes when a familiar can Transcend');
       eq(FF.railAreaFlash('battle'), true, 'and the Battle area that holds it flashes too');
+      // ticket-0175 (desktop): the rail must NOT tear down its buttons on an unchanged render, or the .flash
+      // CSS animation restarts every frame (up to 10x/sec under play) and never dims -> no visible pulse.
+      // Two back-to-back renders with no state change must keep the SAME button node.
+      if(typeof document !== 'undefined' && document.getElementById('ffRail')){
+        FF.render(); var _rn1 = document.querySelector('#ffRail [data-area="battle"]');
+        FF.render(); var _rn2 = document.querySelector('#ffRail [data-area="battle"]');
+        ok(_rn1 && _rn1 === _rn2, 'an unchanged render does not rebuild the rail, so the flash animation keeps pulsing');
+      }
       // ticket-0175 RETEST: the flash class also has to ANIMATE on the mobile sub-chips, not just the
       // desktop rail. The chip got the .flash class but no @media mobile rule animated it, so on phones the
       // Menagerie never pulsed. Assert a `.ff-subchips .chip.flash` rule exists AND sets an animation. Read

@@ -21952,6 +21952,8 @@
   // anywhere, not only while the Battle area is already open).
   function railAreaFlash(areaId){ var a = AREAS.filter(function(x){ return x.id===areaId; })[0]; return !!(a && a.subs.some(function(s){ return railSubFlash(s[0]); })); }
   // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
+  // Last-written markup per container, so an unchanged frame skips the innerHTML write (see the rebuild guard).
+  var _railSig = null, _dockSig = null, _chipSig = null;
   function renderCatTabs(){
     var railHtml = '', dockHtml = '', chipHtml = '';
     var _busy = navBusySkills();   // category-tier rollups (owner pick 2): task dot + at-cap count
@@ -21972,9 +21974,16 @@
     // Rebuilding the rail HTML recreates an EMPTY #chatDockPanel node; invalidate the dock signature
     // so renderChatDock() (called right after this in render()) refills it. Without this reset the
     // sig-gate sees "no structural change" and skips the refill, leaving chat permanently blank.
-    var railEl = document.getElementById('ffRail'); if(railEl){ railEl.innerHTML = railHtml; _chatDockSig = null; }
-    var dockEl = document.getElementById('ffBottomDock'); if(dockEl) dockEl.innerHTML = dockHtml;
-    var chipEl = document.getElementById('ffSubchips'); if(chipEl) chipEl.innerHTML = chipHtml;
+    // Rebuild each nav container only when its markup actually CHANGES. renderCatTabs runs on every render()
+    // (up to 10x/sec under combat/farming pressure); the old unconditional innerHTML write recreated every
+    // button each frame, which RESTARTED the .flash CSS animation before it could dim -- so an attention
+    // flash (a familiar ready to Transcend, a claimable quest, a ready crop) never visibly pulsed during
+    // active play (ticket-0175: flashed on an idle screen, not while playing). Byte-compare like #content;
+    // reset the chat-dock sig ONLY on a real rebuild (which recreates the empty #chatDockPanel). The
+    // firstChild guard re-writes if the node was emptied out from under us.
+    var railEl = document.getElementById('ffRail'); if(railEl && (railHtml !== _railSig || !railEl.firstChild)){ railEl.innerHTML = railHtml; _railSig = railHtml; _chatDockSig = null; }
+    var dockEl = document.getElementById('ffBottomDock'); if(dockEl && (dockHtml !== _dockSig || !dockEl.firstChild)){ dockEl.innerHTML = dockHtml; _dockSig = dockHtml; }
+    var chipEl = document.getElementById('ffSubchips'); if(chipEl && (chipHtml !== _chipSig || (chipHtml && !chipEl.firstChild))){ chipEl.innerHTML = chipHtml; _chipSig = chipHtml; }
   }
   // Persistent top bar HUD: crest, gold, event/tea buff chips, tracking, settings gear. Rebuilt each
   // tick (via updateHeader) so gold + buff countdowns stay live.
@@ -45909,7 +45918,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.21';
+  var GAME_VERSION = '0.0.99.22';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
