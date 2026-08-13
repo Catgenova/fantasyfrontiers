@@ -5276,6 +5276,45 @@
     ok(consumesFrom('pottery','digging'),     'Pottery consumes Digging clay (spine edge)');
   });
 
+  // Workflows UI batch (v0.0.99.19): jump bar, sections, legend, collapsible cards, stage colours,
+  // clickable cross-line material chips, per-node physique icons, and busy dots.
+  suite('ui: workflows jump-bar, sections, stage colours and material links', function(){
+    var html = FF.renderWorkflowsTab();
+    ok((html.match(/data-action="wfJump"/g) || []).length === FF.WORKFLOW_TREES.length, 'the jump bar has one chip per line');
+    ok((html.match(/class="wf-section"/g) || []).length === FF.WF_SECTIONS.length, 'lines are grouped into sections');
+    ok(/data-action="wfExpandAll"/.test(html) && /data-action="wfCollapseAll"/.test(html), 'Expand-all and Collapse-all controls exist');
+    ok(/wf-legend/.test(html) && /wf-s-gather/.test(html) && /wf-s-refine/.test(html) && /wf-s-craft/.test(html), 'a stage legend and stage-tinted nodes render');
+
+    // Stage classification: raw gather vs intermediate refine vs final craft.
+    eq(FF.wfNodeStage('mining'), 'gather', 'Mining is a gather stage');
+    eq(FF.wfNodeStage('metallurgy'), 'refine', 'Metallurgy is a refine stage');
+    eq(FF.wfNodeStage('weaponsmithing'), 'craft', 'Weaponsmithing is a craft stage');
+
+    // Cross-line material links: the "(with ...)" note becomes a clickable chip to the source line.
+    var parsed = FF.wfParseUses('barrels (with planks)');
+    eq(parsed.clean, 'barrels', 'the parenthetical is stripped from the shown note');
+    eq(parsed.mats.join(','), 'planks', 'the material is parsed out');
+    ok(/data-action="wfNav"[^>]*data-sub="carpentry"/.test(FF.wfMatChip('planks')), 'a Planks chip links to Carpentry');
+    ok(/data-action="wfNav"[^>]*data-cat="enemies"/.test(FF.wfMatChip('glyphs')), 'a Glyphs chip links to the Enemies tab (combat drop)');
+    ok(/class="wf-use"/.test(html), 'material chips render in the trees');
+
+    // Per-node physique icons and section assignment.
+    ok(/wf-pico/.test(html), 'nodes show physique icons at a glance');
+    eq(FF.WF_SECTION_OF.mining, 'gear', 'Mining files under Equipment');
+    eq(FF.WF_SECTION_OF.fishing, 'consumable', 'Fishing files under Food/Drink');
+    eq(FF.WF_SECTION_OF.digging, 'utility', 'Digging files under Estate/Utility');
+
+    // Collapse: a folded card keeps its header but drops the tree body.
+    FF._setWfCollapsed('mining', true);
+    var hc = FF.renderWorkflowsTab();
+    ok(/id="wf-mining"/.test(hc), 'a collapsed line keeps its card + header');
+    // Metallurgy is a NODE only in the Mining line (data-skill); it also appears as a "Metal Bars" material
+    // CHIP in other lines (data-sub, no data-skill), so match the node form specifically.
+    ok(hc.indexOf('data-skill="metallurgy"') === -1, 'a collapsed line hides its tree');
+    FF._setWfCollapsed('mining', false);
+    ok(/data-skill="metallurgy"/.test(FF.renderWorkflowsTab()), 'expanding restores the tree');
+  });
+
   // Skills page batch (v0.0.99.18): search, sort, click-to-open, busy dots, group subtotals,
   // collapsible columns + collapse-all, and physique effects inline.
   suite('ui: skills page search / sort / nav / collapse', function(){

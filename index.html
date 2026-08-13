@@ -945,6 +945,37 @@
   .wf-phys-skill{font-size:11.5px;font-weight:700;color:#e0d3a8;min-width:140px;display:inline-flex;align-items:center;gap:5px;}
   .wf-phys-skill svg,.wf-phys-skill img{width:16px;height:16px;}
   .wf-phys-chips{display:flex;flex-wrap:wrap;gap:4px;}
+  /* Workflows batch: controls, legend, jump bar, sections, collapsible cards, stage colours, uses chips */
+  .wf-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 2px;}
+  .wf-legend{margin-left:auto;display:inline-flex;gap:6px;align-items:center;}
+  .wf-lg{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:8px;border:1px solid;}
+  .wf-s-gather.wf-lg{color:#9fd08a;border-color:#4a6a3a;background:rgba(120,180,90,.08);}
+  .wf-s-refine.wf-lg{color:#e0c07a;border-color:#6a5a2e;background:rgba(200,160,80,.08);}
+  .wf-s-craft.wf-lg{color:#d8b04a;border-color:#6a5620;background:rgba(216,178,74,.10);}
+  .wf-toc{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px;}
+  .wf-toc-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:5px 9px;border-radius:8px;
+    background:#181409;border:1px solid #4a3e22;color:#e0d3a8;cursor:pointer;}
+  .wf-toc-chip:hover{border-color:var(--gold);background:#20180c;}
+  .wf-toc-chip svg,.wf-toc-chip img{width:15px;height:15px;flex:0 0 auto;}
+  .wf-section{margin:16px 0 6px;color:#cdbf98;font-size:13px;letter-spacing:.5px;border-bottom:1px solid #33291a;padding-bottom:4px;}
+  .wf-title{cursor:pointer;user-select:none;}
+  .wf-title-chev{font-size:11px;color:var(--text-faint);margin-right:2px;}
+  /* stage-tinted node borders (the chip itself, not the legend) */
+  .wf-node.wf-s-gather{border-left:3px solid #6a9a4a;}
+  .wf-node.wf-s-refine{border-left:3px solid #c8a24a;}
+  .wf-node.wf-s-craft{border-left:3px solid #d8b04a;}
+  .wf-node.wf-maxed{box-shadow:0 0 0 1px rgba(216,178,74,.4),0 1px 2px rgba(0,0,0,.4);}
+  .wf-node.wf-untouched{opacity:.5;}
+  .wf-node.wf-path{border-color:var(--gold);background:#241a0c;box-shadow:0 0 0 1px rgba(216,178,74,.5);opacity:1;}
+  .wf-check{color:var(--gold);font-size:10px;}
+  .wf-busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hp-good);margin-right:3px;vertical-align:middle;box-shadow:0 0 4px var(--hp-good);}
+  .wf-node-phys{display:inline-flex;gap:3px;margin-top:3px;}
+  .wf-pico{display:inline-flex;opacity:.85;}
+  .wf-pico svg,.wf-pico img{width:13px;height:13px;}
+  .wf-uses{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+  .wf-use{font-size:9.5px;padding:1px 6px;border-radius:7px;border:1px dashed #5a4a28;background:#12100a;color:#c2b184;cursor:pointer;line-height:1.5;}
+  .wf-use:hover{border-color:var(--gold);border-style:solid;color:#ece0c4;}
+  .wf-use-plain{cursor:default;opacity:.8;}
   /* Skills page controls + collapsible groups + clickable rows */
   .skills-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 2px;}
   .skills-controls .inv-search{flex:1;min-width:170px;}
@@ -16154,6 +16185,7 @@
   var skillGroupExpanded = {};   // Skills page: group label -> true means COLLAPSED (default open)
   var skillsSearch = '';         // Skills page live filter (matches skill label)
   var skillsSort = 'default';    // default (group order) | level | progress (closest to level-up) | az
+  var wfCollapsed = {};          // Workflows page: root id -> true means that line card is folded
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
   var menagerieSearch = '';   // Menagerie search: matches by familiar name, skill, spell name, or spell effect
@@ -30503,25 +30535,106 @@
     if(CRAFTING_SKILLS[skillId]) return { cat:craftCatForSkill(skillId), sub:skillId };
     return { cat:'skills', sub:null };
   }
-  // One clickable node chip. The tier badge shows the player's current level in that skill so the tree
-  // doubles as a progress readout.
-  function wfNodeChip(node){
+  // Sections group the 18 lines by what they ultimately make.
+  var WF_SECTIONS = [
+    { id:'gear',       label:'Equipment & Gear' },
+    { id:'consumable', label:'Food, Drink & Potions' },
+    { id:'utility',    label:'Estate & Utility' }
+  ];
+  var WF_SECTION_OF = {
+    mining:'gear', forestry:'gear', farming:'gear', butchering:'gear', prospecting:'gear', diving:'gear',
+    fishing:'consumable', herbalism:'consumable', foraging:'consumable', botany:'consumable', beekeeping:'consumable', ranching:'consumable', mycology:'consumable', spelunking:'consumable',
+    digging:'utility', salvaging:'utility', tapping:'utility', essence:'utility'
+  };
+  // Stage colour: raw gather -> intermediate refine -> final craft. Purely visual, so the flow reads as
+  // a pipeline. The refine set is the handful of skills whose whole job is turning one line's output into
+  // the feedstock of another (ore->bars, hide->leather, logs->planks, clay->crucibles, ...).
+  var WF_REFINE_SKILLS = { metallurgy:1, stonecutting:1, tanning:1, weaving:1, carpentry:1, pottery:1, goldsmithing:1, papermaking:1, gemcutting:1, roasting:1, dairy:1, glassblowing:1 };
+  function wfNodeStage(id){
+    if(GATHERING_SKILLS[id] || id === 'farming' || FARMING_SUBSKILLS.indexOf(id) !== -1) return 'gather';
+    if(WF_REFINE_SKILLS[id]) return 'refine';
+    return 'craft';
+  }
+  // A cross-line material named in a node's "(with ...)" note, and the skill/screen it comes from, so the
+  // note becomes a clickable link instead of dead text. Glyphs are a combat drop -> the Enemies tab.
+  var WF_MATERIAL_SOURCE = {
+    glyphs:{ label:'Glyphs', nav:{ cat:'enemies', sub:null } },
+    planks:{ label:'Planks', src:'carpentry' }, bars:{ label:'Metal Bars', src:'metallurgy' },
+    scrap:{ label:'Scrap', src:'salvaging' }, gems:{ label:'Cut Gems', src:'gemcutting' },
+    crucibles:{ label:'Crucibles', src:'pottery' }, soil:{ label:'Soil', src:'digging' },
+    bricks:{ label:'Bricks', src:'stonecutting' }, herbs:{ label:'Herbs', src:'herbalism' },
+    paper:{ label:'Paper', src:'papermaking' }, leather:{ label:'Leather', src:'tanning' },
+    honey:{ label:'Honey', src:'beekeeping' }, berries:{ label:'Berries', src:'foraging' },
+    spices:{ label:'Spices', src:'botany' }, meals:{ label:'Meals', src:'cooking' },
+    dairy:{ label:'Dairy', src:'dairy' }, fungi:{ label:'Fungi', src:'mycology' },
+    fish:{ label:'Fish', src:'fishing' }, vials:{ label:'Glass Vials', src:'glassblowing' },
+    essence:{ label:'Essence', src:'essence' }, coal:{ label:'Coal', src:'mining' }, resin:{ label:'Resin', src:'tapping' }
+  };
+  var WF_MAT_KEYWORDS = [ [/glyph/,'glyphs'],[/plank/,'planks'],[/ingot|bar/,'bars'],[/scrap/,'scrap'],[/gem/,'gems'],
+    [/crucible/,'crucibles'],[/soil/,'soil'],[/brick/,'bricks'],[/herb/,'herbs'],[/paper/,'paper'],[/leather/,'leather'],
+    [/honey/,'honey'],[/berr/,'berries'],[/spice/,'spices'],[/meal/,'meals'],[/dairy/,'dairy'],[/fungi/,'fungi'],
+    [/fish/,'fish'],[/vial|glass/,'vials'],[/essence/,'essence'],[/coal/,'coal'],[/resin/,'resin'] ];
+  // Split a node note like "barrels (with planks)" into its clean output ("barrels") and the material keys
+  // named in the parenthetical (["planks"]). Keeps the data table untouched -- the links are derived.
+  function wfParseUses(note){
+    if(!note) return { clean:'', mats:[] };
+    var m = /\s*\(with ([^)]+)\)/.exec(note);
+    if(!m) return { clean:note, mats:[] };
+    var mats = [];
+    m[1].split(/\s*(?:,|&|and)\s*/).forEach(function(p){
+      var w = p.trim().toLowerCase(); if(!w) return;
+      for(var i=0;i<WF_MAT_KEYWORDS.length;i++){ if(WF_MAT_KEYWORDS[i][0].test(w)){ if(mats.indexOf(WF_MAT_KEYWORDS[i][1])===-1) mats.push(WF_MAT_KEYWORDS[i][1]); return; } }
+    });
+    return { clean: note.replace(m[0], '').trim(), mats:mats };
+  }
+  function wfMatChip(key){
+    var src = WF_MATERIAL_SOURCE[key]; if(!src) return '';
+    var nav = src.nav || (src.src ? skillNavTarget(src.src) : null);
+    if(nav && nav.cat && nav.cat !== 'skills'){
+      return '<button class="wf-use" data-action="wfNav" data-cat="'+nav.cat+'"'+(nav.sub?' data-sub="'+nav.sub+'"':'')+' title="'+escapeHtml(src.label)+' from another line">+ '+escapeHtml(src.label)+'</button>';
+    }
+    return '<span class="wf-use wf-use-plain">+ '+escapeHtml(src.label)+'</span>';
+  }
+  // Up to four physique icons on a node -- what boosts this step at a glance (full list stays in the footer).
+  function wfNodePhysIcons(id){
+    var b = physiqueBenefitsForSkill(id); if(!b.length) return '';
+    var out = b.slice(0,4).map(function(e){ var pm = PHYSIQUE_SKILL_MAP[e[0]]; return pm ? '<span class="wf-pico" title="'+escapeHtml(pm.name+': '+e[1])+'">'+pm.icon+'</span>' : ''; }).join('');
+    return out ? '<span class="wf-node-phys">'+out+'</span>' : '';
+  }
+  // One node: a clickable card that opens the skill. Shows the player's level (so the tree doubles as a
+  // progress map: mastered nodes glow with a mark, never-trained nodes dim), a training-now dot, the
+  // physiques that boost the step, and clickable chips for materials it borrows from other lines.
+  function wfNodeChip(node, busy){
     var m = wfNodeMeta(node);
-    var lv = (node.id && (GATHERING_SKILLS[node.id] || CRAFTING_SKILLS[node.id])) ? skillLevel(node.id, anySkillXpVal(node.id)) : null;
+    var isSkill = node.id && (GATHERING_SKILLS[node.id] || CRAFTING_SKILLS[node.id]);
+    var lv = isSkill ? skillLevel(node.id, anySkillXpVal(node.id)) : null;
+    var cls = 'wf-node wf-s-'+wfNodeStage(node.id);
+    var mark = '';
+    if(isSkill){
+      if(lv >= MAX_SKILL_LEVEL){ cls += ' wf-maxed'; mark = ' <span class="wf-check" title="Mastered">✦</span>'; }
+      else if(anySkillXpVal(node.id) === 0){ cls += ' wf-untouched'; }
+    }
+    var dot = (node.id && busy && busy[node.id]) ? '<span class="wf-busy" title="Training now"></span>' : '';
+    var parsed = wfParseUses(node.note);
     var subAttr = m.nav.sub ? ' data-sub="'+m.nav.sub+'"' : '';
-    return '<button class="wf-node" data-action="wfNav" data-cat="'+m.nav.cat+'"'+subAttr+' title="Open '+escapeHtml(m.label)+'">'
-      + '<span class="wf-node-ico">'+m.icon+'</span>'
-      + '<span class="wf-node-body"><span class="wf-node-nm">'+escapeHtml(m.label)+(lv!=null?' <span class="wf-node-lv">Lv '+lv+'</span>':'')+'</span>'
-      + (node.note ? '<span class="wf-node-note">'+escapeHtml(node.note)+'</span>' : '')
-      + '</span></button>';
+    var uses = parsed.mats.length ? '<span class="wf-uses">'+parsed.mats.map(wfMatChip).join('')+'</span>' : '';
+    return '<div class="'+cls+'" data-action="wfNav" data-cat="'+m.nav.cat+'"'+subAttr+' data-skill="'+(node.id||'')+'" role="button" tabindex="0" title="Open '+escapeHtml(m.label)+'">'
+      + '<span class="wf-node-ico">'+dot+m.icon+'</span>'
+      + '<span class="wf-node-body">'
+        + '<span class="wf-node-nm">'+escapeHtml(m.label)+(lv!=null?' <span class="wf-node-lv">Lv '+lv+'</span>':'')+mark+'</span>'
+        + (parsed.clean ? '<span class="wf-node-note">'+escapeHtml(parsed.clean)+'</span>' : '')
+        + wfNodePhysIcons(node.id)
+        + uses
+      + '</span>'
+      + '</div>';
   }
   // Recursive left-to-right tree: a node, then a vertical stack of its child subtrees to the right,
   // joined by connector rails.
-  function renderWorkflowSubtree(node){
-    var html = '<div class="wf-tree">' + wfNodeChip(node);
+  function renderWorkflowSubtree(node, busy){
+    var html = '<div class="wf-tree">' + wfNodeChip(node, busy);
     if(node.children && node.children.length){
       html += '<div class="wf-branch">';
-      node.children.forEach(function(ch){ html += '<div class="wf-limb">'+renderWorkflowSubtree(ch)+'</div>'; });
+      node.children.forEach(function(ch){ html += '<div class="wf-limb">'+renderWorkflowSubtree(ch, busy)+'</div>'; });
       html += '</div>';
     }
     return html + '</div>';
@@ -30549,19 +30662,40 @@
     return '<details class="wf-phys"><summary>Physiques that affect this line</summary>'+rows+'</details>';
   }
   function renderWorkflowsTab(){
+    var busy = navBusySkills();
     var html = '<div class="section-intro">Every production chain, from a raw gather to the gear it becomes. '
-      + 'Tap any skill to open its page. Each line lists the <b>physiques</b> that affect its steps and what they do. '
-      + 'Materials shown in <i>(with ...)</i> come from another line.</div>';
-    html += '<div class="wf-list">';
-    WORKFLOW_TREES.forEach(function(t){
-      var m = wfNodeMeta(t.node);
-      html += '<div class="wf-card">';
-      html += '<h3 class="wf-title">'+m.icon+' '+escapeHtml(m.label)+' line</h3>';
-      html += '<div class="wf-flow">'+renderWorkflowSubtree(t.node)+'</div>';
-      html += renderWorkflowPhysiques(t.node);
+      + 'Tap any step to open its page; the <b>+ chips</b> jump to a material borrowed from another line. A '
+      + '<span style="color:var(--gold)">✦</span> marks a mastered skill, dimmed steps you have not started, '
+      + 'and a green dot one training now.</div>';
+    // Controls: expand/collapse all + a stage legend.
+    html += '<div class="wf-controls">';
+    html += '<button class="craft-filter-btn" data-action="wfExpandAll" title="Open every line">▾ Expand all</button>';
+    html += '<button class="craft-filter-btn" data-action="wfCollapseAll" title="Fold every line">▸ Collapse all</button>';
+    html += '<span class="wf-legend"><span class="wf-lg wf-s-gather">Gather</span><span class="wf-lg wf-s-refine">Refine</span><span class="wf-lg wf-s-craft">Craft</span></span>';
+    html += '</div>';
+    // Jump bar: one chip per line, scrolls to that card.
+    html += '<div class="wf-toc">';
+    WORKFLOW_TREES.forEach(function(t){ var m = wfNodeMeta(t.node); html += '<button class="wf-toc-chip" data-action="wfJump" data-root="'+t.node.id+'">'+m.icon+'<span>'+escapeHtml(m.label)+'</span></button>'; });
+    html += '</div>';
+    // Sections, each a titled block of collapsible line cards.
+    WF_SECTIONS.forEach(function(sec){
+      var trees = WORKFLOW_TREES.filter(function(t){ return (WF_SECTION_OF[t.node.id] || 'gear') === sec.id; });
+      if(!trees.length) return;
+      html += '<h3 class="wf-section">'+escapeHtml(sec.label)+'</h3>';
+      html += '<div class="wf-list">';
+      trees.forEach(function(t){
+        var m = wfNodeMeta(t.node);
+        var collapsed = !!wfCollapsed[t.node.id];
+        html += '<div class="wf-card" id="wf-'+t.node.id+'">';
+        html += '<h4 class="wf-title" data-action="wfToggleCard" data-root="'+t.node.id+'" role="button" tabindex="0"><span class="wf-title-chev">'+(collapsed?'▸':'▾')+'</span>'+m.icon+' '+escapeHtml(m.label)+' line</h4>';
+        if(!collapsed){
+          html += '<div class="wf-flow">'+renderWorkflowSubtree(t.node, busy)+'</div>';
+          html += renderWorkflowPhysiques(t.node);
+        }
+        html += '</div>';
+      });
       html += '</div>';
     });
-    html += '</div>';
     return html;
   }
   // In-game patch notes, shown in a Settings tab. Newest first. FORMAT (owner rule, Aug 3): SHORT DAILY
@@ -44224,6 +44358,15 @@
       navPickCat(cat);
       if(sub){ currentSub = sub; navSeenTiers[sub] = navUnlockedTiers(skillLevel(sub, (state.xp && state.xp[sub]) || 0)); render(true); }
     },
+    // Workflows page: fold/scroll the production-line cards.
+    wfToggleCard: function(btn, e){ var r = btn.getAttribute('data-root'); wfCollapsed[r] = !wfCollapsed[r]; },
+    wfCollapseAll: function(btn, e){ WORKFLOW_TREES.forEach(function(t){ wfCollapsed[t.node.id] = true; }); },
+    wfExpandAll: function(btn, e){ wfCollapsed = {}; },
+    wfJump: function(btn, e){
+      var r = btn.getAttribute('data-root');
+      if(wfCollapsed[r]) wfCollapsed[r] = false;   // opening a folded line before jumping to it
+      setTimeout(function(){ var el = document.getElementById('wf-'+r); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 0);
+    },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -44778,6 +44921,28 @@
   bindBackdropClose('settingsOverlay', function(){ if(settingsOpen){ settingsOpen = false; renderSettingsModal(); } });
   bindBackdropClose('familiarPopupOverlay', function(){ if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); } });
 
+  // Workflows: hovering a node lights up the whole chain feeding it (its ancestors in the tree), so you
+  // can trace "what do I need to make this?" upstream to the raw gather. Pure DOM, no re-render.
+  (function(){
+    function wfClearPath(){ var lit = document.querySelectorAll('.wf-node.wf-path'); for(var i=0;i<lit.length;i++) lit[i].classList.remove('wf-path'); }
+    function wfLightPath(nodeEl){
+      var tree = nodeEl.closest('.wf-tree');
+      while(tree){
+        var n = tree.firstElementChild; // the .wf-node
+        if(n && n.classList.contains('wf-node')) n.classList.add('wf-path');
+        var limb = tree.parentElement;
+        if(!limb || !limb.classList || !limb.classList.contains('wf-limb')) break;
+        var branch = limb.parentElement;
+        tree = branch ? branch.parentElement : null;
+        if(tree && !(tree.classList && tree.classList.contains('wf-tree'))) tree = null;
+      }
+    }
+    document.getElementById('app').addEventListener('mouseover', function(e){
+      var n = e.target.closest ? e.target.closest('.wf-node') : null;
+      wfClearPath();
+      if(n) wfLightPath(n);
+    });
+  })();
   document.getElementById('app').addEventListener('input', function(e){
     if(e.target.id === 'invSearchInput'){
       inventorySearchQuery = e.target.value;
@@ -45685,7 +45850,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.18';
+  var GAME_VERSION = '0.0.99.19';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -45831,6 +45996,7 @@
       // numbers, NaN/undefined, em dashes) actually cover the craft pages. 15 "Owned: NaN" cards hid
       // here for 13 versions because these were the tabs the sweep could not reach.
       renderWorkflowsTab:renderWorkflowsTab, WORKFLOW_TREES:WORKFLOW_TREES, skillNavTarget:skillNavTarget, workflowTreeSkillIds:workflowTreeSkillIds, wfNodeMeta:wfNodeMeta,
+      wfNodeStage:wfNodeStage, wfParseUses:wfParseUses, wfMatChip:wfMatChip, WF_SECTION_OF:WF_SECTION_OF, WF_SECTIONS:WF_SECTIONS, _setWfCollapsed:function(k,v){ wfCollapsed[k] = !!v; }, _wfCollapsed:function(){ return wfCollapsed; },
       renderSkillsGrid:renderSkillsGrid, skillsRowNav:skillsRowNav, skillsGroupStats:skillsGroupStats, _setSkillsSearch:function(v){ skillsSearch = v||''; }, _setSkillsSort:function(v){ skillsSort = v||'default'; }, _setSkillGroupCollapsed:function(k,v){ skillGroupExpanded[k] = !!v; },
       renderArchaeologyTab:renderArchaeologyTab, renderArmorSmithTab:renderArmorSmithTab, renderBowyerTab:renderBowyerTab, renderCharacterTab:renderCharacterTab, renderClassesTab:renderClassesTab, renderDungeonsTab:renderDungeonsTab, renderEstateTab:renderEstateTab, renderFarmingTab:renderFarmingTab, renderFletchingTab:renderFletchingTab, renderGuildTab:renderGuildTab, renderInventoryTab:renderInventoryTab, renderJewelrycraftingTab:renderJewelrycraftingTab, renderLeaderboardTab:renderLeaderboardTab, leaderboardQueryKey:leaderboardQueryKey, leaderboardPageSize:leaderboardPageSize, LEADERBOARD_LIMIT:LEADERBOARD_LIMIT, LEADERBOARD_LIMIT_WIDE:LEADERBOARD_LIMIT_WIDE, leaderboardFetch:leaderboardFetch, _lbSetFilters:function(m,o){ leaderboardMortalOnly=!!m; leaderboardOnlineOnly=!!o; }, renderLeatherworkingTab:renderLeatherworkingTab, renderMarketTab:renderMarketTab, renderMixologyTab:renderMixologyTab, renderOffhandSmithTab:renderOffhandSmithTab, renderPeonsTab:renderPeonsTab, renderPrayerTab:renderPrayerTab, renderSkillsTab:renderSkillsTab, renderTailoringTab:renderTailoringTab, renderWeaponSmithTab:renderWeaponSmithTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText, gabShortEta:gabShortEta, gabTaskRemainText:gabTaskRemainText, taskRunsForTarget:taskRunsForTarget, taskRunsHorizon:taskRunsHorizon, taskRunsRemaining:taskRunsRemaining, gabNextFinishKey:gabNextFinishKey, gabSummaryText:gabSummaryText, describeTask:describeTask, renderGlobalActionBar:renderGlobalActionBar, _setGabCollapsed:function(v){ gabCollapsed = !!v; }, _gabCollapsed:function(){ return gabCollapsed; },
