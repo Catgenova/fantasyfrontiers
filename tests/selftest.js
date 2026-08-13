@@ -11463,6 +11463,16 @@
       eq(FF.familiarAnyCanTranscend(), true, 'a maxed owned familiar makes Transcend available');
       eq(FF.railSubFlash('menagerie'), true, 'the Menagerie flashes when a familiar can Transcend');
       eq(FF.railAreaFlash('battle'), true, 'and the Battle area that holds it flashes too');
+      // ticket-0175 RETEST: the flash class also has to ANIMATE on the mobile sub-chips, not just the
+      // desktop rail. The chip got the .flash class but no @media mobile rule animated it, so on phones the
+      // Menagerie never pulsed. Assert a `.ff-subchips .chip.flash` rule exists AND sets an animation. Read
+      // the raw <style> text (viewport-independent, and immune to the cssRules SecurityError some sheets throw).
+      (function(){
+        var css = '', styles = document.querySelectorAll('style');
+        for(var i = 0; i < styles.length; i++) css += styles[i].textContent || '';
+        var m = /\.ff-subchips\s+\.chip\.flash\s*\{([^}]*)\}/.exec(css);
+        ok(m && /animation\s*:/.test(m[1]), 'the mobile sub-chip .flash rule carries an animation, so the Menagerie pulses on phones');
+      })();
       FF.transcendAllConfirm();
       eq(FF.familiarAnyCanTranscend(), false, 'nothing to Transcend once all are reset to Lv1');
       eq(FF.railSubFlash('menagerie'), false, 'so the Menagerie stops flashing');
