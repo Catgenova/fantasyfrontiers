@@ -11188,7 +11188,13 @@
       };
       s.inventory.barrier_shard = 0;
       eq(FF.transcendAllCandidates().sort().join(','), 'fishing,mining', 'candidates = owned, maxed familiars only');
+      // ticket-0175: the Menagerie sub-tab (and its Battle area) flash while any familiar can Transcend.
+      eq(FF.familiarAnyCanTranscend(), true, 'a maxed owned familiar makes Transcend available');
+      eq(FF.railSubFlash('menagerie'), true, 'the Menagerie flashes when a familiar can Transcend');
+      eq(FF.railAreaFlash('battle'), true, 'and the Battle area that holds it flashes too');
       FF.transcendAllConfirm();
+      eq(FF.familiarAnyCanTranscend(), false, 'nothing to Transcend once all are reset to Lv1');
+      eq(FF.railSubFlash('menagerie'), false, 'so the Menagerie stops flashing');
       eq(s.familiars.mining.stars, 1, 'mining gained its first star'); eq(s.familiars.mining.level, 1, 'mining reset to Level 1');
       eq(s.familiars.fishing.stars, 3, 'fishing gained a star (2 -> 3)'); eq(s.familiars.fishing.level, 1, 'fishing reset to Level 1');
       eq(s.familiars.cooking.level, 50, 'the below-max familiar is left alone');
