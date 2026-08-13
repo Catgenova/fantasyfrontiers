@@ -30573,6 +30573,7 @@
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency. Each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 1.2x/1.5x/2x (Rare +6%, Supreme +7.5%, Fantastic +10%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
     html += '<input type="text" id="menagerieSearchInput" class="inv-search" style="margin-top:10px;" placeholder="Search familiars by name, skill, spell, or effect…" value="'+menagerieSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
+    html += '<div class="craft-filter-bar" style="margin:6px 0 2px;"><button class="craft-filter-btn" data-action="menagerieCollapseAll" title="Collapse every expanded familiar card">▴ Collapse all</button></div>';
     html += '<div id="menagerieList">'+renderMenagerieList()+'</div>';
     return html;
   }
@@ -41481,7 +41482,7 @@
     var html = '';
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
     else if(currentCategory==='refining' && currentSub==='butchering') html = renderGatherTab(currentSub); // Butchering keeps its corpse-processing UI
-    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button>'+(craftOnlyAffordable ? '<button class="craft-filter-btn on" data-action="toggleCraftFilterTier" title="With the filter on, a tiered card auto-selects this end of the tiers you can afford">'+(craftFilterLowest?'\u2b07 Lowest tier':'\u2b06 Highest tier')+'</button>' : '')+'</div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn" data-action="cardCollapseAll" title="Collapse every card on this page">\u25b4 Collapse all</button><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button>'+(craftOnlyAffordable ? '<button class="craft-filter-btn on" data-action="toggleCraftFilterTier" title="With the filter on, a tiered card auto-selects this end of the tiers you can afford">'+(craftFilterLowest?'\u2b07 Lowest tier':'\u2b06 Highest tier')+'</button>' : '')+'</div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='improvement') html = renderImprovementTab();
     else if(currentCategory==='skills') html = renderSkillsTab();
     else if(currentCategory==='estate'){ estUse(false); estReadOnly=false; html = renderEstateTab(); }
@@ -43776,6 +43777,23 @@
     gabToggleCollapse: function(btn, e){ gabCollapsed = !gabCollapsed; updateGlobalActionBarLive(); },
     // Fold/unfold a crafting card (v0.0.86.17); persisted in state, so it survives refresh.
     cardCollapse: function(btn, e){ cardCollapseToggle(btn.getAttribute('data-key')); }, // crafting cards AND the stage panels (their trayFoldBtn passes a 'panel:' key)
+    // Collapse every collapsible card on the current craft page in one click (v0.0.99.15). Reads the
+    // rendered keys straight off the DOM (like decorateCollapsibleCards), so it needs no per-tab list;
+    // active cards render no queue box, so they are skipped and keep showing their progress.
+    cardCollapseAll: function(btn, e){
+      var qs = document.querySelectorAll('#content .item-card .card-queue[data-qkey]');
+      if(!state.collapsedCards || typeof state.collapsedCards !== 'object') state.collapsedCards = {};
+      var n = 0;
+      for(var i = 0; i < qs.length; i++){
+        var qk = qs[i].getAttribute('data-qkey') || '';
+        if(qk.indexOf('fight:') === 0) continue;
+        state.collapsedCards[cardCollapseKey(qk)] = 1; n++;
+      }
+      if(n) saveGame();
+    },
+    // Collapse every expanded familiar card in the Menagerie (v0.0.99.15). Cards default collapsed and are
+    // expanded one at a time to inspect; this resets them all at once.
+    menagerieCollapseAll: function(btn, e){ menagerieExpanded = {}; },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -45227,7 +45245,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.14';
+  var GAME_VERSION = '0.0.99.15';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

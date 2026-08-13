@@ -5215,6 +5215,17 @@
     } finally { FF._setPointerHeld(false); FF._setNeedsRender(!!wasNeeds); }
   });
 
+  // A one-click "Collapse all" in the Menagerie and on every craft page (incl. Architecture).
+  suite('ui: a Collapse-all button folds every card at once (menagerie + craft tabs)', function(){
+    ok(/data-action="menagerieCollapseAll"/.test(FF.renderMenagerieTab()), 'the Menagerie shows a Collapse all button');
+    var prevCat = FF.currentCategoryId();
+    try {
+      FF.navPickCat('building'); // Construction -> Architecture, a craft tab
+      var content = document.getElementById('content');
+      ok(content && /data-action="cardCollapseAll"/.test(content.innerHTML), 'craft tabs (incl. Architecture) show a Collapse all button');
+    } finally { FF.navPickCat(prevCat); }
+  });
+
   // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
   suite('skills: beekeeping / brewing / confectionery', function(){
     // Registered as real skills in the right groups.
