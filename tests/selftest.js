@@ -5410,6 +5410,39 @@
     s.trackedQuests = savedTracked; s.frontierGuide = savedGuide; s.quests = savedClaimed;
   });
 
+  // ticket (Work the Alchemy): a craft's per-skill-per-tier tally must derive its tier from the item id,
+  // not a raw recipe.tierIndex -- Alchemy's potion recipes (and ~a dozen other skills') carry no tierIndex,
+  // so the old read tallied made_<skill>_tundefined and the Frontier "Work the X" quests never advanced.
+  suite('quest: Frontier refining tally keys off the real tier (recipeTier), not undefined', function(){
+    var s = FF._state;
+    // The exact trap: an Alchemy Toxin has no tierIndex field, yet recipeTier() still resolves its tier.
+    var rec = FF.ALL_CRAFT_RECIPES['toxin_t3'];
+    ok(rec && rec.potionType === 'toxin', 'toxin_t3 is an Alchemy Toxin recipe');
+    eq(rec.tierIndex, undefined, 'alchemy potion recipes carry no tierIndex (the trap)');
+    eq('made_alchemy_t' + FF.recipeTier(rec, 'toxin_t3'), 'made_alchemy_t3',
+      'a Toxin craft now tallies made_alchemy_t3, not made_alchemy_tundefined');
+    // Every FR_REFINE-style skill resolves a numeric tier for a mid-tier recipe (no undefined key anywhere).
+    ['toxin_t3','draught_t3','bomb_t3','flash_t3','scroll_t3','tome_t3','paper_t3','dough_t3','gemcut_t3','enchant_t3'].forEach(function(id){
+      var r = FF.ALL_CRAFT_RECIPES[id];
+      if(r) ok(typeof FF.recipeTier(r, id) === 'number' && !isNaN(FF.recipeTier(r, id)), id + ' resolves a real tier via recipeTier');
+    });
+    // The Frontier "Work the Alchemy" quest reads a made_alchemy_t<T> key and advances when it is bumped;
+    // the old made_alchemy_tundefined tally does nothing.
+    var q = FF.QUESTS.filter(function(x){ return /_r_alchemy$/.test(x.id); })[0];
+    if(q){
+      eq(q.target, 10, 'a "Work the Alchemy" Frontier quest exists (craft 10)');
+      var savedQ = s.quests, savedStats = s.stats;
+      try {
+        s.quests = { claimed:{} };
+        s.stats = { made_alchemy_tundefined: 10 };
+        eq(FF.questProgress(q), 0, 'the old made_alchemy_tundefined tally leaves it at 0');
+        var tier = null;
+        for(var n = 0; n <= 20; n++){ s.stats = {}; s.stats['made_alchemy_t' + n] = 10; if(FF.questComplete(q)){ tier = n; break; } }
+        ok(tier !== null, 'the quest completes once made_alchemy_t<its tier> reaches 10 (tier ' + tier + ')');
+      } finally { s.quests = savedQ; s.stats = savedStats; }
+    }
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){

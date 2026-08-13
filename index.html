@@ -15096,7 +15096,7 @@
           var _wq = recipe.outputQty || 1;
           bumpStat('made_' + act.itemId); // per-recipe successful-craft tally (once per craft, doubles excluded), powers Quest progress ("Tan 10 Rabbit Leather")
           bumpStat('crafted_' + act.skill); // per-SKILL successful-craft tally (any tier/recipe), powers "Cook 10 Meals", "Bake 10", etc.
-          bumpStat('made_' + act.skill + '_t' + recipe.tierIndex); // per-SKILL-per-TIER tally: a uniform tier-gated craft counter the Frontier generator reads for every skill
+          bumpStat('made_' + act.skill + '_t' + recipeTier(recipe, act.itemId)); // per-SKILL-per-TIER tally: a uniform tier-gated craft counter the Frontier generator reads for every skill. Use recipeTier(), not raw recipe.tierIndex: Alchemy's potion recipes (Toxin/Firebomb/Elixir/Catalyst) carry no tierIndex field, so the raw read produced `made_alchemy_tundefined` and the "Work the Alchemy" Frontier quest never advanced (reported: craft a Bryony Toxin, 0/10 stays). recipeTier derives the tier from the item id when the field is absent.
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); }
           if(brewYieldRoll()){ addItem(act.itemId, _wq); } // active Brewing Brew: a chance at a bonus craft output
@@ -45918,7 +45918,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.22';
+  var GAME_VERSION = '0.0.99.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
