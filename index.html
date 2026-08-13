@@ -16122,7 +16122,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills'],['workflows','Workflows']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['salvage','Salvage'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['secondfrontier','Second Frontier'],['thirdfrontier','Third Frontier'],['fourthfrontier','Fourth Frontier'],['fifthfrontier','Fifth Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['secondfrontier','Second Frontier'],['thirdfrontier','Third Frontier'],['fourthfrontier','Fourth Frontier'],['fifthfrontier','Fifth Frontier'],['combatquests','Combat'],['estatequests','Estate'],['towerquests','Tower'],['mortalfeats','Mortal Feats'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -19778,6 +19778,7 @@
     if(act && act.tower){ towerOnKill(monster); return; } // tower foe -> bank the floor + advance, don't re-engage
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
+    if(monster && typeof monster.tierIndex === 'number' && monster.tierIndex >= TIER_COUNT - 1) bumpStat('cb_apex_kills'); // slew an apex-tier wilderness foe (Mortal Feat "The Slayer")
     questNoteKill(monster);   // whole-fight Combat quest facts, read before the per-foe reset clears them
     bumpMonsterKill(monster.id); // per-monster tally powers Quest progress (e.g. "kill 10 Rabbits")
     // Enemies no longer drop a flat gold reward on kill. (Treasure Hunter's legendary/set gold-scatter
@@ -20346,7 +20347,7 @@
   // attack tick AND by lethal DoTs so both paths reset identically.
   function playerCombatDeath(monster, causeLog, blow){
     recordDeathReport(monster, blow); // captured FIRST, while the activity/mortal state is still intact
-    bumpStat('deaths'); state.cbNoDeathRun = 0;
+    bumpStat('deaths'); state.cbNoDeathRun = 0; state.cbAsceticRun = 0; state.cbTowerClean = 0; // death breaks every no-death Mortal Feat streak
     if(causeLog) addLog(causeLog, 'danger');
     if(state.activity && state.activity.netDungeon && typeof dungeonNet !== 'undefined') dungeonNet.deathHandled = true;
     var diedInDungeon = state.activity && state.activity.dungeon;
@@ -20831,6 +20832,7 @@
     state.inventory[best.id] -= 1;
     var healed = Math.min(best.heal, healRoom(state));
     state.playerHp += healed;
+    state.cbAsceticRun = 0; // eating breaks the Ascetic (Mortal Feat) run streak
     addLog('You ate ' + best.name + ' and recovered ' + healed + ' HP.');
   }
 
@@ -20879,6 +20881,7 @@
     state.inventory[next.id] -= 1;
     var healed = Math.min(next.heal, healRoom(state));
     state.playerHp += healed;
+    state.cbAsceticRun = 0; // Auto-Eat also breaks the Ascetic (Mortal Feat) run streak
     spawnCombatFloat('Auto-Eat +' + healed + ' HP', 'ft-success', false);
   }
 
@@ -21954,6 +21957,9 @@
   // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
   // Last-written markup per container, so an unchanged frame skips the innerHTML write (see the rebuild guard).
   var _railSig = null, _dockSig = null, _chipSig = null;
+  // Some sub-tabs only exist for certain players. Mortal Feats is a LIVE-Mortal-only quest line (a dead
+  // Mortal keeps its earned titles in the Titles tab, but the feats themselves are frozen, so the tab hides).
+  function subNavVisible(cat){ return cat === 'mortalfeats' ? isMortal() : true; }
   function renderCatTabs(){
     var railHtml = '', dockHtml = '', chipHtml = '';
     var _busy = navBusySkills();   // category-tier rollups (owner pick 2): task dot + at-cap count
@@ -21962,7 +21968,7 @@
       railHtml += '<button class="ff-area-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span>'+a.label+'</button>';
       if(aon){
         railHtml += '<div class="ff-subnest">';
-        a.subs.forEach(function(s){ railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
+        a.subs.forEach(function(s){ if(!subNavVisible(s[0])) return; railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
         railHtml += '</div>';
       }
       dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span><span class="lbl">'+a.label+'</span></button>';
@@ -21970,7 +21976,7 @@
     // Chat no longer lives in the rail on ANY viewport -- it's behind the bottom-left chat bubble (the
     // drawer), same as mobile. (renderChatDock() becomes a no-op with no #chatDockPanel to fill.)
     var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
-    if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
+    if(area) area.subs.forEach(function(s){ if(!subNavVisible(s[0])) return; chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+navCatRollupHtml(s[0], _busy)+'</button>'; });
     // Rebuilding the rail HTML recreates an EMPTY #chatDockPanel node; invalidate the dock signature
     // so renderChatDock() (called right after this in render()) refills it. Without this reset the
     // sig-gate sees "no structural change" and skips the refill, leaving chat permanently blank.
@@ -26652,7 +26658,7 @@
       var _me = dungeonNetMyMember();
       if(_me && (_me.alive === false || (typeof _me.hp === 'number' && _me.hp <= 0))){
         dungeonNet.deathHandled = true;
-        bumpStat('deaths'); state.cbNoDeathRun = 0;
+        bumpStat('deaths'); state.cbNoDeathRun = 0; state.cbAsceticRun = 0; state.cbTowerClean = 0; // death breaks every no-death Mortal Feat streak
         var _dcat = DUNGEON_DEFS[dungeonNet.session.layer] ? DUNGEON_DEFS[dungeonNet.session.layer].category : 'dungeon';
         addLog('You fell in the depths of the ' + _dcat + '. Your party fights on without you.', 'danger');
         if(isMortal()) mortalDeath(null); // a Mortal's death is final wherever it happens, group runs included
@@ -27809,6 +27815,10 @@
     var t = state.activity && state.activity.tower; if(!t){ state.activity = { type:null }; return; }
     var e = towerEntry(t.entrance), cleared = t.floor;
     bumpStat('kills');
+    // Warded (Mortal Feat): consecutive Tower floors cleared without taking a hit. cbHitTaken accrues on the
+    // floor's own activity (a fresh one per floor under auto-advance), so an untouched floor extends the streak.
+    if(!state.activity.cbHitTaken){ state.cbTowerClean = (state.cbTowerClean || 0) + 1; cbBest('cb_tower_clean', state.cbTowerClean); }
+    else state.cbTowerClean = 0;
     e.best = Math.max(e.best || 0, cleared);
     e.floor = cleared + 1;
     var carried = t.familiarsGained || [];
@@ -28024,6 +28034,7 @@
     { id:'combatquests', label:'Combat' },
     { id:'estatequests', label:'Estate' },
     { id:'towerquests', label:'Tower' },
+    { id:'mortalfeats', label:'Mortal Feats' },
     { id:'titles', label:'Titles' }
   ];
   var QUEST_CATEGORY_IDS = QUEST_CATEGORIES.map(function(c){ return c.id; });
@@ -29475,6 +29486,117 @@
   }
   FRONTIER_SPECS.forEach(function(spec){ buildFrontierQuests(spec).forEach(function(q){ QUESTS.push(q); }); });
 
+  // ================= MORTAL FEATS (mortalfeats): 50 brutal feats + a capstone =================
+  // A quest line ONLY a living Mortal can advance. Every reward is a TITLE (one unique title per feat),
+  // the point being prestige, not power -- a Mortal who dies is done, so the whole line reads as a
+  // permanent record of what one single life managed before it ended. Unclaimed feats freeze the instant
+  // the account stops being a live Mortal (mortalDeath sets state.mortal=false): the progress readers are
+  // wrapped in mfLive(), which returns 0 for anyone who is not currently a Mortal. Already-CLAIMED feats
+  // (and any that latched their completion while still alive) survive that freeze -- questProgress short-
+  // circuits to target for a claimed/latched quest before it ever calls progress(). Titles earned stay in
+  // the Titles tab forever (state.titles), so a dead Mortal keeps the medals even once the tab is hidden.
+  (function(){
+    function xlv(st, id){ return getLevel((st.xp && st.xp[id]) || 0); }                 // capped 1..100
+    function extlv(st, id){ return skillLevel(id, (st.xp && st.xp[id]) || 0); }          // over-100 aware
+    var MF_TRADE_IDS   = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS);
+    var MF_COMBAT_PROF = [].concat(WEAPON_STYLE_IDS, OFFHAND_STYLE_IDS, ARMOR_PROFICIENCY_IDS,
+      [WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID, WARDING_SKILL_ID]);
+    var MF_TOWER_CLASS = TOWER_ENTRANCES.filter(function(e){ return e.id !== 'all'; }).map(function(e){ return e.id; });
+    var MF_FRONTIER_CAPS = ['frontier_hero','trailblazer_of_the_second_frontier','thirdfrontier_capstone','fourthfrontier_capstone','fifthfrontier_capstone'];
+    function countAtLevel(st, ids, lvl){ var n = 0; for(var i=0;i<ids.length;i++){ if(xlv(st, ids[i]) >= lvl) n++; } return n; }
+    function highestSkillLevel(st){ var m = 0, ids = MF_TRADE_IDS.concat(CLASS_SKILL_IDS, MF_COMBAT_PROF); for(var i=0;i<ids.length;i++){ var l = extlv(st, ids[i]); if(l > m) m = l; } return m; }
+    function tradesOver100(st){ var n = 0; for(var i=0;i<MF_TRADE_IDS.length;i++){ if(extlv(st, MF_TRADE_IDS[i]) > 100) n++; } return n; }
+    function estateBuildingCount(st){ var n = 0, g = st.estate && st.estate.grid; if(g){ for(var x=0;x<g.length;x++){ var col = g[x]; if(!col) continue; for(var y=0;y<col.length;y++){ var c = col[y]; if(c && c.buildingId) n++; } } } return n; }
+    function famAtStars(st, minStars){ var n = 0, f = st.familiars || {}; Object.keys(f).forEach(function(id){ if((f[id] && f[id].stars || 0) >= minStars) n++; }); return n; }
+    function fullFantastic(st){ var r = equippedGearRarities(st); return (r.length >= 13 && r.every(function(x){ return x === 'fantastic'; })) ? 1 : 0; }
+    function towerBest(st){ var m = 0; if(st.tower){ Object.keys(st.tower).forEach(function(k){ var b = (st.tower[k] && st.tower[k].best) || 0; if(b > m) m = b; }); } return m; }
+    function towerClassAt(st, floor){ var n = 0; for(var i=0;i<MF_TOWER_CLASS.length;i++){ var e = st.tower && st.tower[MF_TOWER_CLASS[i]]; if(e && (e.best||0) >= floor) n++; } return n; }
+    function capsClaimed(st, ids){ var c = (st.quests && st.quests.claimed) || {}, n = 0; for(var i=0;i<ids.length;i++){ if(c[ids[i]]) n++; } return n; }
+    function featsClaimed(st, excludeId){ var c = (st.quests && st.quests.claimed) || {}, n = 0; QUESTS.forEach(function(q){ if(q.cat==='mortalfeats' && !q.capstone && q.id !== excludeId && c[q.id]) n++; }); return n; }
+    function statOf(st, key){ return (st.stats && st.stats[key]) || 0; }
+    function cbOf(st, key){ return (st.stats && st.stats[key]) || 0; }   // combat counters live in state.stats too
+    // Freeze the line for anyone who is not a LIVE Mortal (claimed/latched feats bypass this in questProgress).
+    function mfLive(fn){ return function(st){ return isMortal() ? (fn(st) || 0) : 0; }; }
+
+    var FEATS = [
+      // ---- Trial I: The Unbroken (1-10) ----
+      { id:'mf_living',    title:'The Living',    d:'The frontier does not forgive a single misstep, yet you have spread one mortal life across every craft and calling until your name is written in five thousand levels of hard-won skill.', h:'Reach a combined Total Level of 5,000.', tg:5000, nav:{cat:'skills'}, p:function(st){ return playerTotalLevel(st); } },
+      { id:'mf_enduring',  title:'The Enduring',  d:'A mortal life is measured in days, and you have returned to the frontier on thirty of them, each one a small refusal to let the story end.', h:'Log in on 30 separate days.', tg:30, nav:{cat:'skills'}, p:function(st){ return statOf(st,'login_days'); } },
+      { id:'mf_tireless',  title:'The Tireless',  d:'One hundred hours with a weapon in hand and death always a breath away. Most who walk the mortal path never last an afternoon.', h:'Spend 100 hours in combat.', tg:360000000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_combat_ms'); } },
+      { id:'mf_steadfast', title:'The Steadfast', d:'Five thousand foes fell and not one of them cut the single thread of your mortal life.', h:'Defeat 5,000 foes in a row without dying.', tg:5000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_nodeath_run'); } },
+      { id:'mf_ascendant', title:'The Ascendant', d:'Seven and a half thousand levels of mastery, gathered under the shadow of a death that never comes twice.', h:'Reach a combined Total Level of 7,500.', tg:7500, nav:{cat:'skills'}, p:function(st){ return playerTotalLevel(st); } },
+      { id:'mf_prospering',title:'The Prospering',d:'A billion coins have passed through your mortal hands, and you are still here to spend them.', h:'Earn 1,000,000,000 gold in total.', tg:1000000000, nav:{cat:'market'}, p:function(st){ return st.goldEarnedTotal || 0; } },
+      { id:'mf_faithful',  title:'The Faithful',  d:'You have filled your soul to its very brim, and a Mortal has only the one to fill.', h:'Fill your Faith to its maximum.', tg:1, nav:{cat:'faith'}, p:function(st){ return (st.faith || 0) >= faithMax(st) ? 1 : 0; } },
+      { id:'mf_trailbound',title:'The Trailbound', d:'Five frontiers, five sagas, every one of them carried to its final page by a single life.', h:'Claim the capstone of all five Frontier quest lines.', tg:5, nav:{cat:'quests', sub:'gettingstarted'}, p:function(st){ return capsClaimed(st, MF_FRONTIER_CAPS); } },
+      { id:'mf_sleepless', title:'The Sleepless', d:'A million things made by one pair of mortal hands. Somewhere in there you must have slept, but the ledger shows no sign of it.', h:'Complete 1,000,000 crafts.', tg:1000000, nav:{cat:'refining'}, p:function(st){ return statOf(st,'crafted'); } },
+      { id:'mf_undying',   title:'The Undying',   d:'Ten thousand levels. The frontier has run out of new things to teach you, and you are still drawing breath.', h:'Reach a combined Total Level of 10,000.', tg:10000, nav:{cat:'skills'}, p:function(st){ return playerTotalLevel(st); } },
+      // ---- Trial II: Master of All Trades (11-20) ----
+      { id:'mf_adept',     title:'The Adept',     d:'Ten trades carried to their ceiling by one relentless life.', h:'Raise 10 gathering or crafting skills to Level 100.', tg:10, nav:{cat:'skills'}, p:function(st){ return countAtLevel(st, MF_TRADE_IDS, 100); } },
+      { id:'mf_learned',   title:'The Learned',   d:'Five and twenty trades, each one taken as far as it will go.', h:'Raise 25 gathering or crafting skills to Level 100.', tg:25, nav:{cat:'skills'}, p:function(st){ return countAtLevel(st, MF_TRADE_IDS, 100); } },
+      { id:'mf_gatherer',  title:'The Gatherer',  d:'Every way the land can be worked, you have mastered. There is nothing left in the wild you cannot take.', h:'Raise every gathering skill to Level 100.', tg:GATHER_SKILL_IDS.length, nav:{cat:'gathering'}, p:function(st){ return countAtLevel(st, GATHER_SKILL_IDS, 100); } },
+      { id:'mf_artisan',   title:'The Artisan',   d:'Every forge, loom and bench answers to your hand. Nothing made in this world is beyond your making.', h:'Raise every crafting skill to Level 100.', tg:CRAFT_SKILL_IDS.length, nav:{cat:'refining'}, p:function(st){ return countAtLevel(st, CRAFT_SKILL_IDS, 100); } },
+      { id:'mf_warmaster', title:'The Warmaster', d:'Every weapon, every stance, every kind of armour, all mastered on a single life that could not afford to learn any of them the hard way.', h:'Raise every combat proficiency to Level 100.', tg:MF_COMBAT_PROF.length, nav:{cat:'character'}, p:function(st){ return countAtLevel(st, MF_COMBAT_PROF, 100); } },
+      { id:'mf_peerless',  title:'The Peerless',  d:'You pushed a single craft past the old ceiling of mortal achievement, into levels the record books were never built to hold.', h:'Raise any skill to Level 110.', tg:110, nav:{cat:'skills'}, p:function(st){ return highestSkillLevel(st); } },
+      { id:'mf_masterful', title:'The Masterful', d:'Ten trades carried BEYOND their ceiling. Mastery was only the beginning of what one life could reach.', h:'Take 10 gathering or crafting skills past Level 100.', tg:10, nav:{cat:'skills'}, p:function(st){ return tradesOver100(st); } },
+      { id:'mf_fortunate', title:'The Fortunate', d:'Fifty times fortune smiled on the forge, and a Mortal has to court that luck the whole way with everything on the line.', h:'Craft 50 Fantastic-quality items.', tg:50, nav:{cat:'refining'}, p:function(st){ return statOf(st,'craftedFantastic'); } },
+      { id:'mf_perfectionist', title:'The Perfectionist', d:'You honed a piece of gear to absolute perfection, the last possible increment of a single mortal effort.', h:'Enhance any gear to +15.', tg:15, nav:{cat:'improvement'}, p:function(st){ return statOf(st,'enhance_best'); } },
+      { id:'mf_selfmade',  title:'The Self-Made', d:'Every slot upon you shines Fantastic. No hand-me-downs, no half-measures, a full loadout of the rarest work there is.', h:'Equip a Fantastic-quality item in every gear slot.', tg:1, nav:{cat:'character'}, p:function(st){ return fullFantastic(st); } },
+      // ---- Trial III: The Untouchable (21-30) ----
+      { id:'mf_precise',   title:'The Precise',   d:'Ten thousand critical strikes, each one a small proof that a Mortal cannot afford to miss.', h:'Land 10,000 Critical Hits.', tg:10000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_crits'); } },
+      { id:'mf_bulwark',   title:'The Bulwark',   d:'Ten thousand blows turned aside. Each block is one more death that did not happen.', h:'Block 10,000 attacks.', tg:10000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_blocks'); } },
+      { id:'mf_elusive',   title:'The Elusive',   d:'Ten thousand strikes that met nothing but air where a Mortal used to be.', h:'Dodge 10,000 attacks.', tg:10000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_dodges'); } },
+      { id:'mf_relentless',title:'The Relentless', d:'Fifty perfect strikes in a row, luck and skill braided into a single unbroken streak.', h:'Land 50 Critical Hits in a row.', tg:50, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_streak_crit'); } },
+      { id:'mf_untouched', title:'The Untouched', d:'A thousand foes slain without a single one landing a blow. On the mortal path, being untouched is the whole art.', h:'Win 1,000 fights without taking damage.', tg:1000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_untouched_kills'); } },
+      { id:'mf_ghost',     title:'The Ghost',     d:'Ten dungeons cleared end to end without so much as a scratch. You passed through the dark and it never knew you were there.', h:'Clear 10 dungeons without taking damage.', tg:10, nav:{cat:'dungeons'}, p:function(st){ return cbOf(st,'cb_untouched_dungeons'); } },
+      { id:'mf_cornered',  title:'The Cornered',  d:'Two hundred and fifty fights won from the very brink, a hair of health between you and the end of everything.', h:'Win 250 fights at critically low HP.', tg:250, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_very_low_hp_wins'); } },
+      { id:'mf_unshaken',  title:'The Unshaken',  d:'Ten of a foe’s deadliest special attacks weathered in a single fight, and you walked away.', h:'Survive 10 special attacks in one fight.', tg:10, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_specials_fight'); } },
+      { id:'mf_ascetic',   title:'The Ascetic',   d:'A thousand kills in a row without a bite of food to save you. Pure endurance, no safety net.', h:'Defeat 1,000 foes in a row without dying or eating.', tg:1000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_ascetic_run'); } },
+      { id:'mf_warded',    title:'The Warded',    d:'Ten floors of the Tower climbed without taking a single hit, a flawless ascent on a life that gets no second try.', h:'Clear 10 Tower floors in a row without taking damage.', tg:10, nav:{cat:'tower'}, p:function(st){ return cbOf(st,'cb_tower_clean'); } },
+      // ---- Trial IV: The Giant-Killer (31-40) ----
+      { id:'mf_overmatched', title:'The Overmatched', d:'A hundred times you slew what should have slain you, foes ten full tiers beyond your blade.', h:'Defeat 100 foes at least 10 tiers above your weapon.', tg:100, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_tier_gap_kills'); } },
+      { id:'mf_bold',      title:'The Bold',      d:'The Tower rewards the reckless as often as it buries them. You reached its fiftieth floor and came back down.', h:'Reach Tower Floor 50.', tg:50, nav:{cat:'tower'}, p:function(st){ return towerBest(st); } },
+      { id:'mf_climber',   title:'The Climber',   d:'One hundred floors of the endless Tower, climbed on a single life.', h:'Reach Tower Floor 100.', tg:100, nav:{cat:'tower'}, p:function(st){ return towerBest(st); } },
+      { id:'mf_depthwalker', title:'The Depthwalker', d:'A hundred descents into the deep places of the world, and a hundred returns.', h:'Clear 100 dungeon runs.', tg:100, nav:{cat:'dungeons'}, p:function(st){ return cbOf(st,'cb_dungeon_clears'); } },
+      { id:'mf_bane',      title:'The Bane',      d:'Ten guild bosses laid low, each one a monster built to end a party of the immortal.', h:'Land the killing blow on 10 guild bosses.', tg:10, nav:{cat:'dungeons'}, p:function(st){ return cbOf(st,'cb_guildboss_kills'); } },
+      { id:'mf_versatile', title:'The Versatile', d:'Every class in the game carried to its peak by one life that could only wear one of them at a time.', h:'Reach Level 100 with every class.', tg:CLASS_SKILL_IDS.length, nav:{cat:'classes'}, p:function(st){ return countAtLevel(st, CLASS_SKILL_IDS, 100); } },
+      { id:'mf_cataclysm', title:'The Cataclysm', d:'A single blow that landed for ten million. The ground remembers it.', h:'Land a single hit of 10,000,000 damage.', tg:10000000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_best_hit'); } },
+      { id:'mf_annihilator', title:'The Annihilator', d:'Ten trillion damage dealt across one mortal lifetime. A number no immortal ever needed to reach.', h:'Deal 10,000,000,000,000 total damage.', tg:10000000000000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_dmg'); } },
+      { id:'mf_reaper',    title:'The Reaper',    d:'One million foes sent to their end by a fighter who only ever had the one life of their own.', h:'Defeat 1,000,000 foes in total.', tg:1000000, nav:{cat:'enemies'}, p:function(st){ return statOf(st,'kills'); } },
+      { id:'mf_slayer',    title:'The Slayer',    d:'You brought down an apex titan-beast, the mightiest thing the wild frontier can field.', h:'Defeat an apex-tier wilderness foe.', tg:1, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_apex_kills'); } },
+      // ---- Trial V: The Immortal Mortal (41-50) ----
+      { id:'mf_starcaller',title:'The Starcaller', d:'You bound a familiar to its fullest, five stars bright, a bond that outshines the short life that forged it.', h:'Raise any familiar to 5 stars.', tg:1, nav:{cat:'menagerie'}, p:function(st){ return famAtStars(st, 5); } },
+      { id:'mf_beastlord', title:'The Beastlord', d:'Six familiars, each ascended past three stars. A whole menagerie answers to one mortal voice.', h:'Have six familiars at 3 stars or better.', tg:6, nav:{cat:'menagerie'}, p:function(st){ return famAtStars(st, 3); } },
+      { id:'mf_warden',    title:'The Warden',    d:'Half of your estate’s bounds stand in finished stone, a wall against a world that only needs to break through once.', h:'Reach a 50% Estate Appraisal.', tg:50, nav:{cat:'estate'}, p:function(st){ return Math.round(estateAppraisal('personal').share * 100); } },
+      { id:'mf_architect', title:'The Architect', d:'Eighty structures raised on a single mortal estate. A city, near enough, built by one pair of hands.', h:'Have 80 buildings standing on your estate.', tg:80, nav:{cat:'estate'}, p:function(st){ return estateBuildingCount(st); } },
+      { id:'mf_complete',  title:'The Complete',  d:'Every trial of war and every labour of the estate, both quest lines crowned, by one life.', h:'Claim the Combat and Estate quest capstones.', tg:2, nav:{cat:'quests', sub:'combatquests'}, p:function(st){ return capsClaimed(st, ['warlord_of_the_frontier','lord_of_the_manor']); } },
+      { id:'mf_towerlord', title:'The Towerlord', d:'The hundredth floor reached with every class the game can field. There is no entrance of the Tower you have not conquered.', h:'Reach Tower Floor 100 with every class entrance.', tg:MF_TOWER_CLASS.length, nav:{cat:'tower'}, p:function(st){ return towerClassAt(st, 100); } },
+      { id:'mf_colossus',  title:'The Colossus',  d:'Fifteen thousand levels of mastery on a single, mortal, breakable life.', h:'Reach a combined Total Level of 15,000.', tg:15000, nav:{cat:'skills'}, p:function(st){ return playerTotalLevel(st); } },
+      { id:'mf_deathless', title:'The Deathless', d:'Twenty-five thousand foes and not one death. The mortal path is meant to end; yours simply refuses to.', h:'Defeat 25,000 foes in a row without dying.', tg:25000, nav:{cat:'enemies'}, p:function(st){ return cbOf(st,'cb_nodeath_run'); } },
+      { id:'mf_magnate',   title:'The Magnate',   d:'Ten billion gold earned across one lifetime. Fortunes like this are usually measured across many.', h:'Earn 10,000,000,000 gold in total.', tg:10000000000, nav:{cat:'market'}, p:function(st){ return st.goldEarnedTotal || 0; } },
+      { id:'mf_storied',   title:'The Storied',   d:'Twenty-five feats of a single mortal life, each one a title the immortal will never wear.', h:'Claim 25 other Mortal Feat titles.', tg:25, nav:{cat:'quests', sub:'mortalfeats'}, p:function(st){ return featsClaimed(st, 'mf_storied'); } }
+    ];
+
+    FEATS.forEach(function(f){
+      QUESTS.push({ id:f.id, cat:'mortalfeats', title:f.title, desc:f.d, how:f.h, target:f.tg,
+        progress:mfLive(f.p), nav:f.nav, reward:{ titleId:'title_' + f.id, name:f.title } });
+    });
+    // The capstone: claim all fifty. Counts CLAIMED mortalfeats (itself excluded, being the only capstone).
+    QUESTS.push({ id:'mf_eternal', cat:'mortalfeats', capstone:true, title:'Eternal Among Mortals',
+      desc:'No single mortal life was ever meant to do all of this. Every trial, every craft, every impossible number, done before the one death that was always waiting. You did it anyway. They will tell your story long after the immortals are forgotten.',
+      how:'Claim all 50 Mortal Feats.', target:50, nav:{cat:'quests', sub:'mortalfeats'},
+      progress:mfLive(function(st){ return featsClaimed(st, null); }),
+      reward:{ titleId:'title_mf_eternal', name:'Eternal Among Mortals' } });
+  })();
+  // The five Trials, keyed by the mortalfeats 1-50 ordinals (assigned in questRebuildDerived). Same shape
+  // as CB_ACTS/EST_ACTS, so renderQuestsTab groups them exactly like every other Act-structured line.
+  FRONTIER_ACTS['mortalfeats'] = [
+    { title:'Trial I · The Unbroken',        from:1,  to:10 },
+    { title:'Trial II · Master of All Trades', from:11, to:20 },
+    { title:'Trial III · The Untouchable',    from:21, to:30 },
+    { title:'Trial IV · The Giant-Killer',    from:31, to:40 },
+    { title:'Trial V · The Immortal Mortal',  from:41, to:50 }
+  ];
+
   var QUEST_BY_ID = {}, TITLES = [], TITLE_BY_ID = {}, QUEST_ORDINAL = {};
   function questRebuildDerived(){
     QUEST_BY_ID = {}; QUESTS.forEach(function(q){ QUEST_BY_ID[q.id] = q; });
@@ -29490,6 +29612,8 @@
     QUESTS.forEach(function(q){ if(q.cat==='secondfrontier' && !q.capstone){ _sn++; QUEST_ORDINAL[q.id] = _sn; } });
     // Generated Frontiers (Third/Fourth/Fifth...) each number 1..N in authored (push) order, the same rule.
     FRONTIER_SPECS.forEach(function(spec){ var _gn = 0; QUESTS.forEach(function(q){ if(q.cat===spec.id && !q.capstone){ _gn++; QUEST_ORDINAL[q.id] = _gn; } }); });
+    var _mfn = 0;  // Mortal Feats number their own 1..50 (Trials I-V), capstone excluded
+    QUESTS.forEach(function(q){ if(q.cat==='mortalfeats' && !q.capstone){ _mfn++; QUEST_ORDINAL[q.id] = _mfn; } });
     TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.titleId; })
       .map(function(q){ return { id: q.reward.titleId, name: q.reward.name, how: q.how || q.desc, questId: q.id }; });
     TITLE_BY_ID = {}; TITLES.forEach(function(t){ TITLE_BY_ID[t.id] = t; });
@@ -39581,7 +39705,7 @@
     if(act.cbWasVeryLow) bumpStat('cb_very_low_hp_wins');
     if(act.cbSpecials) cbBest('cb_specials_fight', act.cbSpecials);
     if(act.cbSrc) cbBest('cb_sources_fight', Object.keys(act.cbSrc).length);
-    if(act.duelStartedAt) cbBest('cb_fight_ms', Date.now() - act.duelStartedAt);
+    if(act.duelStartedAt){ var _fms = Date.now() - act.duelStartedAt; cbBest('cb_fight_ms', _fms); bumpStat('cb_combat_ms', Math.max(0, _fms)); } // longest single fight AND cumulative time in combat (Mortal Feat "The Tireless")
     // Elemental advantage: the last element you actually dealt against what the foe was.
     if(act.cbLastEl && monster && monster.element && ELEMENT_BEATS[act.cbLastEl] === monster.element) bumpStat('cb_advantage_kills');
     // Punching up: the foe's tier against your weapon's. equippedMainhandTier is 1-based, tierIndex is 0-based.
@@ -39597,6 +39721,10 @@
     // Kills without dying: a run, not a total, so it needs its own high-water mark.
     state.cbNoDeathRun = (state.cbNoDeathRun || 0) + 1;
     cbBest('cb_nodeath_run', state.cbNoDeathRun);
+    // Ascetic run (Mortal Feat): kills since the last death OR the last time you ate. Reset in eatFood/
+    // autoEatCheck and at both death sites; its own high-water mark like cbNoDeathRun.
+    state.cbAsceticRun = (state.cbAsceticRun || 0) + 1;
+    cbBest('cb_ascetic_run', state.cbAsceticRun);
   }
   // Class capstones fire inside their own engines rather than through the log, so each gets one counter call.
   // Nine sites, one helper, so the Combat quest line can ask "how many times have you done your class's
@@ -45918,7 +46046,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.99.24';
+  var GAME_VERSION = '0.0.100.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46074,7 +46202,7 @@
       cardCollapseKey:cardCollapseKey, cardCollapsed:cardCollapsed, cardCollapseToggle:cardCollapseToggle, decorateCollapsibleCards:decorateCollapsibleCards, ensureLandingStyle:ensureLandingStyle,
       landingFightActive:landingFightActive, landingFightSeed:landingFightSeed, landingFightMount:landingFightMount, landingFightScale:landingFightScale, landingFightStop:landingFightStop, LANDING_FOES:LANDING_FOES,
       fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables, trayConsumStatusText:trayConsumStatusText, trayFoldBtn:trayFoldBtn,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, frontierGuideSync:frontierGuideSync, firstFrontierComplete:firstFrontierComplete, gatheringBeginnerNudge:gatheringBeginnerNudge, renderGatherTab:renderGatherTab, TICKER_STARTER_TIPS:TICKER_STARTER_TIPS, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, frontierGuideSync:frontierGuideSync, firstFrontierComplete:firstFrontierComplete, gatheringBeginnerNudge:gatheringBeginnerNudge, renderGatherTab:renderGatherTab, TICKER_STARTER_TIPS:TICKER_STARTER_TIPS, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, subNavVisible:subNavVisible, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,

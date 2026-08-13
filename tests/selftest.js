@@ -11217,7 +11217,8 @@
     // 116 tower + seven capstones: Frontier Hero (First), Lord of the Manor (Estate), Warlord (Combat),
     // Trailblazer (Second, v0.0.98.0), and Pathfinder/Vanguard/Pioneer (the generated Third/Fourth/Fifth
     // Frontiers, v0.0.99.0).
-    eq(FF.TITLES.length, 123, 'the Titles registry has one entry per tower quest (116) plus the seven capstones');
+    // + the 51 Mortal Feat titles (50 feats + the mf_eternal capstone, v0.0.100.0).
+    eq(FF.TITLES.length, 174, 'the Titles registry: one per tower quest (116) + seven capstones + 51 Mortal Feats');
     // Registry order follows the QUESTS array, so the static capstones lead in the order they are defined:
     // First Frontier, then Estate, then Combat. Asserted by SET rather than fixed indices past the first,
     // so adding a fourth capstone does not fail here for the wrong reason.
@@ -23032,6 +23033,96 @@
       });
     });
     eq(unnamed.join(' | '), '', 'no craft recipe anywhere bills an id ALL_SELLABLE cannot name (first 5 shown)');
+  });
+
+  // ---- Mortal Feats (mortalfeats): 50 title-only feats + capstone, LIVE-Mortal-only ----
+  suite('mortal feats: category, structure and title-only rewards', function(){
+    ok(FF.QUEST_CATEGORY_IDS.indexOf('mortalfeats') !== -1, 'mortalfeats is a registered quest category');
+    ok(FF.isQuestCategory('mortalfeats'), 'isQuestCategory recognises mortalfeats');
+    var feats = FF.QUESTS.filter(function(q){ return q.cat === 'mortalfeats' && !q.capstone; });
+    var caps  = FF.QUESTS.filter(function(q){ return q.cat === 'mortalfeats' && q.capstone; });
+    eq(feats.length, 50, 'exactly 50 non-capstone Mortal Feats');
+    eq(caps.length, 1, 'exactly one Mortal Feats capstone');
+    eq(caps[0].id, 'mf_eternal', 'the capstone is mf_eternal');
+    // Every feat is TITLE-ONLY: a unique titleId + name, and NO other reward field.
+    var titleIds = {}, names = {};
+    FF.QUESTS.filter(function(q){ return q.cat === 'mortalfeats'; }).forEach(function(q){
+      var r = q.reward || {};
+      ok(!!r.titleId && !!r.name, q.id + ' rewards a title (id + name)');
+      ok(!r.items && !r.itemId && !r.gold && !r.skill && !r.familiarId, q.id + ' rewards ONLY a title, nothing else');
+      ok(!titleIds[r.titleId], 'title id ' + r.titleId + ' is unique');
+      ok(!names[r.name], 'title name "' + r.name + '" is unique');
+      titleIds[r.titleId] = 1; names[r.name] = 1;
+    });
+    // Ordinals: the 50 feats number 1..50; the capstone has none (it lands in the Finale group).
+    var ords = feats.map(function(q){ return FF.QUEST_ORDINAL[q.id]; }).sort(function(a,b){ return a-b; });
+    eq(ords[0], 1, 'first feat is ordinal 1');
+    eq(ords[49], 50, 'last feat is ordinal 50');
+    ok(FF.QUEST_ORDINAL['mf_eternal'] === undefined, 'the capstone carries no ordinal');
+    // A spot-check of the owner-set targets (the numbers the player asked for).
+    eq(FF.questById('mf_living').target, 5000, 'mf_living: Total Level 5000');
+    eq(FF.questById('mf_colossus').target, 15000, 'mf_colossus: Total Level 15000');
+    eq(FF.questById('mf_annihilator').target, 10000000000000, 'mf_annihilator: 10 trillion damage');
+    eq(FF.questById('mf_deathless').target, 25000, 'mf_deathless: 25000-kill run');
+    eq(FF.questById('mf_architect').target, 80, 'mf_architect: 80 buildings');
+    eq(FF.questById('mf_cataclysm').target, 10000000, 'mf_cataclysm: 10M single hit');
+    eq(FF.questById('mf_fortunate').target, 50, 'mf_fortunate: 50 Fantastic crafts');
+    eq(FF.questById('mf_warden').target, 50, 'mf_warden: 50% appraisal');
+  });
+
+  suite('mortal feats: only a LIVE Mortal advances them (frozen after death)', function(){
+    var s = FF._state;
+    var saved = { mortal:s.mortal, quests:s.quests, stats:s.stats };
+    try {
+      var q = FF.questById('mf_precise'); // cb_crits >= 10000
+      // A non-Mortal reads 0 on an unclaimed feat, however high the counter is.
+      s.stats = { cb_crits: 999999 }; s.quests = { claimed:{}, completed:{} };
+      s.mortal = false;
+      eq(FF.questProgress(q), 0, 'an Immortal cannot progress a Mortal Feat');
+      ok(!FF.subNavVisible('mortalfeats'), 'the Mortal Feats tab is hidden for an Immortal');
+      // A live Mortal reads the real value (clamped at the target).
+      s.mortal = true;
+      eq(FF.questProgress(q), q.target, 'a live Mortal reads the counter (clamped at target)');
+      ok(FF.subNavVisible('mortalfeats'), 'the tab shows for a live Mortal');
+      // FREEZE: a feat CLAIMED (or latched) while alive stays claimable/complete after death (mortal=false),
+      // because questProgress short-circuits to target for a claimed/latched quest before the mortal gate.
+      s.quests = { claimed:{}, completed:{} };
+      s.quests.claimed['mf_precise'] = true;
+      s.mortal = false;
+      eq(FF.questProgress(q), q.target, 'a CLAIMED feat survives the death freeze');
+    } finally { s.mortal = saved.mortal; s.quests = saved.quests; s.stats = saved.stats; }
+  });
+
+  suite('mortal feats: the new counters and the tally feats wire up', function(){
+    var s = FF._state;
+    var saved = { mortal:s.mortal, quests:s.quests, stats:s.stats };
+    try {
+      s.mortal = true; s.quests = { claimed:{}, completed:{} };
+      // The four NEW counters this feature added, each read by exactly one feat.
+      s.stats = {}; s.stats['cb_apex_kills'] = 1;
+      eq(FF.questProgress(FF.questById('mf_slayer')), 1, 'mf_slayer reads cb_apex_kills');
+      s.stats = {}; s.stats['cb_combat_ms'] = 360000000;
+      eq(FF.questProgress(FF.questById('mf_tireless')), 360000000, 'mf_tireless reads cb_combat_ms');
+      s.stats = {}; s.stats['cb_ascetic_run'] = 1000;
+      eq(FF.questProgress(FF.questById('mf_ascetic')), 1000, 'mf_ascetic reads cb_ascetic_run');
+      s.stats = {}; s.stats['cb_tower_clean'] = 10;
+      eq(FF.questProgress(FF.questById('mf_warded')), 10, 'mf_warded reads cb_tower_clean');
+      // mf_storied counts OTHER claimed feats (itself excluded); the capstone counts all 50.
+      s.stats = {};
+      var feats = FF.QUESTS.filter(function(q){ return q.cat === 'mortalfeats' && !q.capstone; });
+      s.quests = { claimed:{}, completed:{} };
+      for(var i = 0; i < 25; i++){ s.quests.claimed[feats[i].id] = true; } // claim 25 (incl. mf_storied if it's in the first 25)
+      // mf_storied wants 25 OTHERS. Claim 25 that are NOT mf_storied.
+      s.quests = { claimed:{}, completed:{} };
+      var claimedN = 0;
+      for(var j = 0; j < feats.length && claimedN < 25; j++){ if(feats[j].id !== 'mf_storied'){ s.quests.claimed[feats[j].id] = true; claimedN++; } }
+      eq(FF.questProgress(FF.questById('mf_storied')), 25, 'mf_storied: 25 other feats claimed reads 25');
+      // Now all 50 claimed -> capstone complete.
+      s.quests = { claimed:{}, completed:{} };
+      feats.forEach(function(q){ s.quests.claimed[q.id] = true; });
+      eq(FF.questProgress(FF.questById('mf_eternal')), 50, 'the capstone reads 50 when every feat is claimed');
+      eq(FF.questProgress(FF.questById('mf_storied')), 25, 'mf_storied clamps at 25 even with 49 others claimed');
+    } finally { s.mortal = saved.mortal; s.quests = saved.quests; s.stats = saved.stats; }
   });
 
   // ---- Report ---------------------------------------------------------------------------
