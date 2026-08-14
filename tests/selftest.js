@@ -11956,7 +11956,7 @@
     ok(r8.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every reward item resolves to a real item');
     eq(FF.ALL_SELLABLE['tanning_t0'].name, 'Rabbit Leather', 'tier-0 Leather is Rabbit Leather');
     ok(/Awl/.test(FF.questRewardLabel(q8)) && /Copper/.test(FF.questRewardLabel(q8)), 'the reward line names the Copper Awl (Leatherworking tool)');
-    eq(q8.nav.cat, 'crafting', 'its Go destination is the Crafting tab');
+    eq(q8.nav.cat, 'refining', 'its Go destination is the Refining tab (Tanning is a Refining skill)');
     eq(q8.nav.sub, 'tanning', 'the Go destination drills into the Tanning sub-tab');
     var savedStats8 = s.stats, savedR8 = r8.map(function(id){ return s.inventory[id]; });
     s.quests = { claimed:{} };
@@ -12049,7 +12049,7 @@
     eq(q12.target, 10, 'its target is 10 excavated artifacts');
     ok(q12.reward.kind==='item' && q12.reward.itemId==='relic_t0_normal' && q12.reward.qty===1, 'reward is a Sand Relic (relic_t0_normal)');
     eq(FF.ALL_SELLABLE['relic_t0_normal'].name, 'Sand Relic', 'the reward reads as a Sand Relic');
-    eq(q12.nav.cat, 'crafting', 'its Go destination is the Crafting tab');
+    eq(q12.nav.cat, 'refining', 'its Go destination is the Refining tab (Archaeology is a Refining skill)');
     eq(q12.nav.sub, 'archaeology', 'the Go destination drills into Archaeology');
     var savedStats12 = s.stats, savedRelic = s.inventory['relic_t0_normal'];
     s.quests = { claimed:{} }; s.stats = {};
@@ -23152,6 +23152,21 @@
       ok(s.titles.title_mf_precise === true, 'the earned title survives the death wipe');
       eq(FF.questProgress(FF.questById('mf_precise')), FF.questById('mf_precise').target, 'a claimed feat still reads full after death');
     } finally { s.mortal = saved.mortal; s.quests = saved.quests; s.trackedQuests = saved.tracked; s.titles = saved.titles; }
+  });
+
+  // ---- Quest copy/nav: the retired "Crafting" area is now Refining (ticket: Extract the Past) ----
+  suite('quests: no stale "Crafting" area name, refining skills nav to Refining', function(){
+    var stale = FF.QUESTS.filter(function(q){ return /\bIn Crafting\b/.test(q.how || ''); }).map(function(q){ return q.id; });
+    eq(stale.join(','), '', 'no quest how-text still says "In Crafting" (the area is Refining now)');
+    var noCraftingCat = FF.QUESTS.filter(function(q){ return q.nav && q.nav.cat === 'crafting'; }).map(function(q){ return q.id; });
+    eq(noCraftingCat.join(','), '', 'no quest navigates to the retired cat:"crafting"');
+    // The four refining-skill quests the ticket surfaced land on the Refining tab, at the right skill.
+    [['extract_the_past','archaeology'],['cure_the_hides','tanning'],['fire_the_forge','metallurgy'],['forge_your_tools','blacksmithing']].forEach(function(pair){
+      var q = FF.questById(pair[0]); if(!q) return; // id-tolerant (titles may be reworded), only assert when present
+      eq(q.nav.cat, 'refining', pair[0] + ' navigates to Refining');
+      eq(q.nav.sub, pair[1], pair[0] + ' opens the ' + pair[1] + ' skill');
+      ok(/In Refining →/.test(q.how), pair[0] + ' how-text reads "In Refining"');
+    });
   });
 
   // ---- Report ---------------------------------------------------------------------------
