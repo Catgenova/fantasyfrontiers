@@ -23218,6 +23218,51 @@
     } finally { if(el.parentNode) el.parentNode.removeChild(el); }
   });
 
+  // ---- Cloud save payload: prune zero-defaults + transient buffers (ticket: "save too large") ----
+  suite('cloudSaveData: trims the save without touching gameplay or the live state', function(){
+    var src = {
+      gold: 12345, mortal: false,
+      xp: { mining: 999, staff: 42 },
+      inventory: { held_a: 7, held_b: 1, spent_c: 0, weird_d: -3 },
+      itemEarnedTotal: { earned_a: 1000, never_b: 0 },
+      stats: { kills: 500, made_x: 10, dead_y: 0, hoursBuffed: -2 },
+      uniqueItems: { u1: { uid:'u1', enhance:15 } },
+      quests: { claimed: { q1:true }, completed: { q1:true } },
+      familiars: { forestry: { owned:true, level:100, stars:3 } },
+      log: [{ msg:'x', cls:'combat', t:1 }],
+      popupQueue: [{ kind:'rare' }],
+      companionCast: { forestry:{ accum:1, index:2 } },
+      deathReport: { by:'a Rabbit' }
+    };
+    var out = FF.cloudSaveData(src);
+    // Zero / negative / never-held keys are dropped from the per-item maps (a missing key reads as 0).
+    eq(out.inventory.held_a, 7, 'a held stack survives');
+    eq(out.inventory.held_b, 1, 'a stack of one survives');
+    ok(!('spent_c' in out.inventory), 'a spent (0-qty) stack is pruned');
+    ok(!('weird_d' in out.inventory), 'a negative inventory entry is pruned');
+    ok(!('never_b' in out.itemEarnedTotal), 'a 0 lifetime-earned entry is pruned');
+    eq(out.itemEarnedTotal.earned_a, 1000, 'a real lifetime total survives');
+    // Stats: exact-0 dropped, non-zero kept, a legitimate negative counter kept.
+    ok(!('dead_y' in out.stats), 'a 0 stat counter is pruned');
+    eq(out.stats.made_x, 10, 'a live stat counter survives');
+    eq(out.stats.hoursBuffed, -2, 'a negative stat (hoursBuffed) is kept');
+    // Transient display / combat buffers are stripped (they backfill from newGame() on load).
+    ok(out.log === undefined && out.popupQueue === undefined, 'transient log + popup queue are stripped');
+    ok(out.companionCast === undefined && out.deathReport === undefined, 'transient combat buffers are stripped');
+    // Gameplay data is carried through untouched.
+    eq(out.gold, 12345, 'gold carries through');
+    eq(out.xp.mining, 999, 'skill xp carries through');
+    ok(out.uniqueItems.u1 && out.uniqueItems.u1.enhance === 15, 'unique items carry through');
+    ok(out.quests.claimed.q1 === true, 'quest claims carry through');
+    ok(out.familiars.forestry && out.familiars.forestry.stars === 3, 'familiars carry through');
+    // The LIVE state object is never mutated (the pruned maps are fresh copies).
+    ok('spent_c' in src.inventory && src.inventory.spent_c === 0, 'the live inventory still holds the 0-qty key');
+    ok(Array.isArray(src.log) && src.log.length === 1, 'the live log is untouched');
+    ok(out.inventory !== src.inventory && out.stats !== src.stats, 'pruned maps are new objects, not the live ones');
+    // The result is smaller than the raw state.
+    ok(JSON.stringify(out).length < JSON.stringify(src).length, 'the pruned payload is smaller than the raw state');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

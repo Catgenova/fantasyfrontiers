@@ -38554,6 +38554,39 @@
     ffSaveWarnUpdate(true, 'Progress not saving: ' + (cloudLastFailReason || 'retrying') + ' (' + mins + ' min). A refresh would lose this time.');
   }
 
+  // Drop keys whose value is the default anyway (a 0-quantity item, a 0 lifetime, a 0 counter). A missing
+  // key reads as its default everywhere (state.inventory[id]||0, etc.), so this changes nothing on load.
+  // keepNeg leaves negatives in place (a stat like hoursBuffed can legitimately dip below 0).
+  function savePruneZeros(map, keepNeg){
+    if(!map || typeof map !== 'object') return map;
+    var out = {};
+    for(var k in map){ if(!map.hasOwnProperty(k)) continue; var v = map[k];
+      if(v === 0) continue;
+      if(!keepNeg && !(v > 0)) continue;   // inventory / ledger: drop 0, negatives, NaN
+      out[k] = v;
+    }
+    return out;
+  }
+  // The payload we actually send. The full state carries three per-item maps that only ever GROW
+  // (inventory, itemEarnedTotal, stats) plus purely transient runtime buffers, and the top player's
+  // snapshot pushed past the server's 500KB ceiling ("save too large. Please report this"). Trim what does
+  // not need to persist: drop the zero-default entries above (the common inventory decrements never delete
+  // a key when a stack hits 0, so a veteran account accretes thousands of "id: 0" entries), and strip the
+  // transient display/combat buffers. The loader is `Object.assign(newGame(), loaded)`, so any field absent
+  // from the save simply backfills its newGame() default on load. No gameplay data is touched, and the live
+  // `state` object is never mutated (the pruned maps are fresh copies).
+  var SAVE_TRANSIENT_KEYS = ['log','popupQueue','popupBatchTotal','companionCast','familiarBuffs',
+    'classDebuffs','knightStacks','familiarCastIndex','familiarCastAccum','deathReport',
+    'staffDownbeats','summonerWraiths','summonerCrescendo'];
+  function cloudSaveData(st){
+    var out = {};
+    for(var k in st){ if(st.hasOwnProperty(k)) out[k] = st[k]; }
+    for(var i = 0; i < SAVE_TRANSIENT_KEYS.length; i++) delete out[SAVE_TRANSIENT_KEYS[i]];
+    out.inventory = savePruneZeros(st.inventory);
+    out.itemEarnedTotal = savePruneZeros(st.itemEarnedTotal);
+    out.stats = savePruneZeros(st.stats, true);   // keep the odd negative counter
+    return out;
+  }
   // force = intentional overwrite (reset only): bypasses the empty guard and tells the server
   //         to override its forward-only progress guard.
   // flush = push now, skipping the debounce, but STILL subject to the empty + forward guards.
@@ -38574,7 +38607,7 @@
     try{
       // session_id is attached ONLY once the claim is confirmed. An absent id is never fenced (the
       // rollout-safe rule), so an unclaimed tab saves normally instead of locking itself out.
-      var _body = { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force };
+      var _body = { data: cloudSaveData(state), client_saved_at: state.lastSaved || 0, progress: score, force: !!force };
       if(CLOUD_FENCE_ENABLED && cloudClaimed) _body.session_id = cloudSessionId;
       var res = await chatClient.functions.invoke('save_game', { body: _body });
       // Every outcome is classified and remembered now (see the SAVE WATCHDOG block above) -- a failed
@@ -46158,7 +46191,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.6';
+  var GAME_VERSION = '0.0.100.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46318,7 +46351,7 @@
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
