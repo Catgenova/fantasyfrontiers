@@ -6956,6 +6956,7 @@
     var s = FF._state, savedAct = s.activity, savedHp = s.playerHp, savedMain = s.equippedMainhand;
     var savedTier = s.equippedMainhandTier, savedRar = s.equippedMainhandRarity;
     var savedComps = s.activeCompanions, savedFams = s.familiars, savedCast = s.companionCast;
+    var savedBA = s.bodyArmor, savedSumXp = s.xp && s.xp.summoner;
     try {
       var mon = null;
       for(var i=0;i<FF.MONSTERS.length;i++){ if(FF.MONSTERS[i].special){ mon = FF.MONSTERS[i]; break; } }
@@ -7036,10 +7037,14 @@
       ok(/data-action="stop"/.test(h), 'Retreat still renders');
 
       // ---- six companions, each with a cast clock and a spell queue ----
-      // Six is the ceiling: one base slot plus five from a fantastic staff.
+      // Six is the ceiling: one base slot plus one per Summoner perk (Lv 1/20/40/60/80). Slots come from the
+      // class ladder now, not staff rarity -- so seat a maxed, fully-kitted Summoner to open all six.
       s.equippedMainhand = 'staff'; s.equippedMainhandTier = FF.TIER_COUNT; s.equippedMainhandRarity = 'fantastic';
-      eq(FF.activeCompanionSlots(s), 1 + FF.STAFF_RARITY_FAMILIAR_SLOTS.fantastic, 'a fantastic staff opens all six slots');
-      eq(FF.activeCompanionSlots(s), 6, 'that ceiling is six');
+      s.bodyArmor = { helmet:{tier:1,rarity:'normal',material:'tailoring'}, chest:{tier:1,rarity:'normal',material:'tailoring'}, gauntlets:{tier:1,rarity:'normal',material:'tailoring'}, boots:{tier:1,rarity:'normal',material:'tailoring'}, back:{tier:0,rarity:'normal',material:null} };
+      s.xp.summoner = FF.xpFloorForLevel(80);
+      eq(FF.activeClassId(s), 'summoner', 'the fully-kitted, Lv80 Summoner is active');
+      eq(FF.summonerFamiliarSlots(s), 5, 'all five Summoner perks each opened a slot');
+      eq(FF.activeCompanionSlots(s), 6, 'that ceiling is six (1 base + 5 perks)');
       var ids = Object.keys(FF.FAMILIAR_DATA).slice(0, 6);
       s.familiars = {}; s.companionCast = {};
       ids.forEach(function(id, i){ s.familiars[id] = { owned:true, level:50, stars:0 };
@@ -7088,6 +7093,7 @@
       ok(_painted, 'render() leaves the orb liquid painted in the same frame -- no blank-canvas strobe');
     } finally {
       s.activity = savedAct; s.playerHp = savedHp; s.equippedMainhand = savedMain;
+      s.bodyArmor = savedBA; if(savedSumXp === undefined) delete s.xp.summoner; else s.xp.summoner = savedSumXp;
       s.equippedMainhandTier = savedTier; s.equippedMainhandRarity = savedRar;
       s.activeCompanions = savedComps; s.familiars = savedFams; s.companionCast = savedCast;
       FF._orbsReset();
@@ -11569,7 +11575,8 @@
     // Ticket-0102: a staff roster viewed from a 1-slot class. Replace must seat the newcomer in ONE tap
     // and keep the benched companions for the switch back (the old splice-then-push burned one benched
     // companion per tap and only seated the newcomer once the whole roster was drained).
-    var svW = { mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity };
+    var svW = { mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity, ba:S.bodyArmor, sumXp:(S.xp && S.xp.summoner) };
+    S.xp = S.xp || {};
     var C = ids[2], D = ids[3];
     S.familiars[C] = { owned:true, level:5 };
     S.familiars[D] = { owned:true, level:5 };
@@ -11583,9 +11590,12 @@
     eq(FF.activeCompanionList(S).join(','), D, 'ONE tap seats the newcomer in the lone visible slot');
     eq(S.activeCompanions.join(','), [D,B,C].join(','), 'the benched companions keep their roster seats');
     ok(!S.companionCast[A] && !!S.companionCast[D], 'cast bookkeeping follows the in-place swap');
-    // Back on the staff: the whole roster returns.
+    // Back in the full Summoner kit (staff + cloth + Lv80): the extra slots return, so does the roster.
     S.equippedMainhand = 'staff'; S.equippedMainhandTier = 1; S.equippedMainhandRarity = 'fantastic';
-    eq(FF.activeCompanionList(S).join(','), [D,B,C].join(','), 'switching back to the staff restores the full roster');
+    S.bodyArmor = { helmet:{tier:1,rarity:'normal',material:'tailoring'}, chest:{tier:1,rarity:'normal',material:'tailoring'}, gauntlets:{tier:1,rarity:'normal',material:'tailoring'}, boots:{tier:1,rarity:'normal',material:'tailoring'}, back:{tier:0,rarity:'normal',material:null} };
+    S.xp.summoner = FF.xpFloorForLevel(80);
+    eq(FF.activeCompanionList(S).join(','), [D,B,C].join(','), 'the maxed Summoner kit restores the full roster');
+    S.bodyArmor = svW.ba; if(svW.sumXp === undefined) delete S.xp.summoner; else S.xp.summoner = svW.sumXp;
     // Promoting a BENCHED familiar into the visible seat must not duplicate it.
     S.equippedMainhand = null;
     FF.replaceCompanion(B, D);                       // B is benched at seat 2; it takes seat 1
@@ -14524,7 +14534,7 @@
     FF.WAND_TYPES.forEach(function(w){ ok(FF.WEAPON_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
   });
 
-  // ---- Staff (2h support weapon: block + familiar slots) --------------------------------
+  // ---- Staff (2h support weapon: Block + Downbeat; familiar slots now come from the Summoner class) ----
   suite('staff', function(){
     ok(FF.isStaff('staff'), 'the staff is a staff');
     ok(!FF.isStaff('wandFire'), 'a wand is not a staff');
@@ -14550,17 +14560,14 @@
     var it = FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t'+(FF.TIER_COUNT-1)+'_normal'];
     ok(it && it.block === 0.30 && it.dmgMax > 0, 'top staff item: 30% block AND real swing damage');
 
-    // Rarity grants familiar slots: normal 2, rare 3, supreme 4, fantastic 5.
-    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.normal, 2, 'normal staff = +2 slots');
-    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.rare, 3, 'rare = +3');
-    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.supreme, 4, 'supreme = +4');
-    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.fantastic, 5, 'fantastic = +5');
-    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t0_fantastic'].familiarSlots, 5, 'fantastic staff item grants 5 familiar slots');
+    // Familiar slots no longer come from staff rarity (owner change v0.0.100.4): a staff item carries no
+    // familiarSlots field, and the Summoner class ladder sizes the roster instead (see the Summoner suite).
+    ok(!('familiarSlots' in (FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t0_fantastic'] || {})), 'a staff item no longer carries a familiarSlots field');
 
-    // Companion slots: 1 base; a staff adds its familiarSlots.
+    // Companion slots: 1 base; only the Summoner class perks add more, so a bare staff adds none.
     eq(FF.activeCompanionSlots({ equippedMainhand:null }), 1, 'no staff => 1 companion slot');
     var withStaff = { equippedMainhand:'staff', equippedMainhandTier:1, equippedMainhandRarity:'rare' };
-    eq(FF.activeCompanionSlots(withStaff), 1 + 3, 'rare staff => 1 + 3 = 4 slots');
+    eq(FF.activeCompanionSlots(withStaff), 1, 'a staff alone adds no slots now (rarity is irrelevant; the Summoner class grants them)');
     eq(FF.getStaffBlockChance(withStaff), 0.05, 't0 staff block via equipped item');
 
     // activeCompanionList caps to slots and filters unowned.
@@ -14661,10 +14668,21 @@
     var leveled = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
     ok(FF.classLevel(leveled,'summoner') >= 60, 'xp yields class level >= 60 ('+FF.classLevel(leveled,'summoner')+')');
 
-    // Third Eye is retired: the Conductor kit grants no bonus Companion slot (the staff alone sizes the roster).
+    // Companion slots come from the Summoner class ladder: one per perk at Lv 1/20/40/60/80 (owner change).
+    // Staff RARITY no longer sizes the roster; a non-Summoner holds only the single base Companion.
     var sameStaffNoClass = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'leather'}, chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
     eq(FF.activeClassId(sameStaffNoClass), null, 'leather helm breaks the class (control)');
-    eq(FF.activeCompanionSlots(full), FF.activeCompanionSlots(sameStaffNoClass), 'no class-granted Companion slot: the staff alone sets the roster size');
+    eq(FF.activeCompanionSlots(sameStaffNoClass), 1, 'a non-Summoner has just the base Companion slot');
+    eq(FF.activeCompanionSlots(full), 2, 'a fresh Lv1 Summoner has 2 slots (base + the Downbeat perk)');
+    function sumAt(level){ return { xp:{summoner:FF.xpFloorForLevel(level)}, equippedMainhand:'staff', bodyArmor:full.bodyArmor }; }
+    eq(FF.activeCompanionSlots(sumAt(20)), 3, 'Lv20 (Crescendo) opens a 3rd slot');
+    eq(FF.activeCompanionSlots(sumAt(40)), 4, 'Lv40 (Syncopation) opens a 4th');
+    eq(FF.activeCompanionSlots(sumAt(60)), 5, 'Lv60 (Accelerando) opens a 5th');
+    eq(FF.activeCompanionSlots(sumAt(80)), 6, 'Lv80 (Grand Finale) opens the 6th -- six in all');
+    eq(FF.summonerFamiliarSlots(sumAt(80)), 5, 'a maxed Summoner grants five perk-driven slots');
+    // Staff rarity is now irrelevant to the roster: a fantastic staff seats no more than a normal one.
+    var fantStaff = { xp:{summoner:FF.xpFloorForLevel(80)}, equippedMainhand:'staff', equippedMainhandRarity:'fantastic', equippedMainhandTier:FF.TIER_COUNT, bodyArmor:full.bodyArmor };
+    eq(FF.activeCompanionSlots(fantStaff), 6, 'staff rarity adds no slots (still six at Lv80)');
 
     // Downbeat power: one stack lends every familiar attack the staff's average roll (+ flat enchant lines).
     var pit = FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t9_normal'];
@@ -19524,10 +19542,10 @@
     var wandItem = FF.STACKABLE_WEAPON_ITEMS[wandId];
     var wandCard = FF.uniqueCardBody({ base:wandId, kind:'weapon', tier:wandItem.tierIndex, rarity:'normal', enhance:0, enchants:[] });
     ok(/Damage \d+[–-]\d+ Fire/.test(wandCard), 'a wand card names its element on the damage line');
-    var staffId = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ var it=FF.STACKABLE_WEAPON_ITEMS[k]; return (it.familiarSlots||0)>0 && it.rarity==='fantastic' && it.tierIndex===0; })[0];
+    var staffId = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ var it=FF.STACKABLE_WEAPON_ITEMS[k]; return it.typeId==='staff' && it.rarity==='fantastic' && it.tierIndex===0; })[0];
     var staffItem = FF.STACKABLE_WEAPON_ITEMS[staffId];
     var staffCard = FF.uniqueCardBody({ base:staffId, kind:'weapon', tier:staffItem.tierIndex, rarity:'fantastic', enhance:0, enchants:[] });
-    ok(new RegExp('\\+'+staffItem.familiarSlots+' familiar slot').test(staffCard), 'a staff card shows its extra familiar (summon) slots');
+    ok(!/familiar slot/.test(staffCard), 'a staff card no longer advertises familiar slots (they come from the Summoner class ladder now)');
     ok(/Block \d+%/.test(staffCard), 'a staff card shows its Block chance');
 
     // Field-driven ward / quiver lines (surfaced if such a card is ever shown): reflect % and arrow dmg + keep-ammo.

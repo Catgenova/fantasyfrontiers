@@ -79,8 +79,10 @@ furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`
   works because the frame is mostly horizontal rails — verified by rendering 151/72/56/46/38/30/24px; below
   ~26px the label crowds the rails. **The same squash would wreck the ornate log border** (used as a
   `border-image`, slice 150, so its corners keep native proportion at any panel height).
-- **Companions cap at SIX** (1 base + 5 from a fantastic staff, `STAFF_RARITY_FAMILIAR_SLOTS.fantastic`),
-  each with a cast clock and a pip row for its spell queue. A test seeds a DIFFERENT queue index per
+- **Companions cap at SIX** (1 base + one per Summoner class perk at Lv 1/20/40/60/80, via
+  `summonerFamiliarSlots`/`activeCompanionSlots`; **owner change v0.0.100.4** moved the slots off staff
+  rarity, which used to grant them through the now-deleted `STAFF_RARITY_FAMILIAR_SLOTS`). Each companion
+  has a cast clock and a pip row for its spell queue. A test seeds a DIFFERENT queue index per
   companion, so a shared counter lights the same pip in all six and fails.
 - **The mini feed is a TAIL of the one `combatLog` ring buffer**, never a second log — one source of truth
   means a line cannot appear in the Chat tab's Combat channel and not here.
