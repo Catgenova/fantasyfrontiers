@@ -43699,6 +43699,17 @@
     // The deferred render flushes via the loop the moment the field blurs.
     if(!force && isEditingField()){ needsRender = true; return; }
     _lastRenderAt = Date.now();   // paces the loop's involuntary renders (see the loop's gate)
+    // iOS scroll-anchor rescue for USER GESTURES on the same tab (expand a category, select an item):
+    // replacing a big subtree drops the scroll container to the top on iOS Safari, and it does so
+    // ASYNCHRONOUSLY -- after the synchronous restore inside setOverlayHtml/renderContent has already run,
+    // so the panel-level fix wins on desktop but loses the race on iOS. Snapshot the content scroller now
+    // and, once the render settles, push it back DOWN if it got reset (never up -- a user scrolling further
+    // is left alone). Gestures only, so this can't fight an active finger-drag (idle renders skip it).
+    var _gScroller = null, _gTop = 0;
+    if(force){
+      var _gc = document.getElementById('content');
+      if(_gc && (currentCategory + ' ' + currentSub) === _lastContentView){ _gScroller = nearestScroller(_gc); _gTop = _gScroller ? _gScroller.scrollTop : 0; }
+    }
     // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
     // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
     var _ci = document.getElementById('chatInput');
@@ -43757,6 +43768,13 @@
     // outside the loop (tab clicks, chat events, popup queues). orbTick reads its own clock, so the extra
     // call integrates ~0ms of physics and just draws the current state; it no-ops without a live stage.
     orbTick();
+    // iOS scroll-anchor rescue (see the snapshot above): the synchronous restore already ran inside the
+    // panel writers; re-apply it now, and again on the next frame to beat iOS's async reset-to-top. Only
+    // ever push scroll back DOWN to where the gesture started (< guard), so scrolling further is untouched.
+    if(_gScroller && _gTop > 0){
+      if(_gScroller.scrollTop < _gTop) _gScroller.scrollTop = _gTop;
+      if(typeof requestAnimationFrame === 'function'){ (function(sc, top){ requestAnimationFrame(function(){ if(sc.scrollTop < top) sc.scrollTop = top; }); })(_gScroller, _gTop); }
+    }
   }
 
   // Lightweight per-tick refresh: only touches text/width of existing
@@ -46099,7 +46117,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.4';
+  var GAME_VERSION = '0.0.100.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
