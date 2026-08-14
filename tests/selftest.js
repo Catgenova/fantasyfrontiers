@@ -23125,6 +23125,35 @@
     } finally { s.mortal = saved.mortal; s.quests = saved.quests; s.stats = saved.stats; }
   });
 
+  suite('mortal feats: death wipes unclaimed claimables but keeps earned titles', function(){
+    var s = FF._state;
+    var saved = { mortal:s.mortal, quests:s.quests, tracked:s.trackedQuests, titles:s.titles };
+    try {
+      // A Mortal completed two feats: one CLAIMED (title earned), one only LATCHED (complete, never claimed).
+      s.mortal = true;
+      s.titles = { title_mf_precise:true }; // The Precise was claimed while alive -> its title is owned
+      s.quests = { claimed:{ mf_precise:true }, completed:{ mf_precise:true, mf_slayer:true } };
+      s.trackedQuests = ['mf_slayer']; // and the unclaimed one was pinned to the tracker
+      // Before death: the latched-but-unclaimed feat is claimable, so the Mortal Feats tab flashes.
+      ok(FF.questClaimable(FF.questById('mf_slayer')), 'the latched, unclaimed feat is claimable while alive');
+      ok(FF.questClaimableInCat('mortalfeats'), 'the Mortal Feats category has a claimable while alive');
+      ok(FF.railSubFlash('mortalfeats'), 'the Mortal Feats tab flashes while alive');
+      // The player dies (mortal -> false) and the wipe runs.
+      s.mortal = false;
+      FF.mortalFeatsWipeOnDeath();
+      // The phantom claimable is gone: no latch, not tracked, nothing flashing.
+      ok(!(s.quests.completed && s.quests.completed.mf_slayer), 'the unclaimed feat lost its completion latch');
+      ok(s.trackedQuests.indexOf('mf_slayer') === -1, 'the unclaimed feat was untracked');
+      eq(FF.questProgress(FF.questById('mf_slayer')), 0, 'a dead Mortal reads 0 on the wiped feat (no phantom claim)');
+      ok(!FF.questClaimableInCat('mortalfeats'), 'the Mortal Feats category has no claimable after death');
+      ok(!FF.railSubFlash('mortalfeats'), 'a hidden Mortal Feats tab never flashes the nav');
+      // Earned titles are UNTOUCHED: the claimed feat keeps its claim and its title.
+      ok(s.quests.claimed.mf_precise === true, 'the CLAIMED feat keeps its claim');
+      ok(s.titles.title_mf_precise === true, 'the earned title survives the death wipe');
+      eq(FF.questProgress(FF.questById('mf_precise')), FF.questById('mf_precise').target, 'a claimed feat still reads full after death');
+    } finally { s.mortal = saved.mortal; s.quests = saved.quests; s.trackedQuests = saved.tracked; s.titles = saved.titles; }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

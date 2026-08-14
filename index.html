@@ -20783,8 +20783,25 @@
     var slayer = (monster && monster.name) || 'Dungeon Depths';
     return 'has fallen! Slain by the ' + slayer + ' at Total Level ' + fmt(playerTotalLevel()) + '.';
   }
+  // A Mortal's death freezes the Mortal Feats line. A feat that was COMPLETE but never CLAIMED would
+  // otherwise stay latched-and-claimable forever -- questProgress returns target for a latched quest, which
+  // BYPASSES the live-Mortal gate (that bypass is deliberate, so a feat claimed while alive survives death).
+  // The side effect: the Quests nav button flashed with a phantom reward that now lives behind a hidden tab
+  // (ticket: "Quests button keeps flashing if I had a mortal quest done, but I died"). On death, wipe every
+  // UNCLAIMED Mortal Feat's completion latch + tracker entry: the notification and the phantom claimable are
+  // gone, while CLAIMED feats (and the titles they already granted, in state.titles) are left untouched.
+  function mortalFeatsWipeOnDeath(){
+    if(!state.quests) return;
+    var claimed = state.quests.claimed || {};
+    QUESTS.forEach(function(q){
+      if(q.cat !== 'mortalfeats' || claimed[q.id]) return;
+      if(state.quests.completed) delete state.quests.completed[q.id];
+      if(Array.isArray(state.trackedQuests)){ var i = state.trackedQuests.indexOf(q.id); if(i !== -1) state.trackedQuests.splice(i, 1); }
+    });
+  }
   function mortalDeath(monster){
     state.mortal = false;
+    mortalFeatsWipeOnDeath(); // clear the now-hidden Mortal Feat claimables so the Quests nav stops flashing (titles kept)
     addLog('The ' + (monster ? monster.name : 'foe') + ' has slain you. Your mortal life is over. Your soul passes into the immortal realm, and you continue on as an Immortal.', 'danger');
     // Blast the death everywhere a Fantastic craft goes: the Discord Rarest Items feed (structured
     // event; the server owns the template, mirrors forge/enhance) and global game chat via the
@@ -21950,7 +21967,7 @@
     var guildReady = inGuild && (guildGridReady ? anyReadyOnGrid(state.guildFarmingPlots, guildEstate.grid) : anyReady(state.guildFarmingPlots));
     return personalReady || guildReady;
   }
-  function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()) || (cat==='menagerie' && familiarAnyCanTranscend()) || (isQuestCategory(cat) && questClaimableInCat(cat)); } // draw attention when a plot is ready / a familiar can Transcend / a quest reward is claimable in that category
+  function railSubFlash(cat){ if(!subNavVisible(cat)) return false; return (cat==='farming' && hasReadyFarmingPlot()) || (cat==='menagerie' && familiarAnyCanTranscend()) || (isQuestCategory(cat) && questClaimableInCat(cat)); } // draw attention when a plot is ready / a familiar can Transcend / a quest reward is claimable in that category -- but NEVER for a sub that is hidden (a hidden Mortal Feats tab must not flash the nav)
   // An area button flashes when ANY of its sub-views wants attention (so a claimable quest is visible from
   // anywhere, not only while the Battle area is already open).
   function railAreaFlash(areaId){ var a = AREAS.filter(function(x){ return x.id===areaId; })[0]; return !!(a && a.subs.some(function(s){ return railSubFlash(s[0]); })); }
@@ -46046,7 +46063,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.0';
+  var GAME_VERSION = '0.0.100.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46166,7 +46183,7 @@
       // online boot never runs (no backend). Selftest-only, like every seam export.
       _startLoop: function(){ if(!gameStarted){ gameStarted = true; lastTick = Date.now(); requestAnimationFrame(loop); } },
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, jewelrySuccessRate:jewelrySuccessRate, craftSuccessRate:craftSuccessRate, grossMotorCraftSuccessBonus:grossMotorCraftSuccessBonus, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
-      isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
+      isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, mortalFeatsWipeOnDeath:mortalFeatsWipeOnDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState, mortalRestartLeavesGuild:mortalRestartLeavesGuild,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost, ESTATE_EXPANSION_ORDER:ESTATE_EXPANSION_ORDER, estateExpand:estateExpand,
       ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST, ESTATE_EXPANSION_FINAL_COST:ESTATE_EXPANSION_FINAL_COST, ESTATE_EXPANSION_TILE_COUNT:ESTATE_EXPANSION_TILE_COUNT,
