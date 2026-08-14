@@ -23169,6 +23169,37 @@
     });
   });
 
+  // ---- Mobile snap-to-top: a panel innerHTML swap must not scroll its container (ticket: inventory) ----
+  suite('setOverlayHtml: byte-gated and scroll-transparent to its container', function(){
+    // The gate: identical markup does NOT rewrite (returns false); a real change does (returns true).
+    var el = document.createElement('div'); el.id = 'ff_ovtest_panel';
+    document.body.appendChild(el);
+    try {
+      eq(FF.setOverlayHtml(el, '<div>a</div>'), true, 'first write happens');
+      eq(FF.setOverlayHtml(el, '<div>a</div>'), false, 'byte-identical markup is skipped (no rewrite)');
+      eq(FF.setOverlayHtml(el, '<div>b</div>'), true, 'changed markup rewrites');
+      // Scroll-transparency: build a real overflow:auto scroller (like .ff-main), scroll it down, put the
+      // panel inside it, rewrite the panel, and assert the CONTAINER scroll did not jump to the top.
+      // Build with appendChild (NOT innerHTML +=, which re-parses and orphans the panel node).
+      var scroller = document.createElement('div');
+      scroller.style.cssText = 'height:200px;overflow-y:auto;';
+      var pad1 = document.createElement('div'); pad1.style.height = '400px';
+      var panel = document.createElement('div'); panel.id = 'ff_ovtest_inner';
+      var pad2 = document.createElement('div'); pad2.style.height = '400px';
+      scroller.appendChild(pad1); scroller.appendChild(panel); scroller.appendChild(pad2);
+      document.body.appendChild(scroller);
+      FF.setOverlayHtml(panel, '<div style="height:60px">x</div>');
+      scroller.scrollTop = 150;
+      var before = scroller.scrollTop;
+      if(before > 0){ // only meaningful when the container really scrolls in this harness
+        ok(FF.nearestScroller(panel) === scroller, 'nearestScroller finds the overflow:auto container');
+        FF.setOverlayHtml(panel, '<div style="height:70px">y</div>'); // a real rewrite mid-scroll
+        eq(scroller.scrollTop, before, 'the container scroll is unchanged by the panel rewrite (no snap-to-top)');
+      }
+      if(scroller.parentNode) scroller.parentNode.removeChild(scroller);
+    } finally { if(el.parentNode) el.parentNode.removeChild(el); }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

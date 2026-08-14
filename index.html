@@ -16148,6 +16148,7 @@
   // Markup last written into #content. render() compares against it and skips the DOM write when the
   // panel is byte-identical, so an unchanged tab costs a string compare instead of a full re-parse.
   var _lastContentHtml = null;
+  var _lastContentView = null;   // currentCategory+currentSub last written to #content -- lets renderContent preserve the scroll container across a same-tab rebuild but open fresh on a real tab switch
   // ---- Frame profiler (?perf) -----------------------------------------------------------------
   // Two rounds of reasoned optimisation moved the needle less than expected, so measure instead of
   // guessing again: open the game with ?perf and the console prints, once a second, how many ms of
@@ -30315,6 +30316,23 @@
   // "while you were away" / loot / familiar summaries, on both desktop and mobile. Writes now go through
   // here: identical markup leaves the DOM (and its scroll offset) completely alone, and when the markup
   // really did change, the scrolled card's offset is carried across the rebuild.
+  // The app scrolls an INNER container (.ff-main is overflow-y:auto; body/#app are overflow:hidden), so an
+  // innerHTML swap of a panel the player is scrolled into resets that container to the top -- on iOS Safari
+  // especially, replacing a big subtree drops its scroll ancestor to 0 (ticket: "page keeps snapping to the
+  // top" while browsing the inventory, whose grid rewrites every time idle production ticks an owned count).
+  // A rewrite should be scroll-transparent, so find the nearest scrolling ancestor, snapshot its scrollTop
+  // immediately before the write and restore it immediately after -- adjacent synchronous statements, so the
+  // compositor can't async-scroll between them and fight an active finger-drag. getComputedStyle is only
+  // called on ancestors that already overflow, so this is a couple of cheap reads per real rewrite.
+  function nearestScroller(el){
+    for(var n = el && el.parentElement; n && n !== document.body; n = n.parentElement){
+      if(n.scrollHeight > n.clientHeight + 1){
+        var oy = getComputedStyle(n).overflowY;
+        if(oy === 'auto' || oy === 'scroll' || oy === 'overlay') return n;
+      }
+    }
+    return document.scrollingElement || document.documentElement || null;
+  }
   function setOverlayHtml(el, html, cls){
     if(!el) return false;
     if(cls !== undefined && el.className !== cls) el.className = cls;
@@ -30325,11 +30343,12 @@
     // an otherwise identical tree) and simply finds nothing to restore when the shape really differs.
     var _prev = el.querySelectorAll('*'), _tops = null;
     for(var _i = 0; _i < _prev.length; _i++){ if(_prev[_i].scrollTop > 0){ (_tops = _tops || {})[_i] = _prev[_i].scrollTop; } }
-    var _ovTop = el.scrollTop;
+    var _ovTop = el.scrollTop, _sc = nearestScroller(el), _scTop = _sc ? _sc.scrollTop : 0;
     el._ffHtml = html;
     el.innerHTML = html;
     if(_tops){ var _next = el.querySelectorAll('*'); for(var _k in _tops){ if(_next[_k]) _next[_k].scrollTop = _tops[_k]; } }
     if(_ovTop) el.scrollTop = _ovTop;
+    if(_sc && _sc.scrollTop !== _scTop) _sc.scrollTop = _scTop; // a panel rewrite must never scroll the container the player is reading in (mobile snap-to-top)
     return true;
   }
   function offlineItemName(id){
@@ -42274,12 +42293,18 @@
     // unchanged panel keeps its live DOM -- scroll position, focus, open <details>, and the bars
     // updateDynamic() has been animating are all left untouched rather than destroyed and restored.
     var _contentEl = document.getElementById('content');
+    var _viewKey = currentCategory + ' ' + currentSub;
     if(html !== _lastContentHtml){
       // Only when we really are replacing: carry the reader's place across the swap.
       var _chatSnap = feedSnapshot('chatMessages'), _chronSnap = feedSnapshot('chronicleFeed');
       var _detSnap = detailsSnapshot(_contentEl);
       var _inpSnap = inputSnapshot(_contentEl);   // preserve in-progress text entry (+ focus/caret) across the rebuild
       var _scrSnap = scrollSnapshot(_contentEl);  // preserve inner-scroller positions (e.g. the Marketplace item list)
+      // Preserve the scroll CONTAINER (.ff-main) across a same-tab rebuild (idle production ticking an
+      // "owned"/qty count rewrites the Blueprints/inventory markup, which drops the scroller to the top on
+      // mobile). A real tab switch (view changed) is left to open fresh at the top.
+      var _scEl = (_viewKey === _lastContentView) ? nearestScroller(_contentEl) : null;
+      var _scPos = _scEl ? _scEl.scrollTop : 0;
       _contentEl.innerHTML = html;
       _lastContentHtml = html;
       detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
@@ -42287,7 +42312,9 @@
       scrollRestore(_scrSnap);    // put every scrolled panel back where the player was
       decorateCollapsibleCards(_contentEl); // fold buttons + folded state on the craft/gather/forge cards
       if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); chatChanPipsUpdate(); }
+      if(_scEl && _scEl.scrollTop !== _scPos) _scEl.scrollTop = _scPos;
     }
+    _lastContentView = _viewKey;
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
     // markup does not mean an unchanged estate.
     if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
@@ -46063,7 +46090,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.2';
+  var GAME_VERSION = '0.0.100.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46225,7 +46252,7 @@
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
-      scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore,
+      scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
