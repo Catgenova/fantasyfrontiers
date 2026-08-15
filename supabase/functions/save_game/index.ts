@@ -18,7 +18,13 @@
 // wallet/item ledgers. Once clients have rolled out, requiring session_id is the phase-2 tightening.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const MAX_BYTES = 500_000; // keep under the table's ~512KB column guard
+// Ceiling on the RAW JSON length of a save. The DB column guard (saves_size_chk) was raised to
+// pg_column_size(data) < 2 MiB in 20260803220000, but this function's limit was left at the old 500 KB
+// and became the real bottleneck: a veteran's honest save (per-item inventory/ledger/counter maps that
+// only grow) crossed 500 KB even after the client-side prune and got a "Save too large" 413. Raised to
+// 1.5 MB of raw JSON -- JSONB is TOAST-compressed on disk, so 1.5 MB raw stores well under the 2 MiB
+// pg_column_size constraint, while staying FINITE as an anti-abuse bound on a single row.
+const MAX_BYTES = 1_500_000;
 // Absolute ceiling on the stored progress score. Far above any real play, but FINITE: an unbounded
 // value pinned the row's progress so high that every later legitimate save was rejected as stale,
 // which locked the account out of saving entirely.
