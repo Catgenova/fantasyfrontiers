@@ -5511,7 +5511,9 @@
   // flat XP reward and refills Faith. Devotion/Blessing/Miracle are continuous background
   // activities that drain Faith per second while active and give a rolling chance for any
   // equipment you forge in that window to come out Rare / Rare-Superior / Rare-Fantastic.
-  function faithMax(state){ return 100 + getLevel(state.xp.prayer)*20 + faithPhysiqueBonus(state); }
+  // Each Prayer level adds +100 max Faith (owner change v0.0.100.9; was +20), on top of the 100 base and
+  // the physique bonus, so a Lv100 Prayer holds ~10,100 before physiques.
+  function faithMax(state){ return 100 + getLevel(state.xp.prayer)*100 + faithPhysiqueBonus(state); }
   var PRAYER_TIERS = [];
   for(var _pi=0; _pi<TIER_COUNT; _pi++){
     PRAYER_TIERS.push({ id:'prayer_t'+_pi, name:TIER_NAMES[_pi]+' Prayer', levelReq:TIER_LEVELS[_pi], xp:craftXp(_pi), time:tierTime(3,0.3,_pi) }); // linear XP curve (same as Crafting) -- the old exponential tierXp made high tiers level far too fast
@@ -37214,7 +37216,7 @@
     var max = faithMax(state);
     var pct = clamp(state.faith/max*100,0,100);
     var html = '<div class="hp-track"><div class="hp-fill" id="faithBarFill" style="width:'+pct+'%;background:var(--cat-faith)"></div></div>';
-    html += '<div class="hp-label"><span>Faith</span><span id="faithBarLabel">'+fmt(state.faith)+' / '+max+'</span></div>';
+    html += '<div class="hp-label"><span>Faith</span><span id="faithBarLabel">'+fmt(state.faith)+' / '+fmt(max)+'</span></div>';
     return html;
   }
 
@@ -43956,9 +43958,9 @@
     var faithMaxVal = faithMax(state);
     var faithPctNow = clamp(state.faith/faithMaxVal*100,0,100);
     if(faithFill) faithFill.style.width = faithPctNow + '%';
-    if(faithLabelEl) faithLabelEl.textContent = fmt(state.faith) + ' / ' + faithMaxVal;
+    if(faithLabelEl) faithLabelEl.textContent = fmt(state.faith) + ' / ' + fmt(faithMaxVal);
     if(charFaithFill) charFaithFill.style.width = faithPctNow + '%';
-    if(charFaithLabelEl) charFaithLabelEl.textContent = fmt(state.faith) + ' / ' + faithMaxVal;
+    if(charFaithLabelEl) charFaithLabelEl.textContent = fmt(state.faith) + ' / ' + fmt(faithMaxVal);
 
     var teaTrack = document.getElementById('charTeaTrack');
     var teaLabelRow = document.getElementById('charTeaLabelRow');
@@ -46191,7 +46193,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.8';
+  var GAME_VERSION = '0.0.100.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

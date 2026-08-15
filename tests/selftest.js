@@ -300,8 +300,11 @@
     eq(S.inventory[wid], 1000, 'unflagged item is never auto-sacrificed');
     eq(S.faith, 0, 'unflagged item leaves Faith untouched');
 
-    // Flag it, Faith empty -> tops up only while a FULL offer fits the deficit (never wasting overflow).
+    // Flag it, near-full Faith -> tops up only while a FULL offer fits the deficit (never wasting overflow).
+    // Start a small, cap-independent deficit (~a few offers) so the stop is the offer no longer fitting,
+    // not the per-call iteration guard (faithMax scales with Prayer level, so filling from 0 can be huge).
     S.autoSacrifice[key] = true;
+    S.faith = mx - perOffer * 4;
     FF.autoSacrificeItemsCheck();
     ok(S.faith <= mx + 1e-6, 'auto-sacrifice never pushes Faith past the cap');
     ok(mx - S.faith < perOffer, 'stops once no full offer fits the remaining deficit (no waste)');
@@ -3443,8 +3446,8 @@
     var s = FF._state;
     var saved = { fa:s.faithActivity, faith:s.faith, auto:s.autoSacrificeRelics,
       xpM:s.xp.miracle, prayer:s.xp.prayer, phys:Object.assign({}, s.physique) };
-    s.xp.prayer = 0;                              // faithMax = 100 (no prayer levels)
-    // Zero the physiques that feed faithMax so the cap is a clean 100 for the arithmetic below.
+    s.xp.prayer = 0;                              // Prayer Lv1 -> faithMax = 100 base + 100/level (below the 80 Faith used here regardless)
+    // Zero the physiques that feed faithMax so the cap is a clean base for the arithmetic below.
     Object.keys(s.physique).forEach(function(k){ s.physique[k] = 0; });
     s.faithActivity = { type:'miracle', tier:0 };
     s.autoSacrificeRelics = false;
@@ -23261,6 +23264,23 @@
     ok(out.inventory !== src.inventory && out.stats !== src.stats, 'pruned maps are new objects, not the live ones');
     // The result is smaller than the raw state.
     ok(JSON.stringify(out).length < JSON.stringify(src).length, 'the pruned payload is smaller than the raw state');
+  });
+
+  // ---- Prayer raises max Faith by 100 per level (owner change) ----
+  suite('faithMax: +100 max Faith per Prayer level', function(){
+    var s = FF._state;
+    var save = { pray:s.xp.prayer, phys:Object.assign({}, s.physique) };
+    try {
+      Object.keys(s.physique).forEach(function(k){ s.physique[k] = 0; }); // hold the physique term constant
+      // Measure by DELTA so the (nonzero) physique-base term cancels: each Prayer level adds exactly 100.
+      s.xp.prayer = FF.xpFloorForLevel(1); var atLv1 = FF.faithMax(s);
+      s.xp.prayer = FF.xpFloorForLevel(2);
+      eq(FF.faithMax(s) - atLv1, 100, 'each Prayer level adds 100 max Faith');
+      s.xp.prayer = FF.xpFloorForLevel(50);
+      eq(FF.faithMax(s) - atLv1, 49*100, 'Lv50 is 49 levels x 100 above Lv1');
+      s.xp.prayer = FF.xpFloorForLevel(100);
+      eq(FF.faithMax(s) - atLv1, 99*100, 'Lv100 is 99 levels x 100 above Lv1 (base 100 + 10,000)');
+    } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
   // ---- Report ---------------------------------------------------------------------------
