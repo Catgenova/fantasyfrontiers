@@ -323,6 +323,50 @@
     S.inventory = sv.inv; S.faith = sv.faith; S.autoSacrifice = sv.auto; S.lockedItems = sv.locked; S.xp = sv.xp; S.physique = sv.phys;
   });
 
+  // ---- Auto-sacrifice ORDER: flagged/selected items are spent BEFORE Broken Relics ----
+  suite('sacrifice: flagged items consumed before Broken Relics', function(){
+    // The live tick (autoSacrificeTick) must spend per-card flagged equipment first, then dip into
+    // Broken Relics only for the remainder. The scenario below is discriminating: the deficit is fully
+    // coverable by the flagged item AND large enough that a relic would also fit -- so if relics ran
+    // first they would fire, consuming a relic. Relics ending untouched proves items ran first.
+    var S = FF._state;
+    var sv = { inv:S.inventory, faith:S.faith, auto:S.autoSacrifice, autoR:S.autoSacrificeRelics, locked:S.lockedItems, xp:S.xp, phys:S.physique };
+    S.inventory = {}; S.autoSacrifice = {}; S.autoSacrificeRelics = true; S.lockedItems = {}; S.physique = {};
+    S.xp = Object.assign({}, sv.xp); S.xp.prayer = 1e9;                  // huge cap: deficit stays well above mx*0.5 (no low-Faith overflow path)
+
+    // smallest-restore stackable weapon as the fill unit, so a relic-sized deficit stays well under
+    // mx*0.5 (the deficit binds, not the low-Faith overflow fallback).
+    var wid = null, offer = Infinity;
+    Object.keys(FF.STACKABLE_WEAPON_ITEMS).forEach(function(id){
+      var it = FF.STACKABLE_WEAPON_ITEMS[id];
+      var v = FF.sacRowRestore({ category:'stackweapon', id:id, tier:it.tierIndex+1, item:it });
+      if(v < offer){ offer = v; wid = id; }
+    });
+    var key = FF.sacRowKey({ category:'stackweapon', id:wid });
+    var mx = FF.faithMax(S);
+
+    var relicId = FF.BROKEN_RELIC_ITEMS[0].id;   // t0: the cheapest broken relic (smallest restore)
+    var relicRestore = FF.brokenRelicFaithRestore(0);
+    S.inventory[relicId] = 50;
+    var relicHeld = S.inventory[relicId];
+
+    // deficit = an exact multiple of the item offer, and >= one relic's restore (so a relic could fire).
+    var k = Math.max(1, Math.ceil(relicRestore / offer));
+    var deficit = offer * k;
+    S.inventory[wid] = k + 10; S.autoSacrifice[key] = true;
+    S.faith = mx - deficit;
+    ok(deficit >= relicRestore, 'deficit is large enough that a Broken Relic would fit (discriminating precondition)');
+    ok(S.faith > mx * 0.5, 'deficit stays in the no-waste regime, not the low-Faith overflow fallback');
+
+    FF.autoSacrificeTick();  // the live loop order: items first, relics for the remainder
+
+    eq(S.inventory[wid], 10, 'flagged item was consumed to fill the whole deficit');
+    ok(S.faith >= mx - 0.5, 'Faith is topped up to the cap');
+    eq(S.inventory[relicId], relicHeld, 'Broken Relics are left untouched when flagged items cover the deficit');
+
+    S.inventory = sv.inv; S.faith = sv.faith; S.autoSacrifice = sv.auto; S.autoSacrificeRelics = sv.autoR; S.lockedItems = sv.locked; S.xp = sv.xp; S.physique = sv.phys;
+  });
+
   // ---- Auto-sacrifice list: flags are visible and clearable WITHOUT owning the item --------------
   // Ticket (Scum): switching a card's flag on at a Faith deficit usually consumes every copy on the
   // spot; the card vanished with the items (only owned gear renders cards) and the flag lived on

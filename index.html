@@ -37364,6 +37364,13 @@
       needsRender = true;
     }
   }
+  // The live per-frame Faith top-up: spend per-card FLAGGED equipment first, then dip into Broken Relics
+  // for whatever deficit those did not cover. Order is deliberate (owner request) and lives in one place so
+  // the loop cannot drift it -- both halves are no-ops unless their own toggle/flags are set.
+  function autoSacrificeTick(){
+    autoSacrificeItemsCheck();
+    autoSacrificeRelicsCheck();
+  }
   var sacAutoShowZero = false;   // transient UI: expand the zero-owned flags in the auto-sacrifice list
   // Clear every flag whose item the player owns none of (the collapsed group in the list).
   function sacAutoClearZero(){
@@ -45584,8 +45591,7 @@
     autoEatCheck();
 
     applyFaithActivityTick(dt);
-    autoSacrificeRelicsCheck(); // top up Faith from Broken Relics when enabled (no-op otherwise)
-    autoSacrificeItemsCheck();  // top up Faith from per-card flagged equipment (no-op unless any flagged)
+    autoSacrificeTick();        // top up Faith: per-card flagged equipment FIRST, then Broken Relics for the remainder
     autoActionsCheck(); // opt-in auto open-caches/chests + harvest/plant/fertilize crops (all off by default)
     dungeonNetTick(); // networked dungeon: drip shared-enemy damage while a party run is active (self-rate-limited)
 
@@ -46193,7 +46199,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.100.9';
+  var GAME_VERSION = '0.0.100.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46566,7 +46572,7 @@
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
-      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
+      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, autoSacrificeTick:autoSacrificeTick, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
