@@ -5525,6 +5525,16 @@
       'signed out: falls back to the public game page (no identifier, so no webhook)');
   });
 
+  // The voting call-to-action is a HIGH-PRIORITY ticker line (woven in like the disclaimer, not one entry
+  // in the shuffled pool), so it shows far more often than any single pooled tip.
+  suite('ticker: high-priority voting call-to-action', function(){
+    ok(/vote/i.test(FF.TICKER_VOTE), 'the vote ticker line is about voting');
+    ok(/EXP/.test(FF.TICKER_VOTE), 'the vote ticker line names the +50% EXP reward');
+    ok(FF.TICKER_VOTE.indexOf('—') === -1, 'no em dash in the vote ticker line (house rule)');
+    ok(FF.TICKER_VOTE_CHANCE >= 0.15, 'the vote line is high priority (>= 15% of marquee cycles)');
+    ok(FF.TICKER_VOTE_CHANCE > 1 / FF.TICKER_TIPS.length, 'the vote line beats a single pooled tip\'s share');
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
