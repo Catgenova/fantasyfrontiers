@@ -5500,6 +5500,18 @@
     ok(checked >= 30, 'verified the refine/cook Frontier quests across the 3rd/4th/5th frontiers (' + checked + ' checked)');
   });
 
+  // The "Sharper Still" enhance quest asked for +'+(5+3*(ord-1)) per frontier, which reaches +17 on the
+  // Fifth Frontier -- impossible, since enhancing caps at +15. Every enhance quest target must be reachable.
+  suite('quests: no enhance quest asks beyond the +15 ceiling', function(){
+    var enh = FF.QUESTS.filter(function(q){ return /frontier_enhance$/.test(q.id); });
+    ok(enh.length >= 3, 'the generated-frontier enhance quest exists (' + enh.length + ')');
+    enh.forEach(function(q){
+      ok(q.target <= FF.ENHANCE_MAX, q.id + ' target +' + q.target + ' is within the +' + FF.ENHANCE_MAX + ' enhance ceiling');
+    });
+    var fifth = enh.filter(function(q){ return q.id.indexOf('fifthfrontier') === 0; })[0];
+    if(fifth){ eq(fifth.target, FF.ENHANCE_MAX, 'the Fifth Frontier enhance quest is capped at +' + FF.ENHANCE_MAX); }
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
