@@ -5523,6 +5523,14 @@
     FF._setChatMod({ authUser:null });
     eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/game/fantasy-frontiers',
       'signed out: falls back to the public game page (no identifier, so no webhook)');
+    // The embedded vote widget is the origin-isolated IFRAME src; it threads the account id as a
+    // best-effort ?identifier= so a vote from inside the widget can also reward, and omits it signed out.
+    FF._setChatMod({ authUser:{ username:'Me', id:'u-abc 123' } });
+    eq(FF.scapelikesWidgetSrc(), 'https://scapelikes.com/widget/vote/fantasy-frontiers?identifier=u-abc%20123',
+      'signed in: widget iframe src carries the url-encoded identifier');
+    FF._setChatMod({ authUser:null });
+    eq(FF.scapelikesWidgetSrc(), 'https://scapelikes.com/widget/vote/fantasy-frontiers',
+      'signed out: widget iframe src is the bare public widget (no identifier)');
   });
 
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the

@@ -3141,6 +3141,16 @@
     return id ? ('https://scapelikes.com/vote/' + SCAPELIKES_SLUG + '/' + encodeURIComponent(id))
               : ('https://scapelikes.com/game/' + SCAPELIKES_SLUG);
   }
+  // The Scapelikes vote WIDGET, embedded as an IFRAME (not the JS widget). The iframe runs in
+  // scapelikes.com's own origin, so unlike a same-origin <script> it can NOT read the player's Supabase
+  // session token from our localStorage -- deliberate, given the auth token lives there (see the
+  // one-per-origin note near authInit). The account id rides along as a best-effort ?identifier= so a
+  // vote cast from inside the widget can also fire the reward webhook; the plain Vote link above is the
+  // GUARANTEED reward path (it uses the documented /vote/{slug}/{identifier} form).
+  function scapelikesWidgetSrc(){
+    var id = (authUser && authUser.id) ? authUser.id : '';
+    return 'https://scapelikes.com/widget/vote/' + SCAPELIKES_SLUG + (id ? ('?identifier=' + encodeURIComponent(id)) : '');
+  }
   var DIGGING_NAMES = ['Sand','Moss','Mulch','Compost','Dirt','Soil','Mud','Sod','Loam','Silt','Peat','Bog','Fen','Marsh','Mire','Marl','Clay','Gravel','Pebbles','Chalk','Lime'];
   var DIGGING_COLORS = ['#d4b483','#6b8f4e','#5a3d2b','#4a3524','#6f4e2f','#5c3a1e','#4b3621','#7a8f4e','#6e5a3a','#9c8a6b','#3d2b1f','#3f4a34','#4a5c3f','#556b4a','#35301f','#a89a7c','#b5654b','#8a8a86','#9a9a94','#e8e4d8','#d9e8c4'];
   var DIGGING_ICONS = DIGGING_COLORS.map(function(c){ return svgIcon('dirt', c); });
@@ -16738,6 +16748,9 @@
     // Scapelikes vote page in a new tab; the account id rides along as the identifier so the webhook fires.
     html += '<div class="settings-row"><div><div class="settings-row-label">Vote for us: +50% EXP &middot; 10 min</div><div class="settings-row-desc">Free. A recorded vote on Scapelikes boosts <b>every</b> player for 10 minutes. You can vote once every 12 hours.' + ((authUser && authUser.id) ? '' : '<br>Sign in first so your vote rewards the server.') + '</div></div>';
     html += '<a class="action-btn" href="' + scapelikesVoteUrl() + '" target="_blank" rel="noopener noreferrer" style="width:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">Vote</a></div>';
+    // The Scapelikes vote card, embedded as an origin-isolated iframe (cannot read our auth token). Shows
+    // live vote totals and cooldown; the "Vote" link above is the guaranteed reward path.
+    html += '<iframe src="' + scapelikesWidgetSrc() + '" width="100%" height="440" loading="lazy" style="border:0;border-radius:14px;overflow:hidden;max-width:100%;margin-top:8px;background:transparent;" title="Scapelikes Vote Widget" referrerpolicy="no-referrer"></iframe>';
     // Rarity Bonus: event-triggered (not bought). Every rare+ item sacrificed by ANY player extends it.
     var _rarMs = serverBuff.rarityUntil - Date.now();
     html += '<div class="settings-row"><div><div class="settings-row-label">Rarity Bonus</div><div class="settings-row-desc">+5% rare · +0.5% supreme · +0.005% fantastic &bull; ' + (_rarMs > 0 ? 'Active: ' + formatDuration(_rarMs) + ' left' : 'Inactive') + '<br>Extended whenever any player sacrifices a rare-or-better item (longer for higher rarity/tier).</div></div></div>';
@@ -46216,7 +46229,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.101.1';
+  var GAME_VERSION = '0.0.101.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46467,7 +46480,7 @@
       guildQueueArr:guildQueueArr, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
-      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, scapelikesWidgetSrc:scapelikesWidgetSrc, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,
