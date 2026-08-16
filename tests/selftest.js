@@ -5512,6 +5512,19 @@
     if(fifth){ eq(fifth.target, FF.ENHANCE_MAX, 'the Fifth Frontier enhance quest is capped at +' + FF.ENHANCE_MAX); }
   });
 
+  // The in-game Scapelikes vote link must carry the player's account id as the identifier (so the vote
+  // webhook fires and per-account cooldowns apply), url-encoded, and fall back to the public game page
+  // when signed out. The slug is public; the account id is an opaque uid, never a username.
+  suite('scapelikes: vote URL builder', function(){
+    eq(FF.SCAPELIKES_SLUG, 'fantasy-frontiers', 'the public Scapelikes slug');
+    FF._setChatMod({ authUser:{ username:'Me', id:'u-abc 123' } });
+    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/vote/fantasy-frontiers/u-abc%20123',
+      'signed in: the vote URL carries the url-encoded account id as the identifier');
+    FF._setChatMod({ authUser:null });
+    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/game/fantasy-frontiers',
+      'signed out: falls back to the public game page (no identifier, so no webhook)');
+  });
+
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
   // hide-unsummoned wall, and the combat-capable "Damage" classifier/filter.
   suite('ui: menagerie role badges, filters, sort and the combat classifier', function(){
