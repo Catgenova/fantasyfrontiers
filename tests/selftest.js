@@ -7499,9 +7499,19 @@
     ok(Object.keys(FF.LEGENDARY_RING_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server catalog marks every legendary ring tradeable');
     ok(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary cloak');
     ok(Object.keys(FF.LEGENDARY_AMULET_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary amulet');
-    // Legendary WEAPONS/gear stay ledger-only (0): they mint as uniques, so the stackable key is untradeable.
-    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return cat[id] === 0; }), 'legendary D1 gear keys stay untradeable (ledger-only)');
-    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ return cat[id] === 0; }), 'legendary D4 gear keys stay untradeable (ledger-only)');
+    // Legendary WEAPONS + WARDS are tradeable too now (owner call 2026-08-18), matching the accessories:
+    // tradeable=1 on the server catalog, still sell:0 so no Vendor can buy them (Marketplace/guild-bank only).
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return cat[id] === 1; }), 'legendary D1 gear keys are tradeable');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).every(function(id){ return cat[id] === 1; }), '...and D2');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).every(function(id){ return cat[id] === 1; }), '...and D3');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ return cat[id] === 1; }), '...and D4');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] && FF.ALL_SELLABLE[id].sell === 0; }), 'legendary weapons stay non-vendorable (Marketplace/guild-bank only)');
+    // A legendary weapon browses under Weapons; a legendary ward (offhand) under Armor.
+    var _lgMain = Object.keys(FF.LEGENDARY_GEAR_ITEMS).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS[id].slot === 'mainhand'; })[0];
+    ok(_lgMain && FF.marketItemCategory(_lgMain) === 'weapons', 'a legendary weapon browses under the Weapons category');
+    var _allLg = {}; [FF.LEGENDARY_GEAR_ITEMS, FF.LEGENDARY_GEAR_ITEMS_D2, FF.LEGENDARY_GEAR_ITEMS_D3, FF.LEGENDARY_GEAR_ITEMS_D4].forEach(function(m){ Object.keys(m).forEach(function(id){ _allLg[id] = m[id]; }); });
+    var _lgWard = Object.keys(_allLg).filter(function(id){ return _allLg[id].slot !== 'mainhand'; })[0];
+    if(_lgWard) ok(FF.marketItemCategory(_lgWard) === 'armor', 'a legendary ward browses under the Armor category');
     ok([ringId, cloakId, amuId].every(function(id){ return FF.marketItemCategory(id) === 'accessories'; }), 'legendary accessories browse under the Accessories category');
     // The vendor never buys one, and Sell All never sweeps one.
     var s = FF._state, svI = s.inventory, svG = s.gold;

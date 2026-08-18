@@ -6851,7 +6851,11 @@
   // way to part with one is a player-priced Auction House listing. Legendary weapons/armor stay
   // untradeable (they're minted as uniques with per-item enchants/enhances, not stackable keys).
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS,
-    BLUEPRINT_ITEMS, LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS);
+    BLUEPRINT_ITEMS, LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS,
+    // Legendary WEAPONS + WARDS join the tradeable set too (owner call 2026-08-18), matching the legendary
+    // accessories above: sellable/biddable on the marketplace and depositable to the guild bank. They keep
+    // sell:0 so a Vendor still can't dump them for gold; buildItemCatalog flips them to tradeable=1.
+    LEGENDARY_GEAR_ITEMS, LEGENDARY_GEAR_ITEMS_D2, LEGENDARY_GEAR_ITEMS_D3, LEGENDARY_GEAR_ITEMS_D4);
   // Retired-but-held keys join the registry so they keep a name, an icon, a vendor price and a place on the
   // server's item allowlist. See RETIRED_ITEM_DEFS.
 
@@ -42086,6 +42090,8 @@
     if(RELIC_ITEMS[id]) return 'relics';
     if(RING_ITEMS[id] || AMULET_ITEMS[id] || BELT_ITEMS[id]) return 'accessories';            // jewelry + belt
     if(LEGENDARY_RING_ITEMS[id] || LEGENDARY_AMULET_ITEMS[id] || LEGENDARY_CLOAK_ITEMS[id]) return 'accessories'; // Mastercrafted legendary jewelry/capes
+    var _lg = LEGENDARY_GEAR_ITEMS[id] || LEGENDARY_GEAR_ITEMS_D2[id] || LEGENDARY_GEAR_ITEMS_D3[id] || LEGENDARY_GEAR_ITEMS_D4[id];
+    if(_lg) return _lg.slot === 'mainhand' ? 'weapons' : 'armor'; // legendary weapons -> weapons; legendary wards (offhand) -> armor
     if(BODY_ARMOR_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'armor'; // worn/offhand defensive gear
     if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id] || /^totem_t\d+$/.test(id)) return 'other'; // estate placeables
     var m = /^([a-z]+)_t\d+$/.exec(id);
@@ -46239,7 +46245,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.101.7';
+  var GAME_VERSION = '0.0.102.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
