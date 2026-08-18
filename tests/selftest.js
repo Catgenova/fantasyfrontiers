@@ -12781,6 +12781,7 @@
     ok(!!wandType, 'a wand type exists');
     eq(FF.weaponEquipProfId(wandType), FF.WANDS_SKILL_ID, 'a wand resolves to the Wands proficiency');
     eq(FF.weaponEquipProfId('scepter'), FF.SCEPTERS_SKILL_ID, 'a scepter resolves to the Scepters proficiency');
+    eq(FF.weaponEquipProfId('staff'), FF.STAVES_SKILL_ID, 'a staff resolves to the Staves proficiency (not Arcanism)');
     eq(FF.weaponEquipProfId('sword'), 'sword', 'a melee weapon keeps its per-type proficiency');
     // Lowest tier>=2 wand & scepter (tier gate is a no-op below tierIndex 1).
     function lowest(pred){
@@ -12788,24 +12789,31 @@
       ids.sort(function(a,b){ return items[a].tierIndex - items[b].tierIndex; });
       return ids[0];
     }
-    var wandId = lowest(FF.isWandWeapon), scepId = lowest(FF.isScepter);
+    var wandId = lowest(FF.isWandWeapon), scepId = lowest(FF.isScepter), staffId = lowest(FF.isStaff);
     ok(!!wandId && !!scepId, 'found a tier 3+ wand and scepter');
-    var saved = { w:s.xp[FF.WANDS_SKILL_ID], c:s.xp[FF.SCEPTERS_SKILL_ID], a:s.xp.arcanism, r:s.xp.runesmithing };
+    ok(!!staffId, 'found a tier 3+ staff');
+    var saved = { w:s.xp[FF.WANDS_SKILL_ID], c:s.xp[FF.SCEPTERS_SKILL_ID], t:s.xp[FF.STAVES_SKILL_ID], a:s.xp.arcanism, r:s.xp.runesmithing };
     try {
       // No proficiency, but MAX crafting skill -> the gate must block on proficiency now, not the craft skill.
-      s.xp[FF.WANDS_SKILL_ID] = 0; s.xp[FF.SCEPTERS_SKILL_ID] = 0; s.xp.arcanism = 1e12; s.xp.runesmithing = 1e12;
+      s.xp[FF.WANDS_SKILL_ID] = 0; s.xp[FF.SCEPTERS_SKILL_ID] = 0; s.xp[FF.STAVES_SKILL_ID] = 0; s.xp.arcanism = 1e12; s.xp.runesmithing = 1e12;
       var wg = FF.stackableEquipGate(items[wandId]);
       eq(wg.ok, false, 'a higher-tier wand is locked with no Wands proficiency (even at max Arcanism)');
       eq(wg.label, 'Wands', 'the lock names the Wands proficiency, not Arcanism');
       var sg = FF.stackableEquipGate(items[scepId]);
       eq(sg.ok, false, 'a higher-tier scepter is locked with no Scepters proficiency (even at max Runesmithing)');
       eq(sg.label, 'Scepters', 'the lock names the Scepters proficiency, not Runesmithing');
+      // The staff bug: it used to gate on Arcanism (the CRAFT skill), so a crafter could wield any tier.
+      // It must now gate on the Staves proficiency like every other weapon (max Arcanism must not unlock it).
+      var tg = FF.stackableEquipGate(items[staffId]);
+      eq(tg.ok, false, 'a higher-tier staff is locked with no Staves proficiency (even at max Arcanism)');
+      eq(tg.label, 'Staves', 'the lock names the Staves proficiency, not Arcanism');
       // Raising the proficiency unlocks them.
-      s.xp[FF.WANDS_SKILL_ID] = 1e12; s.xp[FF.SCEPTERS_SKILL_ID] = 1e12;
+      s.xp[FF.WANDS_SKILL_ID] = 1e12; s.xp[FF.SCEPTERS_SKILL_ID] = 1e12; s.xp[FF.STAVES_SKILL_ID] = 1e12;
       ok(FF.stackableEquipGate(items[wandId]).ok, 'Wands proficiency unlocks the wand');
       ok(FF.stackableEquipGate(items[scepId]).ok, 'Scepters proficiency unlocks the scepter');
+      ok(FF.stackableEquipGate(items[staffId]).ok, 'Staves proficiency unlocks the staff');
     } finally {
-      s.xp[FF.WANDS_SKILL_ID]=saved.w; s.xp[FF.SCEPTERS_SKILL_ID]=saved.c; s.xp.arcanism=saved.a; s.xp.runesmithing=saved.r;
+      s.xp[FF.WANDS_SKILL_ID]=saved.w; s.xp[FF.SCEPTERS_SKILL_ID]=saved.c; s.xp[FF.STAVES_SKILL_ID]=saved.t; s.xp.arcanism=saved.a; s.xp.runesmithing=saved.r;
     }
   });
 
