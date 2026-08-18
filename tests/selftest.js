@@ -5525,6 +5525,28 @@
       'signed out: falls back to the public game page (no identifier, so no webhook)');
   });
 
+  // Running a bow dry must announce the retreat in the COMBAT CHANNEL (combatLog), not just the Chronicle.
+  // A player watching the Combat feed saw the fight silently stop with no reason (they were out of arrows).
+  suite('combat: out-of-arrows retreat shows in the Combat channel and Chronicle', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, main:S.equippedMainhand, arrow:S.equippedArrow, off:S.equippedOffhand, inv:S.inventory, log:S.log };
+    var mon = FF.MONSTERS[0];
+    ok(mon && mon.id, 'a monster exists to fight');
+    S.equippedMainhand = 'bowShort';   // a bow
+    S.equippedArrow = null;            // Auto (highest usable)
+    S.equippedOffhand = null;          // no quiver
+    S.inventory = {};                  // no arrows anywhere -> bowArrowToConsume returns null
+    S.log = [];
+    FF._clReset();
+    S.activity = { type:'combat', monsterId:mon.id, monsterHp:1000, tickAccum:0 };
+    FF.playerAttackTick();
+    ok(FF._clGet().some(function(e){ return /out of arrows/i.test(e.text || ''); }), 'the retreat is in the Combat channel (combatLog)');
+    ok(S.log.some(function(e){ return /out of arrows/i.test(e.msg || ''); }), 'the retreat is in the Chronicle (state.log)');
+    ok(!S.activity || S.activity.type !== 'combat', 'running out of arrows ends the fight (retreat)');
+    S.activity = sv.act; S.equippedMainhand = sv.main; S.equippedArrow = sv.arrow; S.equippedOffhand = sv.off; S.inventory = sv.inv; S.log = sv.log;
+    FF._clReset();
+  });
+
   // A refund of a spend must restore gold WITHOUT bumping the monotonic goldEarnedTotal anchor. earnGold
   // bumps both; using it for refunds inflated the anchor, and walletSync then MINTED that as real gold
   // (the server-EXP-buff dupe: press Buy when the server wallet lagged -> failed buy -> earnGold refund ->
