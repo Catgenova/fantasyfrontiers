@@ -5525,6 +5525,30 @@
       'signed out: falls back to the public game page (no identifier, so no webhook)');
   });
 
+  // A refund of a spend must restore gold WITHOUT bumping the monotonic goldEarnedTotal anchor. earnGold
+  // bumps both; using it for refunds inflated the anchor, and walletSync then MINTED that as real gold
+  // (the server-EXP-buff dupe: press Buy when the server wallet lagged -> failed buy -> earnGold refund ->
+  // free 100k on the next sync). refundGold is the plain restore that closes it.
+  suite('economy: refundGold restores gold without minting earnings', function(){
+    var S = FF._state;
+    var sv = { gold:S.gold, earned:S.goldEarnedTotal, act:S.activity };
+    S.activity = {};
+    S.gold = 500000; S.goldEarnedTotal = 1000000;
+    // A spend is a plain subtraction: gold drops, the earned anchor is untouched.
+    S.gold -= 100000;
+    // The refund puts the gold back and must NOT touch goldEarnedTotal (or the next sync mints it).
+    FF.refundGold(100000);
+    eq(S.gold, 500000, 'refundGold restores the spent gold');
+    eq(S.goldEarnedTotal, 1000000, 'refundGold does NOT raise goldEarnedTotal (no phantom pending -> no mint)');
+    // Contrast: earnGold (a genuine earn) DOES raise the anchor -- proving refunds must not use it.
+    FF.earnGold(100000);
+    eq(S.goldEarnedTotal, 1100000, 'earnGold raises the anchor (that is why it is wrong for refunds)');
+    // refundGold ignores non-positive amounts, like earnGold.
+    S.gold = 42; FF.refundGold(0); FF.refundGold(-5);
+    eq(S.gold, 42, 'refundGold ignores zero/negative amounts');
+    S.gold = sv.gold; S.goldEarnedTotal = sv.earned; S.activity = sv.act;
+  });
+
   // The voting call-to-action is a HIGH-PRIORITY ticker line (woven in like the disclaimer, not one entry
   // in the shuffled pool), so it shows far more often than any single pooled tip.
   suite('ticker: high-priority voting call-to-action', function(){

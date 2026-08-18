@@ -16713,13 +16713,13 @@
         addLog('You activated a server-wide +50% EXP buff for 1 hour. Every player benefits. Thanks for supporting the server!', 'important');
         chronicleBroadcast('buff', 'bought a +50% EXP server buff (1 hour) for the whole server!');
       } else {
-        earnGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
+        refundGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
         addLog('The buff purchase failed: ' + ((res && res.error) || 'try again') + '. Your gold was refunded.', 'danger');
       }
       renderSettingsModal(); render();
     }, function(){
       _serverBuffBusy = false;
-      earnGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
+      refundGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
       addLog('The buff purchase failed (network). Your gold was refunded.', 'danger');
       renderSettingsModal(); render();
     });
@@ -21286,17 +21286,28 @@
     cloudSave();   // ONLINE-ONLY: persistence goes to the backend (debounced); no localStorage
   }
 
-  // Every gold RECEIVED -- combat/gathering earnings, sale proceeds, cross-player transfers, and
-  // refunds -- flows through here so the monotonic goldEarnedTotal anchor stays accurate. walletSync()
-  // reconciles that anchor with the server, which credits it under a rate limit and clamps a
-  // spoofed-high balance back down. Spending stays a plain subtraction: the clamp reflects it via the
-  // lower reported gold, so no per-spend plumbing is needed to keep the wallet honest.
+  // Every gold genuinely EARNED -- combat/gathering earnings, sale proceeds, cross-player transfers --
+  // flows through here so the monotonic goldEarnedTotal anchor stays accurate. walletSync() reconciles
+  // that anchor with the server, which credits it under a rate limit and clamps a spoofed-high balance
+  // back down. Spending stays a plain subtraction: the clamp reflects it via the lower reported gold, so
+  // no per-spend plumbing is needed to keep the wallet honest.
   function earnGold(amt){
     amt = Math.floor(amt);
     if(!(amt > 0)) return;
     state.gold += amt;
     state.goldEarnedTotal = (state.goldEarnedTotal||0) + amt;
     if(state.activity && state.activity.type==='combat') state.activity.goldEarned = (state.activity.goldEarned||0) + amt; // per-fight tally (Greedwyrm's Claw)
+  }
+  // Restore gold from a REFUND or escrow return (a failed/cancelled purchase coming back). This must NOT
+  // be earnGold: a spend is a PLAIN SUBTRACTION that leaves goldEarnedTotal untouched, so bumping the
+  // anchor here would manufacture "pending" earnings that walletSync then MINTS real gold for on the
+  // server. That was the server-EXP-buff dupe: press Buy while the server wallet lagged local gold -> the
+  // buy failed -> the earnGold refund inflated the anchor -> the next sync credited 100k of free gold,
+  // repeatable. A refund just puts the spent gold back; the clamp keeps it honest exactly like the spend.
+  function refundGold(amt){
+    amt = Math.floor(amt);
+    if(!(amt > 0)) return;
+    state.gold += amt;
   }
 
   // A background Faith activity (Devotion/Blessing/Miracle) running at logout keeps going through the away
@@ -40981,7 +40992,7 @@
     render();
     guildInvoke('create', { name:name, tag:tag, description:desc, mortal:isMortal() }).then(function(res){
       guildState.busy=false;
-      if(!res || !res.ok){ earnGold(GUILD_CREATE_COST); guildState.error=(res&&res.error)||'Could not create guild.'; render(); return; }
+      if(!res || !res.ok){ refundGold(GUILD_CREATE_COST); guildState.error=(res&&res.error)||'Could not create guild.'; render(); return; }
       saveGame();
       guildState.error=''; guildBrowseState.status='idle'; guildReload(true);
     });
@@ -42346,7 +42357,7 @@
     state.gold -= cost; saveGame(); // escrow gold (price-improvement + sale proceeds return via collect)
     marketInvoke('place', { side:'buy', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;
-      if(!res || !res.ok){ earnGold(cost); saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      if(!res || !res.ok){ refundGold(cost); saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
       var filled = res.filled||0, rest = res.rest||0;
       if(instant){
         addLog(filled>0 ? ('Bought '+fmt(filled)+' '+marketItemName(item)+(rest>0? '. Bid '+fmt(rest)+' more @ '+fmt(price)+'g':'')+'.') : ('Nothing available to buy now. Bid '+fmt(rest)+' '+marketItemName(item)+' @ '+fmt(price)+'g.'), 'chronicle');
@@ -42376,7 +42387,7 @@
     marketInvoke('cancel', { order_id:orderId }).then(function(res){
       if(res && res.ok){
         if(res.side==='sell'){ addItem(res.item_key, res.qty); addLog('Cancelled sell order. Recovered '+fmt(res.qty)+' '+marketItemName(res.item_key)+'.', 'chronicle'); }
-        else { earnGold(res.qty * res.unit_price); addLog('Cancelled buy order. Refunded '+fmt(res.qty*res.unit_price)+'g.', 'chronicle'); }
+        else { refundGold(res.qty * res.unit_price); addLog('Cancelled buy order. Refunded '+fmt(res.qty*res.unit_price)+'g.', 'chronicle'); }
         saveGame(); marketReload();
       } else { addLog('Cancel failed: '+((res&&res.error)||'try again')+'.','danger'); }
     });
@@ -46231,7 +46242,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.101.4';
+  var GAME_VERSION = '0.0.101.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46391,7 +46402,7 @@
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
+      earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
