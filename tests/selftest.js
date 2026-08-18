@@ -5549,6 +5549,46 @@
     S.gold = sv.gold; S.goldEarnedTotal = sv.earned; S.activity = sv.act;
   });
 
+  // A stalled/throttled tab resumes as one big frame (dt clamped to 60s) that drains SEVERAL enemy swings
+  // in the live monster loop. Without a heal between them the hits land back-to-back and a mortal dies to
+  // swings they never got to eat through ("missing actions caused death"). The loop now calls
+  // autoEatCheck() between each swing; this proves that interleave is the recourse: a burst that kills a
+  // fed player if resolved back-to-back is survived when auto-eat runs between the hits.
+  suite('combat: auto-eat interleaves between batched enemy swings (no back-to-back death)', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, hp:S.playerHp, thr:S.autoEatThreshold, inv:S.inventory, locked:S.lockedItems,
+               warned:S._autoEatWarned, logged:S._autoEatLogged, asc:S.cbAsceticRun };
+    S.inventory = {}; S.lockedItems = {}; S._autoEatWarned = false; S._autoEatLogged = false;
+    var food = FF.getAutoEatFoodTypes()[0];
+    ok(food && food.heal > 2, 'there is an auto-eat food that heals a meaningful amount');
+    S.inventory[food.id] = 100;
+    S.activity = { type:'combat', monsterId:'archdemon', monsterHp: 1e12 };
+    S.autoEatThreshold = 0.99;                       // eat whenever below full
+    var M = FF.maxHp(S);
+    var D = Math.ceil(M/2) + 1;                      // two of these from full exceed max HP -> lethal back-to-back
+
+    // Back-to-back (the OLD live loop): two swings with no eat between -> dead.
+    S.playerHp = M;
+    S.playerHp -= D; S.playerHp -= D;
+    ok(S.playerHp <= 0, 'two back-to-back swings from full are lethal (the reported burst)');
+
+    // Interleaved (the FIXED live loop): auto-eat between each swing -> the fed player lives.
+    S.playerHp = M; S._autoEatWarned = false; S._autoEatLogged = false;
+    var died = false;
+    for(var i=0;i<2;i++){ S.playerHp -= D; FF.autoEatCheck(); if(S.playerHp <= 0){ died = true; break; } }
+    ok(!died && S.playerHp > 0, 'auto-eat between each swing keeps the fed player alive through the burst');
+    ok(S.inventory[food.id] < 100, 'auto-eat consumed food to provide the recourse');
+
+    // With no food, the interleave gives no false safety (parity with a live fight): still dies.
+    S.inventory[food.id] = 0; S.playerHp = M; S._autoEatWarned = false; S._autoEatLogged = false;
+    var diedNoFood = false;
+    for(var j=0;j<2;j++){ S.playerHp -= D; FF.autoEatCheck(); if(S.playerHp <= 0){ diedNoFood = true; break; } }
+    ok(diedNoFood, 'no food -> no phantom heal; the burst is still lethal (matches a live fight)');
+
+    S.activity = sv.act; S.playerHp = sv.hp; S.autoEatThreshold = sv.thr; S.inventory = sv.inv;
+    S.lockedItems = sv.locked; S._autoEatWarned = sv.warned; S._autoEatLogged = sv.logged; S.cbAsceticRun = sv.asc;
+  });
+
   // The voting call-to-action is a HIGH-PRIORITY ticker line (woven in like the disclaimer, not one entry
   // in the shuffled pool), so it shows far more often than any single pooled tip.
   suite('ticker: high-priority voting call-to-action', function(){

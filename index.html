@@ -45530,6 +45530,12 @@
           while(state.activity.monsterTickAccum >= monsterIntervalMs && state.activity.type==='combat'){
             state.activity.monsterTickAccum -= monsterIntervalMs;
             monsterAttackTick();
+            // Auto-eat BETWEEN each swing, not once per frame. A stalled/throttled tab resumes as one big
+            // frame (dt clamped to 60s) that drains several enemy swings in this while-loop; without a heal
+            // between them the hits land back-to-back and a mortal dies to swings they never had a chance to
+            // eat through -- the reported "missing actions caused death". This mirrors the offline catch-up
+            // path, which already interleaves autoEatCheck() per monster swing for exactly this reason.
+            autoEatCheck();
             monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + enemyExtraSlowPct()) * enemyFrenzySpeedMult(state.activity, monsterForSpeed);
           }
           // Enemy special attack (Wildlife extra bar): charges on its own timer while the beast can act,
@@ -46242,7 +46248,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.101.5';
+  var GAME_VERSION = '0.0.101.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46507,7 +46513,7 @@
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS, uniqueInvGroupId:uniqueInvGroupId, renderOffhandClawEquipSection:renderOffhandClawEquipSection, renderEquipShieldSection:renderEquipShieldSection, renderEquipWardSection:renderEquipWardSection,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
-      getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
+      getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes, autoEatCheck:autoEatCheck,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, chronicleMortalToSystemMsg:chronicleMortalToSystemMsg, mortalDeathBody:mortalDeathBody, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, famBuffApply:famBuffApply, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
