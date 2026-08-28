@@ -5571,6 +5571,23 @@
     S.gold = sv.gold; S.goldEarnedTotal = sv.earned; S.activity = sv.act;
   });
 
+  // The planned-closure kill-switch. The boot gate only fires on page load, so an already-logged-in player
+  // stays in the game until their tab reloads. version.json now carries a live `closed` flag (stamped by
+  // build.mjs from SERVER_CLOSED); a running client polls it and force-closes on sight, mid-combat included.
+  // This pins the WIRE CONTRACT the poller reads -- only closed===true (a real boolean) trips it, so a
+  // missing/false/truthy-but-not-true field never accidentally shuts the server on live players.
+  suite('server: the live closed-flag kill-switch reads only closed===true', function(){
+    ok(FF.versionClosedSignal({ build:'x', closed:true }) === true, 'closed:true trips the kill-switch');
+    ok(FF.versionClosedSignal({ build:'x', closed:false }) === false, 'closed:false does not');
+    ok(FF.versionClosedSignal({ build:'x' }) === false, 'a version.json with no closed field does not (old deploys)');
+    ok(FF.versionClosedSignal({ closed:1 }) === false, 'a truthy-but-not-true value does not (strict === true)');
+    ok(FF.versionClosedSignal({ closed:'true' }) === false, 'the string "true" does not');
+    ok(FF.versionClosedSignal(null) === false && FF.versionClosedSignal(undefined) === false, 'a null/undefined payload does not');
+    // The reopen instant is Aug 31 2026, 14:00 UTC, and the countdown reads it, so before then it is non-empty.
+    eq(FF.SERVER_REOPEN_UTC, Date.UTC(2026, 7, 31, 14, 0, 0), 'the reopen instant is Aug 31 2026 14:00 UTC');
+    ok(typeof FF.serverCountdownStr() === 'string', 'serverCountdownStr returns a string');
+  });
+
   // A stalled/throttled tab resumes as one big frame (dt clamped to 60s) that drains SEVERAL enemy swings
   // in the live monster loop. Without a heal between them the hits land back-to-back and a mortal dies to
   // swings they never got to eat through ("missing actions caused death"). The loop now calls

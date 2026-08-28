@@ -45434,6 +45434,9 @@
     // accrue progress this tab can never persist (cloudSave is closed), which reads to the player as
     // lost hours. The overlay from cloudEnterFenced() is already up asking them to reload.
     if(cloudFenced) return;
+    // Server closed under us (live kill-switch tripped mid-session): freeze the simulation and stop
+    // rescheduling, exactly like cloudFenced. forceServerClosed() has already put the closure gate up.
+    if(serverClosedForced) return;
     // One bad frame must NEVER kill the simulation (offline-catchup audit, v0.0.77.32): an uncaught
     // throw here used to end the rAF chain silently -- the game froze, lastTick froze with it, and the
     // next tab-hide/show read the whole frozen span as "time away", up to the 12h catch-up cap. Log the
@@ -46347,7 +46350,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.5';
+  var GAME_VERSION = '0.0.102.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46362,6 +46365,23 @@
   var updateChecksArmed = false;
   var updatePending = false;          // a newer build was detected; reload at the next safe moment
   var updateTargetBuild = null;       // the deployed build id we're reloading to reach
+  var serverClosedForced = false;     // the live kill-switch tripped mid-session (see forceServerClosed)
+  // True when the deployed version.json says the server is CLOSED. build.mjs stamps closed:true whenever the
+  // source's SERVER_CLOSED is set, so this is a live signal a running client polls -- independent of its own
+  // build-time SERVER_CLOSED (a client that is IN the game is by definition on an OPEN build).
+  function versionClosedSignal(data){ return !!(data && data.closed === true); }
+  // Trip the closure gate on a RUNNING session. Unlike the boot gate (which only fires on page load) and
+  // unlike updateRefreshNow (which waits for a "safe" moment and skips combat), this fires immediately and
+  // unconditionally: it freezes the loop and overlays the maintenance card even mid-fight, so a planned
+  // shutdown flushes everyone, not just idle players. Idempotent. Flushes the save first so nothing is lost.
+  function forceServerClosed(){
+    if(serverClosedForced) return;
+    serverClosedForced = true;
+    SERVER_CLOSED = true;             // so renderMaintenanceGate shows the closure card + countdown, not the generic one
+    try{ cloudSave(false, true); }catch(e){}   // best-effort flush (bypasses the push throttle) before we freeze
+    try{ saveGame(); }catch(e){}
+    try{ renderMaintenanceGate(); }catch(e){}
+  }
   var UPDATE_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','towerPreviewOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay','uniqueDetailOverlay'];
   // Loop-guard: right after a Pages deploy the edge/browser can still serve the OLD index.html for a
   // short while even though version.json already reads the new stamp. Without this, we'd reload, boot
@@ -46397,11 +46417,15 @@
   // Silently no-ops in the readable repo copy (FF_BUILD_ID==='dev', or version.json missing), so
   // local/selftest boots never reload.
   async function checkForNewBuild(){
-    if(FF_BUILD_ID === 'dev' || updatePending) return;
+    if(FF_BUILD_ID === 'dev' || serverClosedForced) return;   // dev/selftest never polls; once closed, done
     try{
       var res = await fetch('version.json?ts=' + Date.now(), { cache: 'no-store' });
       if(!res || !res.ok) return;
       var data = await res.json();
+      // Live kill-switch first, and BEFORE the updatePending short-circuit: a planned closure must catch a
+      // client even if a build update is already queued for it. Fires immediately, mid-combat included.
+      if(versionClosedSignal(data)){ forceServerClosed(); return; }
+      if(updatePending) return;
       if(data && data.build && data.build !== FF_BUILD_ID && !reloadedRecentlyFor(data.build)){
         updateTargetBuild = data.build; updatePending = true;
       }
@@ -46613,6 +46637,7 @@
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS, uniqueInvGroupId:uniqueInvGroupId, renderOffhandClawEquipSection:renderOffhandClawEquipSection, renderEquipShieldSection:renderEquipShieldSection, renderEquipWardSection:renderEquipWardSection,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes, autoEatCheck:autoEatCheck,
+      versionClosedSignal:versionClosedSignal, serverCountdownStr:serverCountdownStr, SERVER_REOPEN_UTC:SERVER_REOPEN_UTC,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, normalCraftFeedRarity:normalCraftFeedRarity, normalCraftBlasts:normalCraftBlasts, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, chronicleMortalToSystemMsg:chronicleMortalToSystemMsg, mortalDeathBody:mortalDeathBody, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, famBuffApply:famBuffApply, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
