@@ -2395,6 +2395,13 @@
   .ff-fenced-card p{margin:0 0 10px;line-height:1.6;font-size:13.5px;color:var(--text-dim);}
   .ff-fenced-card p.last{margin-bottom:18px;}
   .ff-fenced-card .action-btn{width:auto;padding:9px 30px;margin-top:0;}
+  .ff-reopen{margin:4px 0 18px;padding:14px 12px;border:1px solid var(--border);border-radius:var(--radius);
+    background:rgba(20,18,16,.28);}
+  .ff-reopen-lbl{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;}
+  .ff-reopen-count{font-family:var(--font-display);font-size:19px;letter-spacing:.5px;color:var(--gold);
+    line-height:1.35;font-variant-numeric:tabular-nums;}
+  .ff-reopen-when{margin-top:7px;font-size:12px;line-height:1.5;color:var(--text-dim);}
+  .ff-reopen-tz{opacity:.72;}
   .physique-bonus b{color:var(--cat-physique);}
 
   ::-webkit-scrollbar{width:6px;}
@@ -45808,7 +45815,36 @@
   // paid Supabase project, which stays always-running and cannot be paused. Aug 2026: closed for the Alpha
   // reset until Aug 31. Set back to false + bump to the Alpha version to reopen.
   var SERVER_CLOSED = true;
-  var SERVER_CLOSED_MSG = 'Fantasy Frontiers is closed until <b>August 31</b> for the Alpha. Everything resets for a fresh start, so see you then with a clean world.';
+  var SERVER_CLOSED_MSG = 'Fantasy Frontiers is closed for the Alpha. Everything resets for a fresh start, so see you at reopen with a clean world.';
+  // Planned reopen instant (UTC). The card shows a live countdown to this moment AND the same moment in the
+  // viewer's own local time, so nobody has to convert time zones. Aug 31 2026, 14:00 UTC (month is 0-based).
+  var SERVER_REOPEN_UTC = Date.UTC(2026, 7, 31, 14, 0, 0);
+  // The reopen instant rendered in the viewer's local zone (e.g. "Fri, Aug 21, 7:00 AM PDT"). Falls back to
+  // a plain UTC string on old engines that ignore the options bag.
+  function serverReopenLocalStr(){
+    try{
+      return new Date(SERVER_REOPEN_UTC).toLocaleString(undefined, {
+        weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'
+      });
+    }catch(e){ return new Date(SERVER_REOPEN_UTC).toUTCString(); }
+  }
+  // Human countdown from now to the reopen instant. Returns '' once the moment has passed (caller then shows a
+  // "reopening" line and stops ticking). Days/hours/minutes/seconds, trimming leading zero units.
+  function serverCountdownStr(){
+    var ms = SERVER_REOPEN_UTC - Date.now();
+    if(ms <= 0) return '';
+    var s = Math.floor(ms / 1000);
+    var d = Math.floor(s / 86400); s -= d * 86400;
+    var h = Math.floor(s / 3600);  s -= h * 3600;
+    var m = Math.floor(s / 60);    s -= m * 60;
+    function u(n, one, many){ return n + ' ' + (n === 1 ? one : many); }
+    var parts = [];
+    if(d > 0) parts.push(u(d, 'day', 'days'));
+    if(h > 0 || d > 0) parts.push(u(h, 'hour', 'hours'));
+    if(m > 0 || h > 0 || d > 0) parts.push(u(m, 'minute', 'minutes'));
+    parts.push(u(s, 'second', 'seconds'));
+    return parts.join(', ');
+  }
   var BACKEND_HEALTH_TIMEOUT_MS = 7000;   // a probe that doesn't answer in this long counts as "down"
   var BACKEND_RECHECK_MS = 20000;         // while showing the maintenance screen, re-probe this often
   function checkBackendHealth(){
@@ -45831,6 +45867,7 @@
     });
   }
   var _maintRecheckTimer = null;
+  var _serverCountdownTimer = null;
   function renderMaintenanceGate(){
     var app = document.getElementById('app'); if(!app) return;
     var el = document.getElementById('maintenanceGate');
@@ -45839,12 +45876,33 @@
     if(SERVER_CLOSED){
       // Planned closure: a fixed message and NO auto-recover reload loop (the backend is up, so a reload
       // would just re-gate every 20s). The gate lifts when the owner reopens by flipping SERVER_CLOSED off.
+      // A live countdown ticks down to SERVER_REOPEN_UTC, shown in the viewer's own local time.
       el.innerHTML = '<div class="ff-fenced-card">'
         + '<div class="ff-brand" style="justify-content:center;margin-bottom:14px;"><svg class="ff-brand-crest" viewBox="0 0 100 100"><use href="#shape-crest"></use></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>'
         + '<h2>Closed for the Alpha</h2>'
-        + '<p class="last">' + SERVER_CLOSED_MSG + '</p>'
+        + '<p>' + SERVER_CLOSED_MSG + '</p>'
+        + '<div class="ff-reopen">'
+        +   '<div class="ff-reopen-lbl">Reopens in</div>'
+        +   '<div class="ff-reopen-count" id="serverCountdown">&hellip;</div>'
+        +   '<div class="ff-reopen-when">' + serverReopenLocalStr() + ' <span class="ff-reopen-tz">(your local time)</span></div>'
+        + '</div>'
         + '<div style="display:flex;justify-content:center;margin-top:6px;">' + discordLinkHtml('Join the Discord for updates') + '</div>'
         + '</div>';
+      // Tick the countdown once now and every second. When the moment passes, swap to a reopening line, stop
+      // the timer, and start re-probing so the page recovers on its own the instant SERVER_CLOSED is lifted.
+      var tick = function(){
+        var cd = document.getElementById('serverCountdown'); if(!cd) return;
+        var str = serverCountdownStr();
+        if(str){ cd.textContent = str; return; }
+        cd.textContent = 'any moment now';
+        if(_serverCountdownTimer){ clearInterval(_serverCountdownTimer); _serverCountdownTimer = null; }
+        if(!_maintRecheckTimer){
+          _maintRecheckTimer = setInterval(function(){ location.reload(); }, BACKEND_RECHECK_MS);
+        }
+      };
+      if(_serverCountdownTimer){ clearInterval(_serverCountdownTimer); _serverCountdownTimer = null; }
+      _serverCountdownTimer = setInterval(tick, 1000);
+      tick();
       return;
     }
     el.innerHTML = '<div class="ff-fenced-card">'
@@ -46289,7 +46347,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.4';
+  var GAME_VERSION = '0.0.102.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
