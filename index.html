@@ -45803,6 +45803,12 @@
   // the backend returns. The probe is a plain fetch (no supabase-js needed) with a SHORT timeout, so a
   // hung backend can never stall startup. BACKEND_HEALTH_GATE_ENABLED is a kill switch.
   var BACKEND_HEALTH_GATE_ENABLED = true;
+  // PLANNED-CLOSURE GATE (owner-flipped). When true, every client shows the maintenance screen and never
+  // loads the game, regardless of backend health. This is the "server off" lever for planned downtime on a
+  // paid Supabase project, which stays always-running and cannot be paused. Aug 2026: closed for the Alpha
+  // reset until Aug 31. Set back to false + bump to the Alpha version to reopen.
+  var SERVER_CLOSED = true;
+  var SERVER_CLOSED_MSG = 'Fantasy Frontiers is closed until <b>August 31</b> for the Alpha. Everything resets for a fresh start, so see you then with a clean world.';
   var BACKEND_HEALTH_TIMEOUT_MS = 7000;   // a probe that doesn't answer in this long counts as "down"
   var BACKEND_RECHECK_MS = 20000;         // while showing the maintenance screen, re-probe this often
   function checkBackendHealth(){
@@ -45830,6 +45836,17 @@
     var el = document.getElementById('maintenanceGate');
     if(!el){ el = document.createElement('div'); el.id = 'maintenanceGate'; el.className = 'ff-fenced';
       el.setAttribute('role','alertdialog'); el.setAttribute('aria-modal','true'); app.appendChild(el); }
+    if(SERVER_CLOSED){
+      // Planned closure: a fixed message and NO auto-recover reload loop (the backend is up, so a reload
+      // would just re-gate every 20s). The gate lifts when the owner reopens by flipping SERVER_CLOSED off.
+      el.innerHTML = '<div class="ff-fenced-card">'
+        + '<div class="ff-brand" style="justify-content:center;margin-bottom:14px;"><svg class="ff-brand-crest" viewBox="0 0 100 100"><use href="#shape-crest"></use></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>'
+        + '<h2>Closed for the Alpha</h2>'
+        + '<p class="last">' + SERVER_CLOSED_MSG + '</p>'
+        + '<div style="display:flex;justify-content:center;margin-top:6px;">' + discordLinkHtml('Join the Discord for updates') + '</div>'
+        + '</div>';
+      return;
+    }
     el.innerHTML = '<div class="ff-fenced-card">'
       + '<div class="ff-brand" style="justify-content:center;margin-bottom:14px;"><svg class="ff-brand-crest" viewBox="0 0 100 100"><use href="#shape-crest"></use></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>'
       + '<h2>Servers are down for maintenance</h2>'
@@ -46272,7 +46289,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.3';
+  var GAME_VERSION = '0.0.102.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46365,7 +46382,7 @@
   (async function onlineBoot(){
     // Backend down? Show the maintenance screen instead of a login gate whose every sign-in just fails.
     // Runs before loading supabase-js (the probe is a plain fetch), so a dark backend short-circuits fast.
-    if(!(await checkBackendHealth())){ renderMaintenanceGate(); return; }
+    if(SERVER_CLOSED || !(await checkBackendHealth())){ renderMaintenanceGate(); return; }
     // Did we just return from a Discord OAuth round-trip? That's an explicit login intent, so honor it
     // even if "auto-login" is off. Consume the one-shot flag regardless of outcome.
     var oauthReturn = false;
