@@ -167,8 +167,15 @@
     eq(Math.round(FF.fishingTreasureChance('fishing_t20')*100), 45, 'fishing t20 treasure = 45%');
     eq(FF.tierSell(3, 0), 3, 'tierSell base');
     eq(FF.tierSell(3, 1), 4, 'tierSell x1.45');
-    eq(FF.tierTime(7, 0.3, 0), 7, 'tierTime base');
-    eq(FF.tierTime(7, 0.3, 1), 7.3, 'tierTime +step');
+    // tierTime carries the GLOBAL +25% base-action-time lever (BASE_ACTION_TIME_MULT), so the raw curve
+    // reads 25% longer at every tier: 7 -> 8.75 (round 8.8), 7.3 -> 9.125 (round 9.1).
+    eq(FF.BASE_ACTION_TIME_MULT, 1.25, 'the base-action-time lever is +25%');
+    eq(FF.tierTime(7, 0.3, 0), 8.8, 'tierTime base carries the +25% lever');
+    eq(FF.tierTime(7, 0.3, 1), 9.1, 'tierTime +step carries the +25% lever');
+    // The lever scales every skill action uniformly: a t0 gather and a t0 craft are both 25% longer than
+    // the pre-lever curve (5 -> 6.3, 25... crafts use a 7s base -> 8.8), and the one non-tier action time
+    // (the fletching shaft, a hard literal) is scaled to match rather than left behind.
+    eq(FF.CRAFTING_SKILLS.fletching.shaftRecipe.time, 8.8, 'the fletching shaft (non-tier literal) carries the +25% lever too');
   });
 
   // ---- Card XP preview: base vs. real earned (Mortal / server buff / Tea / familiar / Diligence / Curiosity) ----
