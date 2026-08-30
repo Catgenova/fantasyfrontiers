@@ -20047,6 +20047,33 @@
     }
   });
 
+  // ---- Equip level requirement never exceeds Lv 100 (dungeon Tier-24 gear, ticket-0191) --------------
+  // The tier->level table stops at t20 (Lv 100). Drop-only gear can be a higher tier, so the lookup used to
+  // run off the end and show "Requires ... Lv undefined" -- a gate no one could satisfy on the >= path.
+  // equipTierLevel clamps to the cap, so every equip requirement is a real, meetable Lv <= 100.
+  suite('equip gate: no level requirement exceeds Lv 100', function(){
+    eq(FF.equipTierLevel(20), 100, 't20 is Lv 100 (the cap)');
+    eq(FF.equipTierLevel(24), 100, 'Tier 24 dungeon gear clamps to Lv 100, not undefined');
+    eq(FF.equipTierLevel(30), 100, 'any tier past the ladder still clamps to Lv 100');
+    eq(FF.equipTierLevel(0), 1, 't0 is Lv 1');
+    // No tier, however high, ever yields a requirement above 100 or an undefined.
+    for(var t=0; t<=40; t++){ var L = FF.equipTierLevel(t); ok(typeof L === 'number' && L >= 1 && L <= 100, 'equipTierLevel('+t+') is a real level 1..100'); }
+    // The proficiency gate is now satisfiable at max level for a Tier-24 piece (was false vs undefined).
+    ok(FF.meetsProficiencyRequirement(1e12, 24) === true, 'a maxed proficiency CAN meet a Tier-24 requirement');
+    ok(FF.meetsProficiencyRequirement(0, 24) === false, 'and an untrained one still cannot');
+    // The unique-equip lock label reads "Lv 100", never "undefined", for a high-tier body piece.
+    var s = FF._state, mat = Object.keys(FF.MATERIAL_TO_PROFICIENCY)[0], prof = FF.MATERIAL_TO_PROFICIENCY[mat];
+    var sv = s.xp[prof];
+    try {
+      var u = { uid:'dchest', base:'bodyarmor_'+mat+'_chest_t24_rare', kind:'bodyarmor', tier:24, rarity:'rare', enchants:[], enhance:0 };
+      s.xp[prof] = 0;
+      var lock = FF.uniqueEquipLock(u) || '';
+      ok(/Lv 100/.test(lock) && !/undefined/.test(lock), 'the lock reads "Lv 100", not "Lv undefined"');
+      s.xp[prof] = 1e12;
+      eq(FF.uniqueEquipLock(u), null, 'a maxed proficiency clears the Tier-24 lock (equippable)');
+    } finally { s.xp[prof] = sv; }
+  });
+
   // ---- Mortal / Immortal path -------------------------------------------------------------
   suite('mortal path: half XP + death conversion', function(){
     ok(typeof FF.isMortal === 'function', 'isMortal exported');

@@ -12036,9 +12036,15 @@
   // place. Since proficiency only grows by using gear you've already equipped, this
   // creates a natural bootstrap: equip Tier 1, fight with it until proficient enough,
   // then the next tier opens up.
+  // The tier -> equip-level table only runs t0..t20 (Lv 1..100). Drop-only gear can be a HIGHER tier (e.g.
+  // Tier 24 unique dungeon class pieces), which ran off the end of TIER_LEVELS and yielded `undefined`: on the
+  // `>=` gate that was a requirement NO ONE could meet ("Requires Chainmail Armor Lv undefined"), and on the
+  // runesmithing `<` gate it silently passed. Lv 100 is the cap, so clamp the lookup: no equip requirement
+  // ever exceeds Lv 100 (owner rule 2026-08-30, ticket-0191).
+  function equipTierLevel(tierIndex){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, tierIndex|0))] || 1; }
   function meetsProficiencyRequirement(profXp, tierIndex){
     if(tierIndex <= 0) return true;
-    return getLevel(profXp||0) >= TIER_LEVELS[tierIndex];
+    return getLevel(profXp||0) >= equipTierLevel(tierIndex);
   }
   // Which proficiency skill gates EQUIPPING a weapon of this type at higher tiers. Melee/bows use their
   // per-type proficiency (state.xp[typeId]); wands and scepters use their SHARED proficiency (wands/scepters),
@@ -13561,7 +13567,7 @@
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     var mh = getWeaponStyle(state.equippedMainhand);
     if(mh.hand !== '1h'){ blockedNotice('Wards need a one-handed mainhand equipped (the offhand must be free).'); return; }
-    if(getLevel(state.xp.runesmithing) < TIER_LEVELS[item.tierIndex]){
+    if(getLevel(state.xp.runesmithing) < equipTierLevel(item.tierIndex)){
       addLog('Your Runesmithing isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
     }
     unequipCurrentOffhandToInventory();
@@ -18040,17 +18046,17 @@
       var mw=/^stweapon_(.+)_t\d+_\w+$/.exec(u.base); if(!mw) return 'Cannot equip';
       var tw=mw[1];
       var pw = weaponEquipProfId(tw); // wands/scepters/staves -> shared proficiency; melee/bows -> per-type
-      return meetsProficiencyRequirement(state.xp[pw], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[pw]||pw)+' Lv '+TIER_LEVELS[u.tier]);
+      return meetsProficiencyRequirement(state.xp[pw], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[pw]||pw)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='offhand'){
       var mo=/^stshield_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
       var to=mo[1];
-      return meetsProficiencyRequirement(state.xp[to], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[to]||to)+' Lv '+TIER_LEVELS[u.tier]);
+      return meetsProficiencyRequirement(state.xp[to], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[to]||to)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='bodyarmor'){
       var mb=/^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); if(!mb) return 'Cannot equip';
       var prof=MATERIAL_TO_PROFICIENCY[mb[1]];
-      return meetsProficiencyRequirement(prof?state.xp[prof]:0, u.tier) ? null : ('Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[prof]||mb[1])+' Lv '+TIER_LEVELS[u.tier]);
+      return meetsProficiencyRequirement(prof?state.xp[prof]:0, u.tier) ? null : ('Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[prof]||mb[1])+' Lv '+equipTierLevel(u.tier));
     }
     return null; // ring / amulet: no proficiency gate
   }
@@ -18105,7 +18111,7 @@
   // renderUniqueEquipOptions('offhand', ...) -- surface it here so a dual-wielder can off-hand it).
   function renderUniqueOffhandClawCard(u){
     var inOff = state.equippedOffhandUid===u.uid, inMain = state.equippedMainhandUid===u.uid;
-    var lock = (!inOff && !inMain && !meetsProficiencyRequirement(state.xp.claw, u.tier)) ? ('Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+TIER_LEVELS[u.tier]) : null;
+    var lock = (!inOff && !inMain && !meetsProficiencyRequirement(state.xp.claw, u.tier)) ? ('Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+equipTierLevel(u.tier)) : null;
     var btn;
     if(inOff) btn = '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Unequip</button>';
     else if(inMain) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">In main hand</button>';
@@ -18146,7 +18152,7 @@
       return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:avg,
         statHtml:fmtRange(item.dmgMin, item.dmgMax, '-')+' dmg &bull; off-hand &minus;30% dmg, +30% timer',
         equipped:!!(curOff && curOff.id===id), canEquip:meetsProficiencyRequirement(state.xp.claw, item.tierIndex),
-        lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+        lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+equipTierLevel(item.tierIndex)+'</span>',
         action:'equipOffhandClaw', data:'data-item="'+id+'"' }; // whole-row equips to the OFF hand (no clawId -> single button)
     });
     var body = renderEquipCandidatePicker([{ key:'ohclaws', candidates:cands }], {flat:true, bestLabel:'Equip best off-hand Claw'});
@@ -23658,7 +23664,7 @@
             statHtml:'def '+item.defense, deltaHtml:'vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def',
             equipped:(!(s&&s.uid) && current && current.id===id),
             canEquip:meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex),
-            lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||mat)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+            lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||mat)+' Lv '+equipTierLevel(item.tierIndex)+'</span>',
             action:'equipBodyArmor', data:'data-item="'+id+'"'
           };
         });
@@ -24127,7 +24133,7 @@
     return html;
   }
   function stackableEquipGate(item){
-    var t = item.tierIndex, lvl = TIER_LEVELS[t];
+    var t = item.tierIndex, lvl = equipTierLevel(t);
     var pid = weaponEquipProfId(item.typeId); // wands/scepters/staves -> shared proficiency; melee/bows -> per-type
     return { ok: meetsProficiencyRequirement(state.xp[pid], t), label:(SKILL_LABELS[pid]||pid), lvl:lvl };
   }
@@ -24230,7 +24236,7 @@
             return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.defense,
               statHtml:'defense '+item.defense, deltaHtml:'vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def',
               equipped:!!(current && current.id===id), canEquip:meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex),
-              lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+              lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+equipTierLevel(item.tierIndex)+'</span>',
               action:'equipStackableShield', data:'data-item="'+id+'"' };
           }) };
       }).filter(Boolean);
@@ -24265,7 +24271,7 @@
         return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.dmgBonus,
           statHtml:Math.round(item.dmgBonus*100)+'% dmg', deltaHtml:'vs equipped '+equipDeltaChip(item.dmgBonus, current?current.dmgBonus:0)+' arrow dmg',
           equipped:!!(current && current.id===id), canEquip:meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex),
-          lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.leatherworking||'Leatherworking')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+          lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.leatherworking||'Leatherworking')+' Lv '+equipTierLevel(item.tierIndex)+'</span>',
           action:'equipStackableQuiver', data:'data-item="'+id+'"' };
       }) }], {flat:true});
     }
@@ -24406,8 +24412,8 @@
             return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.reflect,
               statHtml:'reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':''),
               deltaHtml:'vs equipped '+equipDeltaChip(item.reflect, current?current.reflect:0, true)+' reflect',
-              equipped:!!(current && current.id===id), canEquip:(getLevel(state.xp.runesmithing) >= TIER_LEVELS[item.tierIndex]),
-              lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+              equipped:!!(current && current.id===id), canEquip:(getLevel(state.xp.runesmithing) >= equipTierLevel(item.tierIndex)),
+              lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+equipTierLevel(item.tierIndex)+'</span>',
               action:'equipWard', data:'data-item="'+id+'"' };
           }) };
       }).filter(Boolean);
@@ -46356,7 +46362,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.9';
+  var GAME_VERSION = '0.0.102.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46671,7 +46677,7 @@
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, WARDING_XP_PER_DMG:WARDING_XP_PER_DMG, DEF_PROF_XP_PER_DMG:DEF_PROF_XP_PER_DMG, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES, getMonsterLootChance:getMonsterLootChance, getMonsterLootLabel:getMonsterLootLabel, MONSTER_CATEGORIES:MONSTER_CATEGORIES, applyMonsterCategoryLoot:applyMonsterCategoryLoot,
-      WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, weaponEquipProfId:weaponEquipProfId, meetsProficiencyRequirement:meetsProficiencyRequirement, stackableEquipGate:stackableEquipGate, isScepter:isScepter, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
+      WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, weaponEquipProfId:weaponEquipProfId, meetsProficiencyRequirement:meetsProficiencyRequirement, equipTierLevel:equipTierLevel, stackableEquipGate:stackableEquipGate, isScepter:isScepter, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, summonerFamiliarSlots:summonerFamiliarSlots, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, activateCompanion:activateCompanion, replaceCompanion:replaceCompanion, transcendFamiliar:transcendFamiliar, familiarCanTranscend:familiarCanTranscend, familiarAnyCanTranscend:familiarAnyCanTranscend, transcendAllCandidates:transcendAllCandidates, transcendAllConfirm:transcendAllConfirm, familiarStars:familiarStars, familiarTranscendDamageMult:familiarTranscendDamageMult, transcendRequest:transcendRequest, transcendCancel:transcendCancel, renderFamiliarCard:renderFamiliarCard, renderMenagerieTab:renderMenagerieTab, renderMenagerieList:renderMenagerieList, familiarIsMaxed:familiarIsMaxed, familiarMatchesSearch:familiarMatchesSearch, _setMenagerieSearch:function(v){ menagerieSearch = v||''; }, _setMenagerieExpanded:function(id,v){ menagerieExpanded[id] = !!v; }, familiarRoleInfo:familiarRoleInfo, familiarIsCombatCapable:familiarIsCombatCapable, familiarBadgeHtml:familiarBadgeHtml, _setMenagerieFilter:function(v){ menagerieFilter = v||'all'; }, _setMenagerieHideLocked:function(v){ menagerieHideLocked = !!v; }, _setMenagerieSort:function(v){ menagerieSort = v||'default'; }, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
