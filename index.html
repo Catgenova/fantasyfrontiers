@@ -4766,15 +4766,16 @@
     wildlife_direwolf:  { id:'intimidate', name:'Intimidate',      kind:'weaken', chargeMs:12000, durMs:8000, mult:0.75 },                    // your outgoing damage drops 25%
     wildlife_behemoth:  { id:'regen',      name:'Regenerate',      kind:'regen',  chargeMs:14000, healPct:0.12 },                             // heals 12% of its max HP each fire
     // Elementals: two per element, themed to the beast's own element. Reuse the Wildlife engine (DoT /
-    // Shred / Weaken / Harden / heal) plus four new control primitives -- Chill (attack-speed slow),
-    // Blind (hit-chance down), Purge (buff strip), and Veil (the beast gains dodge).
+    // Shred / Weaken / Harden / heal) plus three new control primitives -- Chill (attack-speed slow),
+    // Blind (hit-chance down), and Veil (the beast gains dodge). (Purge, a buff strip, was removed by owner
+    // order 2026-08-30: it took the player's skilling Tea buff in a fight, which was never the intent.)
     elemental_fire_elemental:   { id:'immolate',   name:'Immolate',      kind:'burn',        chargeMs:12000, durMs:6000, pctPerSec:0.20, word:'Burning' },
     elemental_magma_golem:      { id:'cinder',     name:'Cinder Burst',  kind:'cinder',      chargeMs:13000, durMs:6000, pctPerSec:0.15, word:'Burning', shredMult:1.30, shredMs:8000 },
     elemental_ice_elemental:    { id:'frostbite',  name:'Frost Bite',    kind:'chill',       chargeMs:11000, durMs:6000, slowPct:0.30 },
     elemental_frost_giant:      { id:'icycarapace',name:'Icy Carapace',  kind:'icycarapace', chargeMs:13000, hardenMult:0.50, hardenMs:5000, slowPct:0.30, chillMs:5000 },
     elemental_stone_golem:      { id:'petrify',    name:'Petrify',       kind:'petrify',     chargeMs:13000, durMs:6000, slowPct:0.50, weakenMult:0.75 },
     elemental_air_elemental:    { id:'sandblast',  name:'Sandblast',     kind:'blind',       chargeMs:11000, durMs:5000, hitMult:0.70 },
-    elemental_astral_elemental: { id:'purge',      name:'Purge',         kind:'purge',       chargeMs:15000 },
+    elemental_astral_elemental: { id:'enervate',   name:'Astral Enervation', kind:'weaken',  chargeMs:14000, durMs:8000, mult:0.75 },
     elemental_primal_elemental: { id:'searingray', name:'Searing Ray',   kind:'burn',        chargeMs:12000, durMs:6000, pctPerSec:0.20, word:'Searing' },
     elemental_void_elemental:   { id:'lifedrain',  name:'Life Drain',    kind:'drain',       chargeMs:13000, durMs:5000, pctPerSec:0.15, healPct:0.08, word:'Draining' },
     elemental_elemental_titan:  { id:'umbralveil', name:'Umbral Veil',   kind:'veil',        chargeMs:14000, durMs:6000, hitMult:0.70 },
@@ -4818,6 +4819,12 @@
       if(pool && pool.length) m.special = pool[(m.tierIndex || 0) % pool.length];
     });
   })();
+  // Obsidian Elemental: pin its OWN special. The tier-cycled gap-fill landed it on the same pool slot as the
+  // Astral Elemental (that slot used to be Purge -- the reason a combat foe stripped your skilling Tea buff --
+  // and is now Astral Enervation). Owner call 2026-08-30: only the Astral keeps that signature, so the
+  // Obsidian gets its own. Hand-authored HERE, not in MONSTER_SPECIALS, so the elemental pool length is
+  // unchanged and no other gap-filled beast's special shifts. 'shred' is an existing, fully-handled kind.
+  MONSTERS.forEach(function(m){ if(m.id==='elemental_obsidian_elemental') m.special = { id:'obsidianshards', name:'Obsidian Shards', kind:'shred', chargeMs:13000, durMs:8000, mult:1.30 }; });
   // id -> monster lookup so hot paths (the combat loop, action-bar live updates, attack ticks) don't
   // linear-scan every monster every frame.
   var MONSTERS_BY_ID = {};
@@ -20114,15 +20121,6 @@
   // Blind (Sandblast) + Veil (Umbral Veil): multipliers ON your hit chance at the miss roll (<1 = more misses).
   function playerBlindMult(){ var a = state.activity; return (a && (a.pBlindUntil||0) > Date.now()) ? (a.pBlindMult||1) : 1; }
   function enemyVeilHitMult(){ var a = state.activity; return (a && (a.enemyVeilUntil||0) > Date.now()) ? (a.enemyVeilHit||1) : 1; }
-  // Purge (Astral Elemental): strip your single strongest active consumable buff. Returns its name, or null.
-  function purgePlayerBuff(){
-    var now = Date.now(), slots = [['activeFeast','Feast'],['activeTea','Tea'],['activeTome','Tome'],['activeScroll','Scroll'],['activeBrew','Brew']];
-    for(var i=0;i<slots.length;i++){
-      var b = state[slots[i][0]];
-      if(b && b.itemId && (b.expiresAt||0) > now){ var nm = b.name || slots[i][1]; b.expiresAt = 0; b.itemId = null; return nm; }
-    }
-    return null;
-  }
   // Wipe every enemy-special effect (player debuffs + the beast's own harden + its charge). Called when a
   // fresh foe engages so nothing carries between fights.
   function clearEnemySpecialState(act){
@@ -20159,7 +20157,6 @@
     if(sp.kind==='icycarapace') return 'ices over. Takes ' + Math.round((1-sp.hardenMult)*100) + '% less, and Chills you (−' + Math.round(sp.slowPct*100) + '% attack speed)';
     if(sp.kind==='petrify') return 'Petrifies you. −' + Math.round(sp.slowPct*100) + '% attack speed and −' + Math.round((1-sp.weakenMult)*100) + '% damage';
     if(sp.kind==='blind')  return 'Blinds you. Your hit chance drops to ' + Math.round(sp.hitMult*100) + '%';
-    if(sp.kind==='purge')  return 'Purges one of your active buffs';
     if(sp.kind==='drain')  return 'Drains you. Armour-ignoring DoT while it heals ' + Math.round(sp.healPct*100) + '% of its HP';
     if(sp.kind==='veil')   return 'cloaks in shadow. Your hit chance drops to ' + Math.round(sp.hitMult*100) + '%';
     if(sp.kind==='siphon') return 'Siphons your soul. Its hits heal it ' + Math.round(sp.frac*100) + '% of the damage dealt';
@@ -20245,10 +20242,6 @@
       act.pBlindUntil = now + sp.durMs; act.pBlindMult = sp.hitMult;
       addLog('The ' + monster.name + ' blasts grit into your eyes. You can barely see!', 'danger');
       if(!offlineCapture) spawnCombatFloat('Blinded!', 'ft-miss', false);
-    } else if(sp.kind==='purge'){
-      var purged = purgePlayerBuff();
-      if(purged){ addLog('The ' + monster.name + ' purges your ' + purged + '. The buff is snuffed out!', 'danger'); if(!offlineCapture) spawnCombatFloat('Purged: ' + purged, 'ft-miss', false); }
-      else { addLog('The ' + monster.name + ' looses a purging light, but you had no buff to lose.', ''); }
     } else if(sp.kind==='drain'){
       var drainHeal = Math.max(1, Math.round(monster.hp * sp.healPct));
       act.monsterHp = Math.min(monster.hp, (act.monsterHp||0) + drainHeal);
@@ -46357,7 +46350,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.7';
+  var GAME_VERSION = '0.0.102.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46710,7 +46703,7 @@
       maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
-      playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
+      playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
       knightStacks:knightStacks, knightStackCap:knightStackCap, knightBonus:knightBonus, knBannerRaise:knBannerRaise, knOrderMult:knOrderMult, knOrdersStanding:knOrdersStanding, knOrdersAll:knOrdersAll, knightSteelMult:knightSteelMult, knightBloodLifestealPct:knightBloodLifestealPct, knightBeaconPotencyMult:knightBeaconPotencyMult, knDecreeOnSwing:knDecreeOnSwing, knightDamageTakenMult:knightDamageTakenMult, KN_BANNER_MAX:KN_BANNER_MAX, KN_BANNER_MAX_D1:KN_BANNER_MAX_D1, KN_BANNER_MAX_HIGH:KN_BANNER_MAX_HIGH, KN_SEED_HIT:KN_SEED_HIT, KN_SEED_CRIT:KN_SEED_CRIT, KN_SEED_CRIT_D2:KN_SEED_CRIT_D2, KN_ORDER_STEEL:KN_ORDER_STEEL, KN_ORDER_PACE:KN_ORDER_PACE, KN_ORDER_BLOOD:KN_ORDER_BLOOD, KN_STEEL_PCT:KN_STEEL_PCT, KN_PACE_PCT:KN_PACE_PCT, KN_BLOOD_PCT:KN_BLOOD_PCT, KN_ORDER_D2_MULT:KN_ORDER_D2_MULT, KN_SHIELDWALL_PER:KN_SHIELDWALL_PER, KN_DECREE_EVERY:KN_DECREE_EVERY, KN_DECREE_EVERY_D1:KN_DECREE_EVERY_D1, KN_DECREE_PCT:KN_DECREE_PCT, KN_DECREE_STUN_MS:KN_DECREE_STUN_MS, KN_TRAMPLE_SWINGS:KN_TRAMPLE_SWINGS, KN_TRAMPLE_MULT:KN_TRAMPLE_MULT, KN_DECREE_D4_MULT:KN_DECREE_D4_MULT, LEG_BREACHBLADE_PIERCE:LEG_BREACHBLADE_PIERCE, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, playerDamageModBreakdown:playerDamageModBreakdown, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,

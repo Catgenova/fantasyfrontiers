@@ -3162,9 +3162,9 @@
     }
   });
 
-  // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Purge / Veil + engine reuse) ----
+  // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Veil + engine reuse) ----
   suite('enemy specials: elemental primal attacks', function(){
-    var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
+    var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'weaken', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
     var _elem = FF.MONSTERS.filter(function(m){ return m.category==='elemental'; }); ok(_elem.length > 0 && _elem.every(function(m){ return !!m.special; }), 'every elemental now carries a special (gap-fill)');
 
@@ -3196,15 +3196,19 @@
       var voidE = fresh('elemental_void_elemental'); s.activity.monsterHp = 1;
       FF.monsterSpecialFire(voidE);
       ok(s.activity.monsterHp > 1 && FF.playerBurnActive(s.activity), 'Life Drain heals the foe and leaves you withering');
-      // Purge -> strips your strongest active buff.
-      fresh('elemental_astral_elemental');
-      s.activeFeast = { itemId:'feast_x', name:'Test Feast', regenPer5s:50, durationMs:1e6, expiresAt:Date.now()+1e6 };
-      var purged = FF.purgePlayerBuff();
-      eq(purged, 'Test Feast', 'Purge strips the active Feast (top priority)');
-      ok(!(s.activeFeast.itemId), 'the purged buff is cleared');
-      eq(FF.purgePlayerBuff(), null, 'Purge finds nothing to strip when no buff is active');
+      // Astral Enervation -> Weaken (replaced Purge, which stripped your skilling Tea buff in a fight).
+      var astral = fresh('elemental_astral_elemental'); FF.monsterSpecialFire(astral);
+      ok(Math.abs(FF.enemyWeakenMult() - 0.75) < 1e-9, 'Astral Enervation weakens your outgoing damage 25%');
+      // Obsidian Shards -> Shred (pinned so it never inherits Astral's slot / the old Purge).
+      var obs = fresh('elemental_obsidian_elemental'); FF.monsterSpecialFire(obs);
+      ok(obs.special && obs.special.kind === 'shred' && Math.abs(FF.playerShredMult(s) - 1.30) < 1e-9, 'Obsidian Shards shred your armour (+30% damage taken)');
+      // PURGE IS GONE: no monster in any family may carry it, and its buff drinker is a skilling buff (Tea)
+      // that a combat foe must never strip. A regression guard so the accidental tier-cycle re-assignment
+      // (or a hand-authored re-add) cannot bring it back unnoticed.
+      ok(FF.MONSTERS.every(function(m){ return !(m.special && m.special.kind === 'purge'); }), 'no monster carries the Purge (buff-strip) special anymore');
+      ok(typeof FF.purgePlayerBuff === 'undefined', 'the purgePlayerBuff helper is retired');
       // Descriptions read sensibly.
-      ok(/Chills/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_ice_elemental)) && /Purges/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_astral_elemental)), 'elemental descriptions summarise the effect');
+      ok(/Chills/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_ice_elemental)) && /Weakens/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_astral_elemental)), 'elemental descriptions summarise the effect');
     } finally {
       s.activity = sv.act; s.playerHp = sv.hp; s.activeFeast = sv.feast; s.activeTea = sv.tea;
     }
