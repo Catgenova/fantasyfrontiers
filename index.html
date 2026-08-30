@@ -22854,6 +22854,12 @@
       var need = inputs[k];
       var have = state.inventory[k]||0;
       var name = (ALL_SELLABLE[k]||{}).name || k;
+      // Prior-tier equipment fodder (weapons/tools/armour/belts) is ALWAYS the Normal-rarity copy: rare+ are
+      // deliberately protected from being eaten (ticket-0093). Normal item names carry NO rarity prefix
+      // ("Birch Staff"), while rare+ do ("Rare Birch Staff"), so a player holding only rare priors read the
+      // generic "1x Birch Staff" as satisfied and could not tell why the Carve button stayed off. Say
+      // "Normal" so the requirement is unambiguous; the "owned" count already reflects Normal copies only.
+      if(/_normal$/.test(k) && ALL_SELLABLE[k]) name = 'Normal ' + name;
       var ok = have >= need;
       var idAttr = idPrefix ? ' id="'+idPrefix+'-'+k+'"' : '';
       return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+fmt(need)+'x '+name+' ('+fmt(have)+' owned)</span>';
@@ -46350,7 +46356,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.8';
+  var GAME_VERSION = '0.0.102.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46509,7 +46515,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
-      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
+      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,

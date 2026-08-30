@@ -1956,6 +1956,25 @@
     eq(FF.CRAFT_TOOL_NAMES.goldsmithing, "Goldsmith's Loupe", "goldsmithing's tool is now the Goldsmith's Loupe");
   });
 
+  // ---- Needs line labels the prior-tier fodder as NORMAL rarity (staff-carve confusion ticket) --------
+  // A Pine Staff needs a Normal Birch Staff as fodder, but Normal item names carry no rarity prefix, so the
+  // bill read "1x Birch Staff" and a player holding only Rare Birch Staves could not tell why Carve stayed
+  // off. inputsLine now says "Normal Birch Staff" for any _normal fodder key, so the requirement is explicit.
+  suite('crafting: the Needs line names prior-tier fodder as Normal rarity', function(){
+    var s = FF._state, savedInv = s.inventory;
+    try {
+      s.inventory = {};
+      var line = FF.inputsLine({ 'stweapon_staff_t1_normal':1 }, '');
+      ok(/Normal Birch Staff/.test(line), 'a _normal weapon fodder input reads "Normal <name>"');
+      ok(!/Normal Normal/.test(line), 'the Normal prefix is not doubled');
+      // A non-rarity input (a raw material) is never prefixed.
+      var line2 = FF.inputsLine({ 'forestry_t2':4 }, '');
+      ok(!/Normal/.test(line2), 'a raw-material input is not labelled Normal');
+      // Tool fodder gets the same clarity.
+      ok(/Normal Bronze Pickaxe/.test(FF.inputsLine({ 'tool_mining_t1_normal':1 }, '')), 'tool fodder is labelled Normal too');
+    } finally { s.inventory = savedInv; }
+  });
+
   // ---- Tool equip level gate (owner order, v0.0.86.42) ---------------------------------------------
   // A tool is FORGED under Blacksmithing, so nothing ever checked the skill it actually serves, and
   // tools are tradeable: a Mining 1 character could buy a t20 Pickaxe and wear the whole speed curve.
