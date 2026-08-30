@@ -16774,14 +16774,14 @@
   // per-member instead: cleared resources go to the clearer's own inventory, and expansion is paid from
   // the expanding member's own gold. (A normal guild pools both through the treasury.)
   function isMortalGuild(){ return !!(guildState && guildState.guild && guildState.guild.mortal); }
-  var MORTAL_XP_MULT = 0.5;   // Mortals gain experience at half the rate of Immortals.
+  var MORTAL_XP_MULT = 0.9;   // Mortals gain experience at 90% of the Immortal rate (a 10% penalty).
   function addXp(skill, amount){
     if(!isFinite(amount)) return; // never let a NaN/Infinity poison an xp total (would zero saveProgressScore and stop cloud saves)
     if(!isFinite(state.xp[skill])) state.xp[skill] = 0;
     var before = skillLevel(skill, state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
-    if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at half speed
+    if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at 90% speed (10% penalty)
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) amount *= diligenceCraftXpMult(); // Diligence: +Crafting XP
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
@@ -16799,7 +16799,7 @@
     if(!pairs) return;
     pairs.forEach(function(pair){
       var id = pair[0], amount = pair[1] * familiarXpMult(id) * serverBuffXpMult();
-      if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at half speed (physiques too)
+      if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at 90% speed (10% penalty; physiques too)
       if(!isFinite(amount)) return; // guard against a NaN physique total (same cloud-save hazard as addXp)
       if(!isFinite(state.physique[id])) state.physique[id] = 0;
       var before = getLevel(state.physique[id]||0);
@@ -22201,7 +22201,7 @@
   TICKER_TIPS = TICKER_TIPS.concat([
     "Fantasy Frontiers is a one-developer passion project. If you would like to chip in, there is a <b>Support us on Ko-fi</b> button beside the community Discord link.",
     "You can sign in with <b>Discord</b> instead of a password, and link Discord to an account you already have.",
-    "The <b>Mortal</b> path earns experience at half rate and ends for good on death, converting you to Immortal. It is a badge, not a shortcut.",
+    "The <b>Mortal</b> path earns experience at 90% rate (a 10% penalty) and ends for good on death, converting you to Immortal. It is a badge, not a shortcut.",
     "A <b>Mortal guild</b> has no shared treasury. Its estate is funded per member, and cleared resources go to whoever cleared them.",
     "The leaderboard's <b>Mortal</b> filter searches the whole board, not just the page in front of you.",
     "<b>Enchant before you Enhance.</b> Once an item is +1 or better it can never take another enchant line.",
@@ -22705,7 +22705,7 @@
     var m = 1;
     if(isTeaActive()) m *= (1 + (state.activeTea.xpBoost||0));
     m *= familiarXpMult(skill) * serverBuffXpMult();
-    if(isMortal()) m *= MORTAL_XP_MULT;                       // Mortal deficit: half XP
+    if(isMortal()) m *= MORTAL_XP_MULT;                       // Mortal deficit: 10% less XP
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) m *= diligenceCraftXpMult();
     return m;
   }
@@ -46304,7 +46304,7 @@
       desc:'The standard path, and the right choice for a first run. Death has no lasting cost, when you fall in battle you simply retreat to recover, keeping all your progress. Full access to the Auction House, guild banks, and every guild. Experience is earned at the normal rate.' },
     { id:'mortal', name:'Mortal', accent:'#8a1f2c', advanced:true,
       icon:svgIcon('hornedskull','#8a1f2c'),
-      desc:'A single, fragile life for players who want the hardest challenge. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>half</b> the rate, cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
+      desc:'A single, fragile life for players who want the hardest challenge. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>90%</b> the rate (a 10% penalty), cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
   ];
   var pathSelectBusy = false;
   function pathSelectNeeded(){ return CHAT_ENABLED && authUser && state.mortal === null; }
@@ -46362,7 +46362,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.10';
+  var GAME_VERSION = '0.0.102.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

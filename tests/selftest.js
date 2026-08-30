@@ -193,9 +193,9 @@
     eq(FF.addXpAppliedMult('cooking'), 1, 'no modifiers -> x1 applied multiplier');
     eq(FF.cardRealXp('cooking', 100, 'craft'), 100, 'craft real == base with no bonuses');
 
-    // Mortal deficit halves the real XP.
+    // Mortal deficit trims the real XP by 10% (0.9x).
     clear(); s.mortal = true;
-    eq(FF.cardRealXp('cooking', 100, 'craft'), 50, 'Mortal deficit halves real XP');
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 90, 'Mortal deficit trims real XP by 10%');
 
     // Paving's intrinsic x4 craft-XP multiplier lives in the displayed BASE (it applies to every
     // completion), so the real figure stays a pure personal-boost readout.
@@ -227,7 +227,7 @@
     ok(/>t2</.test(plain) && /\+100 XP/.test(plain) && !/real/.test(plain), 'neutral: zero-based tier chip t2, base only, no real span');
     s.mortal = true;
     var mod = FF.xpStat('cooking', 100, 'craft', 4);
-    ok(/>t4</.test(mod) && /\(\+50 real\)/.test(mod), 'with a modifier: zero-based tier chip t4 and a (+50 real) span');
+    ok(/>t4</.test(mod) && /\(\+90 real\)/.test(mod), 'with a modifier: zero-based tier chip t4 and a (+90 real) span');
 
     // cardTierIndex resolves a number, an id string, or an object.
     eq(FF.cardTierIndex(3), 3, 'tier from number');
@@ -20075,9 +20075,9 @@
   });
 
   // ---- Mortal / Immortal path -------------------------------------------------------------
-  suite('mortal path: half XP + death conversion', function(){
+  suite('mortal path: XP penalty + death conversion', function(){
     ok(typeof FF.isMortal === 'function', 'isMortal exported');
-    ok(typeof FF.MORTAL_XP_MULT === 'number' && FF.MORTAL_XP_MULT === 0.5, 'Mortals gain XP at half rate (0.5)');
+    ok(typeof FF.MORTAL_XP_MULT === 'number' && FF.MORTAL_XP_MULT === 0.9, 'Mortals gain XP at 90% rate (0.9, a 10% penalty)');
     var s = FF._state;
     var sv = { mortal:s.mortal, xp:s.xp.fishing };
     // Neutralise the buff/familiar multipliers so we isolate the mortal factor: no active tea, no
@@ -20089,7 +20089,7 @@
     FF.addXp('fishing', 1000);
     var mortalGain = s.xp.fishing;
     ok(mortalGain > 0 && immortalGain > 0, 'both paths gain some XP');
-    near(mortalGain, immortalGain * 0.5, 'a Mortal gains exactly half an Immortal\'s XP', immortalGain * 0.01);
+    near(mortalGain, immortalGain * 0.9, 'a Mortal gains 90% of an Immortal\'s XP (10% penalty)', immortalGain * 0.01);
     s.mortal = sv.mortal; s.xp.fishing = sv.xp;
   });
 
