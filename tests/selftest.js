@@ -4336,6 +4336,28 @@
     eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
   });
 
+  // ---- Guest accounts: solo play now, social systems walled until upgrade ----
+  suite('guest accounts: the social systems are walled until upgrade', function(){
+    try {
+      // As a guest, the social tabs return the upgrade wall instead of their content.
+      FF._authUserSet({ username:'guest123418349', id:'g-1', isGuest:true });
+      ok(FF.isGuestAccount() === true, 'a guest account reads as a guest');
+      var wall = FF.guestWallHtml('The Marketplace');
+      ok(/Upgrade my account/.test(wall) && /The Marketplace/.test(wall) && /data-action="guestUpgradeOpen"/.test(wall), 'the wall names the feature and offers the upgrade');
+      ok(/Upgrade my account/.test(FF.renderMarketTab()), 'the Marketplace is walled for a guest');
+      ok(/Upgrade my account/.test(FF.renderGuildTab()), 'Guilds are walled for a guest');
+      ok(/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is walled for a guest');
+      // A guest is kept OFF the public leaderboard: profileSync is a no-op for them.
+      // (Verified indirectly: isGuestAccount gates it; the render walls prove the branch.)
+      // Once upgraded (isGuest false), the walls lift.
+      FF._authUserSet({ username:'RealName', id:'g-1', isGuest:false });
+      ok(FF.isGuestAccount() === false, 'an upgraded account is no longer a guest');
+      ok(!/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is no longer walled after upgrade');
+    } finally {
+      FF._authUserSet(null);   // restore signed-out state for the rest of the suite
+    }
+  });
+
   // ---- Tower leaderboards: an All-Classes climb board + one per Class tower ----
   suite('leaderboard: the Tower climb boards', function(){
     // The profile carries a compact map of the deepest floor per entrance (best > 0 only).

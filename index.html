@@ -22370,7 +22370,8 @@
     } else {
       trackBtn = '<button class="ff-track-btn ff-track-empty" id="topTrackerBtn" data-action="openTrackerPicker" title="Track a skill or physique">Track a skill</button>';
     }
-    html += '<div class="ff-tb-right">'+trackBtn+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
+    var guestChip = isGuestAccount() ? '<button class="ff-settings-btn" data-action="guestUpgradeOpen" title="Upgrade your guest account to keep your progress and unlock chat, trading and guilds" style="background:#3a3320;border-color:#5a4a2a;color:var(--gold);">'+shellIcon('person')+'<span class="ff-settings-lbl">Upgrade</span></button>' : '';
+    html += '<div class="ff-tb-right">'+trackBtn+guestChip+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
     el.innerHTML = html;
     _topbarSig = topbarSignature();
     startTicker(); // idempotent -- kicks off the tips ticker once the header is on screen
@@ -31245,7 +31246,11 @@
     html += '</div>';
     html += '<div class="settings-scroll">'; // scrolling body: only this scrolls, so the tab bar + Close footer stay put
     html += '<div class="settings-tabpanel">';
-    if(settingsTab==='account' && authUser){
+    if(settingsTab==='account' && authUser && isGuestAccount()){
+      // A guest sees only the Upgrade panel (no password change / recovery / Discord / danger zone until
+      // they hold a real account).
+      html += renderGuestUpgradePanel();
+    } else if(settingsTab==='account' && authUser){
       html += '<div class="settings-row"><div><div class="settings-row-label">Signed in</div><div class="settings-row-desc">as <b>'+escapeHtml(authUser.username||'')+'</b></div></div>';
       html += '<button class="action-btn" data-action="authLogout" style="width:auto;flex:0 0 auto;">Log out</button></div>';
       html += '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
@@ -38189,6 +38194,11 @@
     authAutoLogin = localStorage.getItem('ff-autologin') !== '0';
   }catch(e){} })();
   function chatName(){ return authUser ? authUser.username : ''; }
+  // A guest account: a system-assigned guest<digits> name and no chosen credentials. Guests get full solo
+  // progression, but the social systems (chat, Marketplace, guilds, Leaderboard) are walled until they
+  // Upgrade to a real username + password (guestUpgrade), which converts THIS account in place so nothing
+  // is lost. isGuest rides on authUser (set from user_metadata.is_guest wherever a session is adopted).
+  function isGuestAccount(){ return !!(authUser && authUser.isGuest); }
   function authEmailFor(name){ return String(name).trim().toLowerCase() + '@' + CHAT_CONFIG.authEmailDomain; }
   function authFriendlyError(err, mode){
     var m = ((err && err.message) || '').toLowerCase();
@@ -38260,7 +38270,7 @@
       if(res.error) throw res.error;
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
-      authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
+      authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id, isGuest: !!(u && u.user_metadata && u.user_metadata.is_guest) };
       authBindIdentity(u && u.id); authWatchIdentity();   // this tab is now bound to THIS account; fence if the shared session later swaps
       if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
       // (New players still gift the server a 1h +50% EXP buff, but that now fires server-side inside the
@@ -38273,6 +38283,47 @@
       await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
       return;
     }catch(err){ authError = authFriendlyError(err, authMode); captchaConsume(); }
+    authBusy = false; authRender();
+  }
+  // Play as Guest: mint a throwaway account (server-assigned guest<digits> name + random password), sign in,
+  // and start playing. Turnstile-gated exactly like registration -- it holds on the token and resumes here.
+  async function authPlayAsGuest(){
+    if(authBusy) return;
+    if(captchaOn() && !turnstileToken){
+      if(turnstileScriptState === 'failed'){ authError = 'Human verification could not load. Disable any script blocker and reload.'; authRender(); return; }
+      turnstilePendingGuest = true; authError = ''; authBusy = true; authRender(); turnstileMount(); return;
+    }
+    authError = ''; authBusy = true; authRender();
+    authBindIdentity(null);   // deliberate new session: clear the binding so the SIGNED_IN event isn't misread as a foreign swap
+    var ok = await authEnsureClient();
+    if(!ok){ authBusy = false; authError = 'Could not reach the server.'; authRender(); return; }
+    try{
+      var reg = await chatClient.functions.invoke('register_guest', { body: { captcha_token: turnstileToken } });
+      captchaConsume();   // spent by register_guest; a fresh one is minted below for the sign-in
+      if(reg.error) throw reg.error;
+      if(!reg.data || !reg.data.ok || !reg.data.username || !reg.data.password){ authError = (reg.data && reg.data.error) || 'Could not start a guest session.'; authBusy = false; authRender(); return; }
+      var gUser = reg.data.username, gPass = reg.data.password;
+      // GoTrue's /token needs its own fresh CAPTCHA token (register_guest spent ours). Wait for one.
+      if(captchaOn()){
+        await captchaAwaitToken(10000);
+        if(!turnstileToken){ authError = 'The human check timed out. Please tap Play as Guest again.'; authBusy = false; authRender(); return; }
+      }
+      var res = await chatClient.auth.signInWithPassword({ email: authEmailFor(gUser), password: gPass, options: captchaAuthOpts() });
+      captchaConsume();
+      if(res.error) throw res.error;
+      var u = res.data && res.data.user;
+      if(!u || !res.data.session) throw new Error('guest sign-in failed');
+      authUser = { username: gUser, id: u.id, isGuest: true };
+      authBindIdentity(u.id); authWatchIdentity();
+      if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
+      // Auto-resume the guest on this device via the persisted Supabase session (same path as normal
+      // auto-login). No password is stored client-side; if the session is cleared, the guest is gone, which
+      // is exactly the "upgrade to keep it" nudge.
+      try{ localStorage.setItem('ff-autologin', '1'); }catch(e){}
+      authError = ''; authBusy = false;
+      await startGameOnline();
+      return;
+    }catch(err){ authError = authFriendlyError(err, 'register'); captchaConsume(); }
     authBusy = false; authRender();
   }
   async function authLogout(){
@@ -38865,6 +38916,7 @@
   var turnstileWidget = null;
   var turnstileScriptState = '';        // '' | 'loading' | 'ready' | 'failed'
   var turnstilePendingSubmit = false;   // a submit that landed before the token did
+  var turnstilePendingGuest = false;    // a Play-as-Guest click that landed before the token did
   var turnstileWaiters = [];            // resolvers awaiting the NEXT token (see captchaAwaitToken)
   function captchaOn(){ return !!(CHAT_CONFIG.turnstileSiteKey && CHAT_ENABLED); }
   // Spread onto signInWithPassword. Empty when CAPTCHA is off, so the call is byte-for-byte what it was.
@@ -38934,9 +38986,10 @@
         callback: function(tok){
           turnstileToken = tok || '';
           turnstileFlushWaiters(turnstileToken);
-          // If the player already pressed Log In while verification was still running, finish the job for
-          // them instead of making them click a second time. authSubmit re-renders on its own.
-          if(turnstilePendingSubmit){ turnstilePendingSubmit = false; authSubmit(); }
+          // If the player already pressed Log In (or Play as Guest) while verification was still running,
+          // finish the job for them instead of making them click a second time. Each re-renders on its own.
+          if(turnstilePendingGuest){ turnstilePendingGuest = false; authPlayAsGuest(); }
+          else if(turnstilePendingSubmit){ turnstilePendingSubmit = false; authSubmit(); }
         },
         // Expiry is NOT flushed: the widget re-challenges itself, so a real token may still arrive and an
         // awaiting caller should keep waiting (its own timeout is the backstop). A hard error never will.
@@ -38971,15 +39024,98 @@
     var submitDisabled = authBusy || (isReg && !(authPrivacyAccepted && authRulesAccepted))
                        || (captchaOn() && turnstileScriptState === 'failed');
     html += '<button class="action-btn" data-action="authSubmit" '+(submitDisabled?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
+    // Play as Guest: available in both modes, under a single "or" divider (Discord follows in login mode).
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:9px 2px 5px;"><div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:11px;color:var(--text-dim);">or</span><div style="flex:1;height:1px;background:var(--border);"></div></div>';
+    html += '<button class="action-btn" data-action="authPlayAsGuest"'+(authBusy || (captchaOn() && turnstileScriptState==='failed')?' disabled':'')+' style="background:#3a3320;border-color:#5a4a2a;">Play as Guest</button>';
+    html += '<div class="auth-note" style="text-align:center;font-size:11px;">Jump straight in with a temporary name. Upgrade any time to keep your progress and unlock chat, trading and guilds.</div>';
     if(!isReg){
-      html += '<div style="display:flex;align-items:center;gap:8px;margin:9px 2px 5px;"><div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:11px;color:var(--text-dim);">or</span><div style="flex:1;height:1px;background:var(--border);"></div></div>';
-      html += '<button class="action-btn" data-action="discordLogin"'+(authBusy?' disabled':'')+' style="background:#5865F2;border-color:#4752c4;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;">'+discordIconSvg('#fff')+'<span>Log in with Discord</span></button>';
+      html += '<button class="action-btn" data-action="discordLogin"'+(authBusy?' disabled':'')+' style="background:#5865F2;border-color:#4752c4;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;">'+discordIconSvg('#fff')+'<span>Log in with Discord</span></button>';
       html += '<div class="auth-note" style="text-align:center;font-size:11px;">Works once you\u2019ve linked Discord in Settings.</div>';
     }
     if(!isReg) html += '<div class="auth-note" style="text-align:center;"><a href="#" data-action="recoverOpen" style="color:var(--gold);">Forgot your password?</a></div>';
     html += '<div class="auth-note">'+(isReg?'Choose a username and password, no email required.':'Welcome back, adventurer.')+(CHAT_ENABLED?'':' <b>Local preview:</b> accounts aren\'t real until a backend is connected.')+'</div>';
     html += '</div>';
     return html;
+  }
+  // ======== Guest upgrade: convert a guest into a real account, in place ========
+  // A guest plays with a system name and no chosen credentials. Upgrading claims a real username + password
+  // (and optional recovery questions) on the SAME account, so nothing is lost, and unlocks the social
+  // systems. Hosted in the Settings > Account panel (renderSettingsModal) and reachable from the social
+  // walls below. The optional recovery questions are always-visible fields (no collapse) so toggling never
+  // re-renders away a half-typed username/password.
+  var guestUpgradeBusy = false, guestUpgradeMsg = '', guestUpgradeOk = false;
+  function guestWallHtml(feature){
+    return '<div class="section-intro" style="text-align:center;padding:22px 16px;">'
+      + '<div style="font-size:15px;color:var(--gold);margin-bottom:6px;"><b>' + escapeHtml(feature) + ' is for registered players</b></div>'
+      + '<div style="margin-bottom:12px;">You are playing as a guest. Upgrade to a real account (it keeps all your progress) to unlock chat, the Marketplace, guilds and the Leaderboard, and to play on your other devices.</div>'
+      + '<button class="action-btn" data-action="guestUpgradeOpen" style="width:auto;">Upgrade my account</button>'
+      + '</div>';
+  }
+  function renderGuestUpgradePanel(){
+    var html = '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:4px;">';
+    html += '<div class="settings-row-label">Guest account</div>';
+    html += '<div class="settings-row-desc">You are playing as <b>' + escapeHtml((authUser && authUser.username) || '') + '</b>. Your progress is saved, but a guest can only be reopened from this browser, so clearing it loses the account. <b>Upgrade</b> to claim a real username and password: your progress carries over, you can play on any device, and chat, the Marketplace, guilds and the Leaderboard unlock.</div>';
+    html += '</div>';
+    html += '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
+    html += '<div class="settings-row-label">Choose your account</div>';
+    html += '<input id="guUsername" class="chat-input" aria-label="Username" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false">';
+    html += '<input id="guPassword" class="chat-input" aria-label="Password" type="password" placeholder="Password" autocomplete="new-password">';
+    html += '<input id="guConfirm" class="chat-input" aria-label="Confirm password" type="password" placeholder="Confirm password" autocomplete="new-password">';
+    html += '<div class="settings-row-desc" style="margin-top:4px;">Recovery questions (optional). Set '+RECOVERY_Q_COUNT+' and you can reset a forgotten password without email; leave them blank to skip. Answers need '+RECOVERY_A_MIN+'+ characters and ignore case and spacing.</div>';
+    for(var i=0;i<RECOVERY_Q_COUNT;i++){
+      html += '<input id="guQ'+i+'" class="chat-input" aria-label="Recovery question '+(i+1)+'" maxlength="120" placeholder="Question '+(i+1)+' (optional)">';
+      html += '<input id="guA'+i+'" class="chat-input" aria-label="Recovery answer '+(i+1)+'" placeholder="Answer '+(i+1)+'" autocomplete="off">';
+    }
+    if(guestUpgradeMsg){ html += '<div style="font-size:12px;'+(guestUpgradeOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(guestUpgradeMsg)+'</div>'; }
+    html += '<button class="action-btn" data-action="guestUpgradeSubmit"'+(guestUpgradeBusy?' disabled':'')+'>'+(guestUpgradeBusy?'Upgrading…':'Upgrade account')+'</button>';
+    html += '</div>';
+    html += '<div class="settings-row"><div><div class="settings-row-label">Leave guest</div><div class="settings-row-desc">Logging out abandons this guest for good (there is no way back without upgrading).</div></div><button class="action-btn" data-action="authLogout" style="width:auto;flex:0 0 auto;">Log out</button></div>';
+    return html;
+  }
+  async function guestUpgradeSubmit(){
+    if(guestUpgradeBusy) return;
+    var u = (document.getElementById('guUsername')||{}).value || '';
+    var p = (document.getElementById('guPassword')||{}).value || '';
+    var c = (document.getElementById('guConfirm')||{}).value || '';
+    u = u.trim();
+    var uErr = validateUsername(u); if(uErr){ guestUpgradeMsg = uErr; guestUpgradeOk = false; renderSettingsModal(); return; }
+    if(/^guest[0-9]+$/i.test(u)){ guestUpgradeMsg = 'That username is reserved.'; guestUpgradeOk = false; renderSettingsModal(); return; }
+    var pErr = validatePassword(p); if(pErr){ guestUpgradeMsg = pErr; guestUpgradeOk = false; renderSettingsModal(); return; }
+    if(c !== p){ guestUpgradeMsg = 'Passwords do not match.'; guestUpgradeOk = false; renderSettingsModal(); return; }
+    // Gather the optional recovery questions. Any filled field means all must be valid; all empty = skip.
+    var qs = [], anyQ = false, allQ = true;
+    for(var i=0;i<RECOVERY_Q_COUNT;i++){
+      var q = ((document.getElementById('guQ'+i)||{}).value||'').trim();
+      var a = ((document.getElementById('guA'+i)||{}).value||'');
+      if(q || a) anyQ = true;
+      var aNorm = a.trim().replace(/\s+/g,' ');
+      if(q.length>=3 && aNorm.length>=RECOVERY_A_MIN){ qs.push({ q:q, a:a }); } else { allQ = false; }
+    }
+    if(anyQ && !(allQ && qs.length===RECOVERY_Q_COUNT)){ guestUpgradeMsg = 'Fill in all '+RECOVERY_Q_COUNT+' recovery questions (answers '+RECOVERY_A_MIN+'+ characters), or clear them all to skip.'; guestUpgradeOk = false; renderSettingsModal(); return; }
+    guestUpgradeBusy = true; guestUpgradeMsg = ''; renderSettingsModal();
+    try{
+      if(!(await authEnsureClient())){ guestUpgradeMsg = 'Could not reach the server.'; guestUpgradeOk = false; guestUpgradeBusy = false; renderSettingsModal(); return; }
+      var up = await chatClient.functions.invoke('guest_upgrade', { body: { username: u, password: p } });
+      if(up.error) throw up.error;
+      if(!up.data || !up.data.ok){ guestUpgradeMsg = (up.data && up.data.error) || 'Upgrade failed.'; guestUpgradeOk = false; guestUpgradeBusy = false; renderSettingsModal(); return; }
+      // The account is now real. Try to adopt a fresh session with the new credentials (best case); if the
+      // sign-in cannot complete right now, the current session keeps working and they log in with the new
+      // details next time. Either way the account is no longer a guest.
+      try{
+        var res = await chatClient.auth.signInWithPassword({ email: authEmailFor(u), password: p, options: captchaAuthOpts() });
+        if(!res.error && res.data && res.data.session){ if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token; }
+      }catch(e2){}
+      authUser = { username: u, id: authUser && authUser.id, isGuest: false };
+      try{ localStorage.setItem('ff-remember-username', u); authRememberUser = true; }catch(e){}
+      // Optional recovery questions, now that we hold a real (registered) session.
+      if(qs.length === RECOVERY_Q_COUNT){ try{ await accountRecoveryInvoke('set', { questions: qs }); }catch(e3){} }
+      guestUpgradeOk = true; guestUpgradeMsg = 'You are now registered as ' + u + '. Chat, the Marketplace, guilds and the Leaderboard are unlocked.';
+      guestUpgradeBusy = false;
+      try{ profileSync(true); }catch(e){}   // publish the real username to the leaderboard/profile
+      renderSettingsModal(); render();
+      return;
+    }catch(err){ guestUpgradeMsg = authFriendlyError(err, 'register'); guestUpgradeOk = false; }
+    guestUpgradeBusy = false; renderSettingsModal();
   }
   // ======== Account recovery: user-authored security questions ========
   // We store no email/PII, so these are the self-service password-reset path. Answers are hashed
@@ -39526,6 +39662,7 @@
     return maskProfanity(text);
   }
   async function chatSend(){
+    if(isGuestAccount()) return;   // guests can't post to global chat until they upgrade
     var input = document.getElementById('chatInput');
     if(!input) return;
     var text = (input.value||'').trim();
@@ -40092,7 +40229,9 @@
     var html = bar;
     html += '<div class="chat-wrap">';
     html += '<div id="chatMessages" class="chat-messages">'+chatMessagesHtml()+'</div>';
-    if(name){
+    if(isGuestAccount()){
+      html += '<div class="chat-account" style="text-align:center;">Chat is for registered players. <a href="#" data-action="guestUpgradeOpen" style="color:var(--gold);">Upgrade your account</a> to join in (your progress carries over).</div>';
+    } else if(name){
       var _myMute = chatAmIMuted();
       var _roleBadge = myChatRole ? ' <span class="chat-mod-badge chat-mod-'+myChatRole+'">'+(myChatRole==='owner'?'\u2605 Owner':'\u2691 Mod')+'</span>' : '';
       html += '<div class="chat-account">Signed in as <b>'+escapeHtml(name)+'</b>'+_roleBadge+'</div>';
@@ -40237,6 +40376,7 @@
   var _lastEstateJson = null; // last estate snapshot ACCEPTED by submit_profile, serialized -- resend only on change
   async function profileSync(force){
     if(!CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(isGuestAccount()) return;   // guests stay OFF the public leaderboard/profile until they upgrade (social-later)
     if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never write
     var now = Date.now();
     if(!force && now - profileLastSync < 90000) return;
@@ -40812,6 +40952,7 @@
     render();
   }
   function renderLeaderboardTab(){
+    if(isGuestAccount()) return guestWallHtml('The Leaderboard');
     if(profileView) return renderProfileDetail(profileView);
     var html = '<div class="section-intro">Leaderboard. Ranked by <b>'+escapeHtml(lbMetricLabel(leaderboardMetric))+'</b>. Use <b>Rank by</b> to sort by a skill, a lifetime stat, or a <b>Tower</b> climb (the All-Classes run or any single Class). Tap a name to view their profile.</div>';
     html += '<div class="chat-wrap">';
@@ -41101,6 +41242,7 @@
   function guildRankLabel(rank){ return rank==='leader'?'Leader':(rank==='officer'?'Officer':'Member'); }
 
   function renderGuildTab(){
+    if(isGuestAccount()) return guestWallHtml('Guilds');
     if(!authUser) return '<div class="empty-note">Sign in to access guilds.</div>';
     if(guildState.status==='idle'||guildState.status==='loading') return '<div class="section-intro">Guilds. Team up, pool resources, and take on shared challenges.</div><div class="empty-note">Loading&hellip;</div>';
     var html='';
@@ -42335,6 +42477,7 @@
     return html + '</div>';
   }
   function renderMarketTab(){
+    if(isGuestAccount()) return guestWallHtml('The Marketplace');
     if(!authUser) return '<div class="section-intro">Sign in to use the Auction House.</div>';
     if(isMortal()) return '<div class="section-intro">Auction House</div><div class="empty-note">The Auction House is closed to those on the <b style="color:#8a1f2c;">Mortal</b> path. Trade with other players is barred while a single life hangs in the balance. Gather and craft your own fortune.</div>';
     marketEnsureLoaded();
@@ -44877,6 +45020,7 @@
     titleUnequip: function(btn, e){ unequipTitle(); },
     titleHelpToggle: function(btn, e){ titleHelpToggle(btn.getAttribute('data-title')); },
     authSubmit: function(btn, e){ authSubmit(); },
+    authPlayAsGuest: function(btn, e){ authPlayAsGuest(); },
     discordLogin: function(btn, e){ discordLogin(); },
     linkDiscord: function(btn, e){ linkDiscord(); },
     unlinkDiscord: function(btn, e){ unlinkDiscord(); },
@@ -45181,6 +45325,9 @@
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
       serverBuffFetch(); // refresh the buff status when the menu opens
     },
+    // Open Settings on the Account tab (where a guest's Upgrade panel lives). Reached from the social walls.
+    guestUpgradeOpen: function(btn, e){ settingsTab = 'account'; guestUpgradeMsg = ''; settingsOpen = true; render(); },
+    guestUpgradeSubmit: function(btn, e){ guestUpgradeSubmit(); },
     buyExpBuff: function(btn, e){ buyServerExpBuff(); },
     toggleChatDrawer: function(btn, e){ chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen){ clearChatUnread(); chatChanClear(chatChannel); } renderChatDrawer(); },
     // Jump-to-latest pill: snap the feed to the newest line. Deliberately does NOT retire the "new"
@@ -45980,7 +46127,7 @@
       var sess = res.data && res.data.session;
       if(sess && sess.user){
         var _un = sess.user.user_metadata && sess.user.user_metadata.username;
-        if(_un){ authUser = { username: _un, id: sess.user.id }; authBindIdentity(sess.user.id); authWatchIdentity(); if(sess.access_token) cloudAccessToken = sess.access_token; }
+        if(_un){ authUser = { username: _un, id: sess.user.id, isGuest: !!(sess.user.user_metadata && sess.user.user_metadata.is_guest) }; authBindIdentity(sess.user.id); authWatchIdentity(); if(sess.access_token) cloudAccessToken = sess.access_token; }
         else { authOrphanSession = true; } // signed in but no game username = an unlinked Discord sign-in
       }
     }catch(e){}
@@ -46391,7 +46538,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.103.0';
+  var GAME_VERSION = '0.0.104.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46663,7 +46810,7 @@
       guildQueueArr:guildQueueArr, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
-      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile,
+      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile, isGuestAccount:isGuestAccount, guestWallHtml:guestWallHtml, _authUserSet:function(o){ authUser = o; },
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,
