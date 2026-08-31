@@ -4145,9 +4145,9 @@
     ok(T.some(function(t){ return /Multitasking/.test(t) && /craft slot/.test(t); }), 'includes the Multitasking craft-slot tip');
     ok(T.some(function(t){ return /Sand/.test(t) && /Archaeolog/.test(t); }), 'includes the Sand / Archaeology tip');
     ok(new Set(T).size === T.length, 'no duplicate tips');
-    // Pre-alpha disclaimer: red, correct wording, and weighted well above any single tip.
+    // Alpha-state disclaimer: red, correct wording, and weighted well above any single tip.
     var d = FF.TICKER_DISCLAIMER;
-    ok(/Active Development Pre-Alpha/.test(d) && /progress wipes/.test(d) && /feedback/.test(d), 'disclaimer carries the pre-alpha wording');
+    ok(/Open Alpha/.test(d) && /progress wipes/.test(d) && /feedback/.test(d), 'disclaimer carries the Open Alpha wording');
     ok(/color:\s*#ff6b6b/i.test(d), 'disclaimer is styled red');
     ok(FF.TICKER_DISCLAIMER_CHANCE > (1 / T.length), 'disclaimer appears far more often than any single tip');
 
