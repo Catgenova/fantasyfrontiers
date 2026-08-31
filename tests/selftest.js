@@ -3541,6 +3541,22 @@
     }
   });
 
+  // ---- "Cast a Line" counts every fishing tier, not just tier-0 Bluegill (reported: active fisher stuck) ----
+  suite('quest: Cast a Line counts all fishing tiers', function(){
+    var s = FF._state, sv = s.stats;
+    try {
+      var q = FF.questById('cast_a_line');
+      ok(q && q.target === 50, 'the Cast a Line quest exists (catch 50 fish)');
+      s.stats = { 'gathered_fishing_t0':10, 'gathered_fishing_t1':25, 'gathered_fishing_t2':20 };
+      eq(q.progress(s), 55, 'progress sums every fishing tier (10 + 25 + 20), not just Bluegill');
+      ok(q.progress(s) >= q.target, 'so an angler pulling Sunfish/Crappie actually completes it');
+      s.stats = { 'gathered_fishing_t0':84 };
+      eq(q.progress(s), 84, 'tier-0-only catches still count');
+      s.stats = {};
+      eq(q.progress(s), 0, 'no catches -> 0');
+    } finally { s.stats = sv; }
+  });
+
   // ---- Offline faith: a running miracle keeps its rarity buff, at the cost of Faith + relics ----
   suite('offline faith activity: buff costs faith + relics, ends when dry', function(){
     var s = FF._state;
@@ -12589,8 +12605,8 @@
     var q25 = FF.questById('cast_a_line');
     ok(!!q25 && q25.target===50, 'Cast a Line: catch 50');
     s.quests={claimed:{}}; s.stats={};
-    s.stats['gathered_fishing_t1']=50; eq(FF.questProgress(q25), 0, 'a different fish does not count');
-    s.stats['gathered_fishing_t0']=50; ok(FF.questComplete(q25), '50 fish completes');
+    s.stats['gathered_fishing_t1']=50; ok(FF.questComplete(q25), 'any fish tier counts toward the 50 (Sunfish/Crappie included; reported: higher tiers were ignored)');
+    s.stats={}; s.stats['gathered_fishing_t0']=50; ok(FF.questComplete(q25), '50 tier-0 Bluegill completes too');
     invGrantCheck('cast_a_line','tool_roasting_t0_normal',1);
     // 26-28 kitchen crafts (crafted_<skill>)
     [['roast_the_catch','roasting',20,'tool_cooking_t0_normal'],['a_warm_meal','cooking',10,'tool_baking_t0_normal'],['break_bread','baking',10,'tool_mixology_t0_normal']].forEach(function(row){

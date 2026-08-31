@@ -28313,8 +28313,11 @@
       reward:{ items:[ { itemId:'tool_fishing_t0_normal', qty:1 } ] } },
     { id:'cast_a_line', cat:'gettingstarted', title:'Cast a Line',
       desc:'Not every meal has to be hunted down and wrestled home. Wade the shallows, cast your line, and pull fifty fish from the cold water. Patient work, and the frontier’s most forgiving larder. A full creel is a hungry night forgotten.',
-      how:'In Gathering → Fishing, catch 50 fish.',
-      target:50, progress:function(st){ return (st.stats && st.stats['gathered_fishing_t0']) || 0; },
+      how:'In Gathering → Fishing, catch 50 fish (any kind).',
+      // "50 FISH" means any fish: a Lv-13 angler is pulling Sunfish/Crappie (t1/t2), not just tier-0 Bluegill,
+      // so sum EVERY fishing tier's catch tally rather than only gathered_fishing_t0 (reported: quest ignored
+      // higher-tier catches, so an active fisher never completed it).
+      target:50, progress:function(st){ if(!st.stats) return 0; var n=0; for(var _ft=0; _ft<TIER_COUNT; _ft++){ n += st.stats['gathered_fishing_t'+_ft] || 0; } return n; },
       nav:{ cat:'gathering', sub:'fishing' },
       reward:{ items:[ { itemId:'tool_roasting_t0_normal', qty:1 }, { itemId:'fishing_t0', qty:30 } ] } },
     { id:'roast_the_catch', cat:'gettingstarted', title:'Roast the Catch',
@@ -46540,7 +46543,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.2';
+  var GAME_VERSION = '0.1.0.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
