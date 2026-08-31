@@ -281,6 +281,25 @@ Deno.serve(async (req) => {
   };
   const stats = cleanStats((body as { stats?: unknown }).stats);
 
+  // Tower leaderboards: the player's deepest floor per entrance -- 'all' (the All-Classes climb) plus one
+  // per Class tower. Cosmetic + client-authoritative (like stats/class), so never reject over it. Keys are
+  // 'all' or a class-id slug; values are bounded positive floor integers; at most ~40 entries (all + every
+  // class) so a spoofed blob can't bloat the row. Zeros/absent entrances are dropped (a compact map).
+  const cleanTower = (raw: unknown) => {
+    const out: Record<string, number> = {};
+    const o = (raw && typeof raw === "object" && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+    const FLOOR_CAP = 1_000_000;
+    let n = 0;
+    for (const k of Object.keys(o)) {
+      if (n >= 40) break;
+      if (!(k === "all" || /^[a-z][a-zA-Z0-9_]{0,23}$/.test(k))) continue;
+      const v = o[k];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) { out[k] = Math.min(FLOOR_CAP, Math.floor(v)); n++; }
+    }
+    return out;
+  };
+  const tower = cleanTower((body as { tower?: unknown }).tower);
+
   // Mortal-path flag (leaderboard styling + guild segregation). Client-authoritative, like the rest
   // of the game's progress — a Mortal's death flips this to false when they republish as Immortal.
   const mortal = (body as { mortal?: unknown }).mortal === true;
@@ -321,6 +340,7 @@ Deno.serve(async (req) => {
     skills: storedSkills,        // submitted map only when within allowance; otherwise the last accepted (no fake per-skill flash)
     equipment,
     stats,
+    tower,
     mortal,
     class: cls,
     title,
@@ -335,9 +355,9 @@ Deno.serve(async (req) => {
   try { const { data: _cl } = await admin.rpc("is_clamped", { p_user: userId, p_surface: "leaderboard" }); if (_cl === true) return json({ ok: true, clamped: true }); } catch { /* clamp check unavailable -> write normally */ }
   let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
   if (upErr) {
-    // An optional cosmetic column (estate / mastery / title) may not be migrated yet -- retry WITHOUT them
-    // so a leaderboard update never fails purely on deploy order. (Deploy-order safety.)
-    delete record.estate; delete record.mastery; delete record.title;
+    // An optional cosmetic column (estate / mastery / title / tower) may not be migrated yet -- retry WITHOUT
+    // them so a leaderboard update never fails purely on deploy order. (Deploy-order safety.)
+    delete record.estate; delete record.mastery; delete record.title; delete record.tower;
     ({ error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" }));
   }
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);

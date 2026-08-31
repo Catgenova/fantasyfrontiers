@@ -40171,7 +40171,21 @@
     // profile display. They also count toward total_level (which the server validates as the sum of
     // every submitted skill level), so physique training raises your ranked Total too.
     PHYSIQUE_SKILLS.forEach(function(p){ var pl = getLevel(state.physique[p.id]||0); skills[p.id] = pl; total += pl; });
-    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, mastery: mastery, equipment: computeEquipment(), stats: buildProfileStats() };
+    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, mastery: mastery, equipment: computeEquipment(), stats: buildProfileStats(), tower: towerBestsForProfile() };
+  }
+  // The player's deepest Tower floor per entrance (the 'all' climb + each Class tower), for the Tower
+  // leaderboards. Compact: only entrances actually climbed (best > 0) ride along, keyed by entrance id
+  // ('all' or a class id). Floors are bounded safe integers (the climb is exponential; best is a small
+  // floor number, but clamp defensively so a spoofed save can't post a wild value).
+  function towerBestsForProfile(){
+    var out = {}, t = state.tower;
+    if(!t || typeof t !== 'object') return out;
+    TOWER_ENTRANCES.forEach(function(en){
+      var e = t[en.id];
+      var best = e && typeof e.best === 'number' && isFinite(e.best) ? Math.max(0, Math.min(1e6, Math.floor(e.best))) : 0;
+      if(best > 0) out[en.id] = best;
+    });
+    return out;
   }
   // Currently-equipped weapons + armor (NOT tools), captured as display-ready
   // {slot,name,rarity} entries for a player's public leaderboard profile. Names are
@@ -40236,7 +40250,7 @@
       // `estate` is a compact render-only snapshot so others can view it from the leaderboard.
       // It's tens of KB, so it rides along ONLY when it changed since the last accepted send --
       // the server leaves the stored estate untouched when the field is absent from the body.
-      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, mastery: stats.mastery, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null, title: state.equippedTitle || null };
+      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, mastery: stats.mastery, equipment: stats.equipment, stats: stats.stats, tower: stats.tower, mortal: isMortal(), class: activeClassId(state) || null, title: state.equippedTitle || null };
       var estJson = null;
       try{ estJson = JSON.stringify(computeEstateSnapshot()); }catch(e2){}
       if(estJson !== null && estJson !== _lastEstateJson) body.estate = JSON.parse(estJson);
@@ -40590,8 +40604,14 @@
         return q.order('total_level', { ascending:false }).limit(_size);
       }
       var res = await lbApplyFilters(chatClient.from('leaderboard')
-        .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at'), true);
+        .select('id,username,total_level,gold,skills,mastery,equipment,stats,tower,mortal,class,has_estate,updated_at'), true);
       if(res.error){
+        res = await lbApplyFilters(chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,mastery,equipment,stats,tower,mortal,class,has_estate,updated_at'), true);
+      }
+      if(res.error){
+        // The `tower` column may not be migrated yet -- retry WITHOUT it (Tower boards then read as empty
+        // until the server stores tower bests), but keep every other ranking intact. (Deploy-order safety.)
         res = await lbApplyFilters(chatClient.from('profiles')
           .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at'), true);
       }
@@ -40617,11 +40637,13 @@
     if(currentCategory==='leaderboard' && !profileView) render();
   }
   function lbCombatScore(p){ return (p.stats && p.stats.combat_score) || 0; }
+  function lbMetricIsTower(metric){ return typeof metric === 'string' && metric.indexOf('tower:')===0; }
   function lbMetricValue(p, metric){
     if(metric==='gold') return p.gold||0;
     if(metric==='combat') return lbCombatScore(p);
     if(metric.indexOf('skill:')===0){ var _sk = metric.slice(6); return (p.mastery && p.mastery[_sk] > 100) ? p.mastery[_sk] : ((p.skills && p.skills[_sk])||0); } // rank by the over-100 Mastery value when present
     if(metric.indexOf('stat:')===0) return (p.stats && p.stats[metric.slice(5)])||0;
+    if(lbMetricIsTower(metric)) return (p.tower && p.tower[metric.slice(6)]) || 0; // deepest Tower floor for this entrance
     return p.total_level||0; // 'total'
   }
   function lbMetricLabel(metric){
@@ -40630,6 +40652,7 @@
     if(metric==='combat') return 'Combat Score';
     if(metric.indexOf('skill:')===0){ var s=metric.slice(6); return SKILL_LABELS[s]||s; }
     if(metric.indexOf('stat:')===0){ var k=metric.slice(5); var m=LB_STAT_METRICS.filter(function(x){return x.key===k;})[0]; return m?m.label:k; }
+    if(lbMetricIsTower(metric)){ var en=metric.slice(6); return 'The Tower: ' + (en==='all' ? 'All Classes' : ((CLASS_DEFS_BY_ID[en]&&CLASS_DEFS_BY_ID[en].name)||en)); }
     return 'Total Level';
   }
   // Primary (ranked) value shown for a row under the current metric.
@@ -40637,6 +40660,7 @@
     var v = lbMetricValue(p, metric);
     if(metric==='gold') return fmt(v)+'g';
     if(metric==='combat') return 'CS '+fmt(v);
+    if(lbMetricIsTower(metric)) return 'Floor '+fmt(v);
     if(metric==='total' || metric.indexOf('skill:')===0) return 'Lv '+fmt(v);
     return fmt(v); // lifetime stat -> raw count
   }
@@ -40667,6 +40691,8 @@
     var cur = leaderboardMetric;
     var opt = function(val,label){ return '<option value="'+val+'"'+(cur===val?' selected':'')+'>'+escapeHtml(label)+'</option>'; };
     var html = '<optgroup label="Overall">'+opt('total','Total Level')+opt('combat','Combat Score')+opt('gold','Gold')+'</optgroup>';
+    // The Tower: the All-Classes climb first, then one board per Class tower.
+    html += '<optgroup label="The Tower">'+TOWER_ENTRANCES.map(function(en){ return opt('tower:'+en.id, en.id==='all' ? 'All Classes' : en.label); }).join('')+'</optgroup>';
     html += '<optgroup label="Lifetime Stats">'+LB_STAT_METRICS.map(function(m){ return opt('stat:'+m.key, m.label); }).join('')+'</optgroup>';
     (typeof SKILL_GROUPS !== 'undefined' ? SKILL_GROUPS : []).forEach(function(g){
       html += '<optgroup label="'+escapeHtml(g.label)+'">'+g.skills.map(function(sk){ return opt('skill:'+sk, SKILL_LABELS[sk]||sk); }).join('')+'</optgroup>';
@@ -40787,12 +40813,12 @@
   }
   function renderLeaderboardTab(){
     if(profileView) return renderProfileDetail(profileView);
-    var html = '<div class="section-intro">Leaderboard. Ranked by <b>'+escapeHtml(lbMetricLabel(leaderboardMetric))+'</b>. Use <b>Rank by</b> to sort by a skill or lifetime stat. Tap a name to view their profile.</div>';
+    var html = '<div class="section-intro">Leaderboard. Ranked by <b>'+escapeHtml(lbMetricLabel(leaderboardMetric))+'</b>. Use <b>Rank by</b> to sort by a skill, a lifetime stat, or a <b>Tower</b> climb (the All-Classes run or any single Class). Tap a name to view their profile.</div>';
     html += '<div class="chat-wrap">';
     if(!CHAT_ENABLED){
       var me = computeProfileStats();
       html += '<div class="empty-note">Local preview. Connect a backend to see a real global leaderboard. Here\'s your own profile as a sample:</div>';
-      html += '<div class="lb-list">'+lbRow(1, { id:'', username: chatName()||'You', total_level: me.total_level, gold: me.gold, skills: me.skills, stats: me.stats }, true, leaderboardMetric)+'</div>';
+      html += '<div class="lb-list">'+lbRow(1, { id:'', username: chatName()||'You', total_level: me.total_level, gold: me.gold, skills: me.skills, stats: me.stats, tower: me.tower }, true, leaderboardMetric)+'</div>';
       html += '</div>'; return html;
     }
     html += '<div class="lb-controls"><button class="action-btn" data-action="leaderboardRefresh" style="width:auto;flex:0 0 auto;">Refresh</button>';
@@ -40813,11 +40839,14 @@
       // Online mirrors the row's own dot, which counts YOU as online unconditionally -- otherwise the
       // filter would hide you from your own board in the moment before presence syncs.
       if(leaderboardOnlineOnly) rows = rows.filter(function(p){ return isPlayerOnline(p.id) || !!(authUser && p.id===authUser.id); });
+      // Tower boards list only players who have actually climbed that tower (Floor 0 = never entered).
+      if(lbMetricIsTower(leaderboardMetric)) rows = rows.filter(function(p){ return lbMetricValue(p, leaderboardMetric) > 0; });
       var sorted = rows.slice().sort(function(a,b){ return lbMetricValue(b, leaderboardMetric) - lbMetricValue(a, leaderboardMetric); });
       if(!sorted.length){
         // Say which filter emptied it, rather than always blaming the Mortal one.
         html += '<div class="empty-note">' + (
-            (leaderboardMortalOnly && leaderboardOnlineOnly) ? 'No Mortal-path players are online right now.'
+            lbMetricIsTower(leaderboardMetric) ? ('No one has climbed the ' + escapeHtml(lbMetricLabel(leaderboardMetric)) + ' yet. Be the first to set a mark!')
+          : (leaderboardMortalOnly && leaderboardOnlineOnly) ? 'No Mortal-path players are online right now.'
           : leaderboardOnlineOnly ? 'Nobody else is online right now. Try again later, or untick Online only.'
           : 'No Mortal-path players on the board yet. Will you be the first to risk it all?'
         ) + '</div>';
@@ -46362,7 +46391,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.102.11';
+  var GAME_VERSION = '0.0.103.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46634,7 +46663,7 @@
       guildQueueArr:guildQueueArr, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
-      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,

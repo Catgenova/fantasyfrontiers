@@ -4336,6 +4336,37 @@
     eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
   });
 
+  // ---- Tower leaderboards: an All-Classes climb board + one per Class tower ----
+  suite('leaderboard: the Tower climb boards', function(){
+    // The profile carries a compact map of the deepest floor per entrance (best > 0 only).
+    var s = FF._state, sv = s.tower;
+    try {
+      s.tower = { all:{ floor:1, best:42 }, reaver:{ floor:1, best:30 }, herald:{ floor:1, best:0 } };
+      var t = FF.towerBestsForProfile();
+      eq(t.all, 42, "the All-Classes best rides along");
+      eq(t.reaver, 30, "a class best rides along");
+      ok(!('herald' in t), 'an entrance never climbed (best 0) is omitted from the compact map');
+      // computeProfileStats surfaces the same map for submit_profile / the local preview.
+      ok(FF.computeProfileStats().tower && FF.computeProfileStats().tower.all === 42, 'computeProfileStats includes the tower map');
+    } finally { s.tower = sv; }
+    // Ranking reads p.tower[entranceId]; a metric with no climb ranks 0.
+    var row = { total_level:100, tower:{ all:55, reaver:33 } };
+    eq(FF.lbMetricValue(row, 'tower:all'), 55, 'ranks by the All-Classes floor');
+    eq(FF.lbMetricValue(row, 'tower:reaver'), 33, 'ranks by a Class tower floor');
+    eq(FF.lbMetricValue(row, 'tower:herald'), 0, 'a tower never entered ranks 0');
+    eq(FF.lbMetricValue({ total_level:100 }, 'tower:all'), 0, 'a row with no tower map ranks 0');
+    ok(FF.lbMetricIsTower('tower:all') && !FF.lbMetricIsTower('skill:fishing') && !FF.lbMetricIsTower('total'), 'lbMetricIsTower detects the tower prefix');
+    // Labels: "The Tower: All Classes" and per-class.
+    eq(FF.lbMetricLabel('tower:all'), 'The Tower: All Classes', 'the All-Classes tower label');
+    ok(/^The Tower: /.test(FF.lbMetricLabel('tower:reaver')) && FF.lbMetricLabel('tower:reaver') !== 'The Tower: reaver', 'a class tower label resolves the class name');
+    // The "Rank by" dropdown offers a Tower optgroup with the all board + one option per entrance.
+    var opts = FF.lbMetricOptions();
+    ok(/optgroup label="The Tower"/.test(opts), 'the dropdown has a "The Tower" group');
+    ok(/value="tower:all"/.test(opts), 'the All-Classes tower is offered');
+    var perClass = (opts.match(/value="tower:/g) || []).length;
+    eq(perClass, FF.TOWER_ENTRANCES.length, 'every Tower entrance (all + each class) is a board');
+  });
+
   // ---- PEON_MAX_SLOTS must be a defined constant (its absence blanked the Peons tab) ---
   suite('peon slot constant', function(){
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');
