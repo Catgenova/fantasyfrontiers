@@ -3515,6 +3515,32 @@
     }
   });
 
+  // ---- Offline gathering advances the per-item quest counters (reported: fishing quest ignored offline catches) ----
+  // The live gather loop bumps gathered_<itemId> on every successful pull, which is what "Catch 50 Fish" and
+  // friends count. applyOfflineProgress runs a SEPARATE bulk sim that credited the items but never bumped the
+  // counter, so a player who fished offline filled their bag while the quest sat still. The fix bumps the
+  // counter (and the lifetime 'gathered' tally) in the offline branches too.
+  suite('offline gathering advances quest counters', function(){
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp, gold:s.gold, gEarn:s.goldEarnedTotal, xp:s.xp.fishing };
+    var beforeCatch = (s.stats && s.stats['gathered_fishing_t0']) || 0;
+    var beforeGathered = (s.stats && s.stats['gathered']) || 0;
+    var beforeInv = (s.inventory && s.inventory['fishing_t0']) || 0;
+    try {
+      s.activity = { type:'gather', skill:'fishing', itemId:'fishing_t0', tier:0, progress:0 };
+      FF.applyOfflineProgress(600*1000); // 10 minutes of offline fishing
+      var caught = ((s.inventory && s.inventory['fishing_t0']) || 0) - beforeInv;
+      var counterDelta = ((s.stats && s.stats['gathered_fishing_t0']) || 0) - beforeCatch;
+      ok(caught > 0, 'offline fishing put fish in the bag');
+      ok(counterDelta > 0, 'the fishing quest counter advanced offline (it stayed 0 before the fix)');
+      ok(counterDelta === caught, 'the counter advanced by exactly the number caught');
+      ok(((s.stats && s.stats['gathered']) || 0) > beforeGathered, 'the lifetime gather tally also advances offline');
+    } finally {
+      s.activity = sv.act; s.playerHp = sv.hp; s.gold = sv.gold; s.goldEarnedTotal = sv.gEarn; s.xp.fishing = sv.xp;
+      if(s.stats){ s.stats['gathered_fishing_t0'] = beforeCatch; s.stats['gathered'] = beforeGathered; }
+      if(s.inventory){ s.inventory['fishing_t0'] = beforeInv; }
+    }
+  });
+
   // ---- Offline faith: a running miracle keeps its rarity buff, at the cost of Faith + relics ----
   suite('offline faith activity: buff costs faith + relics, ends when dry', function(){
     var s = FF._state;

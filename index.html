@@ -21443,6 +21443,7 @@
       var ticks = Math.floor(capped/1000 / item.time);
       if(ticks > 0){
         addXp(act.skill, ticks*item.xp * (1 + curiosityGatherXpBonus(state))); // match live gathering's Curiosity bonus
+        bumpStat('gathered', ticks); // lifetime gather-action tally, exactly as the live loop bumps per tick
         if(act.skill === 'digging'){
           var tierIndex = parseInt(act.itemId.split('_t')[1], 10);
           var mainGain = Math.round(ticks * diggingMainChance(state));
@@ -21450,7 +21451,7 @@
           var coalGain = 0;
           for(var _ce=0; _ce<coalEvents; _ce++) coalGain += randInt(1,5);
           var artifactGain = Math.round(ticks * diggingArtifactChance(state));
-          if(mainGain > 0) addItem(act.itemId, mainGain);
+          if(mainGain > 0){ addItem(act.itemId, mainGain); bumpStat('gathered_'+act.itemId, mainGain); } // per-item quest tally (as the live loop does), so offline digs count toward "Dig N X"
           if(coalGain > 0) addItem('coal', coalGain);
           if(artifactGain > 0) addItem('muddyartifact_t'+tierIndex, artifactGain);
           addLog('While away, you dug up ' + mainGain + ' ' + item.name + (coalGain>0 ? ', ' + coalGain + ' Coal' : '') + (artifactGain>0 ? ', ' + artifactGain + ' Muddy Artifact(s)' : '') + '.', 'important');
@@ -21461,7 +21462,7 @@
           var mCoalGain = 0;
           for(var _mce=0; _mce<mCoalEvents; _mce++) mCoalGain += randInt(1,5);
           var gemGain = Math.round(ticks * miningGemChance(state));
-          if(oreGain > 0) addItem(act.itemId, oreGain);
+          if(oreGain > 0){ addItem(act.itemId, oreGain); bumpStat('gathered_'+act.itemId, oreGain); } // per-item quest tally, so offline mining counts toward "Mine N X"
           if(mCoalGain > 0) addItem('coal', mCoalGain);
           if(gemGain > 0) addItem(getGemForTier(mTierIndex), gemGain);
           addLog('While away, you mined ' + oreGain + ' ' + item.name + (mCoalGain>0 ? ', ' + mCoalGain + ' Coal' : '') + (gemGain>0 ? ', ' + gemGain + ' gem(s)' : '') + '.', 'important');
@@ -21469,11 +21470,12 @@
           var catchGain = Math.round(ticks * fishingCatchChance(state));
           var missTicks = Math.max(0, ticks - catchGain);
           var chestGain = Math.round(missTicks * fishingTreasureChance(act.itemId)); // tier-scaled treasure on misses
-          if(catchGain > 0) addItem(act.itemId, catchGain);
+          if(catchGain > 0){ addItem(act.itemId, catchGain); bumpStat('gathered_'+act.itemId, catchGain); } // per-fish quest tally, so offline fishing counts toward "Catch N Fish" (reported: fishing quest ignored offline catches)
           if(chestGain > 0) addItem('treasure_chest', chestGain);
           addLog('While away, you caught ' + catchGain + ' ' + item.name + (chestGain>0 ? ', and snagged ' + chestGain + ' Treasure Chest' + (chestGain===1?'':'s') : '') + '.', 'important');
         } else {
           addItem(act.itemId, ticks);
+          bumpStat('gathered_'+act.itemId, ticks); // per-item quest tally (forestry/herbalism/etc.), so offline gathers count toward "Chop N Logs" etc.
           addLog('While away, you gathered ' + ticks + ' ' + item.name + '.', 'important');
         }
       }
@@ -46538,7 +46540,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.1';
+  var GAME_VERSION = '0.1.0.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
