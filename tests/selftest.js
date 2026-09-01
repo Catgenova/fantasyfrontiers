@@ -3570,6 +3570,33 @@
     } finally { s.activeTea = sv.tea; s.autoTea = sv.auto; s.inventory = sv.inv; }
   });
 
+  // ---- Auto-Drink keeps the STRONGEST tea active: upgrades when a stronger one is stocked (reported order bug) ----
+  suite('tea: Auto-Drink upgrades to the strongest available', function(){
+    var s = FF._state, sv = { tea:s.activeTea, auto:s.autoTea, inv:s.inventory };
+    try {
+      var weak = FF.TEA_DRINK_RECIPES[2], strong = FF.TEA_DRINK_RECIPES[15];
+      ok(strong.xpBoost > weak.xpBoost, 'the higher-tier tea is stronger');
+      s.autoTea = true;
+      // A weak tea is running and a STRONGER one is in the bag -> Auto-Drink upgrades to it.
+      s.activeTea = { itemId:weak.id, name:weak.name, icon:weak.icon, xpBoost:weak.xpBoost, durationMs:weak.teaDurationMs, expiresAt: Date.now() + 100000 };
+      s.inventory = {}; s.inventory[strong.id] = 1;
+      FF.autoTeaTick();
+      near(s.activeTea.xpBoost, strong.xpBoost, 'a stronger tea in stock upgrades the active weaker one', 1e-9);
+      eq(s.inventory[strong.id]||0, 0, 'the stronger tea was consumed by the upgrade');
+      // The reverse must NOT happen: a strong tea running is never downgraded to a weaker one in stock.
+      s.activeTea = { itemId:strong.id, name:strong.name, icon:strong.icon, xpBoost:strong.xpBoost, durationMs:strong.teaDurationMs, expiresAt: Date.now() + 100000 };
+      s.inventory = {}; s.inventory[weak.id] = 5;
+      FF.autoTeaTick();
+      near(s.activeTea.xpBoost, strong.xpBoost, 'a running strong tea is not downgraded', 1e-9);
+      eq(s.inventory[weak.id]||0, 5, 'and the weaker stock is untouched');
+      // Idle with a stash -> starts the strongest.
+      s.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+      s.inventory = {}; s.inventory[weak.id] = 1; s.inventory[strong.id] = 1;
+      FF.autoTeaTick();
+      near(s.activeTea.xpBoost, strong.xpBoost, 'from idle, Auto-Drink starts the strongest tea', 1e-9);
+    } finally { s.activeTea = sv.tea; s.autoTea = sv.auto; s.inventory = sv.inv; }
+  });
+
   // ---- "Cast a Line" counts every fishing tier, not just tier-0 Bluegill (reported: active fisher stuck) ----
   suite('quest: Cast a Line counts all fishing tiers', function(){
     var s = FF._state, sv = s.stats;
