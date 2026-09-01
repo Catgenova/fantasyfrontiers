@@ -2387,6 +2387,18 @@
   #ffSaveWarn{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:9500;max-width:min(92vw,560px);
     background:#4a1212;color:#ffd9d9;border:1px solid #c33;border-radius:9px;padding:8px 14px;
     font-size:13px;line-height:1.45;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.5);pointer-events:none;}
+  /* LOUD stale banner: raised the moment the server rejects this device's saves because the account is
+     further ahead on another device (the player left it open elsewhere). Unlike #ffSaveWarn this is
+     prominent, top-centre, and pointer-events:auto so its Reload button works. It replaces the old silent
+     auto-reload, so the player is told WHY before adopting the cloud save. */
+  #ffStaleWarn{position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:9800;max-width:min(94vw,540px);
+    background:#5a1414;color:#ffe2e2;border:2px solid #e04a4a;border-radius:11px;padding:13px 18px;
+    text-align:center;box-shadow:0 8px 26px rgba(0,0,0,.6);animation:ffStalePulse 1.8s ease-in-out infinite;}
+  #ffStaleWarn .ffsw-title{font-weight:800;font-size:14.5px;letter-spacing:.3px;margin-bottom:5px;}
+  #ffStaleWarn .ffsw-body{font-size:12.5px;line-height:1.5;color:#ffcfcf;margin-bottom:10px;}
+  #ffStaleWarn .ffsw-btn{display:inline-block;cursor:pointer;background:#e04a4a;color:#2a0808;font-weight:800;
+    border:none;border-radius:8px;padding:8px 22px;font-size:13px;letter-spacing:.4px;}
+  @keyframes ffStalePulse{0%,100%{box-shadow:0 8px 26px rgba(0,0,0,.6);}50%{box-shadow:0 0 0 4px rgba(224,74,74,.35),0 8px 26px rgba(0,0,0,.6);}}
   .ff-fenced{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
     padding:24px;background:rgba(20,18,16,.72);backdrop-filter:blur(2px);}
   .ff-fenced-card{max-width:430px;background:var(--bg-panel-raised);border:2px solid var(--border);
@@ -38733,11 +38745,12 @@
   //      crosses CLOUD_WARN_AFTER_MS, naming the reason -- a silent 25-minute loss becomes a visible
   //      one-minute one, and the next player report says WHY;
   //   3. recovery -- auth refresh + fast retry (cloudLastPush=0, so the next 4s tick pushes instead of
-  //      waiting out the debounce) on transient failures, and on CLOUD_STALE_ADOPT_AFTER consecutive
-  //      409s adopt the cloud save (fence + reload, wakeStalenessCheck's move): playing on is unsaveable
-  //      by definition, and the reload restarts us FROM the higher cloud row so it cannot loop.
+  //      waiting out the debounce) on transient failures; and on a 409 STALE (the account is ahead on
+  //      another device) a LOUD, persistent banner naming the cause with a Reload button (owner call,
+  //      ticket-0208). This replaced a silent auto fence+reload after two 409s, which yanked the player
+  //      mid-session with no explanation: playing on is unsaveable by definition, but the player -- not the
+  //      client -- now chooses when to reload FROM the higher cloud row.
   var CLOUD_WARN_AFTER_MS = 60000;
-  var CLOUD_STALE_ADOPT_AFTER = 2;   // one 409 could be a glitch; two in a row (>=8s apart) is a verdict
   var cloudLastConfirmed = 0;        // last {ok:true} from save_game; stamped at boot so a session whose FIRST push fails still warns
   var cloudLastFailReason = '';      // player-facing clause for the banner
   var _cloudStale409s = 0;
@@ -38754,15 +38767,36 @@
     if(status === 429) return { kind:'ratelimit' };
     return { kind:'error' };
   }
-  function cloudStaleShouldAdopt(count){ return count >= CLOUD_STALE_ADOPT_AFTER; }
+  // The LOUD stale banner (owner call, ticket-0208). When the server rejects this device's saves because the
+  // account is further ahead on ANOTHER device (the player left it open elsewhere), the forward-only guard
+  // will reject every push here until this device is reloaded onto the cloud truth. The old code silently
+  // fenced + reloaded after two 409s, which yanked the player with no explanation and lost whatever they had
+  // done since. This raises a prominent, PERSISTENT banner instead: it names the cause and hands them a
+  // Reload button so THEY adopt the cloud save when ready. Nothing they do here can be saved meanwhile, which
+  // is exactly what the banner says. Mounted on document.body (render() rebuilds #content ~10x/sec).
+  function cloudStaleBannerShow(show){
+    var el = document.getElementById('ffStaleWarn');
+    if(!show){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement('div'); el.id = 'ffStaleWarn';
+      el.innerHTML = '<div class="ffsw-title">Your progress is not saving</div>'
+        + '<div class="ffsw-body">This account is open and further ahead on another device, so nothing you do here can be saved. Close the game on your other device, then reload to continue from your latest save.</div>'
+        + '<button type="button" class="ffsw-btn" id="ffStaleReload">Reload latest save</button>';
+      document.body.appendChild(el);
+      var btn = document.getElementById('ffStaleReload');
+      if(btn) btn.addEventListener('click', function(){ try{ cloudEnterFenced(); }catch(e){} location.reload(); });
+    }
+  }
   function cloudNoteSaveResult(v){
     if(!v) return;
-    if(v.kind === 'ok'){ cloudLastConfirmed = Date.now(); cloudLastFailReason = ''; _cloudStale409s = 0; ffSaveWarnUpdate(false); return; }
+    if(v.kind === 'ok'){ cloudLastConfirmed = Date.now(); cloudLastFailReason = ''; _cloudStale409s = 0; ffSaveWarnUpdate(false); cloudStaleBannerShow(false); return; }
     if(v.kind === 'fenced') return;   // cloudEnterFenced's overlay owns the messaging from here
     if(v.kind === 'stale'){
       _cloudStale409s++;
-      cloudLastFailReason = 'the server holds newer progress';
-      if(cloudStaleShouldAdopt(_cloudStale409s)){ cloudEnterFenced(); location.reload(); }
+      cloudLastFailReason = 'this account is further ahead on another device';
+      // Raise the loud, persistent banner at once (owner call). It replaces the old auto fence+reload so the
+      // player is told WHY and adopts the cloud save on their own tap instead of being yanked mid-session.
+      cloudStaleBannerShow(true);
       return;
     }
     if(v.kind === 'auth'){ cloudLastFailReason = 'reconnecting your session'; cloudRefreshToken(); cloudLastPush = 0; return; }
@@ -38788,7 +38822,9 @@
     if(el.textContent !== msg) el.textContent = msg;
   }
   function cloudWatchdogTick(){
-    var blocked = !CLOUD_SYNC_ENABLED || !CHAT_ENABLED || cloudFenced || !authUser || !authUser.id;
+    // A stale-blocked session is owned by the LOUD stale banner (cloudStaleBannerShow), so the soft
+    // watchdog stays quiet -- otherwise both banners would stack once the confirmed clock aged past a minute.
+    var blocked = !CLOUD_SYNC_ENABLED || !CHAT_ENABLED || cloudFenced || !authUser || !authUser.id || _cloudStale409s > 0;
     if(!cloudSaveWarnDue(Date.now(), cloudLastConfirmed, saveProgressScore(state), blocked)){ ffSaveWarnUpdate(false); return; }
     var mins = Math.max(1, Math.floor((Date.now() - cloudLastConfirmed) / 60000));
     ffSaveWarnUpdate(true, 'Progress not saving: ' + (cloudLastFailReason || 'retrying') + ' (' + mins + ' min). A refresh would lose this time.');
@@ -46644,7 +46680,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.7';
+  var GAME_VERSION = '0.1.0.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46866,7 +46902,7 @@
       estateEnqueueOrStart:estateEnqueueOrStart, estateBuildTierLevelOk:estateBuildTierLevelOk, estatePaveTierLevelOk:estatePaveTierLevelOk, SKILL_XP_FLOOR:SKILL_XP_FLOOR, estateArchitectureTierCap:estateArchitectureTierCap, estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
       improveTierLabel:improveTierLabel, popupEnqueue:popupEnqueue, POPUP_QUEUE_MAX:POPUP_QUEUE_MAX,
       offlineCreditBound:offlineCreditBound, OFFLINE_BOUND_SLACK_MS:OFFLINE_BOUND_SLACK_MS, cloudWakeHoldSet:cloudWakeHoldSet, _cloudWakeHold:function(){ return cloudWakeHold; }, CLOUD_WAKE_HOLD_MAX_MS:CLOUD_WAKE_HOLD_MAX_MS, WAKE_PEEK_TRIES:WAKE_PEEK_TRIES,
-      cloudClassifyResult:cloudClassifyResult, cloudSaveWarnDue:cloudSaveWarnDue, cloudStaleShouldAdopt:cloudStaleShouldAdopt, cloudNoteSaveResult:cloudNoteSaveResult, ffSaveWarnUpdate:ffSaveWarnUpdate, cloudWatchdogTick:cloudWatchdogTick, CLOUD_WARN_AFTER_MS:CLOUD_WARN_AFTER_MS, CLOUD_STALE_ADOPT_AFTER:CLOUD_STALE_ADOPT_AFTER, _cloudWatch:function(){ return { lastConfirmed: cloudLastConfirmed, reason: cloudLastFailReason, stale409s: _cloudStale409s, lastPush: cloudLastPush }; }, _cloudWatchSet:function(o){ if(o && typeof o.lastConfirmed === 'number') cloudLastConfirmed = o.lastConfirmed; if(o && typeof o.stale409s === 'number') _cloudStale409s = o.stale409s; if(o && typeof o.reason === 'string') cloudLastFailReason = o.reason; },
+      cloudClassifyResult:cloudClassifyResult, cloudSaveWarnDue:cloudSaveWarnDue, cloudNoteSaveResult:cloudNoteSaveResult, ffSaveWarnUpdate:ffSaveWarnUpdate, cloudStaleBannerShow:cloudStaleBannerShow, cloudWatchdogTick:cloudWatchdogTick, CLOUD_WARN_AFTER_MS:CLOUD_WARN_AFTER_MS, _cloudWatch:function(){ return { lastConfirmed: cloudLastConfirmed, reason: cloudLastFailReason, stale409s: _cloudStale409s, lastPush: cloudLastPush }; }, _cloudWatchSet:function(o){ if(o && typeof o.lastConfirmed === 'number') cloudLastConfirmed = o.lastConfirmed; if(o && typeof o.stale409s === 'number') _cloudStale409s = o.stale409s; if(o && typeof o.reason === 'string') cloudLastFailReason = o.reason; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
       CLASS_ART:CLASS_ART, classArtHtml:classArtHtml, classCardIcon:classCardIcon, classPortraitFor:classPortraitFor,

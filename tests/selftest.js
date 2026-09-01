@@ -19091,8 +19091,9 @@
   // ---- Save watchdog (v0.0.77.22: "lost 25 minutes on a refresh") ---------------------------------
   // cloudSave used to read exactly one field of the push response (data.fenced); a 409 stale, expired
   // token, 413, 429 or network throw was silently swallowed while the player kept playing an
-  // unsaveable session. The watchdog classifies every outcome, surfaces a banner once no save has
-  // confirmed for CLOUD_WARN_AFTER_MS, and adopts the cloud save after consecutive 409s.
+  // unsaveable session. The watchdog classifies every outcome, surfaces a soft banner once no save has
+  // confirmed for CLOUD_WARN_AFTER_MS, and on a 409 STALE raises a LOUD persistent banner (owner call,
+  // ticket-0208) letting the player reload onto the ahead-on-another-device cloud save themselves.
   suite('save watchdog: push results are classified, not swallowed', function(){
     var C = FF.cloudClassifyResult;
     // supabase-js invoke() resolves {data, error:FunctionsHttpError{context:Response}} on non-2xx.
@@ -19118,11 +19119,6 @@
     ok(!FF.cloudSaveWarnDue(t, t - 3600000, 0, false), 'a zero-progress account has nothing to lose -> quiet');
     ok(!FF.cloudSaveWarnDue(t, 0, 5, false), 'no boot stamp yet -> quiet (never warn before a save was possible)');
     ok(!FF.cloudSaveWarnDue(t, t - 3600000, 5, true), 'blocked (fenced / signed out / sync off) -> quiet, other UX owns it');
-    // Adoption: one 409 could be a glitch; the threshold is small enough that an unsaveable session
-    // ends within seconds, not minutes (pushes run every ~8s).
-    ok(!FF.cloudStaleShouldAdopt(FF.CLOUD_STALE_ADOPT_AFTER - 1), 'one shy of the threshold keeps playing');
-    ok(FF.cloudStaleShouldAdopt(FF.CLOUD_STALE_ADOPT_AFTER), 'at the threshold we fence + reload into the cloud save');
-    ok(FF.CLOUD_STALE_ADOPT_AFTER >= 2, 'a single 409 is never enough to reload the game');
   });
 
   suite('save watchdog: result bookkeeping and the banner element', function(){
@@ -19135,15 +19131,19 @@
       ok(w.reason.length > 0, 'a network failure records a player-facing reason');
       eq(w.lastConfirmed, 1234, 'a failure never advances the confirmed clock');
       eq(w.lastPush, 0, 'a transient failure resets the debounce so the next 4s tick retries');
-      // ...one stale strike counts but does not adopt (adopting here would reload the test page)...
+      // ...a stale strike counts AND raises the loud persistent banner at once (owner call, ticket-0208):
+      // no auto-reload, so the test page is never yanked -- the player adopts the cloud save via the banner.
       FF.cloudNoteSaveResult({ kind:'stale' });
       eq(FF._cloudWatch().stale409s, 1, 'a 409 counts one strike');
-      // ...and a confirmed save clears everything.
+      ok(!!document.getElementById('ffStaleWarn'), 'a stale reject raises the loud persistent banner immediately');
+      ok(FF._cloudWatch().reason.indexOf('another device') !== -1, 'the reason names the other device');
+      // ...and a confirmed save clears everything, banner included.
       FF.cloudNoteSaveResult({ kind:'ok' });
       w = FF._cloudWatch();
       ok(w.lastConfirmed > 1234, 'an ok advances the confirmed clock');
       eq(w.stale409s, 0, 'an ok clears the stale strikes');
       eq(w.reason, '', 'an ok clears the reason');
+      ok(!document.getElementById('ffStaleWarn'), 'a confirmed save takes the loud stale banner down');
       // The banner is a body-level element (render() rebuilds #content 10x/sec and would strobe it there).
       FF.ffSaveWarnUpdate(true, 'watchdog test banner');
       var el = document.getElementById('ffSaveWarn');
@@ -19157,6 +19157,7 @@
     } finally {
       FF._cloudWatchSet(saved);
       FF.ffSaveWarnUpdate(false);
+      FF.cloudStaleBannerShow(false);
     }
   });
 
