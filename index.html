@@ -21550,6 +21550,16 @@
         } else {
           addItem(act.itemId, ticks);
           bumpStat('gathered_'+act.itemId, ticks); // per-item quest tally (forestry/herbalism/etc.), so offline gathers count toward "Chop N Logs" etc.
+          // Side drops the live loop rolls per action, credited as expected value over the window -- without
+          // this, offline foraging turned up NO Powder/Artifacts/Caches at all (reported: Lv41 forager, 1482
+          // berries, 0 Ragwort Powder). Mirrors how the digging/mining branches above credit coal/gems.
+          var _oTier = parseInt((act.itemId.split('_t')[1])||'0', 10);
+          if(CRITTER_CACHE_SKILLS.indexOf(act.skill) !== -1){ var _cc = Math.round(ticks * critterCacheChance(state)); if(_cc > 0) addItem('critter_cache', _cc); }
+          if(SEED_DROP_SKILLS.indexOf(act.skill) !== -1){ var _sc = Math.round(ticks * (BOTANY_SEED_DROP_CHANCE + mentalitySeedChanceBonus(state))); if(_sc > 0) addItem('seed_t'+_oTier, _sc); }
+          if(act.skill === 'foraging'){
+            var _pw = Math.round(ticks * foragingPowderChance(state)); if(_pw > 0) addItem('powder_t'+_oTier, _pw);
+            var _fa = Math.round(ticks * foragingArtifactChance(state)); if(_fa > 0) addItem('muddyartifact_t'+_oTier, _fa);
+          }
           addLog('While away, you gathered ' + ticks + ' ' + item.name + '.', 'important');
         }
       }
@@ -43047,7 +43057,7 @@
         lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 5%, Arm Strength adds more). Open one from your Inventory for a mix of Seeds');
       } else if(skillId==='foraging'){
         lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 5%, Arm Strength adds more). Open one from your Inventory for a mix of Seeds');
-        lines.push('Powder Chance: <b>'+Math.round(foragingPowderChance(state)*100)+'%</b> (base 3%, Solving adds more, caps at 8%)');
+        lines.push('Powder Chance: <b>'+Math.round(foragingPowderChance(state)*100)+'%</b> (base '+Math.round(BASE_POWDER_CHANCE*100)+'%, Fine Motor adds more)');
         lines.push('Artifact Chance: <b>'+Math.round(foragingArtifactChance(state)*100)+'%</b> (flat)');
       }
       return lines;
@@ -46627,7 +46637,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.5';
+  var GAME_VERSION = '0.1.0.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

@@ -3541,6 +3541,30 @@
     }
   });
 
+  // ---- Offline foraging turns up its side drops (reported: Lv41 forager, 1482 berries, ZERO Ragwort Powder) ----
+  // The live foraging loop rolls Powder (15% base), a Muddy Artifact and a Critter Cache per successful pull, but
+  // applyOfflineProgress's generic gather branch only credited the main berry -- so offline foraging found none of
+  // them. The fix credits the expected number over the window (ticks * chance), the way the digging/mining branches
+  // credit Coal/gems. A 10-minute window at the 15% base powder rate must produce some Ragwort Powder.
+  suite('offline foraging credits Powder and side drops', function(){
+    var s = FF._state, sv = { act:s.activity };
+    var keys = ['powder_t0','foraging_t0','muddyartifact_t0','critter_cache'];
+    var before = {}; keys.forEach(function(k){ before[k] = (s.inventory && s.inventory[k]) || 0; });
+    try {
+      s.activity = { type:'gather', skill:'foraging', itemId:'foraging_t0', tier:0, progress:0 };
+      FF.applyOfflineProgress(600*1000); // 10 minutes of offline foraging
+      var berries = ((s.inventory && s.inventory['foraging_t0']) || 0) - before['foraging_t0'];
+      var powder = ((s.inventory && s.inventory['powder_t0']) || 0) - before['powder_t0'];
+      ok(berries > 0, 'offline foraging put berries in the bag');
+      ok(powder > 0, 'offline foraging found Ragwort Powder (it found none before the fix)');
+      // Expected value is berries * base 15%; allow slack for physique scaling and rounding, but it must be in range.
+      ok(powder <= berries, 'the Powder count never exceeds the number of forages');
+    } finally {
+      s.activity = sv.act;
+      if(s.inventory){ keys.forEach(function(k){ s.inventory[k] = before[k]; }); } // restore ALL side drops so later cache tests aren't polluted
+    }
+  });
+
   // ---- Offline tea: the XP boost prorates across the window and Auto-Drink works the stash (owner call) ----
   // Offline XP is credited in one lump at login, when the pre-bed tea has expired, so the old code gave it no
   // boost at all. simulateOfflineTea replays the tea timeline: the active tea covers its remaining time, and
