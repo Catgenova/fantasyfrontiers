@@ -6266,6 +6266,11 @@
   var BREW_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
     .map(function(k){ return ALL_CRAFT_RECIPES[k]; })
     .filter(function(r){ return r && r.brewDurationMs; });
+  // Bookbinding Tomes: the studiable work-speed buff, on its OWN slot (activeTome). Same filter shape as
+  // Teas/Brews so the offline replay + best-tome selection share one authoritative list.
+  var TOME_STUDY_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
+    .map(function(k){ return ALL_CRAFT_RECIPES[k]; })
+    .filter(function(r){ return r && r.tomeDurationMs; });
   var ALL_DROP_ITEMS = {};
   CORPSE_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   BROKEN_RELIC_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
@@ -15809,7 +15814,11 @@
   }
   function speedMultiplier(state){
     // Lower = faster. Physique average shaves up to 12%; an active Tome (studyTome) shaves more on top.
-    return (1 - Math.min(0.12, physiqueAvgLevel(state)*0.0018)) * (1 - tomeSpeedBonus());
+    // During offline catch-up the Tome factor comes from offlineTomeMult (the time-weighted throughput the
+    // Tome provided across the away window) instead of the live isTomeActive() check, which would read the
+    // login-time expiry all-or-nothing -- the same override pattern as offlineTeaMult.
+    var tomeFactor = (typeof offlineTomeMult === 'number' && offlineTomeMult > 0) ? (1 / offlineTomeMult) : (1 - tomeSpeedBonus());
+    return (1 - Math.min(0.12, physiqueAvgLevel(state)*0.0018)) * tomeFactor;
   }
 
   // ===== Physique OUTPUTS (remapped). Each function turns one physique's level into a
@@ -16293,6 +16302,15 @@
   // expired, so the live check would give it no boost. simulateOfflineTea computes the time-weighted boost
   // the tea (and, if Auto-Drink is on, the stash it drinks through) actually provided across the window.
   var offlineTeaMult = null;
+  // Offline overrides for the OTHER two consumable buffs, same idea as offlineTeaMult (only set during
+  // applyOfflineProgress). offlineTomeMult is a THROUGHPUT multiplier (>=1) the offline sims apply so a
+  // Tome studied before logout speeds the away window it actually covered; speedMultiplier() reads it so the
+  // craft path picks it up for free, and the gather bulk sim multiplies its tick count by it. offlineBrewYield
+  // is the time-weighted bonus-output chance brewYieldRoll() uses in place of the live isBrewActive() check.
+  // Both are computed time-weighted (simulateOfflineTome/Brew) so a buff that lapsed mid-window only counts
+  // for the slice it was alive, exactly as the tea replay does.
+  var offlineTomeMult = null;
+  var offlineBrewYield = null;
   var offlineSummaryData = null;   // holds the "while you were away" summary until dismissed
   var guildPeonOfflineMs = 0;      // deferred guild-peon offline catch-up (applied once the guild estate loads)
   var guildPeonOverflowMs = 0;     // deferred guild-peon PAST-CAP overflow (funded by Cooperage provisions)
@@ -16655,55 +16673,94 @@
     var start = Date.now() - windowMs;                       // when the offline window began
     return Math.max(0, Math.min(windowMs, state.activeFeast.expiresAt - start));
   }
-  // Replay the Tea XP buff across an offline window, exactly as playing live would. The pre-bed tea covers
-  // its remaining time from the window's start; when it (and each successor) runs out AND Auto-Drink is on,
-  // the best tea in the stash is drunk to keep the boost going (consuming it), just like the live auto-drink
-  // loop. Returns the TIME-WEIGHTED average multiplier to apply to the window's XP (1 = no boost), which teas
-  // were consumed, and the tea left active at login. Owner call (2026): offline should match online.
-  function simulateOfflineTea(windowMs){
+  // Replay a consumable buff (Tea / Tome / Brew) across an offline window, exactly as playing live would. The
+  // buff active at logout covers its remaining time from the window's start; when it (and each successor) runs
+  // out AND its Auto toggle is on, the strongest in the stash is used to keep it going (consuming it), just
+  // like the live auto loop. Returns the TIME-WEIGHTED sum of weightFn(strength) over the covered slices, the
+  // items consumed, and the buff left active at login. Owner call (2026): offline should match online -- one
+  // core so Tea/Tome/Brew can never drift. cfg: { active, auto, recipes, strengthKey, durKey, activeStrengthKey,
+  // weightFn }. `active`/`recipes` durations all live on `durationMs`/`<durKey>`; strength differs per buff.
+  function _simOfflineConsumable(windowMs, cfg){
     var nowT = Date.now(), start = nowT - windowMs;
-    var t = start, boostedMs = 0, consumed = {};
-    // Working stock so best-tea selection reflects what we've already drunk this window.
+    var t = start, weighted = 0, consumed = {};
+    var recipes = cfg.recipes, sKey = cfg.strengthKey, dKey = cfg.durKey;
+    // Working stock so best-in-stash selection reflects what we've already used this window.
     function pickBest(){
       var best = null;
-      for(var i=0;i<TEA_DRINK_RECIPES.length;i++){
-        var r = TEA_DRINK_RECIPES[i];
+      for(var i=0;i<recipes.length;i++){
+        var r = recipes[i];
         if(((state.inventory[r.id]||0) - (consumed[r.id]||0)) <= 0) continue;
-        if(!best || r.xpBoost > best.xpBoost || (r.xpBoost === best.xpBoost && r.teaDurationMs > best.teaDurationMs)) best = r;
+        if(!best || r[sKey] > best[sKey] || (r[sKey] === best[sKey] && r[dKey] > best[dKey])) best = r;
       }
       return best;
     }
-    var haveTea = !!(state.activeTea && state.activeTea.itemId);
-    var curTea = haveTea ? { itemId:state.activeTea.itemId, name:state.activeTea.name, icon:state.activeTea.icon, xpBoost:state.activeTea.xpBoost||0, durationMs:state.activeTea.durationMs||0 } : null;
-    var curExpires = haveTea ? state.activeTea.expiresAt : start;   // nothing active -> "expires" at the window start
-    // Auto-Drink upgrade at log-off: if a stronger tea sits in the stash than the one that was active, switch
-    // to it from the window's start, mirroring the live autoTeaTick (a weak tea never runs while a better one
-    // is in the bag). No initial tea is left to the loop, which auto-drinks the strongest on its own.
-    if(state.autoTea && curTea){
+    var a = cfg.active, have = !!(a && a.itemId);
+    var cur = have ? { itemId:a.itemId, name:a.name, icon:a.icon, strength:a[cfg.activeStrengthKey]||0, durationMs:a.durationMs||0 } : null;
+    var curExpires = have ? a.expiresAt : start;   // nothing active -> "expires" at the window start
+    // Auto upgrade at log-off: if a stronger one sits in the stash than the one that was active, switch to it
+    // from the window's start, mirroring the live auto*Tick (a weak buff never runs while a better one is in
+    // the bag). No initial buff is left to the loop, which uses the strongest on its own.
+    if(cfg.auto && cur){
       var up0 = pickBest();
-      if(up0 && up0.xpBoost > curTea.xpBoost){ consumed[up0.id] = (consumed[up0.id]||0) + 1; curTea = { itemId:up0.id, name:up0.name, icon:up0.icon, xpBoost:up0.xpBoost, durationMs:up0.teaDurationMs }; curExpires = start + up0.teaDurationMs; }
+      if(up0 && up0[sKey] > cur.strength){ consumed[up0.id] = (consumed[up0.id]||0) + 1; cur = { itemId:up0.id, name:up0.name, icon:up0.icon, strength:up0[sKey], durationMs:up0[dKey] }; curExpires = start + up0[dKey]; }
     }
     var guard = 0;
     while(t < nowT && guard++ < 100000){
-      if(curExpires > t){                                    // a tea is covering [t, min(curExpires, now))
+      if(curExpires > t){                                    // a buff is covering [t, min(curExpires, now))
         var sliceEnd = Math.min(curExpires, nowT);
-        boostedMs += (sliceEnd - t) * (curTea ? curTea.xpBoost : 0);
+        weighted += (sliceEnd - t) * cfg.weightFn(cur ? cur.strength : 0);
         t = sliceEnd;
         if(t >= nowT) break;
       }
-      if(!state.autoTea) break;                              // the active tea lapsed and no auto-drink -> rest of window is unboosted
+      if(!cfg.auto) break;                                   // the active buff lapsed and no auto -> rest of window is unbuffed
       var r = pickBest();
       if(!r) break;                                          // stash empty
       consumed[r.id] = (consumed[r.id]||0) + 1;
-      curTea = { itemId:r.id, name:r.name, icon:r.icon, xpBoost:r.xpBoost, durationMs:r.teaDurationMs };
-      curExpires = t + r.teaDurationMs;
+      cur = { itemId:r.id, name:r.name, icon:r.icon, strength:r[sKey], durationMs:r[dKey] };
+      curExpires = t + r[dKey];
     }
     return {
-      mult: 1 + (windowMs > 0 ? boostedMs / windowMs : 0),
+      weightedMs: weighted,
       consumed: consumed,
-      // The tea left active at login (curExpires still in the future), so the returning player picks up where
-      // the away window left off; null when the last tea expired before now.
-      activeTea: (curTea && curExpires > nowT) ? { itemId:curTea.itemId, name:curTea.name, icon:curTea.icon, xpBoost:curTea.xpBoost, durationMs:curTea.durationMs, expiresAt:curExpires } : null
+      // The buff left active at login (curExpires still in the future), so the returning player picks up where
+      // the away window left off; null when the last one expired before now.
+      active: (cur && curExpires > nowT) ? { itemId:cur.itemId, name:cur.name, icon:cur.icon, strength:cur.strength, durationMs:cur.durationMs, expiresAt:curExpires } : null
+    };
+  }
+  // Tea (XP boost): the time-weighted multiplier to apply to the window's XP (1 = no boost).
+  function simulateOfflineTea(windowMs){
+    var r = _simOfflineConsumable(windowMs, { active:state.activeTea, auto:state.autoTea, recipes:TEA_DRINK_RECIPES,
+      strengthKey:'xpBoost', durKey:'teaDurationMs', activeStrengthKey:'xpBoost', weightFn:function(b){ return b; } });
+    return {
+      mult: 1 + (windowMs > 0 ? r.weightedMs / windowMs : 0),
+      consumed: r.consumed,
+      activeTea: r.active ? { itemId:r.active.itemId, name:r.active.name, icon:r.active.icon, xpBoost:r.active.strength, durationMs:r.active.durationMs, expiresAt:r.active.expiresAt } : null
+    };
+  }
+  // Tome (work speed): a THROUGHPUT multiplier (>=1) for the window. A tome shaving fraction b off action time
+  // speeds throughput by 1/(1-b), so the covered slices weight by 1/(1-b)-1 and the window multiplier is
+  // 1 + (that, time-averaged). offlineTomeMult drives the craft path via speedMultiplier and the gather bulk
+  // sim's tick count.
+  function simulateOfflineTome(windowMs){
+    var r = _simOfflineConsumable(windowMs, { active:state.activeTome, auto:state.autoTome, recipes:TOME_STUDY_RECIPES,
+      strengthKey:'tomeSpeedBonus', durKey:'tomeDurationMs', activeStrengthKey:'speedBonus',
+      weightFn:function(b){ return (b > 0 && b < 1) ? (1/(1-b) - 1) : 0; } });
+    return {
+      mult: 1 + (windowMs > 0 ? r.weightedMs / windowMs : 0),
+      consumed: r.consumed,
+      activeTome: r.active ? { itemId:r.active.itemId, name:r.active.name, icon:r.active.icon, speedBonus:r.active.strength, durationMs:r.active.durationMs, expiresAt:r.active.expiresAt } : null
+    };
+  }
+  // Brew (bonus output): the time-weighted average bonus-output CHANCE across the window. offlineBrewYield
+  // uses this in place of the live per-completion roll, so a Brew alive for half the window pays ~half its
+  // chance on average.
+  function simulateOfflineBrew(windowMs){
+    var r = _simOfflineConsumable(windowMs, { active:state.activeBrew, auto:state.autoBrew, recipes:BREW_DRINK_RECIPES,
+      strengthKey:'brewYield', durKey:'brewDurationMs', activeStrengthKey:'yield', weightFn:function(y){ return y; } });
+    return {
+      yield: (windowMs > 0 ? r.weightedMs / windowMs : 0),
+      consumed: r.consumed,
+      activeBrew: r.active ? { itemId:r.active.itemId, name:r.active.name, icon:r.active.icon, yield:r.active.strength, durationMs:r.active.durationMs, expiresAt:r.active.expiresAt } : null
     };
   }
   // Tome buff: studying a Bookbinding Tome speeds ALL gathering & crafting for a while (folded into
@@ -16718,7 +16775,13 @@
   function isBrewActive(){
     return !!(state.activeBrew && state.activeBrew.itemId && state.activeBrew.expiresAt > Date.now());
   }
-  function brewYieldRoll(){ return isBrewActive() && Math.random() < (state.activeBrew.yield||0); }
+  // During offline catch-up offlineBrewYield stands in for the live isBrewActive() check (same reason as
+  // offlineTeaMult/offlineTomeMult): it is the time-weighted bonus-output chance the Brew provided across the
+  // away window, so a Brew that lapsed mid-window pays only for the slice it was alive.
+  function brewYieldRoll(){
+    if(typeof offlineBrewYield === 'number') return offlineBrewYield > 0 && Math.random() < offlineBrewYield;
+    return isBrewActive() && Math.random() < (state.activeBrew.yield||0);
+  }
   // Scroll ward: reading an Inscription Scroll reduces all incoming damage for a while (folded into
   // the monster's attack). Its own timed channel -- the defensive counterpart to Feasts (offense).
   function isScrollActive(){
@@ -21132,9 +21195,17 @@
     return tomes.slice().sort(function(a,b){ return (b.tomeSpeedBonus-a.tomeSpeedBonus) || (b.tomeDurationMs-a.tomeDurationMs); })[0];
   }
   function studyBestTome(){ var t = bestAvailableTome(); if(t) studyTome(t.id); }
+  // Auto-study keeps the STRONGEST owned Tome active: start one when none is running, AND upgrade to a stronger
+  // one the moment it is in stock (mirrors autoTeaTick -- reported for teas as "used in the wrong order").
+  function autoTomeTick(){
+    if(!state.autoTome) return;
+    if(!isTomeActive()){ studyBestTome(); return; }
+    var bt = bestAvailableTome();
+    if(bt && bt.tomeSpeedBonus > (state.activeTome.speedBonus||0)) studyTome(bt.id);
+  }
   function toggleAutoTome(){
     state.autoTome = !state.autoTome;
-    if(state.autoTome && !isTomeActive()) studyBestTome(); // start immediately if a tome is on hand
+    autoTomeTick(); // start (or upgrade to) the strongest tome on hand the instant Auto-study is switched on
     needsRender = true;
   }
   // Brews (Brewing): manually-drunk consumables that add a timed CHANCE for a bonus output on every
@@ -21165,9 +21236,17 @@
     return brews.slice().sort(function(a,b){ return (b.brewYield-a.brewYield) || (b.brewDurationMs-a.brewDurationMs); })[0];
   }
   function drinkBestBrew(){ var b = bestAvailableBrew(); if(b) drinkBrew(b.id); }
+  // Auto-drink keeps the STRONGEST owned Brew active: start one when none is running, AND upgrade to a stronger
+  // one the moment it is in stock (mirrors autoTeaTick).
+  function autoBrewTick(){
+    if(!state.autoBrew) return;
+    if(!isBrewActive()){ drinkBestBrew(); return; }
+    var bb = bestAvailableBrew();
+    if(bb && bb.brewYield > (state.activeBrew.yield||0)) drinkBrew(bb.id);
+  }
   function toggleAutoBrew(){
     state.autoBrew = !state.autoBrew;
-    if(state.autoBrew && !isBrewActive()) drinkBestBrew(); // start immediately if a brew is on hand
+    autoBrewTick(); // start (or upgrade to) the strongest brew on hand the instant Auto-drink is switched on
     needsRender = true;
   }
   // Reading a Scroll (Inscription): starts/refreshes the timed damage-reduction ward. Doesn't stack.
@@ -21523,10 +21602,25 @@
     // multiplier. The stash it drinks through + the tea left active are applied AFTER the sims (see below).
     var teaPlan; try{ teaPlan = simulateOfflineTea(capped); }catch(e){ teaPlan = { mult:1, consumed:{}, activeTea:null }; }
     offlineTeaMult = teaPlan.mult;
+    // Tome (work speed) and Brew (bonus output) get the same time-weighted offline replay as the tea (owner
+    // call: apply the tea fix to tomes and beverages). The craft path picks these up for free via
+    // speedMultiplier()/brewYieldRoll(); the gather bulk sim below reads them explicitly. Consumed stash +
+    // buff-left-active are settled after the sims, exactly like the tea.
+    var tomePlan; try{ tomePlan = simulateOfflineTome(capped); }catch(e){ tomePlan = { mult:1, consumed:{}, activeTome:null }; }
+    var brewPlan; try{ brewPlan = simulateOfflineBrew(capped); }catch(e){ brewPlan = { yield:0, consumed:{}, activeBrew:null }; }
+    offlineTomeMult = tomePlan.mult;
+    offlineBrewYield = brewPlan.yield;
     try{
     if(act && act.type === 'gather'){
       var item = ALL_GATHER_ITEMS[act.itemId];
-      var ticks = Math.floor(capped/1000 / item.time);
+      // An active Tome speeds the away window's gathering (offlineTomeMult is the time-weighted throughput it
+      // provided), so the bulk sim does more pulls -- matching the craft path, which reads the same figure via
+      // speedMultiplier(). 1 when no tome covered the window.
+      var _tomeMult = (typeof offlineTomeMult === 'number' && offlineTomeMult > 0) ? offlineTomeMult : 1;
+      var ticks = Math.floor(capped/1000 / item.time * _tomeMult);
+      // An active Brew's bonus-output chance, credited as expected value over the successful pulls (round(gain
+      // * chance)): extra copies only, no quest-counter bump, exactly like the live gatherDoubleRoll brew arm.
+      var _brewBonus = function(id, gain){ if(typeof offlineBrewYield === 'number' && offlineBrewYield > 0 && gain > 0){ var b = Math.round(gain * offlineBrewYield); if(b > 0) addItem(id, b); } };
       if(ticks > 0){
         addXp(act.skill, ticks*item.xp * (1 + curiosityGatherXpBonus(state))); // match live gathering's Curiosity bonus
         bumpStat('gathered', ticks); // lifetime gather-action tally, exactly as the live loop bumps per tick
@@ -21537,7 +21631,7 @@
           var coalGain = 0;
           for(var _ce=0; _ce<coalEvents; _ce++) coalGain += randInt(1,5);
           var artifactGain = Math.round(ticks * diggingArtifactChance(state));
-          if(mainGain > 0){ addItem(act.itemId, mainGain); bumpStat('gathered_'+act.itemId, mainGain); } // per-item quest tally (as the live loop does), so offline digs count toward "Dig N X"
+          if(mainGain > 0){ addItem(act.itemId, mainGain); bumpStat('gathered_'+act.itemId, mainGain); _brewBonus(act.itemId, mainGain); } // per-item quest tally (as the live loop does), so offline digs count toward "Dig N X"
           if(coalGain > 0) addItem('coal', coalGain);
           if(artifactGain > 0) addItem('muddyartifact_t'+tierIndex, artifactGain);
           addLog('While away, you dug up ' + mainGain + ' ' + item.name + (coalGain>0 ? ', ' + coalGain + ' Coal' : '') + (artifactGain>0 ? ', ' + artifactGain + ' Muddy Artifact(s)' : '') + '.', 'important');
@@ -21548,7 +21642,7 @@
           var mCoalGain = 0;
           for(var _mce=0; _mce<mCoalEvents; _mce++) mCoalGain += randInt(1,5);
           var gemGain = Math.round(ticks * miningGemChance(state));
-          if(oreGain > 0){ addItem(act.itemId, oreGain); bumpStat('gathered_'+act.itemId, oreGain); } // per-item quest tally, so offline mining counts toward "Mine N X"
+          if(oreGain > 0){ addItem(act.itemId, oreGain); bumpStat('gathered_'+act.itemId, oreGain); _brewBonus(act.itemId, oreGain); } // per-item quest tally, so offline mining counts toward "Mine N X"
           if(mCoalGain > 0) addItem('coal', mCoalGain);
           if(gemGain > 0) addItem(getGemForTier(mTierIndex), gemGain);
           addLog('While away, you mined ' + oreGain + ' ' + item.name + (mCoalGain>0 ? ', ' + mCoalGain + ' Coal' : '') + (gemGain>0 ? ', ' + gemGain + ' gem(s)' : '') + '.', 'important');
@@ -21556,12 +21650,14 @@
           var catchGain = Math.round(ticks * fishingCatchChance(state));
           var missTicks = Math.max(0, ticks - catchGain);
           var chestGain = Math.round(missTicks * fishingTreasureChance(act.itemId)); // tier-scaled treasure on misses
-          if(catchGain > 0){ addItem(act.itemId, catchGain); bumpStat('gathered_'+act.itemId, catchGain); } // per-fish quest tally, so offline fishing counts toward "Catch N Fish" (reported: fishing quest ignored offline catches)
+          if(catchGain > 0){ addItem(act.itemId, catchGain); bumpStat('gathered_'+act.itemId, catchGain); _brewBonus(act.itemId, catchGain); } // per-fish quest tally, so offline fishing counts toward "Catch N Fish" (reported: fishing quest ignored offline catches)
           if(chestGain > 0) addItem('treasure_chest', chestGain);
           addLog('While away, you caught ' + catchGain + ' ' + item.name + (chestGain>0 ? ', and snagged ' + chestGain + ' Treasure Chest' + (chestGain===1?'':'s') : '') + '.', 'important');
         } else {
           addItem(act.itemId, ticks);
           bumpStat('gathered_'+act.itemId, ticks); // per-item quest tally (forestry/herbalism/etc.), so offline gathers count toward "Chop N Logs" etc.
+          _brewBonus(act.itemId, ticks); // an active Brew's bonus output on the away window's pulls
+
           // Side drops the live loop rolls per action, credited as expected value over the window -- without
           // this, offline foraging turned up NO Powder/Artifacts/Caches at all (reported: Lv41 forager, 1482
           // berries, 0 Ragwort Powder). Mirrors how the digging/mining branches above credit coal/gems.
@@ -21717,6 +21813,24 @@
       if(teaPlan.activeTea) state.activeTea = teaPlan.activeTea;
       if(_teaDrunk > 0) addLog('While away, Auto-Drink brewed through ' + _teaDrunk + ' tea' + (_teaDrunk===1?'':'s') + ' to keep your XP boost going.', 'important');
     }catch(e){ offlineTeaMult = null; }
+    // Same finalize for the Tome (work-speed) and Brew (bonus-output) replays: drop the offline overrides,
+    // consume what Auto-study/Auto-drink used from the stash, and leave the one still running active at login.
+    offlineTomeMult = null;
+    try{
+      var _tomesStudied = 0;
+      Object.keys(tomePlan.consumed).forEach(function(id){ var n = tomePlan.consumed[id]||0; if(n>0){ state.inventory[id] = Math.max(0, (state.inventory[id]||0) - n); _tomesStudied += n; } });
+      if(_tomesStudied > 0) bumpStat('tomes_studied', _tomesStudied); // powers "Study the Tomes", same as live studying
+      if(tomePlan.activeTome) state.activeTome = tomePlan.activeTome;
+      if(_tomesStudied > 0) addLog('While away, Auto-study worked through ' + _tomesStudied + ' tome' + (_tomesStudied===1?'':'s') + ' to keep your work speed up.', 'important');
+    }catch(e){ offlineTomeMult = null; }
+    offlineBrewYield = null;
+    try{
+      var _brewsDrunk = 0;
+      Object.keys(brewPlan.consumed).forEach(function(id){ var n = brewPlan.consumed[id]||0; if(n>0){ state.inventory[id] = Math.max(0, (state.inventory[id]||0) - n); _brewsDrunk += n; } });
+      if(_brewsDrunk > 0) bumpStat('brews_drunk', _brewsDrunk); // same counter live drinking bumps
+      if(brewPlan.activeBrew) state.activeBrew = brewPlan.activeBrew;
+      if(_brewsDrunk > 0) addLog('While away, Auto-drink worked through ' + _brewsDrunk + ' brew' + (_brewsDrunk===1?'':'s') + ' to keep your bonus output going.', 'important');
+    }catch(e){ offlineBrewYield = null; }
     // Guild-estate peons run client-side against the shared grid, which isn't loaded yet at
     // login — defer their catch-up until the guild estate becomes ready (see the loop).
     if(state.guildPeons && state.guildPeons.length){ guildPeonOfflineMs = capped; guildPeonOverflowMs = Math.max(0, elapsedMs - capped); }
@@ -45794,10 +45908,8 @@
     // Auto-drink: if enabled and no tea buff is running, brew-and-drink the best one on hand
     // (fires once per expiry since drinking makes isTeaActive() true again).
     autoTeaTick(); // keep the strongest tea active: start one when idle, upgrade when a stronger is in stock
-    // Auto-study: same, for the best owned Tome (work-speed buff).
-    if(state.autoTome && !isTomeActive()) studyBestTome();
-    // Auto-drink: same, for the best owned Brew (bonus-output buff).
-    if(state.autoBrew && !isBrewActive()) drinkBestBrew();
+    autoTomeTick(); // same, for the best owned Tome (work-speed buff): start when idle, upgrade when stronger is stocked
+    autoBrewTick(); // same, for the best owned Brew (bonus-output buff)
 
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
@@ -46680,7 +46792,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.8';
+  var GAME_VERSION = '0.1.0.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46975,8 +47087,8 @@
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, BREW_DRINK_RECIPES:BREW_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
       isFeastActive:isFeastActive, feastRegenPer5s:feastRegenPer5s, feastOfflineActiveMs:feastOfflineActiveMs, simulateOfflineTea:simulateOfflineTea, autoTeaTick:autoTeaTick, bestAvailableTea:bestAvailableTea, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
-      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
-      isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll,
+      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier, autoTomeTick:autoTomeTick, simulateOfflineTome:simulateOfflineTome, TOME_STUDY_RECIPES:TOME_STUDY_RECIPES,
+      isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll, autoBrewTick:autoBrewTick, simulateOfflineBrew:simulateOfflineBrew,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,

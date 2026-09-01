@@ -3621,6 +3621,135 @@
     } finally { s.activeTea = sv.tea; s.autoTea = sv.auto; s.inventory = sv.inv; }
   });
 
+  // ---- Tomes get the tea treatment: strongest-first Auto-study + offline replay (owner call) ----
+  // The Tome work-speed buff mirrors the tea fix: autoTomeTick keeps the strongest owned Tome active and
+  // upgrades when a stronger is stocked, and simulateOfflineTome replays the away window as a time-weighted
+  // THROUGHPUT multiplier (1/(1-b) while a tome with bonus b is alive) that the offline sims apply.
+  suite('tomes: strongest-first Auto-study and offline throughput replay', function(){
+    var s = FF._state, sv = { tome:s.activeTome, auto:s.autoTome, inv:s.inventory };
+    try {
+      var tomes = FF.TOME_STUDY_RECIPES.slice().sort(function(a,b){ return a.tomeSpeedBonus - b.tomeSpeedBonus; });
+      ok(tomes.length >= 2, 'there are at least two Tome tiers to compare');
+      var weak = tomes[0], strong = tomes[tomes.length-1];
+      ok(strong.tomeSpeedBonus > weak.tomeSpeedBonus, 'the higher-tier tome is faster');
+      // A) Auto-study upgrades a weak running tome to a stronger stocked one, and never downgrades.
+      s.autoTome = true;
+      s.activeTome = { itemId:weak.id, name:weak.name, icon:weak.icon, speedBonus:weak.tomeSpeedBonus, durationMs:weak.tomeDurationMs, expiresAt: Date.now()+100000 };
+      s.inventory = {}; s.inventory[strong.id] = 1;
+      FF.autoTomeTick();
+      near(s.activeTome.speedBonus, strong.tomeSpeedBonus, 'a stronger tome in stock upgrades the active weaker one', 1e-9);
+      eq(s.inventory[strong.id]||0, 0, 'the stronger tome was consumed by the upgrade');
+      s.activeTome = { itemId:strong.id, name:strong.name, icon:strong.icon, speedBonus:strong.tomeSpeedBonus, durationMs:strong.tomeDurationMs, expiresAt: Date.now()+100000 };
+      s.inventory = {}; s.inventory[weak.id] = 5;
+      FF.autoTomeTick();
+      near(s.activeTome.speedBonus, strong.tomeSpeedBonus, 'a running strong tome is not downgraded', 1e-9);
+      eq(s.inventory[weak.id]||0, 5, 'and the weaker stock is untouched');
+      // B) Offline replay: a tome covering the whole window multiplies throughput by 1/(1-b).
+      var W = 3600*1000, now = Date.now(), b = strong.tomeSpeedBonus;
+      s.autoTome = false; s.inventory = {};
+      s.activeTome = { itemId:strong.id, name:strong.name, icon:strong.icon, speedBonus:b, durationMs:W*2, expiresAt: now+W };
+      near(FF.simulateOfflineTome(W).mult, 1/(1-b), 'a tome covering the whole window speeds all offline work 1/(1-b)', 0.02);
+      // ...lapsed halfway, no Auto-study -> only the covered half counts.
+      s.activeTome = { itemId:strong.id, name:strong.name, icon:strong.icon, speedBonus:b, durationMs:W, expiresAt: now-W/2 };
+      near(FF.simulateOfflineTome(W).mult, 1 + 0.5*(1/(1-b)-1), 'a tome that lapsed halfway speeds only the covered half', 0.02);
+      // ...idle + Auto-study ON + a stash -> studies through and speeds up, consuming tomes.
+      s.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
+      s.autoTome = true; s.inventory = {}; s.inventory[strong.id] = 1000;
+      var rc = FF.simulateOfflineTome(W);
+      ok(rc.mult > 1, 'Auto-study keeps the speed-up going through the window from the stash');
+      ok((rc.consumed[strong.id]||0) > 0, 'and the tomes it studied are counted so they get consumed');
+      // ...idle + Auto-study OFF -> no offline speed-up, nothing consumed.
+      s.autoTome = false; s.inventory = {}; s.inventory[strong.id] = 1000;
+      var rc2 = FF.simulateOfflineTome(W);
+      eq(rc2.mult, 1, 'no active tome + Auto-study off -> no offline speed-up');
+      eq(Object.keys(rc2.consumed).length, 0, 'and nothing is consumed');
+    } finally { s.activeTome = sv.tome; s.autoTome = sv.auto; s.inventory = sv.inv; }
+  });
+
+  // ---- End-to-end: applyOfflineProgress actually APPLIES the tome throughput and brew bonus to gathering ----
+  // The sim suites above prove simulateOfflineTome/Brew; this proves the offline gather loop is wired to them
+  // (offlineTomeMult multiplies the tick count, offlineBrewYield credits bonus output), which a field-name typo
+  // in applyOfflineProgress would silently break.
+  suite('offline gather applies an active Tome (more output) and Brew (bonus output)', function(){
+    var s = FF._state;
+    var invKeys = ['foraging_t0','powder_t0','muddyartifact_t0','critter_cache'];
+    var sv = { act:s.activity, tome:s.activeTome, brew:s.activeBrew, at:s.autoTome, ab:s.autoBrew,
+               xp:s.xp.foraging, gathered:(s.stats&&s.stats['gathered'])||0, gf:(s.stats&&s.stats['gathered_foraging_t0'])||0, inv:{} };
+    invKeys.forEach(function(k){ sv.inv[k] = s.inventory[k]||0; });
+    var tomes = FF.TOME_STUDY_RECIPES.slice().sort(function(a,b){ return a.tomeSpeedBonus - b.tomeSpeedBonus; });
+    var brews = FF.BREW_DRINK_RECIPES.slice().sort(function(a,b){ return a.brewYield - b.brewYield; });
+    var strongTome = tomes[tomes.length-1], strongBrew = brews[brews.length-1];
+    var W = 30*60*1000; // 30 minutes: enough pulls that a ~10-25% tome speedup clears integer rounding
+    function forageOnce(){
+      s.inventory['foraging_t0'] = 0;
+      s.activity = { type:'gather', skill:'foraging', itemId:'foraging_t0', tier:0, progress:0 };
+      FF.applyOfflineProgress(W);
+      return s.inventory['foraging_t0']||0;
+    }
+    try {
+      s.autoTome = false; s.autoBrew = false;
+      var now = Date.now();
+      // Baseline: no tome, no brew.
+      s.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
+      s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
+      var base = forageOnce();
+      ok(base > 0, 'baseline offline foraging produced berries');
+      // A tome covering the window speeds the work -> MORE berries than baseline.
+      s.activeTome = { itemId:strongTome.id, name:strongTome.name, icon:strongTome.icon, speedBonus:strongTome.tomeSpeedBonus, durationMs:W*2, expiresAt: now+W };
+      s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
+      ok(forageOnce() > base, 'an active Tome speeds offline gathering (more berries than the base rate)');
+      // A brew covering the window adds bonus output on top of the same base ticks.
+      s.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
+      s.activeBrew = { itemId:strongBrew.id, name:strongBrew.name, icon:strongBrew.icon, yield:strongBrew.brewYield, durationMs:W*2, expiresAt: now+W };
+      ok(forageOnce() > base, 'an active Brew adds bonus output to offline gathering');
+    } finally {
+      s.activity = sv.act; s.activeTome = sv.tome; s.activeBrew = sv.brew; s.autoTome = sv.at; s.autoBrew = sv.ab; s.xp.foraging = sv.xp;
+      if(s.stats){ s.stats['gathered'] = sv.gathered; s.stats['gathered_foraging_t0'] = sv.gf; }
+      invKeys.forEach(function(k){ s.inventory[k] = sv.inv[k]; });
+    }
+  });
+
+  // ---- Brews (beverages) get the same treatment: strongest-first Auto-drink + offline bonus-output replay ----
+  suite('brews: strongest-first Auto-drink and offline yield replay', function(){
+    var s = FF._state, sv = { brew:s.activeBrew, auto:s.autoBrew, inv:s.inventory };
+    try {
+      var brews = FF.BREW_DRINK_RECIPES.slice().sort(function(a,b){ return a.brewYield - b.brewYield; });
+      ok(brews.length >= 2, 'there are at least two Brew tiers to compare');
+      var weak = brews[0], strong = brews[brews.length-1];
+      ok(strong.brewYield > weak.brewYield, 'the higher-tier brew has the bigger bonus-output chance');
+      // A) Auto-drink upgrades a weak running brew to a stronger stocked one, never downgrades.
+      s.autoBrew = true;
+      s.activeBrew = { itemId:weak.id, name:weak.name, icon:weak.icon, yield:weak.brewYield, durationMs:weak.brewDurationMs, expiresAt: Date.now()+100000 };
+      s.inventory = {}; s.inventory[strong.id] = 1;
+      FF.autoBrewTick();
+      near(s.activeBrew.yield, strong.brewYield, 'a stronger brew in stock upgrades the active weaker one', 1e-9);
+      eq(s.inventory[strong.id]||0, 0, 'the stronger brew was consumed by the upgrade');
+      s.activeBrew = { itemId:strong.id, name:strong.name, icon:strong.icon, yield:strong.brewYield, durationMs:strong.brewDurationMs, expiresAt: Date.now()+100000 };
+      s.inventory = {}; s.inventory[weak.id] = 5;
+      FF.autoBrewTick();
+      near(s.activeBrew.yield, strong.brewYield, 'a running strong brew is not downgraded', 1e-9);
+      eq(s.inventory[weak.id]||0, 5, 'and the weaker stock is untouched');
+      // B) Offline replay: a brew covering the whole window yields its full chance; half-window -> half.
+      var W = 3600*1000, now = Date.now(), y = strong.brewYield;
+      s.autoBrew = false; s.inventory = {};
+      s.activeBrew = { itemId:strong.id, name:strong.name, icon:strong.icon, yield:y, durationMs:W*2, expiresAt: now+W };
+      near(FF.simulateOfflineBrew(W).yield, y, 'a brew covering the whole window applies its full bonus-output chance offline', 0.01);
+      s.activeBrew = { itemId:strong.id, name:strong.name, icon:strong.icon, yield:y, durationMs:W, expiresAt: now-W/2 };
+      near(FF.simulateOfflineBrew(W).yield, y/2, 'a brew that lapsed halfway applies only half its chance', 0.01);
+      // ...idle + Auto-drink ON + a stash -> drinks through, consuming brews.
+      s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
+      s.autoBrew = true; s.inventory = {}; s.inventory[strong.id] = 1000;
+      var rc = FF.simulateOfflineBrew(W);
+      ok(rc.yield > 0, 'Auto-drink keeps the bonus-output going through the window from the stash');
+      ok((rc.consumed[strong.id]||0) > 0, 'and the brews it drank are counted so they get consumed');
+      // ...idle + Auto-drink OFF -> no offline bonus output, nothing consumed.
+      s.autoBrew = false; s.inventory = {}; s.inventory[strong.id] = 1000;
+      var rc2 = FF.simulateOfflineBrew(W);
+      eq(rc2.yield, 0, 'no active brew + Auto-drink off -> no offline bonus output');
+      eq(Object.keys(rc2.consumed).length, 0, 'and nothing is consumed');
+    } finally { s.activeBrew = sv.brew; s.autoBrew = sv.auto; s.inventory = sv.inv; }
+  });
+
   // ---- "Cast a Line" counts every fishing tier, not just tier-0 Bluegill (reported: active fisher stuck) ----
   suite('quest: Cast a Line counts all fishing tiers', function(){
     var s = FF._state, sv = s.stats;
