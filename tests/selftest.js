@@ -3541,6 +3541,35 @@
     }
   });
 
+  // ---- Offline tea: the XP boost prorates across the window and Auto-Drink works the stash (owner call) ----
+  // Offline XP is credited in one lump at login, when the pre-bed tea has expired, so the old code gave it no
+  // boost at all. simulateOfflineTea replays the tea timeline: the active tea covers its remaining time, and
+  // with Auto-Drink on the stash is drunk through to keep the boost going.
+  suite('offline tea: XP boost prorates across the away window', function(){
+    var s = FF._state, sv = { tea:s.activeTea, auto:s.autoTea, inv:s.inventory };
+    try {
+      var W = 3600*1000, now = Date.now();
+      // A) a tea active the whole window -> the whole lump is boosted.
+      s.autoTea = false;
+      s.activeTea = { itemId:'t', name:'T', icon:'', xpBoost:0.2, durationMs:W*2, expiresAt: now + W };
+      near(FF.simulateOfflineTea(W).mult, 1.2, 'a tea covering the whole window boosts all offline XP (+20%)', 0.01);
+      // B) a tea that ran out halfway, no auto-drink -> only that half is boosted.
+      s.activeTea = { itemId:'t', name:'T', icon:'', xpBoost:0.2, durationMs:W, expiresAt: now - W/2 };
+      near(FF.simulateOfflineTea(W).mult, 1.1, 'a tea that lapsed halfway boosts only the covered half', 0.02);
+      // C) no active tea, Auto-Drink ON, a full stash -> it drinks through and boosts, consuming teas.
+      var recipe = FF.TEA_DRINK_RECIPES[0];
+      ok(recipe && recipe.xpBoost > 0 && recipe.teaDurationMs > 0, 'a tea recipe exists to auto-drink');
+      s.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+      s.autoTea = true; s.inventory = {}; s.inventory[recipe.id] = 1000;
+      var rc = FF.simulateOfflineTea(W);
+      ok(rc.mult > 1, 'Auto-Drink keeps a boost going through the window from the stash');
+      ok((rc.consumed[recipe.id]||0) > 0, 'and the teas it drank are counted so they get consumed');
+      // D) no active tea, Auto-Drink OFF -> offline stays unboosted (the stash is preserved).
+      s.autoTea = false; s.inventory = {}; s.inventory[recipe.id] = 1000;
+      eq(FF.simulateOfflineTea(W).mult, 1, 'no active tea + Auto-Drink off -> no offline boost, nothing consumed');
+    } finally { s.activeTea = sv.tea; s.autoTea = sv.auto; s.inventory = sv.inv; }
+  });
+
   // ---- "Cast a Line" counts every fishing tier, not just tier-0 Bluegill (reported: active fisher stuck) ----
   suite('quest: Cast a Line counts all fishing tiers', function(){
     var s = FF._state, sv = s.stats;

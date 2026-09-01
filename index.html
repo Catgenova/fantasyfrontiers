@@ -16276,6 +16276,11 @@
   // the noisy per-event log + floating text + chronicle broadcasts are suppressed; the
   // results are shown in one "while you were away" summary popup instead.
   var offlineCapture = null;
+  // When a number (only during applyOfflineProgress), addXp uses THIS as the tea XP multiplier instead of the
+  // live isTeaActive() check: offline XP is credited in one lump at login, when the pre-bed tea has long
+  // expired, so the live check would give it no boost. simulateOfflineTea computes the time-weighted boost
+  // the tea (and, if Auto-Drink is on, the stash it drinks through) actually provided across the window.
+  var offlineTeaMult = null;
   var offlineSummaryData = null;   // holds the "while you were away" summary until dismissed
   var guildPeonOfflineMs = 0;      // deferred guild-peon offline catch-up (applied once the guild estate loads)
   var guildPeonOverflowMs = 0;     // deferred guild-peon PAST-CAP overflow (funded by Cooperage provisions)
@@ -16638,6 +16643,50 @@
     var start = Date.now() - windowMs;                       // when the offline window began
     return Math.max(0, Math.min(windowMs, state.activeFeast.expiresAt - start));
   }
+  // Replay the Tea XP buff across an offline window, exactly as playing live would. The pre-bed tea covers
+  // its remaining time from the window's start; when it (and each successor) runs out AND Auto-Drink is on,
+  // the best tea in the stash is drunk to keep the boost going (consuming it), just like the live auto-drink
+  // loop. Returns the TIME-WEIGHTED average multiplier to apply to the window's XP (1 = no boost), which teas
+  // were consumed, and the tea left active at login. Owner call (2026): offline should match online.
+  function simulateOfflineTea(windowMs){
+    var nowT = Date.now(), start = nowT - windowMs;
+    var t = start, boostedMs = 0, consumed = {};
+    // Working stock so best-tea selection reflects what we've already drunk this window.
+    function pickBest(){
+      var best = null;
+      for(var i=0;i<TEA_DRINK_RECIPES.length;i++){
+        var r = TEA_DRINK_RECIPES[i];
+        if(((state.inventory[r.id]||0) - (consumed[r.id]||0)) <= 0) continue;
+        if(!best || r.xpBoost > best.xpBoost || (r.xpBoost === best.xpBoost && r.teaDurationMs > best.teaDurationMs)) best = r;
+      }
+      return best;
+    }
+    var haveTea = !!(state.activeTea && state.activeTea.itemId);
+    var curTea = haveTea ? { itemId:state.activeTea.itemId, name:state.activeTea.name, icon:state.activeTea.icon, xpBoost:state.activeTea.xpBoost||0, durationMs:state.activeTea.durationMs||0 } : null;
+    var curExpires = haveTea ? state.activeTea.expiresAt : start;   // nothing active -> "expires" at the window start
+    var guard = 0;
+    while(t < nowT && guard++ < 100000){
+      if(curExpires > t){                                    // a tea is covering [t, min(curExpires, now))
+        var sliceEnd = Math.min(curExpires, nowT);
+        boostedMs += (sliceEnd - t) * (curTea ? curTea.xpBoost : 0);
+        t = sliceEnd;
+        if(t >= nowT) break;
+      }
+      if(!state.autoTea) break;                              // the active tea lapsed and no auto-drink -> rest of window is unboosted
+      var r = pickBest();
+      if(!r) break;                                          // stash empty
+      consumed[r.id] = (consumed[r.id]||0) + 1;
+      curTea = { itemId:r.id, name:r.name, icon:r.icon, xpBoost:r.xpBoost, durationMs:r.teaDurationMs };
+      curExpires = t + r.teaDurationMs;
+    }
+    return {
+      mult: 1 + (windowMs > 0 ? boostedMs / windowMs : 0),
+      consumed: consumed,
+      // The tea left active at login (curExpires still in the future), so the returning player picks up where
+      // the away window left off; null when the last tea expired before now.
+      activeTea: (curTea && curExpires > nowT) ? { itemId:curTea.itemId, name:curTea.name, icon:curTea.icon, xpBoost:curTea.xpBoost, durationMs:curTea.durationMs, expiresAt:curExpires } : null
+    };
+  }
   // Tome buff: studying a Bookbinding Tome speeds ALL gathering & crafting for a while (folded into
   // speedMultiplier). Its own timed channel, separate from Teas (XP) and Feasts (heal-over-time).
   function isTomeActive(){
@@ -16779,7 +16828,10 @@
     if(!isFinite(amount)) return; // never let a NaN/Infinity poison an xp total (would zero saveProgressScore and stop cloud saves)
     if(!isFinite(state.xp[skill])) state.xp[skill] = 0;
     var before = skillLevel(skill, state.xp[skill]);
-    if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
+    // Offline XP is a lump credited at login; use the window-averaged tea boost (simulateOfflineTea) rather
+    // than the live "is a tea active right now" check, which the expired pre-bed tea would fail.
+    if(typeof offlineTeaMult === 'number') amount = amount * offlineTeaMult;
+    else if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
     if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at 90% speed (10% penalty)
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) amount *= diligenceCraftXpMult(); // Diligence: +Crafting XP
@@ -21437,6 +21489,10 @@
     // its live Faith (zealotry) unchanged; the Faith/XP/relic costs are settled after the sims below.
     var faithPlan = planOfflineFaithActivity(capped);
     offlineFaithCtx = faithPlan.type ? { type:faithPlan.type, tier:faithPlan.tier, fraction:faithPlan.fraction } : null;
+    // Tea XP boost across the away window (match-online): every addXp below uses this window-averaged
+    // multiplier. The stash it drinks through + the tea left active are applied AFTER the sims (see below).
+    var teaPlan; try{ teaPlan = simulateOfflineTea(capped); }catch(e){ teaPlan = { mult:1, consumed:{}, activeTea:null }; }
+    offlineTeaMult = teaPlan.mult;
     try{
     if(act && act.type === 'gather'){
       var item = ALL_GATHER_ITEMS[act.itemId];
@@ -21611,6 +21667,16 @@
           + (faithPlan.died ? ' and is now dormant until you restore some. It stays active.' : '.'), 'important');
       }catch(e){}
     }
+    // Finalize the offline tea replay: stop using the window-averaged multiplier, consume the teas the
+    // stash auto-drank, and leave the tea that is still steeping (if any) active for the returning player.
+    offlineTeaMult = null;
+    try{
+      var _teaDrunk = 0;
+      Object.keys(teaPlan.consumed).forEach(function(id){ var n = teaPlan.consumed[id]||0; if(n>0){ state.inventory[id] = Math.max(0, (state.inventory[id]||0) - n); _teaDrunk += n; } });
+      if(_teaDrunk > 0) bumpStat('teas_drunk', _teaDrunk); // powers "A Restful Cup", same as live drinking
+      if(teaPlan.activeTea) state.activeTea = teaPlan.activeTea;
+      if(_teaDrunk > 0) addLog('While away, Auto-Drink brewed through ' + _teaDrunk + ' tea' + (_teaDrunk===1?'':'s') + ' to keep your XP boost going.', 'important');
+    }catch(e){ offlineTeaMult = null; }
     // Guild-estate peons run client-side against the shared grid, which isn't loaded yet at
     // login — defer their catch-up until the guild estate becomes ready (see the loop).
     if(state.guildPeons && state.guildPeons.length){ guildPeonOfflineMs = capped; guildPeonOverflowMs = Math.max(0, elapsedMs - capped); }
@@ -46543,7 +46609,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.3';
+  var GAME_VERSION = '0.1.0.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46837,7 +46903,7 @@
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, BREW_DRINK_RECIPES:BREW_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
-      isFeastActive:isFeastActive, feastRegenPer5s:feastRegenPer5s, feastOfflineActiveMs:feastOfflineActiveMs, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
+      isFeastActive:isFeastActive, feastRegenPer5s:feastRegenPer5s, feastOfflineActiveMs:feastOfflineActiveMs, simulateOfflineTea:simulateOfflineTea, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
       isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
