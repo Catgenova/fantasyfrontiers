@@ -13027,6 +13027,27 @@
     } finally { s.xp.miracle = saved.m; s.xp.devotion = saved.d; }
   });
 
+  // ---- Out of Faith reads as PAUSED, not a plain Stop (ticket-0206: "Miracle doesn't switch to start") ----
+  // The dry activity stays selected (its baseline buff persists, owner order v0.0.86.35), but the card must
+  // say so instead of showing a normal Stop button that reads as "still praying". Owner call: keep the buff,
+  // show a paused note.
+  suite('faith cards: out of Faith shows a paused note on the active tier', function(){
+    var s = FF._state, saved = { m:s.xp.miracle, fa:s.faithActivity, faith:s.faith };
+    try {
+      s.xp.miracle = 1e12; s.faithActivity = { type:'miracle', tier:0 };
+      // With Faith in the tank the active tier is a normal Stop, no paused note.
+      s.faith = 1000;
+      var live = FF.renderFaithActivityTab('miracle');
+      ok(/data-action="stopFaith"/.test(live), 'a running Miracle still shows a Stop button');
+      ok(!/Paused: out of Faith/.test(live), 'a running Miracle shows no paused note');
+      // At zero Faith the same active tier reads as paused (and still offers Stop to deselect).
+      s.faith = 0;
+      var dry = FF.renderFaithActivityTab('miracle');
+      ok(/Paused: out of Faith/.test(dry), 'a dry Miracle reads as paused so the player is not confused');
+      ok(/data-action="stopFaith"/.test(dry), 'a dry Miracle still offers Stop to free the Faith slot');
+    } finally { s.xp.miracle = saved.m; s.faithActivity = saved.fa; s.faith = saved.faith; }
+  });
+
   // ---- Equip: wands & scepters gate on their PROFICIENCY, not the crafting skill (like melee/ranged) ----
   suite('equip: wands & scepters require proficiency for higher tiers', function(){
     var s = FF._state, items = FF.STACKABLE_WEAPON_ITEMS;

@@ -37721,6 +37721,13 @@
       if(locked){
         html += '<div class="lock-note">Locked until level '+t.levelReq+'</div>';
       } else if(isActive){
+        // Out of Faith: the activity stays SELECTED so its passive baseline buff keeps applying ("Faith or
+        // not", owner order v0.0.86.35), but the card must read as PAUSED, not as a normally-running Stop
+        // button -- players read the plain Stop as "it is still praying" and reported the confusion
+        // (ticket-0206). The Stop button stays so they can deselect it and free the single Faith slot.
+        if(state.faith <= 0){
+          html += '<div class="lock-note">Paused: out of Faith. The '+rarityLabel+' buff stays active. Restore Faith to resume gaining xp.</div>';
+        }
         html += '<button class="action-btn stop" data-action="stopFaith">Stop</button>';
       } else {
         html += '<button class="action-btn" data-action="startFaith" data-kind="'+kind+'" data-tier="'+i+'">Start</button>';
@@ -46637,7 +46644,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.6';
+  var GAME_VERSION = '0.1.0.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
