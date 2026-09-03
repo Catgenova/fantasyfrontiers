@@ -4702,6 +4702,41 @@
     }
   });
 
+  // ---- In-game bug/feedback ticket (Mr Cookie's onsite ticket button) ----
+  // The "Report a Bug" tab renders a category picker + a details box when signed in, and a Discord
+  // fallback when signed out. The secret NEVER ships in the client: the panel only wires a call to the
+  // bug_report edge function; the webhook lives there.
+  suite('bug report: the onsite ticket panel', function(){
+    ok(typeof FF.renderBugReportPanel === 'function' && Array.isArray(FF.BUG_REPORT_CATS), 'panel + categories exported');
+    var savedCat = FF._bugReportCat();
+    try {
+      // Signed out: a clear sign-in prompt plus the Discord fallback link, and NO details textarea.
+      FF._authUserSet(null);
+      var out = FF.renderBugReportPanel();
+      ok(/Sign in/i.test(out), 'signed out, the panel asks the player to sign in');
+      ok(/discord\.gg/i.test(out), 'and offers the Discord fallback');
+      ok(!/id="bugReportText"/.test(out), 'no report box is shown when signed out');
+
+      // Signed in: the category chips (one per category, the selected one highlighted) and the details box.
+      FF._authUserSet({ username:'Tester', id:'u-bug', isGuest:false });
+      FF._bugReportCat('balance');
+      var inp = FF.renderBugReportPanel();
+      ok(/id="bugReportText"/.test(inp), 'signed in, the details box renders');
+      FF.BUG_REPORT_CATS.forEach(function(c){ ok(inp.indexOf('data-cat="'+c.id+'"') !== -1, 'a chip exists for the '+c.id+' category'); });
+      // The selected category carries the "on" class; exactly the chosen one.
+      ok(/tracker-chip on" data-action="setBugCat" data-cat="balance"/.test(inp), 'the chosen category chip is highlighted');
+      ok(!/tracker-chip on" data-action="setBugCat" data-cat="bug"/.test(inp), 'an unchosen category chip is not highlighted');
+      ok(inp.indexOf('data-action="submitBugReport"') !== -1, 'the send button dispatches to submitBugReport');
+
+      // The diagnostics line is best-effort text (never throws) and mentions the current tab.
+      var ctx = FF.bugReportContext();
+      ok(typeof ctx === 'string', 'bugReportContext returns a string');
+    } finally {
+      FF._authUserSet(null);
+      FF._bugReportCat(savedCat);
+    }
+  });
+
   // ---- Tower leaderboards: an All-Classes climb board + one per Class tower ----
   suite('leaderboard: the Tower climb boards', function(){
     // The profile carries a compact map of the deepest floor per entrance (best > 0 only).

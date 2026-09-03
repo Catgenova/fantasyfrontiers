@@ -16348,6 +16348,10 @@
   var settingsOpen = false;
   var settingsTab = 'profile';      // which Settings tab is showing (account/profile/interface/qol)
   var _lastSettingsTab = null;      // so a tab switch resets the scroll box instead of carrying it
+  // In-game bug/feedback ticket (Settings -> Report a Bug). Posts a structured report to the bug_report
+  // edge function, which owns the Discord webhook (no credential ships in index.html).
+  var bugReportCat = 'bug';         // bug | balance | suggestion | other
+  var bugReportBusy = false, bugReportMsg = '', bugReportOk = false;
   var selectedToolTier = {};
   var selectedWorkshopTier = {};
   var selectedCottageTier = 0;
@@ -31564,6 +31568,7 @@
     if(authUser) _tabs.push(['account','Account']);
     _tabs.push(['profile','Profile'], ['interface','Interface'], ['qol','Quality of Life']);
     if(chatIsOwner()) _tabs.push(['moderation','Moderation']); // owner-only chat-moderator management
+    _tabs.push(['report','Report a Bug']);
     _tabs.push(['patch','Patch Notes']);
     if(!_tabs.some(function(t){ return t[0]===settingsTab; })) settingsTab = _tabs[0][0];
     html += '<div class="settings-tabs">';
@@ -31604,6 +31609,8 @@
       html += SETTINGS_TOGGLES.filter(function(t){ return t.cat==='qol'; }).map(_toggleRow).join('');
     } else if(settingsTab==='moderation' && chatIsOwner()){
       html += renderChatModerationPanel();
+    } else if(settingsTab==='report'){
+      html += renderBugReportPanel();
     } else if(settingsTab==='patch'){
       html += renderPatchNotes();
     }
@@ -31623,7 +31630,10 @@
     // the top) and blank anything half-typed, so carry scroll + typed values + focus/caret across.
     var _prevScrollEl = overlay.querySelector('.settings-scroll');
     var _prevScroll = _prevScrollEl ? _prevScrollEl.scrollTop : 0;
-    var _vals = {}, _prevIn = overlay.querySelectorAll('input[id]');
+    // Carry input AND textarea values across the constant re-render (the Report a Bug details box is a
+    // textarea -- without this its half-typed report would be wiped ~10x/sec, the same reason the password
+    // fields are carried).
+    var _vals = {}, _prevIn = overlay.querySelectorAll('input[id], textarea[id]');
     for(var _vi = 0; _vi < _prevIn.length; _vi++){ if(_prevIn[_vi].type !== 'checkbox') _vals[_prevIn[_vi].id] = _prevIn[_vi].value; }
     var _act = document.activeElement;
     var _actId = (_act && _act.id && overlay.contains(_act)) ? _act.id : null;
@@ -39550,6 +39560,68 @@
     }catch(err){ guestUpgradeMsg = authFriendlyError(err, 'register'); guestUpgradeOk = false; }
     guestUpgradeBusy = false; renderSettingsModal();
   }
+  // ======== In-game bug / feedback ticket (Mr Cookie's onsite ticket button, 2026-08-19) ========
+  // A "Report a Bug" tab in Settings that posts a structured report to the bug_report edge function, which
+  // owns the Discord webhook (the ticket system lives on Discord). Nothing sensitive ships in index.html:
+  // the webhook is an edge-function secret and the author name is taken from the caller's profile server-side,
+  // not from anything typed here -- the same anti-impersonation stance as the community feed.
+  var BUG_REPORT_CATS = [
+    { id:'bug', label:'Bug' },
+    { id:'balance', label:'Balance' },
+    { id:'suggestion', label:'Suggestion' },
+    { id:'other', label:'Other' }
+  ];
+  var BUG_REPORT_MAX = 1000;  // client cap; the edge function re-caps, so this is only a UI courtesy
+  var BUG_REPORT_MIN = 8;     // a report shorter than this is almost never actionable
+  // Best-effort, NON-PII diagnostics the triager will want, gathered defensively so a missing field never
+  // blocks a report. The edge function treats every one of these as claimed text and sanitises it.
+  function bugReportContext(){
+    var bits = [];
+    try{ if(currentCategory) bits.push('tab:' + currentCategory); }catch(e){}
+    try{ var cid = activeClassId(state); if(cid) bits.push('class:' + cid); }catch(e){}
+    try{ bits.push('TL:' + playerTotalLevel(state)); }catch(e){}
+    try{ if(isMortal()) bits.push('mortal'); }catch(e){}
+    try{ bits.push('ua:' + (navigator.userAgent || '').slice(0, 140)); }catch(e){}
+    return bits.join(' | ');
+  }
+  function renderBugReportPanel(){
+    var html = '<div class="settings-row-desc" style="margin:0 0 10px;">Found a bug, or have feedback? Send it straight to the team. Reports post to our Discord, where the ticket system lives. Your username and the game version are attached automatically. No other personal data is sent.</div>';
+    if(!authUser){
+      html += '<div class="lock-note" style="margin-bottom:10px;">Sign in to submit a report from inside the game. You can also post directly on our Discord.</div>';
+      html += '<div style="display:flex;justify-content:center;margin:8px 0 4px;">'+discordLinkHtml('Report on Discord', 'padding:10px 22px;')+'</div>';
+      return html;
+    }
+    html += '<div class="settings-row-label" style="margin-bottom:6px;">What kind of report?</div>';
+    html += '<div class="tracker-picker-grid" style="margin-bottom:12px;">';
+    BUG_REPORT_CATS.forEach(function(c){ html += '<button class="tracker-chip'+(bugReportCat===c.id?' on':'')+'" data-action="setBugCat" data-cat="'+c.id+'">'+escapeHtml(c.label)+'</button>'; });
+    html += '</div>';
+    html += '<div class="settings-row-label" style="margin-bottom:6px;">Details</div>';
+    html += '<textarea id="bugReportText" class="chat-input" aria-label="Report details" rows="6" maxlength="'+BUG_REPORT_MAX+'" placeholder="What happened, and what did you expect instead? Steps to reproduce help a lot." style="resize:vertical;min-height:120px;font-family:inherit;"></textarea>';
+    if(bugReportMsg){ html += '<div style="font-size:12px;margin-top:8px;'+(bugReportOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(bugReportMsg)+'</div>'; }
+    html += '<button class="action-btn" data-action="submitBugReport" style="margin-top:12px;"'+(bugReportBusy?' disabled':'')+'>'+(bugReportBusy?'Sending&hellip;':'Send report')+'</button>';
+    html += '<div class="settings-row-desc" style="margin:14px 0 0;text-align:center;">Prefer Discord? '+discordLinkHtml('Open our Discord', 'padding:8px 18px;')+'</div>';
+    return html;
+  }
+  async function submitBugReport(){
+    if(bugReportBusy) return;
+    if(!authUser){ bugReportMsg = 'Sign in to submit a report.'; bugReportOk = false; renderSettingsModal(); return; }
+    var el = document.getElementById('bugReportText');
+    var text = ((el && el.value) || '').trim();
+    if(text.length < BUG_REPORT_MIN){ bugReportMsg = 'Please add a little more detail (at least '+BUG_REPORT_MIN+' characters).'; bugReportOk = false; renderSettingsModal(); return; }
+    bugReportBusy = true; bugReportMsg = ''; renderSettingsModal();
+    try{
+      if(!(await authEnsureClient())){ bugReportMsg = 'Could not reach the server. Try again, or report on Discord.'; bugReportOk = false; bugReportBusy = false; renderSettingsModal(); return; }
+      var r = await chatClient.functions.invoke('bug_report', { body: { category: bugReportCat, message: text, version: GAME_VERSION, context: bugReportContext() } });
+      if(r.error) throw r.error;
+      if(!r.data || !r.data.ok){ bugReportMsg = (r.data && r.data.error) || 'Could not send the report. Try again shortly.'; bugReportOk = false; bugReportBusy = false; renderSettingsModal(); return; }
+      bugReportOk = true; bugReportMsg = 'Thanks! Your report was sent to the team.';
+      bugReportBusy = false;
+      if(el) el.value = '';   // clear the box so a second submit is not an accidental duplicate
+      renderSettingsModal();
+      return;
+    }catch(err){ bugReportMsg = 'Could not send the report. Try again, or report on Discord.'; bugReportOk = false; }
+    bugReportBusy = false; renderSettingsModal();
+  }
   // ======== Account recovery: user-authored security questions ========
   // We store no email/PII, so these are the self-service password-reset path. Answers are hashed
   // + verified server-side (account_recovery Edge Function); the client only ever sends plaintext
@@ -45845,6 +45917,8 @@
     mortalRestartNext: function(btn, e){ mortalRestartAdvance(); },
     mortalRestartConfirm: function(btn, e){ mortalRestartExecute(); },
     setSettingsTab: function(btn, e){ settingsTab = btn.getAttribute('data-tab') || 'profile'; if(settingsTab==='moderation') chatModLoad().then(function(){ renderSettingsModal(); }); renderSettingsModal(); },
+    setBugCat: function(btn, e){ bugReportCat = btn.getAttribute('data-cat') || 'bug'; renderSettingsModal(); },
+    submitBugReport: function(btn, e){ submitBugReport(); },
     chatModAppoint: function(btn, e){ chatModAppoint(); },
     chatModRemove: function(btn, e){ chatModAct('chat_set_role', { p_target: btn.getAttribute('data-uid'), p_role:'none' }); },
     chatModSettingsUnmute: function(btn, e){ chatModAct('chat_unmute', { p_target: btn.getAttribute('data-uid') }); },
@@ -47024,7 +47098,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.2.2';
+  var GAME_VERSION = '0.1.3.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47265,6 +47339,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, rareCraftChance:rareCraftChance, supremeCraftChance:supremeCraftChance, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_RARE:FAITH_BASE_RARE, FAITH_BASE_SUPREME:FAITH_BASE_SUPREME, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
+      renderBugReportPanel:renderBugReportPanel, bugReportContext:bugReportContext, BUG_REPORT_CATS:BUG_REPORT_CATS, BUG_REPORT_MIN:BUG_REPORT_MIN, _bugReportCat:function(v){ if(v!==undefined) bugReportCat = v; return bugReportCat; },
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_VOTE:TICKER_VOTE, TICKER_VOTE_CHANCE:TICKER_VOTE_CHANCE, questNoteCombat:questNoteCombat, questNoteKill:questNoteKill, cbStat:cbStat, cbSetSize:cbSetSize, cbClassEvent:cbClassEvent, CB_ACTS:CB_ACTS, EST_ACTS:EST_ACTS, bumpStat:bumpStat, estStat:estStat, estSetSize:estSetSize, estStanding:estStanding, estStandingBuilding:estStandingBuilding, estCropHarvests:estCropHarvests,
       // Estate buildings (v0.0.90.0): the def table, the generic place/upgrade/remove trio, the three
       // effect hooks and the caches, so the suite can exercise a building end to end.
