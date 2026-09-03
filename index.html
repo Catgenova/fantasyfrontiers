@@ -23367,9 +23367,15 @@
       var onlyOne = tiersFor.length === 1;
       if(selectedBuildingTier[key] === undefined) selectedBuildingTier[key] = onlyOne ? tiersFor[0] : maxUnlocked;
       var sel = onlyOne ? tiersFor[0] : Math.min(selectedBuildingTier[key], maxUnlocked);
-      if(onlyOne && maxUnlocked < tiersFor[0]) return;   // Architecture too low to see it at all yet
+      // A single-tier grand build (Bunkhouse / Foreman's Office / Guild Longhouse) exists only at t20, whose
+      // level is 100. This card USED TO be hidden entirely until Architecture 100 (maxUnlocked reached 20), so
+      // every player below max Architecture thought these buildings did not exist -- the Guild Longhouse (the
+      // guild-project queue) most of all (reported: "can't find the guild queue building"). Show it LOCKED
+      // instead, with its Req. Lv, exactly as the game shows any other not-yet-reached content. The Build
+      // button is already gated on level + materials below, so nothing can be built early.
       if(!onlyOne) sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBuildingTierData(key, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:t}); });
       var data = getBuildingTierData(key, sel);
+      var lockedByLevel = lvl < data.levelReq;   // only ever true for the grand builds; multi-tier `sel` is capped at maxUnlocked
       var activeSlot = findActiveSpecialCraftSlotFor('building', {buildingKey:key, tierIndex:sel});
       var isActive = !!activeSlot;
       var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'architecture');
@@ -23377,11 +23383,12 @@
       var ready = lvl >= data.levelReq && hasInputs(data.inputs);
       var owned = state.inventory[def.prefix+sel]||0;
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-card'+(isActive?' active-item':'')+(lockedByLevel?' locked':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+svgIcon(def.shape, def.colorFor(sel))+'</div><div><div class="item-name">'+escapeHtml(def.nameFor(sel))+'</div><div class="item-meta">Owned this tier: '+fmt(owned)+'</div></div></div>';
       html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">'+escapeHtml(def.blurb(sel))+'</div>';
       if(def.gateSkill) html += '<div style="font-size:11px;color:var(--text-faint);margin:0 0 3px;">Placing it needs '+escapeHtml(buildingGateLabel(key, sel))+'.</div>';
       if(buildingIsGuildOnly(key)) html += '<div style="font-size:11px;color:var(--gold);margin:0 0 3px;">Raised on the GUILD estate only.</div>';
+      if(lockedByLevel) html += '<div class="lock-note">Locked until Architecture Lv '+data.levelReq+'.</div>';
       if(!onlyOne) html += '<div class="inputs-line">Tier: '+tierStepper('building',key,tierRange(maxUnlocked),sel,def.nameFor(sel)+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       else html += '<div class="inputs-line" style="color:var(--text-faint);">A single grand build. No tiers, only the bill.</div>';
       html += '<div class="item-stats">'+xpStat('architecture', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
@@ -46797,7 +46804,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.10';
+  var GAME_VERSION = '0.1.0.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

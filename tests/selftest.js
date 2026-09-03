@@ -1208,6 +1208,26 @@
     eq(FF.getSpecialTierData({ craftKind:'building', buildingKey:'apiary', tierIndex:4 }).name, defs.apiary.nameFor(4), 'the craft resolves its tier data through the registry');
   });
 
+  // ---- The t20 grand builds are VISIBLE below Architecture 100, shown locked (reported: can't find them) ----
+  // Bunkhouse / Foreman's Office / Guild Longhouse exist only at t20 (level 100). The Architecture menu USED TO
+  // return early and render nothing until the player hit 100, so most players thought the Guild Longhouse (the
+  // guild-project queue) did not exist. The card now shows LOCKED with its Req. Lv instead of vanishing.
+  suite('architecture: t20 grand builds show locked, not hidden, below Lv 100', function(){
+    var s = FF._state, saved = s.xp.architecture;
+    try {
+      s.xp.architecture = 0; // Architecture Lv 1, far below the t20 gate
+      var low = FF.renderWorkshopForge();
+      ok(low.indexOf('Guild Longhouse') !== -1, 'the Guild Longhouse card shows even at Architecture Lv 1 (it was hidden before)');
+      ok(low.indexOf('Bunkhouse') !== -1, 'the Bunkhouse card shows too');
+      ok(low.indexOf('Foreman') !== -1, "the Foreman's Office card shows too");
+      ok(low.indexOf('Locked until Architecture Lv 100') !== -1, 'and they read as locked with the Lv 100 requirement');
+      s.xp.architecture = 1e12; // Lv 100 (well past): the level lock is gone, only the material bill remains
+      var hi = FF.renderWorkshopForge();
+      ok(hi.indexOf('Guild Longhouse') !== -1, 'the Longhouse is still present at max Architecture');
+      ok(hi.indexOf('Locked until Architecture Lv 100') === -1, 'and no longer carries the level lock');
+    } finally { s.xp.architecture = saved; }
+  });
+
   // ---- AQUEDUCT: water only if the chain reaches real water, and only within its own tier's range ---
   suite('estate buildings: the Aqueduct carries water along a chain', function(){
     var s = FF._state, savedGrid = s.estate.grid, savedPlots = s.farmingPlots;
