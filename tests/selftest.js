@@ -1882,19 +1882,38 @@
       } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
 
       // THE FOREMAN'S OFFICE. Without one, a Cottage beside more than one Workshop is unlinked entirely,
-      // which quietly punishes dense layouts; with one it takes the best neighbour.
+      // which quietly punishes dense layouts; with one it links to ALL of them and its ONE Peon can be
+      // tasked to any adjacent skill (v0.1.2.2 "one flexible peon", was "the best" in v0.0.93.0).
       for(var e=0; e<12; e++){ for(var f=0; f<12; f++){ g[e][f].buildingId = null; g[e][f].workshopId = null; g[e][f].cottageId = null; } }
       g[5][5].cottageId = 'cottage_t10';
       g[4][5].workshopId = 'workshop_mining_t5';
       g[6][5].workshopId = 'workshop_forestry_t12';
       ok(!FF.estateAdjacentWorkshop(g, 5, 5), 'two adjacent Workshops leave the Cottage unlinked');
+      eq(FF.estateAdjacentWorkshops(g, 5, 5).length, 0, 'and estateAdjacentWorkshops lists none of them');
       eq(FF.estatePeonSources(g).length, 0, 'so it is not a Peon source');
       g[9][9].buildingId = 'foreman_t' + TOP;
+      // estateAdjacentWorkshop keeps returning the single BEST neighbour (the representative link)...
       var link = FF.estateAdjacentWorkshop(g, 5, 5);
       ok(!!link, 'with a Foreman on the estate it links');
-      eq(link.workshopId, 'workshop_forestry_t12', 'to the HIGHER-tier neighbour');
-      eq(FF.estatePeonSources(g).length, 1, 'and becomes a Peon source');
-      eq(FF.estatePeonSources(g)[0].skillId, 'forestry', 'for that workshop\'s skill');
+      eq(link.workshopId, 'workshop_forestry_t12', 'the representative link is the HIGHER-tier neighbour');
+      // ...but the Cottage now links to BOTH, and estateCottageWorkshopForSkill resolves each one.
+      eq(FF.estateAdjacentWorkshops(g, 5, 5).length, 2, 'with a Foreman it links to BOTH adjacent Workshops');
+      eq((FF.estateCottageWorkshopForSkill(g, 5, 5, 'mining')||{}).workshopId, 'workshop_mining_t5', 'the mining neighbour resolves by skill');
+      eq((FF.estateCottageWorkshopForSkill(g, 5, 5, 'forestry')||{}).workshopId, 'workshop_forestry_t12', 'the forestry neighbour resolves by skill');
+      ok(!FF.estateCottageWorkshopForSkill(g, 5, 5, 'fishing'), 'a skill with no adjacent workshop resolves to nothing');
+      var src = FF.estatePeonSources(g);
+      eq(src.length, 1, 'it is one Peon SOURCE (one Cottage = one Peon)');
+      ok(src[0].workshops && src[0].workshops.length === 2, 'carrying BOTH linked workshops for the picker');
+      eq(src[0].skillId, 'forestry', 'the legacy summary skill is the best (highest-cap) neighbour');
+      // Each linked skill is tier-capped by min(cottage, workshop): forestry_t12 capped by cottage_t10 = 10,
+      // mining_t5 capped by its own tier = 5.
+      var wsBySkill = {}; src[0].workshops.forEach(function(w){ wsBySkill[w.skillId] = w; });
+      eq(wsBySkill.forestry.tierCap, 10, 'forestry capped by the T10 cottage');
+      eq(wsBySkill.mining.tierCap, 5, 'mining capped by its own T5 workshop');
+      // peonOptionsFor spans BOTH skills, and every option is tagged with the skill it belongs to.
+      var opts = FF.peonOptionsFor(src[0]);
+      ok(opts.some(function(o){ return o.skillId === 'mining'; }) && opts.some(function(o){ return o.skillId === 'forestry'; }),
+         'the flexible cottage offers actions from both linked skills');
       // One adjacent Workshop is unchanged, and zero is still nothing.
       g[6][5].workshopId = null;
       eq((FF.estateAdjacentWorkshop(g, 5, 5)||{}).workshopId, 'workshop_mining_t5', 'a single neighbour links as it always did');
@@ -20873,6 +20892,48 @@
       s.peons = snap.peons; s.inventory = snap.inv;
       if(cellW && saveW){ cellW.type=saveW.type; cellW.paveTileId=saveW.pave; cellW.workshopId=saveW.ws; cellW.cottageId=saveW.cot; cellW.obstacle=saveW.obs; }
       if(cellC && saveC){ cellC.type=saveC.type; cellC.paveTileId=saveC.pave; cellC.workshopId=saveC.ws; cellC.cottageId=saveC.cot; cellC.obstacle=saveC.obs; }
+    }
+  });
+
+  // ---- Foreman's Office: a flexible peon runs the NON-best adjacent skill (v0.1.2.2) --------------
+  // The whole point of "one flexible peon": a Cottage between two Workshops (linked by a Foreman) can be
+  // tasked to the LOWER-tier skill, and the tick must keep resolving it by task.skillId -- not silently
+  // drop it because some other neighbour is the "best". Exercised through peonEffTime, which returns 0 the
+  // instant the source stops resolving, the same signal processPeonScope drops a task on.
+  suite('foreman: a flexible peon works its chosen non-best skill', function(){
+    var s = FF._state, snap = { peons:s.peons, inv:s.inventory };
+    // Three tiles + a Foreman on the always-owned core (5..14): a T5 Mining workshop, the Cottage, a T20
+    // Herbalism workshop. Herbalism (cap 20) is the "best"; the peon is tasked to Mining (cap 5).
+    var g = s.estate && s.estate.grid;
+    var cM = g && g[6] && g[6][6], cC = g && g[7] && g[7][6], cH = g && g[8] && g[8][6], cF = g && g[6] && g[6][8];
+    function saveCell(c){ return c && { type:c.type, pave:c.paveTileId, ws:c.workshopId, cot:c.cottageId, bld:c.buildingId, obs:c.obstacle }; }
+    function restore(c, sv){ if(c && sv){ c.type=sv.type; c.paveTileId=sv.pave; c.workshopId=sv.ws; c.cottageId=sv.cot; c.buildingId=sv.bld; c.obstacle=sv.obs; } }
+    var sM = saveCell(cM), sC = saveCell(cC), sH = saveCell(cH), sF = saveCell(cF);
+    try {
+      var defs = FF.WORKSHOP_ITEMS['workshop_mining_t5'] && FF.WORKSHOP_ITEMS['workshop_herbalism_t20'] && FF.COTTAGE_ITEMS['cottage_t20'];
+      ok(cM && cC && cH && cF && defs, 'core tiles + mining/herbalism/cottage defs exist');
+      if(cM && cC && cH && cF && defs){
+        [cM,cC,cH,cF].forEach(function(c){ c.type='paved'; c.paveTileId='paving_t20'; c.workshopId=null; c.cottageId=null; c.buildingId=null; c.obstacle=null; });
+        cM.workshopId = 'workshop_mining_t5';
+        cH.workshopId = 'workshop_herbalism_t20';
+        cC.cottageId = 'cottage_t20';
+        // Without the Foreman the crowded cottage resolves to neither...
+        ok(!FF.estateCottageWorkshopForSkill(g, 7, 6, 'mining'), 'without a Foreman the crowded cottage resolves to no skill');
+        cF.buildingId = 'foreman_t' + (FF.TIER_COUNT-1);
+        // ...with it, the chosen (non-best) skill resolves.
+        eq((FF.estateCottageWorkshopForSkill(g, 7, 6, 'mining')||{}).workshopId, 'workshop_mining_t5', 'with a Foreman the mining neighbour resolves by skill');
+        var mItem = (FF.GATHERING_SKILLS.mining.items||[])[0];
+        var task = { x:7, y:6, skillId:'mining', kind:'gather', itemId:mItem.id, progress:0, candleId:null, candleMs:0 };
+        s.peons = [task]; s.inventory = {};
+        var eff = FF.peonEffTime('personal', task);
+        ok(eff > 0, 'peonEffTime resolves the mining task even though herbalism is the best neighbour');
+        // And a task pointed at a skill with no adjacent workshop yields 0 (the drop signal).
+        var ghost = { x:7, y:6, skillId:'fishing', kind:'gather', itemId:'x', progress:0 };
+        eq(FF.peonEffTime('personal', ghost), 0, 'a task whose skill has no adjacent workshop resolves to 0 (dropped)');
+      }
+    } finally {
+      s.peons = snap.peons; s.inventory = snap.inv;
+      restore(cM, sM); restore(cC, sC); restore(cH, sH); restore(cF, sF);
     }
   });
 

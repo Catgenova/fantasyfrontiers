@@ -15593,7 +15593,7 @@
       bigStone: 250,
       gateSkill: 'architecture',
       maxPerEstate: function(){ return 1; },
-      blurb: function(){ return 'A Cottage beside SEVERAL Workshops links to the best of them instead of none. One per estate.'; }
+      blurb: function(){ return 'A Cottage beside SEVERAL Workshops links to ALL of them instead of none: its one Peon can be tasked to any adjacent Workshop\'s skill. One per estate.'; }
     },
     longhouse: {
       key:'longhouse', prefix:'longhouse_t', label:'Guild Longhouse', plural:'Guild Longhouses', shape:'castle',
@@ -22527,7 +22527,7 @@
     "A <b>Field fenced on all four borders</b> grows up to 15% faster, priced off the weakest of the four. Three grand sides and one cheap one buys you the cheap one.",
     "The <b>Estate Appraisal</b> is the share of your outer perimeter carrying a Wall, and it works your Peons up to 20% faster. Buying new ground lengthens that perimeter, so it dilutes until you wall the new edge.",
     "A <b>Bunkhouse</b> adds one Peon slot and one Salvage Yard slot. Five of them take you from five Peons to ten.",
-    "A <b>Foreman's Office</b> anywhere on the estate lets a Cottage with several neighbouring Workshops pick the best of them, instead of sitting idle for having too much choice.",
+    "A <b>Foreman's Office</b> anywhere on the estate links a Cottage with several neighbouring Workshops to ALL of them, instead of sitting idle for having too much choice. Its one Peon can be tasked to any of their skills.",
     "<b>Salvage Yards</b> break gear down for Scrap in their own Lands tab, and only gear at or below the Yard's own tier. A fantastic item is worth five times a normal one.",
     "A <b>Ley Font</b> can refund the crystals an Enchant just spent, and a <b>Bellows</b> the scrolls an Enhance spent. Neither touches the odds, only the bill.",
     "An <b>Apiary</b> banks Honey on its own clock and adds a crop to every Field within one tile. Several hives reaching one Field is still one bonus, as with Totems.",
@@ -32993,10 +32993,14 @@
       cell.cottageId = job.cottageId;
       if(giveRewards){
         if(!job.upgrade) bumpStat('cottage_built'); // cottages raised (not upgrades), powers "Hearth and Home"
-        var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
+        var cadjList = estateAdjacentWorkshops(estate.grid, job.x, job.y);
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('architecture', cotXp);
-        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Architecture XP.' + (cadj ? ' Linked to the adjacent ' + skillDisplayLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
+        var cLinkMsg;
+        if(cadjList.length === 1){ cLinkMsg = ' Linked to the adjacent ' + skillDisplayLabel(WORKSHOP_ITEMS[cadjList[0].workshopId].skillId) + ' Workshop.'; }
+        else if(cadjList.length > 1){ cLinkMsg = ' Linked to ' + cadjList.length + ' adjacent Workshops (a Foreman\'s Office lets one Peon work any of them).'; }
+        else { cLinkMsg = ' Place it beside a Workshop to house a Peon.'; }
+        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Architecture XP.' + cLinkMsg, 'important');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
@@ -33764,27 +33768,47 @@
   // ---- Cottages: placed on paved tiles beside a Workshop, they let Peons work that skill. Building
   // takes 10 min per tier (like the timed Workshop build). The cottage->workshop link is computed on demand.
   var estateCottageMenuOpen = false;
-  // The single Workshop cell orthogonally adjacent to (x,y), or null if there are 0 or 2+ (a cottage
-  // links to exactly one workshop). Works on any estate grid (personal or guild).
-  function estateAdjacentWorkshop(grid, x, y){
-    var dirs = [[1,0],[-1,0],[0,1],[0,-1]], found = null, count = 0, best = -1;
+  // EVERY Workshop cell orthogonally adjacent to (x,y) that this Cottage links to. The linking RULE:
+  //  - 0 or 1 adjacent Workshop: the plain case, that one (or none). A Foreman is irrelevant.
+  //  - 2+ adjacent Workshops: ALL of them WITH a FOREMAN'S OFFICE on this estate (v0.0.93.0, reworked to
+  //    "all" in v0.1.2.2 -- one flexible Peon taskable to any adjacent skill); NONE without one (a crowded
+  //    Cottage sits idle rather than silently guessing). Reading the grid it was handed is what scopes the
+  //    Office to its own estate -- called with the personal grid and the guild grid alike.
+  // Returns a list of { x, y, workshopId }.
+  function estateAdjacentWorkshops(grid, x, y){
+    var dirs = [[1,0],[-1,0],[0,1],[0,-1]], list = [];
     for(var i=0;i<dirs.length;i++){
       var nx = x+dirs[i][0], ny = y+dirs[i][1];
       var c = grid[nx] && grid[nx][ny];
-      if(c && c.workshopId){
-        count++;
-        // With a FOREMAN'S OFFICE on this estate the Cottage links to the BEST adjacent Workshop instead of
-        // being unlinked for having too many neighbours (v0.0.93.0). Without one the rule is unchanged:
-        // exactly one, or nothing. Reading the grid it was handed is what scopes the Office to its own
-        // estate -- this helper is called with the personal grid and the guild grid alike.
-        var t = (WORKSHOP_ITEMS[c.workshopId] || {}).tierIndex;
-        if(!(t >= 0)) t = -1;
-        if(count === 1 || t > best){ best = t; found = { x:nx, y:ny, workshopId:c.workshopId }; }
-      }
+      if(c && c.workshopId) list.push({ x:nx, y:ny, workshopId:c.workshopId });
     }
-    if(count === 0) return null;
-    if(count === 1) return found;
-    return gridHasBuilding(grid, 'foreman') ? found : null;
+    if(list.length <= 1) return list;
+    return gridHasBuilding(grid, 'foreman') ? list : [];
+  }
+  // The single BEST adjacent Workshop (highest tier), or null. Kept for callers that want one representative
+  // link -- the cottage-built log line and the Buildings-list "linked / not linked" readout. The Peon system
+  // resolves per-skill via estateCottageWorkshopForSkill instead, so a flexible Cottage is not pinned to its
+  // best neighbour.
+  function estateAdjacentWorkshop(grid, x, y){
+    var list = estateAdjacentWorkshops(grid, x, y), found = null, best = -1;
+    for(var i=0;i<list.length;i++){
+      var t = (WORKSHOP_ITEMS[list[i].workshopId] || {}).tierIndex;
+      if(!(t >= 0)) t = -1;
+      if(!found || t > best){ best = t; found = list[i]; }
+    }
+    return found;
+  }
+  // The adjacent Workshop matching a specific skill (the highest-tier one, if the layout somehow repeats a
+  // skill), or null. This is how a Peon task resolves ITS workshop: the task stores the skill it was assigned
+  // to, and re-finds the neighbour running that skill each tick -- so a Foreman-linked Cottage beside a
+  // Mining and a Smithing Workshop keeps a Smithing task working even though Mining might be the "best".
+  function estateCottageWorkshopForSkill(grid, x, y, skillId){
+    var list = estateAdjacentWorkshops(grid, x, y), found = null, best = -1;
+    for(var i=0;i<list.length;i++){
+      var w = WORKSHOP_ITEMS[list[i].workshopId];
+      if(w && w.skillId === skillId){ var t = w.tierIndex; if(!(t >= 0)) t = -1; if(t > best){ best = t; found = list[i]; } }
+    }
+    return found;
   }
   // Does this specific grid carry a building of that def? Used by effects that must apply to their OWN
   // estate rather than to whichever estate happens to be on screen.
@@ -34394,17 +34418,32 @@
              runwayMs: soonest ? soonest.hoursLeft*3600000 : 0 };
   }
   function peonItemTier(o){ if(o && typeof o.tierIndex === 'number') return o.tierIndex; var m = /_t(\d+)/.exec((o&&o.id)||''); return m ? parseInt(m[1],10) : 0; }
+  // One entry per staffable Cottage. `workshops` is the deduped-by-skill list of every adjacent Workshop the
+  // Cottage links to (highest tier per skill), each with its own tierCap = min(cottage, workshop). The
+  // legacy `skillId`/`tierCap` fields mirror the BEST of that list (highest cap) so the single-line picker
+  // summary and older callers keep reading one representative skill.
   function estatePeonSources(grid){
     var out = [];
     if(!grid) return out;
     for(var x=0;x<grid.length;x++){ for(var y=0;y<grid[x].length;y++){
       var cell = grid[x][y];
       if(!cell || !cell.cottageId) continue;
-      var adj = estateAdjacentWorkshop(grid, x, y);
-      if(!adj) continue;
-      var w = WORKSHOP_ITEMS[adj.workshopId], cot = COTTAGE_ITEMS[cell.cottageId];
-      if(!w || !cot) continue;
-      out.push({ x:x, y:y, skillId:w.skillId, tierCap: Math.min(cot.tierIndex, w.tierIndex) });
+      var cot = COTTAGE_ITEMS[cell.cottageId]; if(!cot) continue;
+      var adjs = estateAdjacentWorkshops(grid, x, y);
+      if(!adjs.length) continue;
+      var bySkill = {};
+      for(var i=0;i<adjs.length;i++){
+        var w = WORKSHOP_ITEMS[adjs[i].workshopId]; if(!w) continue;
+        var cap = Math.min(cot.tierIndex, w.tierIndex);
+        var ex = bySkill[w.skillId];
+        if(!ex || cap > ex.tierCap) bySkill[w.skillId] = { skillId:w.skillId, workshopId:adjs[i].workshopId, tierCap:cap };
+      }
+      var workshops = Object.keys(bySkill).map(function(k){ return bySkill[k]; });
+      if(!workshops.length) continue;
+      workshops.sort(function(a,b){ var la = skillDisplayLabel(a.skillId), lb = skillDisplayLabel(b.skillId); return la < lb ? -1 : (la > lb ? 1 : 0); });
+      var best = workshops[0];
+      for(var j=1;j<workshops.length;j++){ if(workshops[j].tierCap > best.tierCap) best = workshops[j]; }
+      out.push({ x:x, y:y, skillId:best.skillId, tierCap:best.tierCap, workshops:workshops });
     } }
     return out;
   }
@@ -34412,17 +34451,33 @@
   function peonTasksFor(scope){ return scope==='guild' ? state.guildPeons : state.peons; }
   function peonSetTasks(scope, arr){ if(scope==='guild') state.guildPeons = arr; else state.peons = arr; }
   function peonTaskAt(scope, x, y){ return peonTasksFor(scope).filter(function(t){ return t.x===x && t.y===y; })[0] || null; }
-  // Recipe/gather options a source can run (tier <= tierCap). Crafts limited to standard recipes.
+  // Recipe/gather options a source can run (tier <= that skill's tierCap), across EVERY workshop the Cottage
+  // links to. Each option carries its own skillId so the picker can group by skill and the assignment knows
+  // which neighbour to bind to. Crafts limited to standard recipes.
   function peonOptionsFor(source){
-    var out = [], cap = source.tierCap;
-    if(isGatherWorkshop(source.skillId)){
-      var g = GATHERING_SKILLS[source.skillId];
-      (g && g.items || []).forEach(function(it){ if(peonItemTier(it) <= cap) out.push({ kind:'gather', itemId:it.id, name:it.name, tierIndex:peonItemTier(it) }); });
-    } else {
-      var s = CRAFTING_SKILLS[source.skillId];
-      (s && s.recipes || []).forEach(function(r){ if(!r.shaftCraft && peonItemTier(r) <= cap) out.push({ kind:'craft', itemId:r.id, name:r.name, tierIndex:peonItemTier(r) }); });
-    }
+    var out = [];
+    var wsList = source.workshops || [{ skillId:source.skillId, tierCap:source.tierCap }];
+    wsList.forEach(function(ws){
+      var cap = ws.tierCap;
+      if(isGatherWorkshop(ws.skillId)){
+        var g = GATHERING_SKILLS[ws.skillId];
+        (g && g.items || []).forEach(function(it){ if(peonItemTier(it) <= cap) out.push({ kind:'gather', skillId:ws.skillId, itemId:it.id, name:it.name, tierIndex:peonItemTier(it) }); });
+      } else {
+        var s = CRAFTING_SKILLS[ws.skillId];
+        (s && s.recipes || []).forEach(function(r){ if(!r.shaftCraft && peonItemTier(r) <= cap) out.push({ kind:'craft', skillId:ws.skillId, itemId:r.id, name:r.name, tierIndex:peonItemTier(r) }); });
+      }
+    });
     out.sort(function(a,b){ return a.tierIndex - b.tierIndex; });
+    return out;
+  }
+  // The equipment producers a source can staff, across every linked Workshop skill. Each producer carries the
+  // skillId it belongs to and that skill's tierCap, so the tier submenu and the assignment resolve correctly.
+  function peonProducersFor(source){
+    var out = [];
+    var wsList = source.workshops || [{ skillId:source.skillId, tierCap:source.tierCap }];
+    wsList.forEach(function(ws){
+      peonSpecialProducers(ws.skillId).forEach(function(p){ out.push({ craftKind:p.craftKind, params:p.params, label:p.label, icon:p.icon, skillId:ws.skillId, tierCap:ws.tierCap }); });
+    });
     return out;
   }
   function peonGatherSuccess(skillId){
@@ -34468,10 +34523,10 @@
     for(var ti=0; ti<tasks.length; ti++){
       var task = tasks[ti];
       var cell = grid[task.x] && grid[task.x][task.y];
-      var adj = (cell && cell.cottageId) ? estateAdjacentWorkshop(grid, task.x, task.y) : null;
+      var adj = (cell && cell.cottageId) ? estateCottageWorkshopForSkill(grid, task.x, task.y, task.skillId) : null;
       var w = adj ? WORKSHOP_ITEMS[adj.workshopId] : null;
       var cot = (cell && cell.cottageId) ? COTTAGE_ITEMS[cell.cottageId] : null;
-      if(!w || !cot || w.skillId !== task.skillId){ changed = true; continue; } // source gone/changed -> drop task
+      if(!w || !cot){ changed = true; continue; } // source gone / no adjacent workshop of this skill -> drop task
       // Resolve the action's base time. Gather/standard-craft read the recipe table; special crafts
       // (equipment) rebuild a special-craft act and read getSpecialTierData (produced at NORMAL rarity).
       var baseTime = 0, act = null, conf = null;
@@ -34524,7 +34579,7 @@
   function peonEffTime(scope, task){
     var grid = peonGridFor(scope); if(!grid) return 0;
     var cell = grid[task.x] && grid[task.x][task.y];
-    var adj = cell && cell.cottageId ? estateAdjacentWorkshop(grid, task.x, task.y) : null;
+    var adj = cell && cell.cottageId ? estateCottageWorkshopForSkill(grid, task.x, task.y, task.skillId) : null;
     var w = adj ? WORKSHOP_ITEMS[adj.workshopId] : null, cot = cell && cell.cottageId ? COTTAGE_ITEMS[cell.cottageId] : null;
     if(!w || !cot) return 0;
     var baseTime;
@@ -34727,10 +34782,12 @@
   }
   // CHANGE MODE re-points an existing peon instead of adding one (ticket-0158). The two occupancy rules
   // invert: the cottage MUST already hold the peon we are re-tasking, and no new slot is consumed.
-  function peonAssignCore(){ // shared validation; returns { tasks, skillId, existing } or null
+  function peonAssignCore(skillId){ // shared validation; returns { tasks, skillId, existing } or null
     var scope = peonPicker.scope, grid = peonGridFor(scope);
     if(!grid || peonPicker.x === null){ peonPicker.open = false; renderPeonPicker(); return null; }
-    var adj = estateAdjacentWorkshop(grid, peonPicker.x, peonPicker.y);
+    // Resolve the neighbour running the CHOSEN skill (a Foreman-linked Cottage has several); fall back to the
+    // best neighbour when no skill is passed, for any legacy caller.
+    var adj = skillId ? estateCottageWorkshopForSkill(grid, peonPicker.x, peonPicker.y, skillId) : estateAdjacentWorkshop(grid, peonPicker.x, peonPicker.y);
     if(!adj){ addLog('That cottage is no longer next to a workshop.', 'danger'); peonPicker.open = false; render(); return null; }
     var tasks = peonTasksFor(scope);
     var existing = peonTaskAt(scope, peonPicker.x, peonPicker.y);
@@ -34750,6 +34807,7 @@
   // cleared so the tick (which dispatches purely on task.kind) can never read a stale itemId or tierIndex.
   function peonRetask(t, fields){
     t.kind = fields.kind;
+    if(fields.skillId) t.skillId = fields.skillId; // a flexible (Foreman) cottage can switch which adjacent skill the peon runs
     if(fields.kind === 'special'){
       t.craftKind = fields.craftKind; t.params = fields.params; t.tierIndex = fields.tierIndex;
       delete t.itemId;
@@ -34760,10 +34818,10 @@
     t.progress = 0;
     return t;
   }
-  function peonAssign(kind, itemId){
-    var c = peonAssignCore(); if(!c) return;
+  function peonAssign(kind, itemId, skillId){
+    var c = peonAssignCore(skillId); if(!c) return;
     if(c.existing && peonPicker.change){
-      peonRetask(c.existing, { kind:kind, itemId:itemId });
+      peonRetask(c.existing, { kind:kind, itemId:itemId, skillId:c.skillId });
       peonSetTasks(peonPicker.scope, c.tasks);
       addLog('Your peon switched to ' + peonTaskName(c.existing) + '. The candle and provisions carried over.', 'important');
     } else {
@@ -34774,9 +34832,9 @@
   }
   function peonAssignSpecial(tierIndex){
     var p = peonPicker.producer; if(!p) return;
-    var c = peonAssignCore(); if(!c) return;
+    var c = peonAssignCore(p.skillId); if(!c) return;
     if(c.existing && peonPicker.change){
-      peonRetask(c.existing, { kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex });
+      peonRetask(c.existing, { kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, skillId:c.skillId });
       peonSetTasks(peonPicker.scope, c.tasks);
       addLog('Your peon switched to ' + peonTaskName(c.existing) + '. The candle and provisions carried over.', 'important');
     } else {
@@ -34854,39 +34912,54 @@
     html += '<div class="familiar-popup-title">'+(peonPicker.change?'Change Task':'Assign a Peon')+' &bull; '+(scope==='guild'?'Guild':'My')+' Estate</div>';
     if(peonPicker.change) html += '<div class="empty-note" style="margin-bottom:10px;">Pick what this peon works on next. Its <b>candle</b> and <b>provisions</b> carry over; only its progress on the current action is lost.</div>';
     if(peonPicker.x === null){
-      html += '<div class="empty-note" style="margin-bottom:10px;">Pick a cottage to staff. Each shows its linked workshop skill and the highest action tier it can run.</div>';
+      html += '<div class="empty-note" style="margin-bottom:10px;">Pick a cottage to staff. Each shows its linked workshop skill(s) and the highest action tier it can run. A cottage linked to several workshops (needs a <b>Foreman\'s Office</b>) can be tasked to any of their skills.</div>';
       if(!free.length) html += '<div class="empty-note">No free cottages. Build a Cottage next to a Workshop first.</div>';
       free.forEach(function(s){
+        var wsList = s.workshops || [{ skillId:s.skillId, tierCap:s.tierCap }];
+        var label = wsList.map(function(ws){ return skillDisplayLabel(ws.skillId); }).join(', ');
+        var iconSkill = wsList.length > 1 ? null : s.skillId;
         html += '<button class="tracker-chip on" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px;" data-action="peonPickSource" data-x="'+s.x+'" data-y="'+s.y+'">';
-        html += '<span>'+peonSkillIcon(s.skillId)+' '+escapeHtml(skillDisplayLabel(s.skillId))+' &bull; ('+s.x+','+s.y+')</span><span class="style-lvl">up to '+TIER_NAMES[s.tierCap]+'</span></button>';
+        html += '<span>'+(iconSkill ? peonSkillIcon(iconSkill)+' ' : '')+escapeHtml(label)+' &bull; ('+s.x+','+s.y+')</span><span class="style-lvl">up to '+TIER_NAMES[s.tierCap]+'</span></button>';
       });
     } else {
       var src = sources.filter(function(s){ return s.x===peonPicker.x && s.y===peonPicker.y; })[0];
       if(!src){ html += '<div class="empty-note">That cottage is no longer available.</div>'; }
       else if(peonPicker.producer){
-        // Step 3: pick a tier for the chosen equipment producer (tier <= cap).
-        var prod = peonPicker.producer;
-        html += '<div class="empty-note" style="margin-bottom:10px;">'+(prod.icon||'')+' <b>'+escapeHtml(prod.label)+'</b>. Pick a tier to forge (≤ '+TIER_NAMES[src.tierCap]+', always <b>Normal</b> quality).</div>';
+        // Step 3: pick a tier for the chosen equipment producer (tier <= that producer's OWN skill cap).
+        var prod = peonPicker.producer, prodCap = (typeof prod.tierCap === 'number') ? prod.tierCap : src.tierCap;
+        html += '<div class="empty-note" style="margin-bottom:10px;">'+(prod.icon||'')+' <b>'+escapeHtml(prod.label)+'</b>. Pick a tier to forge (≤ '+TIER_NAMES[prodCap]+', always <b>Normal</b> quality).</div>';
         html += '<div class="tracker-picker-grid">';
-        for(var pt=0; pt<=src.tierCap; pt++){ html += '<button class="tracker-chip" data-action="peonPickTier" data-tier="'+pt+'">'+escapeHtml(peonSpecialTierName(prod, pt))+'</button>'; }
+        for(var pt=0; pt<=prodCap; pt++){ html += '<button class="tracker-chip" data-action="peonPickTier" data-tier="'+pt+'">'+escapeHtml(peonSpecialTierName(prod, pt))+'</button>'; }
         html += '</div><button class="mini-btn" data-action="peonPickBack" style="margin-top:8px;">&larr; Back to actions</button>';
       }
       else {
-        // Step 2: gather items / standard recipes (assign directly) + equipment producers (open a tier submenu).
-        var opts = peonOptionsFor(src);
-        peonPickerProducers = peonSpecialProducers(src.skillId);
-        html += '<div class="empty-note" style="margin-bottom:10px;"><b>'+escapeHtml(skillDisplayLabel(src.skillId))+'</b> cottage at ('+src.x+','+src.y+'). Choose an action (tier ≤ '+TIER_NAMES[src.tierCap]+').</div>';
-        if(!opts.length && !peonPickerProducers.length) html += '<div class="empty-note">This skill has no peon-runnable '+(isGatherWorkshop(src.skillId)?'gather':'recipe')+'.</div>';
-        if(opts.length){
-          html += '<div class="tracker-picker-grid">';
-          opts.forEach(function(o){ html += '<button class="tracker-chip" data-action="peonPickTask" data-kind="'+o.kind+'" data-item="'+escapeHtml(o.itemId)+'">'+escapeHtml(o.name)+'</button>'; });
-          html += '</div>';
-        }
-        if(peonPickerProducers.length){
-          html += '<div class="empty-note" style="margin:8px 0 4px;">Equipment (Normal quality, forged tier-by-tier):</div><div class="tracker-picker-grid">';
-          peonPickerProducers.forEach(function(p, pi){ html += '<button class="tracker-chip" data-action="peonPickProducer" data-idx="'+pi+'">'+(p.icon||'')+' '+escapeHtml(p.label)+' &rsaquo;</button>'; });
-          html += '</div>';
-        }
+        // Step 2: gather items / standard recipes (assign directly) + equipment producers (open a tier
+        // submenu), grouped per linked Workshop skill (a Foreman cottage links to several). Each option and
+        // producer carries the skill it belongs to so the assignment binds the peon to the right neighbour.
+        var wsList = src.workshops || [{ skillId:src.skillId, tierCap:src.tierCap }];
+        var multi = wsList.length > 1;
+        peonPickerProducers = peonProducersFor(src); // flat, indexed for dispatch; each carries skillId + tierCap
+        html += '<div class="empty-note" style="margin-bottom:10px;">Cottage at ('+src.x+','+src.y+')'+(multi?' &bull; linked to '+wsList.length+' workshops':'')+'. Choose an action.</div>';
+        var anything = false;
+        wsList.forEach(function(ws){
+          var opts = peonOptionsFor({ workshops:[ws] });
+          var prods = peonPickerProducers.filter(function(p){ return p.skillId === ws.skillId; });
+          if(!opts.length && !prods.length) return;
+          anything = true;
+          if(multi) html += '<div class="empty-note" style="margin:10px 0 4px;">'+peonSkillIcon(ws.skillId)+' <b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+')</div>';
+          else html += '<div class="empty-note" style="margin-bottom:6px;"><b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+').</div>';
+          if(opts.length){
+            html += '<div class="tracker-picker-grid">';
+            opts.forEach(function(o){ html += '<button class="tracker-chip" data-action="peonPickTask" data-kind="'+o.kind+'" data-item="'+escapeHtml(o.itemId)+'" data-skill="'+escapeHtml(o.skillId)+'">'+escapeHtml(o.name)+'</button>'; });
+            html += '</div>';
+          }
+          if(prods.length){
+            html += '<div class="empty-note" style="margin:6px 0 4px;">Equipment (Normal quality, forged tier-by-tier):</div><div class="tracker-picker-grid">';
+            prods.forEach(function(p){ var pi = peonPickerProducers.indexOf(p); html += '<button class="tracker-chip" data-action="peonPickProducer" data-idx="'+pi+'">'+(p.icon||'')+' '+escapeHtml(p.label)+' &rsaquo;</button>'; });
+            html += '</div>';
+          }
+        });
+        if(!anything) html += '<div class="empty-note">This cottage\'s linked workshop has no peon-runnable action.</div>';
         html += '<button class="mini-btn" data-action="peonPickBack" style="margin-top:8px;">&larr; Back to cottages</button>';
       }
     }
@@ -36965,9 +37038,13 @@
         }
       } else if(cell.cottageId){
         var cIt = COTTAGE_ITEMS[cell.cottageId];
-        var cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
+        var cAdjList = estateAdjacentWorkshops(estActive.grid, x, y);
+        var cLinkTxt;
+        if(cAdjList.length === 1){ cLinkTxt = 'Linked to the '+escapeHtml(skillDisplayLabel(WORKSHOP_ITEMS[cAdjList[0].workshopId].skillId))+' Workshop. Assign a Peon in the <b>Peons</b> tab.'; }
+        else if(cAdjList.length > 1){ cLinkTxt = 'Linked to '+cAdjList.length+' Workshops ('+escapeHtml(cAdjList.map(function(a){ return skillDisplayLabel(WORKSHOP_ITEMS[a.workshopId].skillId); }).join(', '))+'). Assign a Peon to any of them in the <b>Peons</b> tab.'; }
+        else { cLinkTxt = 'Not linked. Place beside a single Workshop, or beside several with a <b>Foreman\'s Office</b> on the estate.'; }
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(skillDisplayLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop. Assign a Peon in the <b>Peons</b> tab.') : 'Not linked. Place beside exactly one Workshop.')+'</div>';
+        html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+cLinkTxt+'</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveCottage" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
         var cCur = cIt?cIt.tierIndex:0, cPaveT = pavementTierOf(cell), cArchCap = estateArchitectureTierCap();
@@ -45709,7 +45786,7 @@
       else { peonPicker.x = null; peonPicker.y = null; }
       renderPeonPicker();
     },
-    peonPickTask: function(btn, e){ peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item')); },
+    peonPickTask: function(btn, e){ peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item'), btn.getAttribute('data-skill')); },
     peonPickProducer: function(btn, e){
       peonPicker.producer = peonPickerProducers[parseInt(btn.getAttribute('data-idx'),10)] || null; renderPeonPicker();
     },
@@ -46947,7 +47024,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.2.1';
+  var GAME_VERSION = '0.1.2.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47094,7 +47171,7 @@
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost, ESTATE_EXPANSION_ORDER:ESTATE_EXPANSION_ORDER, estateExpand:estateExpand,
       ESTATE_EXPANSION_MULT:ESTATE_EXPANSION_MULT, ESTATE_EXPANSION_BASE_COST:ESTATE_EXPANSION_BASE_COST, ESTATE_EXPANSION_FINAL_COST:ESTATE_EXPANSION_FINAL_COST, ESTATE_EXPANSION_TILE_COUNT:ESTATE_EXPANSION_TILE_COUNT,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
-      peonTaskTier:peonTaskTier, applySbEchoTick:applySbEchoTick, spellbladeBonus:spellbladeBonus, effectGateOpen:effectGateOpen, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
+      peonTaskTier:peonTaskTier, applySbEchoTick:applySbEchoTick, spellbladeBonus:spellbladeBonus, effectGateOpen:effectGateOpen, renderPeonSection:renderPeonSection, estateAdjacentWorkshop:estateAdjacentWorkshop, estateAdjacentWorkshops:estateAdjacentWorkshops, estateCottageWorkshopForSkill:estateCottageWorkshopForSkill, peonOptionsFor:peonOptionsFor, peonProducersFor:peonProducersFor, estatePeonSources:estatePeonSources, peonRetask:peonRetask, peonAssign:peonAssign, peonAssignSpecial:peonAssignSpecial, peonTaskAt:peonTaskAt, peonTasksFor:peonTasksFor, peonSetTasks:peonSetTasks, peonTaskName:peonTaskName, peonStop:peonStop, _peonPicker:function(v){ if(v) peonPicker = v; return peonPicker; }, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateCancelJob:estateCancelJob, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, estateJobFromServer:estateJobFromServer, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,
