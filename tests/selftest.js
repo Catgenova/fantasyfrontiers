@@ -20226,7 +20226,7 @@
     ok(FF.planInscriptions(5, 1) === null, 'cannot plan when no Scroll is tier5+');
     var pl = FF.planInscriptions(2, 3);
     ok(pl && pl.plan.scroll_t2===1 && pl.plan.scroll_t4===2 && pl.maxTier===4, 'plans tier2 Scroll first then higher');
-    ok(FF.ALL_CRAFT_RECIPES['scroll_t0'] && FF.ALL_CRAFT_RECIPES['scroll_t0'].name === 'Warding Scrap', 'the tier-0 Inscription Scroll is Warding Scrap');
+    ok(FF.ALL_CRAFT_RECIPES['scroll_t0'] && FF.ALL_CRAFT_RECIPES['scroll_t0'].name === 'Warding Scrap Scroll', 'the tier-0 Inscription Scroll is Warding Scrap Scroll');
     s.inventory = savedInv;
   });
 
@@ -22115,8 +22115,9 @@
   // ---- ticket-0157: Inscription Scrolls are findable in the inventory ------------------------------
   // The report: "searching for Inscription or Scroll in the Inventory screen produces no matches", with
   // a moderate stock visible on the Improvement page. The items were there all along -- they are named
-  // 'Minor Sigil', 'Empyreal Ward', 'Warding Codex' and so on, and only 2 of the 21 contain the word
-  // "Scroll" while NONE contain "Inscription", which is the name the Enhance row uses for them. The
+  // 'Minor Sigil', 'Empyreal Ward', 'Warding Codex' and so on -- originally only 2 of the 21 contained the
+  // word "Scroll" (the names now all END in "Scroll" per a later player request) and NONE contain
+  // "Inscription", the name the Enhance row uses for them, so the alias is still doing that half. The
   // sibling material never had the problem because every Enchant Crystal is literally named
   // "<Gem> Enchant Crystal". Search now also matches an alias: the producing skill plus any explicit
   // keywords on the def.
@@ -22137,6 +22138,11 @@
       if(((FF.ALL_SELLABLE['scroll_t'+j]||{}).name||'').toLowerCase().indexOf('inscription') !== -1) byNameOnly++;
     }
     eq(byNameOnly, 0, 'no scroll is named "Inscription", which is why the search failed');
+    // BROWSE half (player request, owner-approved): every tier now ENDS in "Scroll" so a player scrolling
+    // the item list can tell a 'Warding Scrap' is a Scroll without opening the skill description.
+    var endsInScroll = 0;
+    for(var t=0;t<FF.TIER_COUNT;t++){ if(/scroll$/i.test((FF.ALL_SELLABLE['scroll_t'+t]||{}).name||'')) endsInScroll++; }
+    eq(endsInScroll, FF.TIER_COUNT, 'every Inscription Scroll name ends in "Scroll" for at-a-glance browsing');
     // The generalised half: crafted AND gathered items answer to the skill that produces them.
     ok(FF.itemSearchAlias('carpentry_t0').indexOf('carpentry') !== -1, 'a Plank is findable by "carpentry"');
     ok(FF.itemSearchAlias('mining_t0').indexOf('mining') !== -1, 'an ore is findable by "mining" (gathered items too)');
@@ -22148,7 +22154,7 @@
     try {
       S.inventory = {}; S.inventory['scroll_t20'] = 12; S.inventory['scroll_t19'] = 3;
       var bd = FF.ownedIdsBreakdown(['scroll_t19','scroll_t20']);
-      ok(/Eternal Sigil: 3/.test(bd) && /Ward of the Gods: 12/.test(bd), 'the breakdown names each tier and its count: ' + bd);
+      ok(/Eternal Sigil Scroll: 3/.test(bd) && /Ward of the Gods Scroll: 12/.test(bd), 'the breakdown names each tier and its count: ' + bd);
       ok(/title="/.test(FF.improveMaterialSpan('scroll_t', 19, 1)), 'the readout carries the breakdown as a title');
       S.inventory = {};
       eq(FF.ownedIdsBreakdown(['scroll_t19','scroll_t20']), 'You hold none of these.', 'an empty bag says so plainly');

@@ -3334,7 +3334,13 @@
   var ESSENCE_NAMES = ['Faint Mote','Dim Aether','Pale Wisp','Spirit Dust','Arcane Mote','Ether Wisp','Astral Dust','Mana Crystal','Ley Wisp','Aether Shard','Spirit Ember','Void Mote','Star Dust','Ley Crystal','Runed Aether','Celestial Mote','Astral Shard','Ethereal Core','Cosmic Dust','Empyreal Essence','Primordial Aether'];
   var ESSENCE_COLORS = _rampColors([0x5a,0x8a,0xc8], [0x9a,0x5a,0xc8]);   // arcane blue -> violet
   var ESSENCE_ICONS = ESSENCE_COLORS.map(function(c){ return svgIcon('dust', c); });
-  var SCROLL_NAMES = ['Warding Scrap','Minor Sigil','Warding Note','Sigil of Guard','Rune Scroll','Aegis Sigil','Greater Ward','Runed Tablet','Sigil of Aegis','Warding Codex','Astral Sigil','Guardian Scroll','Celestial Ward','Runic Aegis','Sigil of Protection','Empyreal Ward','Cosmic Sigil','Aegis of Ages','Primordial Ward','Eternal Sigil','Ward of the Gods'];
+  // Every tier ENDS in "Scroll" so a player browsing item names can tell at a glance that a 'Warding Scrap'
+  // is a Scroll (player request, owner-approved). The flavour name stays the source; " Scroll" is appended
+  // unless it already ends in it (so 'Rune Scroll' / 'Guardian Scroll' don't double up). Inventory SEARCH for
+  // "scroll"/"inscription" was already handled separately by itemSearchAlias (ticket-0157); this is the
+  // browse-the-names half.
+  var SCROLL_NAMES = ['Warding Scrap','Minor Sigil','Warding Note','Sigil of Guard','Rune Scroll','Aegis Sigil','Greater Ward','Runed Tablet','Sigil of Aegis','Warding Codex','Astral Sigil','Guardian Scroll','Celestial Ward','Runic Aegis','Sigil of Protection','Empyreal Ward','Cosmic Sigil','Aegis of Ages','Primordial Ward','Eternal Sigil','Ward of the Gods']
+    .map(function(n){ return /scroll$/i.test(n) ? n : n + ' Scroll'; });
 
   // ---- Pottery + Goldsmithing: the "refinement" slice for the jewelry chain -----------------------
   // Pottery fires Digging's clay into a 21-tier Crucible ladder (1:1); Goldsmithing casts a Metallurgy
@@ -6276,9 +6282,10 @@
   // ---- Inventory search aliases (ticket-0157) ------------------------------------------------------
   // An item is findable by the words the GAME uses for it, not only by its own flavour name. The report:
   // the Enhance row says "1 Inscription Scroll", and searching the inventory for "Inscription" or
-  // "Scroll" returned nothing, because those 21 items are named 'Minor Sigil', 'Empyreal Ward',
-  // 'Warding Codex' and so on. Only 2 of the 21 contain the word "Scroll" and none contain
-  // "Inscription". (The sibling material got this right by accident: every Enchant Crystal is literally
+  // "Scroll" returned nothing, because those 21 items were named 'Minor Sigil', 'Empyreal Ward',
+  // 'Warding Codex' and so on -- none contained "Inscription", and only 2 contained "Scroll" (the names now
+  // all END in "Scroll", a later player request, but still none say "Inscription", so the alias still earns
+  // its keep). (The sibling material got this right by accident: every Enchant Crystal is literally
   // named "<Gem> Enchant Crystal", so searching "crystal" finds all 21.)
   // The alias is the PRODUCING SKILL's label plus any explicit `keywords` on the def, so every crafted
   // and gathered item becomes findable by the skill that makes it. That fixes the whole family of
@@ -17622,7 +17629,7 @@
   // Success ramps LINEARLY from 95% for the first enhance (+0 -> +1) down to 5% for the last (+14 -> +15),
   // i.e. -(0.90/(ENHANCE_MAX-1)) per level already reached, clamped to [5%, 95%]. A failure DESTROYS the
   // item (unless a Barrier Shard absorbs it). Cost = (current +level + 1) Inscription Scrolls (scroll_t<n>,
-  // e.g. Warding Scrap) of tier >= the item's tier -- the Scrolls that the Inscription skill scribes.
+  // e.g. Warding Scrap Scroll) of tier >= the item's tier -- the Scrolls that the Inscription skill scribes.
   function enhanceSuccessChance(enhance){ return Math.max(0.05, Math.min(0.95, 0.95 - (0.90/(ENHANCE_MAX-1))*(enhance||0))); }
   // Total materials of `prefix`+tier owned across tiers >= fromTier (for the "you have N" readouts).
   function planInscriptions(itemTier, count){
@@ -17660,7 +17667,7 @@
     }
     var cost = u.enhance + 1;
     var planned = planInscriptions(u.tier, cost);
-    if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of '+improveTierLabel(improveMatTier(u.tier))+' or higher.','danger'); return; }
+    if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. '+SCROLL_NAMES[0]+') of '+improveTierLabel(improveMatTier(u.tier))+' or higher.','danger'); return; }
     if(planned.maxTier>improveMatTier(u.tier) && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
     enhanceWarnArmed = false;
     if(spendImprovePlan(planned.plan, 'enhance')) addLog(improveRefundLabel('enhance'), 'important');
@@ -23208,7 +23215,7 @@
   // spending were always right; only the label lied. Every improvement-tab tier mention routes through
   // this so the two screens can never disagree again.
   function improveTierLabel(tierIndex){ return 't' + tierIndex; }
-  // Per-tier breakdown behind an owned-live figure ("Ward of the Gods: 12, Eternal Sigil: 3"). Shared by
+  // Per-tier breakdown behind an owned-live figure ("Ward of the Gods Scroll: 12, Eternal Sigil Scroll: 3"). Shared by
   // the render and by updateDynamic, so the tooltip can never drift from the number beside it (the
   // inputsLine spans learned that lesson the hard way in the comma sweep).
   function ownedIdsBreakdown(ids){
@@ -46874,7 +46881,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.1.3';
+  var GAME_VERSION = '0.1.1.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
