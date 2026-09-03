@@ -23065,7 +23065,10 @@
     if(firstFrontierComplete()) return '';
     return '<div class="section-intro beginner-intro">New here? Press <b>Start</b> on a resource below to begin gathering (the first tier is always ready at Level 1). Your <b>current objective</b> is pinned in the tracker above, and <b>Quests &rarr; First Frontier</b> walks you through the whole game, step by step.</div>';
   }
-  function renderGatherTab(skillKey){ return gatheringBeginnerNudge(skillKey) + renderGatherTabBody(skillKey) + renderToolCardFor(skillKey); }
+  // Tool card sits at the TOP of the tab (player request, Kirbiitis/owner-approved): at the bottom of a long
+  // resource list it was easy to miss. renderToolCardFor returns '' for skills with no tool, so tool-less
+  // tabs are unchanged.
+  function renderGatherTab(skillKey){ return gatheringBeginnerNudge(skillKey) + renderToolCardFor(skillKey) + renderGatherTabBody(skillKey); }
   function renderGatherTabBody(skillKey){
     var skill = GATHERING_SKILLS[skillKey];
     var lvl = getLevel(state.xp[skillKey]);
@@ -23293,7 +23296,7 @@
   // stay untouched.
   function craftStatsLine(){ return ''; }
 
-  function renderCraftTab(skillKey){ return renderCraftTabBody(skillKey) + renderToolCardFor(skillKey); }
+  function renderCraftTab(skillKey){ return renderToolCardFor(skillKey) + renderCraftTabBody(skillKey); }
   function renderCraftTabBody(skillKey){
     if(skillKey==='weaponsmithing') return renderWeaponSmithTab();
     if(skillKey==='armorsmithing') return renderArmorSmithTab();
@@ -46944,7 +46947,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.2.0';
+  var GAME_VERSION = '0.1.2.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

@@ -2089,6 +2089,16 @@
     }
   });
 
+  // ---- The Tool card sits ABOVE the resource list, not at the bottom (player request, Kirbiitis) ----
+  suite('skill tab: Tool card is at the top', function(){
+    var tab = FF.renderGatherTab('mining');   // Mining has a Pickaxe tool
+    var toolIdx = tab.indexOf('>Tool</h3>');
+    var barIdx = tab.indexOf('topbar-mining');  // the skill progress bar, first thing in the resource body
+    ok(toolIdx !== -1, 'the Mining tab shows a Tool card');
+    ok(barIdx !== -1, 'and the skill progress bar');
+    ok(toolIdx < barIdx, 'the Tool card renders before the progress bar / resource list, not below it');
+  });
+
   // ---- Architecture split: Carpentry keeps Planks; buildings + Woodcarving move to Construction -----
   suite('architecture: the Carpentry split + stonework building bills', function(){
     // The new skill exists in Construction; Carpentry stays (planks only); Woodcarving moved over.
