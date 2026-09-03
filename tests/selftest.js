@@ -12966,23 +12966,26 @@
     s.jewelrySlots.ring1 = { typeId:'plain', tier:1, rarity:'normal' };
     ok(FF.questComplete(q42), 'a ring in a ring slot completes');
     invGrantCheck('cut_and_set','amulet_t0_normal',1);
-    // 43 Steel Sharpened: enhance a unique to +5 (progress = max enhance)
-    var q43 = FF.questById('steel_sharpened');
-    ok(!!q43 && q43.target===5, 'Steel Sharpened: to +5');
+    // Steel Sharpened: enhance a unique to +5 (progress = max enhance). Numbered AFTER Bind the Crystal now
+    // (ticket-0211): enchant-then-enhance is the intended order, so the enchant quest comes first.
+    var qSteel = FF.questById('steel_sharpened');
+    ok(!!qSteel && qSteel.target===5, 'Steel Sharpened: to +5');
     // Progress reads the non-regressing enhance_best stat (set on any successful enhance of ANY item, not
     // just masterwork loot) so a later shatter can't drop the bar back below +5.
     s.quests={claimed:{}}; s.stats={ enhance_best:4 };
-    eq(FF.questProgress(q43), 4, '+4 reads as 4/5 progress');
-    eq(FF.questComplete(q43), false, '+4 is not complete');
-    s.stats.enhance_best = 5; ok(FF.questComplete(q43), '+5 on any item completes');
+    eq(FF.questProgress(qSteel), 4, '+4 reads as 4/5 progress');
+    eq(FF.questComplete(qSteel), false, '+4 is not complete');
+    s.stats.enhance_best = 5; ok(FF.questComplete(qSteel), '+5 on any item completes');
     s.gold=0; ok(FF.claimQuest('steel_sharpened'), 'claim steel_sharpened'); eq(s.gold, 2000, 'grants 2000 gold');
-    // 44 Bind the Crystal: enchant a piece -> 5 crystals
-    var q44 = FF.questById('bind_the_crystal');
-    ok(!!q44 && q44.target===1, 'Bind the Crystal: target 1');
+    // Bind the Crystal: enchant a piece -> 5 crystals. Comes BEFORE Steel Sharpened in the numbering.
+    var qBind = FF.questById('bind_the_crystal');
+    ok(!!qBind && qBind.target===1, 'Bind the Crystal: target 1');
     s.quests={claimed:{}}; s.stats={};
-    eq(FF.questComplete(q44), false, 'no enchant applied -> not complete');
-    s.stats['enchants_applied']=1; ok(FF.questComplete(q44), 'one enchant completes');
+    eq(FF.questComplete(qBind), false, 'no enchant applied -> not complete');
+    s.stats['enchants_applied']=1; ok(FF.questComplete(qBind), 'one enchant completes');
     invGrantCheck('bind_the_crystal','enchant_t0',5);
+    // The enchant quest is numbered ahead of the enhance quest (enchant-then-enhance, ticket-0211).
+    ok(FF.QUEST_ORDINAL['bind_the_crystal'] < FF.QUEST_ORDINAL['steel_sharpened'], 'Bind the Crystal is numbered before Steel Sharpened');
     // 45 Ward and Glyph: equip a ward
     var q45 = FF.questById('ward_and_glyph');
     ok(!!q45 && q45.target===1, 'Ward and Glyph: target 1');
