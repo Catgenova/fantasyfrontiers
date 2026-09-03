@@ -1239,6 +1239,20 @@
     ok(FF.TICKER_TIPS.some(function(t){ return /Summoner/.test(t) && /companion slot/i.test(t); }), 'a tip now explains the Summoner class opens the Companion slots');
   });
 
+  // ---- Dark mode: an Interface toggle that flips the ff-dark theme class on <html> ----
+  suite('dark mode: the Interface toggle flips the ff-dark theme class', function(){
+    var dm = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'darkMode'; })[0];
+    ok(!!dm, 'a darkMode setting toggle exists');
+    eq(dm.cat, 'interface', 'it lives under the Interface settings section');
+    var s = FF._state, sv = s.settings.darkMode, had = document.documentElement.classList.contains('ff-dark');
+    try {
+      s.settings.darkMode = true; FF.applyDarkModePref();
+      ok(document.documentElement.classList.contains('ff-dark'), 'turning it on adds the ff-dark class to <html>');
+      s.settings.darkMode = false; FF.applyDarkModePref();
+      ok(!document.documentElement.classList.contains('ff-dark'), 'turning it off removes the class');
+    } finally { s.settings.darkMode = sv; document.documentElement.classList.toggle('ff-dark', had); }
+  });
+
   // ---- AQUEDUCT: water only if the chain reaches real water, and only within its own tier's range ---
   suite('estate buildings: the Aqueduct carries water along a chain', function(){
     var s = FF._state, savedGrid = s.estate.grid, savedPlots = s.farmingPlots;

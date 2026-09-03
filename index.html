@@ -25,6 +25,10 @@
            full-size flash on every load, the exact jump this pre-load block exists to prevent. */
         try { if(localStorage.getItem('ff-compact-desktop') === '1') document.documentElement.style.setProperty('--ui-scale', '0.75'); } catch(e2){}
       }
+      /* Dark mode is a per-account setting, but applying it only after the save parses would flash the light
+         theme on every load. A localStorage mirror (written by applyDarkModePref) lets us add the class here,
+         before the body renders -- same precedent as ff-compact-desktop above. */
+      try { if(localStorage.getItem('ff-dark-mode') === '1') document.documentElement.classList.add('ff-dark'); } catch(e3){}
     } catch(e){}
   })();
 </script>
@@ -2517,6 +2521,45 @@
     background-color:#141109;
     background-image:radial-gradient(ellipse at 50% 38%, rgba(70,60,44,.5), rgba(26,22,16,.78)),url('art/marble_dark.png');
     background-size:auto,cover;background-position:center;background-clip:padding-box;}
+
+  /* ===================== DARK MODE (Settings > Interface toggle) =====================
+     OFF by default -- the game's design is dark boxes on white marble. When the player turns it on, the class
+     `ff-dark` is placed on <html>, which does two things:
+       1. re-scopes the ROOT palette to the SAME proven dark inks the dark-marble sweep already uses for its
+          converted containers, so every surface that reads the root vars flips to light-on-dark at the same
+          contrast (this is the "adjust the text colour to keep contrast" half of the request); and
+       2. repaints the WHITE-MARBLE surfaces (the page ground #app, the modals/drawers, and the arena's own
+          marble base) with the commissioned dark marble.
+     The already-dark sweep containers set their own vars and are untouched. A localStorage mirror
+     (ff-dark-mode), written by applyDarkModePref, lets the <head> pre-load add the class before the save is
+     parsed, so there is no light-mode flash on boot. The landing/login page is deliberately left alone (it
+     renders before any account setting is known). */
+  html.ff-dark{
+    --text:#e8dcc0; --text-dim:#c0b394; --text-faint:#9a8f78;
+    --border:#48432f; --border-light:#6b5a38; --ink:#0c0a08;
+    --gold:#ddbb66; --gold-bright:#e6c24a; --green-deep:#9dbb66;
+    --cat-chat:#7cb350; --hp-good:#7cb350; --hp-bad:#d4574a;
+    --bg-panel:#241f15; --bg-panel-raised:#2a2418; --bg-card:#241f15; --bg-deep:#0c0a08;
+    --input-fill:#181409; --paper:#241f15; --stone-card:#4a4436;
+  }
+  html.ff-dark body{ background:#0e0c0a; }
+  html.ff-dark #app,
+  html.ff-dark .ff-chat-expand,
+  html.ff-dark .ff-drawer,
+  html.ff-dark .skill-info-card,
+  html.ff-dark .familiar-popup-card,
+  html.ff-dark .settings-card,
+  html.ff-dark .ar2.ivy{
+    background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.5),rgba(10,8,6,.5)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-repeat:no-repeat;
+  }
+  /* Those three white-marble islands re-scope --gold to the deep GREEN and --text-faint dark for contrast on
+     the CREAM marble (see the a11y note by .skill-info-card). On the dark marble that reverses: restore the
+     dark-sweep gold + a light faint ink so titles/labels/notes read light-on-dark, not green-on-dark. */
+  html.ff-dark .skill-info-card,
+  html.ff-dark .familiar-popup-card,
+  html.ff-dark .settings-card{ --gold:#ddbb66; --text-faint:#9a8f78; }
 
   /* ============== Sub-nav furniture (owner picks 1/2/3/5 of the nav proposals, v0.0.86.14) ==========
      Level badges + running-task pulse dots on the skill chips, and TIER HIERARCHY: the category chips
@@ -22511,6 +22554,15 @@
   // Re-evaluate on resize: dragging a window under UI_SCALE_MIN_W has to drop back to 1 or the layout and the
   // breakpoints disagree. Cheap enough to run unthrottled -- it writes one custom property.
   try { window.addEventListener('resize', applyUiScalePref); } catch(e){}
+  // Dark mode (Settings > Interface): toggle the ff-dark class on <html> and mirror the pref to localStorage
+  // so the <head> pre-load can apply it before the next boot without a light-theme flash.
+  function applyDarkModePref(){
+    try {
+      var on = !!(state && state.settings && state.settings.darkMode === true);
+      document.documentElement.classList.toggle('ff-dark', on);
+      try { localStorage.setItem('ff-dark-mode', on ? '1' : '0'); } catch(e2){}
+    } catch(e){}
+  }
   // Pre-alpha disclaimer: shown in red on the ticker with a much higher chance than any single tip.
   var TICKER_DISCLAIMER = '<span style="color:#ff6b6b;font-weight:700">The current state of the game is Open Alpha. Please expect bugs, frequent changes, and future progress wipes. Thank you and excited for your feedback!</span>';
   var TICKER_DISCLAIMER_CHANCE = 0.30; // ~30% of marquee cycles land on the disclaimer
@@ -30580,6 +30632,7 @@
   // cat groups each toggle into a Settings section: 'interface' (what the UI shows) or 'qol' (automation &
   // convenience that changes gameplay flow). Account/Profile sections are rendered separately.
   var SETTINGS_TOGGLES = [
+    {key:'darkMode', cat:'interface', label:'Dark mode', desc:'Swap the white-marble surfaces (the page background, popups and drawers) for the dark marble the rest of the UI already wears, with the text lightened to match. The top bar, rail and cards are unchanged.'},
     {key:'popupRare', cat:'interface', label:'Rare item popup', desc:'Show a popup when a Rare item is forged'},
     {key:'popupSupreme', cat:'interface', label:'Supreme item popup', desc:'Show a popup when a Supreme item is forged'},
     {key:'popupFantastic', cat:'interface', label:'Fantastic item popup', desc:'Show a popup when a Fantastic item is forged'},
@@ -45641,6 +45694,7 @@
       state.settings[setKey] = !state.settings[setKey];
       if(setKey==='compactMobile') applyMobileLayoutPref(); // re-scale the viewport immediately
       if(setKey==='compactDesktop') applyUiScalePref();   // re-scale the shell immediately
+      if(setKey==='darkMode') applyDarkModePref();        // swap the theme immediately
       if(setKey==='chatFilter'){ _chatDockSig = _chatDrawerSig = _chatExpandSig = null; } // force the chat panels to re-censor visible messages now
     },
     // Auto-plant seed filter (Farming screen). These persist immediately so the choice survives a reload.
@@ -46808,7 +46862,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.0.13';
+  var GAME_VERSION = '0.1.1.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -46907,6 +46961,7 @@
     await initGame();                 // readSave() now fetches this account's save from the backend
     applyMobileLayoutPref();          // reconcile the mobile viewport with the loaded Compact-layout preference
     applyUiScalePref();               // and the desktop shell scale with its own
+    applyDarkModePref();              // and the Dark mode theme with the loaded setting
     if(!gameStarted){
       gameStarted = true;
       lastTick = Date.now();
@@ -47162,7 +47217,7 @@
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult,
-      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
+      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, applyDarkModePref:applyDarkModePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
       knightStacks:knightStacks, knightStackCap:knightStackCap, knightBonus:knightBonus, knBannerRaise:knBannerRaise, knOrderMult:knOrderMult, knOrdersStanding:knOrdersStanding, knOrdersAll:knOrdersAll, knightSteelMult:knightSteelMult, knightBloodLifestealPct:knightBloodLifestealPct, knightBeaconPotencyMult:knightBeaconPotencyMult, knDecreeOnSwing:knDecreeOnSwing, knightDamageTakenMult:knightDamageTakenMult, KN_BANNER_MAX:KN_BANNER_MAX, KN_BANNER_MAX_D1:KN_BANNER_MAX_D1, KN_BANNER_MAX_HIGH:KN_BANNER_MAX_HIGH, KN_SEED_HIT:KN_SEED_HIT, KN_SEED_CRIT:KN_SEED_CRIT, KN_SEED_CRIT_D2:KN_SEED_CRIT_D2, KN_ORDER_STEEL:KN_ORDER_STEEL, KN_ORDER_PACE:KN_ORDER_PACE, KN_ORDER_BLOOD:KN_ORDER_BLOOD, KN_STEEL_PCT:KN_STEEL_PCT, KN_PACE_PCT:KN_PACE_PCT, KN_BLOOD_PCT:KN_BLOOD_PCT, KN_ORDER_D2_MULT:KN_ORDER_D2_MULT, KN_SHIELDWALL_PER:KN_SHIELDWALL_PER, KN_DECREE_EVERY:KN_DECREE_EVERY, KN_DECREE_EVERY_D1:KN_DECREE_EVERY_D1, KN_DECREE_PCT:KN_DECREE_PCT, KN_DECREE_STUN_MS:KN_DECREE_STUN_MS, KN_TRAMPLE_SWINGS:KN_TRAMPLE_SWINGS, KN_TRAMPLE_MULT:KN_TRAMPLE_MULT, KN_DECREE_D4_MULT:KN_DECREE_D4_MULT, LEG_BREACHBLADE_PIERCE:LEG_BREACHBLADE_PIERCE, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, playerDamageModBreakdown:playerDamageModBreakdown, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, swingRescaleAccum:swingRescaleAccum, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, ASSASSIN_WOUND_MAX:ASSASSIN_WOUND_MAX, ASSASSIN_WOUND_MS:ASSASSIN_WOUND_MS, ASSASSIN_VANISH_MS:ASSASSIN_VANISH_MS, ASSASSIN_FANG_PCT:ASSASSIN_FANG_PCT, ASSASSIN_FANG_PCT_D1:ASSASSIN_FANG_PCT_D1, ASSASSIN_FANG_PCT_SHADOWWYRM:ASSASSIN_FANG_PCT_SHADOWWYRM, ASSASSIN_HEAVYFANG_INTERVAL:ASSASSIN_HEAVYFANG_INTERVAL, ASSASSIN_HEAVYFANG_DMG:ASSASSIN_HEAVYFANG_DMG, ASSASSIN_FLOW_REFUND:ASSASSIN_FLOW_REFUND, ASSASSIN_VIGOR_MAX:ASSASSIN_VIGOR_MAX, ASSASSIN_VIGOR_PER:ASSASSIN_VIGOR_PER, ASSASSIN_BLOODRUSH_MULT:ASSASSIN_BLOODRUSH_MULT, assassinWoundCap:assassinWoundCap, assassinWoundStacks:assassinWoundStacks, assassinWoundsFull:assassinWoundsFull, assassinWoundsPerHit:assassinWoundsPerHit, assassinOpenWounds:assassinOpenWounds, assassinFangPerWound:assassinFangPerWound, assassinVigorStacks:assassinVigorStacks, assassinVigorAdd:assassinVigorAdd, assassinVigorDmgMult:assassinVigorDmgMult, assassinCommunionLifesteal:assassinCommunionLifesteal, assassinBloodrushActive:assassinBloodrushActive, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, thunderfuryBonus:thunderfuryBonus, tfStormCap:tfStormCap, tfStormIntensity:tfStormIntensity, tfStormSeed:tfStormSeed, tfGalvanizeCap:tfGalvanizeCap, tfBoltFire:tfBoltFire, applyTfStormTick:applyTfStormTick, enemyStunned:enemyStunned, TF_STORM_MAX:TF_STORM_MAX, TF_STORM_MAX_D1:TF_STORM_MAX_D1, TF_STORM_MAX_GLOOM:TF_STORM_MAX_GLOOM, TF_BOLT_PCT:TF_BOLT_PCT, TF_BOLT_MS:TF_BOLT_MS, TF_BOLT_MS_TEMPEST:TF_BOLT_MS_TEMPEST, TF_SEED_HIT:TF_SEED_HIT, TF_SEED_CRIT:TF_SEED_CRIT, TF_SEED_CRIT_D2:TF_SEED_CRIT_D2, TF_FADE_MS:TF_FADE_MS, TF_TEMPO_THRESHOLD:TF_TEMPO_THRESHOLD, TF_TEMPO_PCT:TF_TEMPO_PCT, TF_CLAP_EVERY:TF_CLAP_EVERY, TF_CLAP_MULT:TF_CLAP_MULT, TF_CLAP_STUN_MS:TF_CLAP_STUN_MS, TF_CLAP_STUN_MS_D3:TF_CLAP_STUN_MS_D3, TF_GALV_PER:TF_GALV_PER, TF_GALV_MAX:TF_GALV_MAX, TF_GALV_MAX_SCALE:TF_GALV_MAX_SCALE, LEG_STORMWYRM_CRIT_BOLT:LEG_STORMWYRM_CRIT_BOLT, enemyStunned:enemyStunned,
