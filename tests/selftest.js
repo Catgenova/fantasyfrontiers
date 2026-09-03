@@ -6187,6 +6187,8 @@
   suite('improvement: auto-roll enchanting', function(){
     var s = FF._state;
     var savedU = s.uniqueItems, savedInv = s.inventory['enchant_t0'];
+    if(!s.stats) s.stats = {};
+    var savedStat = s.stats['enchants_applied'] || 0;
     function setup(enchants, crystals){
       s.uniqueItems = { u9001:{ uid:'u9001', base:'stweapon_sword_t0_rare', kind:'weapon', tier:0, rarity:'rare', enhance:0, enchants:enchants } };
       s.inventory['enchant_t0'] = crystals;
@@ -6194,18 +6196,23 @@
 
     // A) Keeps rolling until the requested mod lands, then stops with a single slot filled.
     setup([], 500);
+    s.stats['enchants_applied'] = 0;
     var a = FF.improveAutoRoll('critDamage', 5, 'u9001');
     ok(a && a.placed && a.placed.mod==='critDamage' && a.placed.roll>=5, 'auto-roll lands the requested Critical Damage enchant');
     eq(s.uniqueItems['u9001'].enchants.length, 1, 'exactly one enchant is placed');
     eq(s.uniqueItems['u9001'].enchants[0].mod, 'critDamage', 'the placed enchant is the target mod');
     eq(s.inventory['enchant_t0'], 500 - a.spent, 'crystals removed match the reported spend');
     ok(a.spent >= 1, 'at least one crystal was spent');
+    // A successful Auto-roll counts as an enchant applied, so the "Bind the Crystal" quest completes
+    // (reported: an Auto-rolled enchant never advanced the quest -- only the manual path bumped the stat).
+    eq(s.stats['enchants_applied'], 1, 'a landed Auto-roll bumps enchants_applied (powers Bind the Crystal)');
 
     // B) No affordable crystals -> spends nothing, places nothing.
     setup([], 0);
     var b = FF.improveAutoRoll('critDamage', 5, 'u9001');
     ok(b && !b.placed && b.spent===0, 'no crystals -> auto-roll is inert');
     eq(s.uniqueItems['u9001'].enchants.length, 0, 'the item is untouched when it cannot afford a roll');
+    eq(s.stats['enchants_applied'], 1, 'an inert Auto-roll (no placement) does NOT bump the stat');
 
     // C) Target already met -> no-op, no spend.
     setup([{mod:'critDamage', roll:25}], 100);
@@ -6264,7 +6271,7 @@
     eq(s.inventory['enchant_t0'], 100, 'nothing spent on a stale slot index');
 
     // restore
-    s.uniqueItems = savedU; s.inventory['enchant_t0'] = savedInv;
+    s.uniqueItems = savedU; s.inventory['enchant_t0'] = savedInv; s.stats['enchants_applied'] = savedStat;
   });
 
   // ---- Ranching / Dairy / Gastronomy vertical slice + Feast buff channel ----------------------
