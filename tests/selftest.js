@@ -1228,6 +1228,17 @@
     } finally { s.xp.architecture = saved; }
   });
 
+  // ---- Ticker tips: no stale "staff rarity grants familiar slots" claim (ticket-0212) ----
+  // Companion slots moved off staff rarity to the Summoner class ladder (Lv 1/20/40/60/80); the ticker tip
+  // that still promised a Fantastic Staff the biggest menagerie was outdated.
+  suite('ticker tips: staff-rarity familiar-slot claim is gone', function(){
+    // The stale CLAIM was a Staff granting SLOTS or "the biggest menagerie" -- not any mention of a staff
+    // alongside companions (the correct new tip says a staff's swing empowers your Companions, which is fine).
+    var stale = FF.TICKER_TIPS.filter(function(t){ return /staff/i.test(t) && /(slot|menagerie)/i.test(t); });
+    eq(stale.length, 0, 'no ticker tip ties familiar/companion slots (or "menagerie") to a Staff (that mechanic was removed)');
+    ok(FF.TICKER_TIPS.some(function(t){ return /Summoner/.test(t) && /companion slot/i.test(t); }), 'a tip now explains the Summoner class opens the Companion slots');
+  });
+
   // ---- AQUEDUCT: water only if the chain reaches real water, and only within its own tier's range ---
   suite('estate buildings: the Aqueduct carries water along a chain', function(){
     var s = FF._state, savedGrid = s.estate.grid, savedPlots = s.farmingPlots;
