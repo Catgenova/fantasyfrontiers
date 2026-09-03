@@ -4642,10 +4642,18 @@
     if(tier<=0) return {tier:0, name:'Empty', speedBonus:0};
     return applyToolRarity(getGatherToolTierData(skillId, tier), rarityId);
   }
+  // SAFETY NET (ticket-0210, "bar stuck"): an effTime is (base time * speedMultiplier * a tool multiplier).
+  // If any of those factors ever goes non-finite -- a NaN leaking in from corrupt tool/physique/rarity state --
+  // effTime becomes NaN, the completion loop's `progress >= effTime` is forever false, and the progress bar
+  // FREEZES at full with the task stuck "running" (no ticking can clear it, since the loop never fires). These
+  // three multipliers are the only variable factors, so clamping each to a finite positive value here makes a
+  // frozen bar impossible from ANY source, present or future. 1 is the neutral fallback (base speed, no bonus);
+  // the real 0.1 speed floor still applies to finite values. No effect in normal play (every input is finite).
+  function safeSpeedFactor(v, fallback){ return (isFinite(v) && v > 0) ? v : fallback; }
   function gatherToolSpeedMultiplier(state, skillId){
     var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
     var sp = 1 - getEquippedGatherTool(skillId, tier, state.gatherToolRarities[skillId]).speedBonus - workshopSpeedBonus(state, skillId);
-    return Math.max(0.1, sp);
+    return safeSpeedFactor(Math.max(0.1, sp), 1);
   }
 
   // ---- Per-crafting-skill tools (no more universal Master Toolset) ----
@@ -12336,7 +12344,7 @@
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
   function curiosityGatherXpBonus(state){ return Math.min(0.15, getLevel(state.physique.curiosity||0)*0.003); }
   function craftSuccessRate(state, skillId){ var b = BASE_CRAFT_SUCCESS + craftToolSuccessBonus(state, skillId) + grossMotorCraftSuccessBonus(state); if(PHYS_ALCH_GROUP.indexOf(skillId)!==-1) b += criticalThinkingCraftSuccessBonus(state); return Math.min(1, b); }
-  function toolSpeedMultiplier(state, skillId){ var sp = craftToolSpeedMultiplier(state, skillId) - sleightOfHandCraftSpeedBonus(state); if(PHYS_HAND_CRAFT.indexOf(skillId)!==-1) sp -= handStrengthCraftSpeedBonus(state); if(PHYS_ESTATE_CRAFT.indexOf(skillId)!==-1) sp -= coreStrengthCraftSpeedBonus(state); if(PHYS_MENTAL_CRAFT.indexOf(skillId)!==-1) sp -= solvingCraftSpeedBonus(state); sp -= workshopSpeedBonus(state, skillId); return Math.max(0.1, sp); }
+  function toolSpeedMultiplier(state, skillId){ var sp = craftToolSpeedMultiplier(state, skillId) - sleightOfHandCraftSpeedBonus(state); if(PHYS_HAND_CRAFT.indexOf(skillId)!==-1) sp -= handStrengthCraftSpeedBonus(state); if(PHYS_ESTATE_CRAFT.indexOf(skillId)!==-1) sp -= coreStrengthCraftSpeedBonus(state); if(PHYS_MENTAL_CRAFT.indexOf(skillId)!==-1) sp -= solvingCraftSpeedBonus(state); sp -= workshopSpeedBonus(state, skillId); return safeSpeedFactor(Math.max(0.1, sp), 1); }
   // Jewelry (Rings/Amulets): 50% base success, lower than Twine's standard 70% -- setting
   // fine gems into Twine is a fussier job than braiding the Twine itself.
   var BASE_JEWELRY_SUCCESS = 0.5;
@@ -15865,7 +15873,7 @@
     // Tome provided across the away window) instead of the live isTomeActive() check, which would read the
     // login-time expiry all-or-nothing -- the same override pattern as offlineTeaMult.
     var tomeFactor = (typeof offlineTomeMult === 'number' && offlineTomeMult > 0) ? (1 / offlineTomeMult) : (1 - tomeSpeedBonus());
-    return (1 - Math.min(0.12, physiqueAvgLevel(state)*0.0018)) * tomeFactor;
+    return safeSpeedFactor((1 - Math.min(0.12, physiqueAvgLevel(state)*0.0018)) * tomeFactor, 1);  // never non-finite -> a craft/gather bar can never freeze (ticket-0210)
   }
 
   // ===== Physique OUTPUTS (remapped). Each function turns one physique's level into a
@@ -46862,7 +46870,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.1.0';
+  var GAME_VERSION = '0.1.1.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47158,7 +47166,7 @@
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, BREW_DRINK_RECIPES:BREW_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
       isFeastActive:isFeastActive, feastRegenPer5s:feastRegenPer5s, feastOfflineActiveMs:feastOfflineActiveMs, simulateOfflineTea:simulateOfflineTea, autoTeaTick:autoTeaTick, bestAvailableTea:bestAvailableTea, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
-      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier, autoTomeTick:autoTomeTick, simulateOfflineTome:simulateOfflineTome, TOME_STUDY_RECIPES:TOME_STUDY_RECIPES,
+      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier, safeSpeedFactor:safeSpeedFactor, autoTomeTick:autoTomeTick, simulateOfflineTome:simulateOfflineTome, TOME_STUDY_RECIPES:TOME_STUDY_RECIPES,
       isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll, autoBrewTick:autoBrewTick, simulateOfflineBrew:simulateOfflineBrew,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,

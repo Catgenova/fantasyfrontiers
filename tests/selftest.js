@@ -1239,6 +1239,25 @@
     ok(FF.TICKER_TIPS.some(function(t){ return /Summoner/.test(t) && /companion slot/i.test(t); }), 'a tip now explains the Summoner class opens the Companion slots');
   });
 
+  // ---- Craft/gather effTime can never go non-finite -> a progress bar can never freeze (ticket-0210) ----
+  // A "bar stuck" report: a craft's progress bar sat full and its task never completed. The only logic path to
+  // that is a NON-FINITE effTime (base time * speedMultiplier * a tool multiplier): once effTime is NaN the
+  // completion loop's `progress >= effTime` is forever false and the bar freezes. safeSpeedFactor clamps each
+  // variable factor to a finite positive value, so effTime is always finite from any source.
+  suite('speed guard: effTime factors are always finite (no frozen craft bar)', function(){
+    var f = FF.safeSpeedFactor;
+    eq(f(0.9, 1), 0.9, 'a normal finite factor passes through unchanged');
+    eq(f(0.1, 1), 0.1, 'the fast floor passes through');
+    eq(f(NaN, 1), 1, 'NaN falls back to the neutral 1 (no speed change) instead of poisoning effTime');
+    eq(f(Infinity, 1), 1, 'Infinity falls back');
+    eq(f(-Infinity, 1), 1, '-Infinity falls back');
+    eq(f(0, 1), 1, 'zero (which would make effTime 0 / infinite crafts) falls back');
+    eq(f(-0.5, 1), 1, 'a negative factor falls back');
+    // The live multiplier that feeds every effTime must be finite and positive for the current state.
+    var sp = FF.speedMultiplier(FF._state);
+    ok(isFinite(sp) && sp > 0, 'speedMultiplier(state) is finite and positive');
+  });
+
   // ---- Dark mode: an Interface toggle that flips the ff-dark theme class on <html> ----
   suite('dark mode: the Interface toggle flips the ff-dark theme class', function(){
     var dm = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'darkMode'; })[0];
