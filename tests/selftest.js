@@ -22161,6 +22161,40 @@
     } finally { S.inventory = svInv; }
   });
 
+  // ---- Inventory detail card: what an item DOES + where to acquire it (player request, Kirbiitis/Gutwrench) --
+  // itemEffectLine reads the effect straight off the def (so "how much food heals" can never drift); itemSourceLine
+  // names the producing skill (authoritative) or, for monster loot / bonus finds, the place it comes from.
+  suite('inventory detail: effect + source lines', function(){
+    var eff = FF.itemEffectLine, src = FF.itemSourceLine, R = FF.ALL_CRAFT_RECIPES;
+    function strip(s){ return (s||'').replace(/<[^>]+>/g, ''); }
+    // EFFECT: food states its exact heal; the number matches the def, not a guess.
+    var foodId = Object.keys(R).find(function(k){ return typeof R[k].heal === 'number' && !R[k].feastDurationMs; });
+    ok(foodId, 'a food item with a heal value exists');
+    ok(/restore/i.test(strip(eff(foodId))) && strip(eff(foodId)).indexOf(String(R[foodId].heal)) !== -1,
+       'food effect names its exact heal (' + strip(eff(foodId)) + ')');
+    // EFFECT: the buff consumables each describe their buff.
+    var teaId = Object.keys(R).find(function(k){ return R[k].teaDurationMs; });
+    ok(teaId && /xp/i.test(strip(eff(teaId))), 'a Tea effect mentions the XP boost');
+    ok(/ward/i.test(strip(eff('scroll_t0'))), 'a Scroll effect mentions warding damage');
+    // EFFECT: a tool states its speed/success bonus; a raw material has no one-line effect.
+    var toolId = Object.keys(FF.ALL_SELLABLE).find(function(k){ return k.indexOf('tool_') === 0; });
+    ok(toolId && /speed|success/i.test(strip(eff(toolId))), 'a Tool effect names its speed/success bonus');
+    eq(eff('mining_t0'), '', 'a raw gathered material has no effect line');
+    // SOURCE: the producing skill is authoritative for crafts and gathers.
+    ok(/Gathered with Mining/i.test(strip(src('mining_t0'))), 'raw ore says Gathered with Mining');
+    ok(/Crafted with Metallurgy/i.test(strip(src('metallurgy_t0'))), 'a bar says Crafted with Metallurgy');
+    ok(/Crafted with Inscription/i.test(strip(src('scroll_t0'))), 'a Scroll says Crafted with Inscription');
+    ok(/Blacksmithing/i.test(strip(src(toolId))), 'a Tool says Forged with Blacksmithing');
+    // SOURCE: monster loot and bonus finds map by prefix.
+    ok(/Wildlife/i.test(strip(src('corpse_t0'))), 'a Corpse is from Wildlife');
+    ok(/Mining/i.test(strip(src('coal'))), 'Coal is a Mining/Digging bonus');
+    ok(/Fishing/i.test(strip(src('treasure_chest'))), 'a Treasure Chest is from Fishing');
+    ok(/Foraging/i.test(strip(src('powder_t0'))), 'Powder is from Foraging');
+    ok(/Archaeology/i.test(strip(src('brokenrelic_t0'))), 'a Broken Relic is from Archaeology');
+    // An unknown id never states a guessed source.
+    eq(src('totally_made_up_id_xyz'), '', 'an unknown item has no source line (never a guess)');
+  });
+
   // ---- Code review v0.0.86.43, finding 1: the offline Faith settle must not clobber the sims --------
   // planOfflineFaithActivity runs BEFORE the offline gather/craft/combat sims and the settle runs AFTER,
   // and the settle used to ASSIGN plan.finalFaith -- a snapshot of the pre-sim pool. Plunder (Treasure

@@ -6297,12 +6297,19 @@
     ITEM_SEARCH_ALIAS[id] = (cur ? cur + ' ' : '') + String(words).toLowerCase();
   }
   function itemSearchAlias(id){ return ITEM_SEARCH_ALIAS[id] || ''; }
+  // WHERE an item comes from, for the inventory detail card's "Source" line (player request: tell me how to
+  // get more). Recorded straight off the skill definition that produces it, so it is authoritative: kind is
+  // 'craft' (a crafting bench), 'refine' (a gathering-skill recipe, e.g. Butchering), or 'gather' (a raw
+  // gathered material). Drops that no skill defines (monster loot, bonus finds) are handled by prefix in
+  // itemSourceLine() below.
+  var ITEM_SOURCE = {};
   var ALL_CRAFT_RECIPES = {};
   Object.keys(CRAFTING_SKILLS).forEach(function(sk){
     var block = CRAFTING_SKILLS[sk];
     if(block.recipes) block.recipes.forEach(function(r){
       ALL_CRAFT_RECIPES[r.id] = r;
       addSearchAlias(r.id, (block.label || sk) + ' ' + (r.keywords || ''));
+      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'craft' };
     });
   });
   Object.keys(GATHERING_SKILLS).forEach(function(sk){
@@ -6310,14 +6317,16 @@
     if(block.recipes) block.recipes.forEach(function(r){
       ALL_CRAFT_RECIPES[r.id] = r;
       addSearchAlias(r.id, (block.label || sk) + ' ' + (r.keywords || ''));
+      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'refine' };
     });
   });
   ALL_CRAFT_RECIPES[CRAFTING_SKILLS.fletching.shaftRecipe.id] = CRAFTING_SKILLS.fletching.shaftRecipe;
+  ITEM_SOURCE[CRAFTING_SKILLS.fletching.shaftRecipe.id] = { label:(CRAFTING_SKILLS.fletching.label || 'Fletching'), kind:'craft' };
   // Gathered raw materials hang off `.items`, not `.recipes`, so the loops above never saw them: an ore
   // was unfindable by "mining". Same alias treatment, so the rule holds for everything in the bag.
   Object.keys(GATHERING_SKILLS).forEach(function(sk){
     var block = GATHERING_SKILLS[sk];
-    (block.items || []).forEach(function(it){ addSearchAlias(it.id, (block.label || sk) + ' ' + (it.keywords || '')); });
+    (block.items || []).forEach(function(it){ addSearchAlias(it.id, (block.label || sk) + ' ' + (it.keywords || '')); ITEM_SOURCE[it.id] = { label:(block.label || sk), kind:'gather' }; });
   });
   // Mixology Teas: the drinkable XP-rate buff (activeTea slot).
   var TEA_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
@@ -43711,6 +43720,55 @@
     }
   }
   // Item detail modal (opened by tapping a grid cell): big icon, stats, and the item's actions.
+  // What an item DOES, for the inventory detail card (player request: "how much food heals or bonus amounts
+  // from similar items"). Reads the effect fields straight off the definition, so it can never drift from the
+  // real behaviour. Returns '' for items with no simple one-line effect (raw materials, gear -- gear keeps its
+  // Equip button and stat card).
+  function itemEffectLine(id){
+    var d = ALL_CRAFT_RECIPES[id];
+    if(d){
+      if(d.feastDurationMs) return 'Serve for <b>+'+(d.feastRegen||0)+' HP/5s</b> for '+Math.round(d.feastDurationMs/60000)+' min'+(d.heal?' (and <b>+'+fmt(d.heal)+' HP</b> at once)':'')+'.';
+      if(typeof d.heal === 'number') return 'Eat to restore <b>'+fmt(d.heal)+' HP</b>.';
+      if(d.teaDurationMs) return 'Drink for <b>+'+Math.round((d.xpBoost||0)*100)+'% XP</b> for '+Math.round(d.teaDurationMs/60000)+' min.';
+      if(d.tomeDurationMs) return 'Study for <b>+'+Math.round((d.tomeSpeedBonus||0)*100)+'% work speed</b> for '+Math.round(d.tomeDurationMs/60000)+' min.';
+      if(d.brewDurationMs) return 'Drink for a <b>'+Math.round((d.brewYield||0)*100)+'%</b> bonus-output chance for '+Math.round(d.brewDurationMs/60000)+' min.';
+      if(d.scrollDurationMs) return 'Read to ward <b>'+Math.round((d.scrollBonus||0)*100)+'%</b> of incoming damage for '+Math.round(d.scrollDurationMs/60000)+' min.';
+      if(d.potionType){ var pd = { toxin:'poisons the foe over time', firebomb:'deals a flat burst of damage', elixir:'raises your Crit Damage', catalyst:'empowers your familiar spells' }[d.potionType]; if(pd) return 'Battle item (10 charges, one per attack): <b>'+pd+'</b>.'; }
+    }
+    var tool = (typeof TOOL_ITEMS !== 'undefined') && TOOL_ITEMS[id];
+    if(tool){
+      var td = tool.isGather ? getEquippedGatherTool(tool.skillId, tool.tierIndex+1, tool.rarity) : getEquippedCraftTool(tool.skillId, tool.tierIndex+1, tool.rarity);
+      var parts = [];
+      if(td && td.speedBonus) parts.push('+'+Math.round(td.speedBonus*100)+'% '+(tool.isGather?'gather':'craft')+' speed');
+      if(td && td.successBonus) parts.push('+'+Math.round(td.successBonus*100)+'% success');
+      if(parts.length) return 'Equip to boost <b>'+escapeHtml(skillDisplayLabel(tool.skillId))+'</b>: <b>'+parts.join(', ')+'</b>.';
+    }
+    return '';
+  }
+  // "Where do I get more?" (player request). ITEM_SOURCE is authoritative for anything a skill definition
+  // produces; the prefix map handles monster loot and bonus finds that no skill defines. Returns '' when the
+  // origin is unknown, so a card never states a guess.
+  function itemSourceLine(id){
+    var src = ITEM_SOURCE[id];
+    if(src){
+      var verb = src.kind==='gather' ? 'Gathered with' : (src.kind==='refine' ? 'Produced with' : 'Crafted with');
+      return verb + ' <b>'+escapeHtml(src.label)+'</b>.';
+    }
+    if(typeof TOOL_ITEMS !== 'undefined' && TOOL_ITEMS[id]) return 'Forged with <b>Blacksmithing</b> (Forge Tools).';
+    function pre(p){ return id.indexOf(p) === 0; }
+    if(pre('corpse_')) return 'Left behind by <b>Wildlife</b> in combat.';
+    if(pre('glyph_')) return 'Shattered from <b>Elementals</b> in combat.';
+    if(pre('brokenrelic_')) return 'Turned up by <b>Archaeology</b> digs.';
+    if(pre('meat_') || pre('butchering_') || pre('fat_')) return 'Harvested by <b>Butchering</b> a carcass.';
+    if(pre('powder_')) return 'A rare find while <b>Foraging</b>.';
+    if(pre('muddyartifact_')) return 'Dug up while <b>Digging</b> or <b>Foraging</b>.';
+    if(id === 'coal') return 'A bonus find while <b>Mining</b> or <b>Digging</b>.';
+    if(pre('gem_')) return 'A bonus find while <b>Mining</b>.';
+    if(id === 'treasure_chest') return 'Snagged on a missed <b>Fishing</b> cast.';
+    if(id === 'critter_cache') return 'A bonus find while <b>Forestry, Botany, Herbalism or Foraging</b>.';
+    if(pre('seed_') || pre('grainseed_') || pre('herbseed_')) return 'Found inside <b>Critter Caches</b>.';
+    return '';
+  }
   function renderInvDetailOverlay(){
     var overlay = document.getElementById('invDetailOverlay'); if(!overlay) return;
     var id = inventoryDetailItem;
@@ -43729,6 +43787,11 @@
     var body = '<div class="inv-detail-icon">'+item.icon+'</div>';
     body += '<div class="skill-info-title">'+escapeHtml(item.name)+(rarLabel?'<span class="inv-rarity-tag rar-'+rar+'">'+rarLabel+'</span>':'')+'</div>';
     body += '<div class="inv-detail-meta">'+(cat?cat.label:'Item')+' &bull; Owned <b>'+fmt(qty)+'</b> &bull; '+(item.sell>0 ? item.sell+'g each' : 'Marketplace-only')+'</div>';
+    // What it does + where to get more (player request, Kirbiitis/Gutwrench). Each line only appears when known.
+    var _eff = itemEffectLine(id);
+    if(_eff) body += '<div style="font-size:12.5px;line-height:1.5;color:var(--gold);margin:8px 0 2px;">'+_eff+'</div>';
+    var _src = itemSourceLine(id);
+    if(_src) body += '<div style="font-size:12px;line-height:1.5;color:var(--text-dim);margin:'+(_eff?'2px':'8px')+' 0 0;">'+_src+'</div>';
 
     var acts = '';
     if(id==='critter_cache'){ acts += '<button class="action-btn" data-action="openCritterCache">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllCritterCaches">Open All ('+fmt(qty)+')</button>'; }
@@ -46881,7 +46944,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.1.4';
+  var GAME_VERSION = '0.1.2.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47069,7 +47132,7 @@
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
-      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantAutoForecast:enchantAutoForecast, enchantCrystalsAvailable:enchantCrystalsAvailable, AUTOROLL_CONFIRM_AT:AUTOROLL_CONFIRM_AT, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
+      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, itemEffectLine:itemEffectLine, itemSourceLine:itemSourceLine, ITEM_SOURCE:ITEM_SOURCE, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantAutoForecast:enchantAutoForecast, enchantCrystalsAvailable:enchantCrystalsAvailable, AUTOROLL_CONFIRM_AT:AUTOROLL_CONFIRM_AT, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, equipCandidateRowHtml:equipCandidateRowHtml, bankUniqueBlob:bankUniqueBlob, bankUniqueRevive:bankUniqueRevive, uniqueBaseName:uniqueBaseName, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
