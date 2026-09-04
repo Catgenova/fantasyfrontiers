@@ -31332,7 +31332,7 @@
   // bullet for the small ones. Owner rules apply to the newest entry (a selftest guards it): no em dashes,
   // no emoji. The whole pre-alpha daily-snippet history was wiped when the weekly cadence began.
   var PATCH_NOTES = [
-    { v:'0.1.3.2', date:'Sep 3', heading:'Open Alpha is live', items:[
+    { v:'0.1.3.1', date:'Sep 3', heading:'Open Alpha is live', items:[
       '<b>Open Alpha has begun.</b> The server is back open and Fantasy Frontiers is now in Open Alpha. Patch notes move to a weekly rhythm from here on: one drop every Thursday. Expect frequent changes while we build, and thank you for playing this early.',
       '<b>Play as Guest.</b> Jump straight in without signing up, then upgrade to a full account in place whenever you like, keeping all your progress. Chat, the Marketplace, guilds and the Leaderboard unlock the moment you upgrade.',
       '<b>Tower leaderboards.</b> A new All-Classes climb board sits alongside one board per class, so you can see who has climbed deepest overall and in each class.',
@@ -31342,7 +31342,7 @@
       '<b>Inscription scrolls read at a glance.</b> Every Inscription item now ends in the word Scroll, so your scrolls are easy to spot and to search for.',
       '<b>The Foreman&rsquo;s Office got smarter.</b> A Cottage built beside several Workshops now links to all of them, and its one Peon can be tasked to any of their skills, instead of being pinned to a single Workshop.',
       '<b>New painted class art</b> for the Berserker, Duelist, Executioner, Frostwarden and Herald, shown on the Classes tab, in the arena and on the leaderboards.',
-      '<b>Fixes:</b> offline gathering now credits Powder, Artifacts and Caches and advances your per-item quest counters; Teas, Tomes and Brews auto-use the strongest one in stock, and their offline XP boost now applies across the whole time you are away; a loud banner warns when a device&rsquo;s save is rejected as stale, so moving between devices stops quietly losing progress; an out-of-Faith prayer reads as Paused rather than a live Stop; the tier-20 grand estate buildings were hidden below Architecture 100 and now show; outdated staff and familiar-slot tooltips were corrected (familiar slots come from the Summoner class now); the unreadable claimable quest card was restyled to match the rest of the UI; a craft or gather bar can no longer freeze mid-run; the enchant quest now comes before the enhance quest, and auto-roll enchanting advances it; and &ldquo;Cast a Line&rdquo; counts every fishing tier, not just Bluegill; and the <b>Inventory and Combat screens no longer jump back to the top</b> while they refresh.'
+      '<b>Fixes:</b> offline gathering now credits Powder, Artifacts and Caches and advances your per-item quest counters; Teas, Tomes and Brews auto-use the strongest one in stock, and their offline XP boost now applies across the whole time you are away; a loud banner warns when a device&rsquo;s save is rejected as stale, so moving between devices stops quietly losing progress; an out-of-Faith prayer reads as Paused rather than a live Stop; the tier-20 grand estate buildings were hidden below Architecture 100 and now show; outdated staff and familiar-slot tooltips were corrected (familiar slots come from the Summoner class now); the unreadable claimable quest card was restyled to match the rest of the UI; a craft or gather bar can no longer freeze mid-run; the enchant quest now comes before the enhance quest, and auto-roll enchanting advances it; and &ldquo;Cast a Line&rdquo; counts every fishing tier, not just Bluegill.'
     ]}
   ];
   function renderPatchNotes(){
@@ -42952,9 +42952,12 @@
       var _scrSnap = scrollSnapshot(_contentEl);  // preserve inner-scroller positions (e.g. the Marketplace item list)
       // Preserve the scroll CONTAINER (.ff-main) across a same-tab rebuild (idle production ticking an
       // "owned"/qty count rewrites the Blueprints/inventory markup, which drops the scroller to the top on
-      // mobile). A real tab switch (view changed) is left to open fresh at the top.
-      var _scEl = (_viewKey === _lastContentView) ? nearestScroller(_contentEl) : null;
-      var _scPos = _scEl ? _scEl.scrollTop : 0;
+      // mobile). A real tab switch (view changed) opens fresh at the top, so zero the held offset then. The
+      // restore targets _mainWantTop, NOT the live scrollTop: on mobile the live value has already been reset
+      // to 0 by a prior rebuild, so reading it back here would just re-anchor the top (see _mainWantTop).
+      var _sameV = (_viewKey === _lastContentView);
+      if(!_sameV) _mainWantTop = 0;
+      var _scEl = _sameV ? nearestScroller(_contentEl) : null;
       _contentEl.innerHTML = html;
       _lastContentHtml = html;
       detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
@@ -42962,7 +42965,7 @@
       scrollRestore(_scrSnap);    // put every scrolled panel back where the player was
       decorateCollapsibleCards(_contentEl); // fold buttons + folded state on the craft/gather/forge cards
       if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); chatChanPipsUpdate(); }
-      if(_scEl && _scEl.scrollTop !== _scPos) _scEl.scrollTop = _scPos;
+      if(_scEl && _mainWantTop >= 4 && _scEl.scrollTop < 4) _scEl.scrollTop = _mainWantTop;
     }
     _lastContentView = _viewKey;
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
@@ -44394,23 +44397,12 @@
     // The deferred render flushes via the loop the moment the field blurs.
     if(!force && isEditingField()){ needsRender = true; return; }
     _lastRenderAt = Date.now();   // paces the loop's involuntary renders (see the loop's gate)
-    // iOS/Android scroll-anchor rescue on the same tab: replacing a big subtree drops the scroll container
-    // to the top on mobile, and it does so ASYNCHRONOUSLY -- after the synchronous restore inside
-    // setOverlayHtml/renderContent has already run, so the panel-level fix wins on desktop but loses the
-    // race on mobile. Snapshot the content scroller now and, once the render settles, push it back DOWN if
-    // it got reset (never up -- a user scrolling further is left alone).
-    // This used to run for USER GESTURES only, which left INVOLUNTARY renders unprotected: the game loop
-    // rebuilds the combat arena every frame, and an idle production tick rewrites the inventory grid, so on
-    // mobile both snapped to the top on every rebuild (players reported "screen jumping back to the top in
-    // Inventory and Combat"). It now runs for those too, gated by `!_pointerHeld` so it can NEVER fight an
-    // active finger-drag (a drag holds the pointer down, so its involuntary renders still skip the rescue),
-    // and it only ever pushes DOWN to where the reader already was, re-read from the live scrollTop each
-    // render so scrolling to a new spot is always respected.
-    var _gScroller = null, _gTop = 0;
-    if(force || !_pointerHeld){
-      var _gc = document.getElementById('content');
-      if(_gc && (currentCategory + ' ' + currentSub) === _lastContentView){ _gScroller = nearestScroller(_gc); _gTop = _gScroller ? _gScroller.scrollTop : 0; }
-    }
+    // Does this render stay on the SAME content view? A real tab switch opens fresh at the top (renderContent
+    // zeroes _mainWantTop on the change); a same-view rebuild must hold the reader's place. Captured NOW,
+    // before renderContent updates _lastContentView. The push-down itself happens at the end of the frame,
+    // once every panel writer has run, targeting _mainWantTop (see the scroll-anchoring block near
+    // _pointerHeld for why the live scrollTop cannot be the source on mobile).
+    var _sameContentView = (currentCategory + ' ' + currentSub) === _lastContentView;
     // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
     // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
     var _ci = document.getElementById('chatInput');
@@ -44472,21 +44464,25 @@
     // iOS scroll-anchor rescue (see the snapshot above): the synchronous restore already ran inside the
     // panel writers; re-apply it now, and again on the next frame to beat iOS's async reset-to-top. Only
     // ever push scroll back DOWN to where the gesture started (< guard), so scrolling further is untouched.
-    if(_gScroller && _gTop > 0){
-      // Re-apply across several ticks, not one. iOS resets to top on the NEXT frame (one rAF beat it), but
-      // ANDROID's scroll-anchor reset after a panel SHRINK (collapsing an Inventory accordion) lands LATER
-      // than a single frame, so the one-rAF fix lost the race and the list jumped to the top (owner report).
-      // Push back DOWN to where the reader was on this frame, the next two frames, and -- for a user GESTURE
-      // only -- a short timeout backstop for that Android shrink. An INVOLUNTARY render skips the timeout so
-      // its push-down window stays as short as possible (it fires every frame in combat; the shrink case is
-      // a gesture anyway). Each clamps to the shorter content, and "< top" only ever pushes down, so a user
-      // scrolling further is left alone.
-      (function(sc, top, gesture){
-        var _restore = function(){ if(sc.scrollTop < top) sc.scrollTop = top; };
-        _restore();
-        if(typeof requestAnimationFrame === 'function'){ requestAnimationFrame(function(){ _restore(); requestAnimationFrame(_restore); }); }
-        if(gesture && typeof setTimeout === 'function'){ setTimeout(_restore, 60); }
-      })(_gScroller, _gTop, force);
+    // Hold the reader's place across the rebuild(s) this render just did. _mainWantTop is the user's true
+    // scroll offset, maintained by real scroll gestures and never poisoned by the mobile reset-to-top, so
+    // pushing .ff-main back DOWN to it recovers even on a screen that rebuilds every frame. Re-apply across
+    // this frame, the next two, and an 80ms backstop, because the reset lands a beat later on some platforms
+    // (Android's post-shrink reset lands later than a single frame). Push-down only ("< want"), so a further
+    // scroll or a downward fling is never yanked back, and each write clamps to the current content height.
+    if(_sameContentView && _mainWantTop >= 4){
+      var _mEl = document.getElementById('ffMain');
+      if(_mEl){
+        // Act ONLY when the rebuild snapped the scroller to the TOP (the reported bug), and put it back where
+        // the reader was. Restoring only from the top -- not "any position below want" -- means this can never
+        // fight a momentum fling that is still gliding somewhere in the middle; it just undoes the jump-to-0.
+        (function(sc, want){
+          var _restore = function(){ if(sc.scrollTop < 4) sc.scrollTop = want; };
+          _restore();
+          if(typeof requestAnimationFrame === 'function'){ requestAnimationFrame(function(){ _restore(); requestAnimationFrame(_restore); }); }
+          if(typeof setTimeout === 'function'){ setTimeout(_restore, 80); }
+        })(_mEl, _mainWantTop);
+      }
     }
   }
 
@@ -46354,6 +46350,31 @@
   var _pointerHeld = false;
   window.addEventListener('pointerdown', function(){ _pointerHeld = true; }, true);
   ['pointerup','pointercancel','blur'].forEach(function(ev){ window.addEventListener(ev, function(){ _pointerHeld = false; }, true); });
+  // ---- Content scroll anchoring: hold the reader's place across #content rebuilds --------------------
+  // THE BUG (players: "screen jumping back to the top in Inventory and Combat"): the .ff-main scroller is
+  // reset to the top a beat AFTER an innerHTML swap on mobile, and the two screens that rebuild constantly
+  // (Combat every frame, Inventory on every production tick) snapped up on every rebuild. The first attempt
+  // read the live scrollTop back at the next render and pushed down to it -- but the reset had already set
+  // that to 0, so every following frame captured 0 and could never recover. The cure is to keep the reader's
+  // TRUE offset in _mainWantTop, written ONLY by user-driven scrolls (a held pointer, or a recent
+  // wheel/keyboard scroll) and NEVER by our own writes or the async reset, then push .ff-main back DOWN to it
+  // on every render. Push-down only, so a further scroll or a downward fling is never yanked back.
+  var _mainWantTop = 0, _userScrollUntil = 0;
+  (function(){
+    var m = document.getElementById('ffMain'); if(!m) return;
+    m.addEventListener('scroll', function(){
+      // Only a USER scroll updates the target. A finger/scrollbar drag holds the pointer; wheel/keyboard bump
+      // _userScrollUntil. Our push-down writes and the browser's reset-to-top both fire with the pointer up
+      // and no wheel/key, so they can never corrupt it. iOS momentum after release is not tracked (pointer
+      // up), so the list holds where the finger left it, which is the desired "stay put" behaviour.
+      if(_pointerHeld || Date.now() < _userScrollUntil) _mainWantTop = m.scrollTop;
+    }, { passive:true });
+    m.addEventListener('wheel', function(){ _userScrollUntil = Date.now() + 300; }, { passive:true });
+    window.addEventListener('keydown', function(e){
+      var k = e.key || '';
+      if(k.indexOf('Arrow') === 0 || k.indexOf('Page') === 0 || k === 'Home' || k === 'End' || k === ' ' || k === 'Spacebar') _userScrollUntil = Date.now() + 300;
+    }, true);
+  })();
   // Repaint now UNLESS the player is mid-interaction with a focused field or mid-click -- a full render()
   // rebuilds #content and, on iOS especially, slams shut any open native <select> picker (the guild-bank
   // deposit dropdown) or drops a text input's keyboard, and it eats an in-flight click (above). In that
@@ -46911,7 +46932,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.2';
+  var GAME_VERSION = '0.1.3.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
