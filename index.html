@@ -14135,6 +14135,13 @@
   // higher-rarity Belt unlocks additional simultaneous task slots that can each run any
   // task -- crafting, gathering, or Faith (prayer) -- freely mixed.
   var BELT_RARITY_SLOTS = { normal:1, rare:2, supreme:3, fantastic:4 };
+  // BELT_RARITY_SLOTS is the TOTAL concurrent task slots (everyone has 1 base slot, so a normal belt is no
+  // gain). What a belt actually GRANTS is that total minus the base 1: normal +0, rare +1, supreme +2,
+  // fantastic +3. The belt cards used to print the total (a normal belt read "1 slots" while granting
+  // nothing), so display the BONUS instead (owner report). beltSlotLabel is the shared "+N task slot(s)"
+  // phrasing; the mechanic (beltSlots above) is unchanged.
+  function beltBonusSlots(rarity){ return Math.max(0, (BELT_RARITY_SLOTS[rarity] || 1) - 1); }
+  function beltSlotLabel(rarity){ var n = beltBonusSlots(rarity); return n > 0 ? ('+' + n + ' task slot' + (n > 1 ? 's' : '')) : 'no extra slots'; }
   function getBeltTierData(tierIndex){
     var inputs = {};
     inputs['tanning_t'+tierIndex] = 2; // belts are cut from Tanning's cured Leather (2x), not raw Hide
@@ -18179,8 +18186,9 @@
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
     if(d.kind==='relic') baseLines.push('+'+fmtPct(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+' Damage & Armour');
-    // A Belt's headline stat is its concurrent task slots (rarity-scaled).
-    if(d.kind==='belt' && BELT_RARITY_SLOTS[d.rarity]) baseLines.push(BELT_RARITY_SLOTS[d.rarity]+' task slot'+(BELT_RARITY_SLOTS[d.rarity]>1?'s':''));
+    // A Belt's headline stat is the EXTRA concurrent task slots it grants (rarity-scaled, over the base 1
+    // everyone has): normal grants none, rare +1, supreme +2, fantastic +3.
+    if(d.kind==='belt') baseLines.push(beltSlotLabel(d.rarity));
     return baseLines;
   }
   // A Legendary gear unique's effect blurb (weapon/shield/ward), looked up across the four dungeon maps.
@@ -24106,7 +24114,7 @@
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+fmt(beltData.defense)+'</span></div>';
-    html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
+    html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Normal grants no extra slots; Rare = +1, Supreme = +2, Fantastic = +3</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(beltData.inputs, 'inp-belt')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(beltIsActive?' id="'+beltFillId+'"':'')+' style="width:'+beltPct+'%"></div></div>';
     if(beltIsActive){
@@ -25290,14 +25298,14 @@
       .sort(function(a,b){ return BELT_ITEMS[a].tierIndex - BELT_ITEMS[b].tierIndex; });
     var html = '<h3>Belt</h3>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">'+(currentBelt ? currentBelt.name+' &bull; defense '+fmt(currentBelt.defense)+' &bull; '+BELT_RARITY_SLOTS[currentBelt.rarity]+' craft slots' : 'Not equipped &bull; 1 craft slot')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">'+(currentBelt ? currentBelt.name+' &bull; defense '+fmt(currentBelt.defense)+' &bull; '+beltSlotLabel(currentBelt.rarity) : 'Not equipped &bull; no extra slots')+'</div></div></div>';
     if(ownedBelts.length===0){
       html += '<div class="empty-note">No Belts in inventory. Forge one in Outfitting &rarr; Leatherworking.</div>';
     } else {
       html += renderEquipCandidatePicker([{ key:'belt', title:'Belts', candidates: ownedBelts.map(function(id){
         var item = BELT_ITEMS[id];
         return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.tierIndex*10 + (BELT_RARITY_SLOTS[item.rarity]||1)),
-          statHtml:BELT_RARITY_SLOTS[item.rarity]+' slots &bull; def '+item.defense, deltaHtml:'',
+          statHtml:beltSlotLabel(item.rarity)+' &bull; def '+item.defense, deltaHtml:'',
           equipped:!!(currentBelt && currentBelt.id===id), canEquip:true, lockHtml:'',
           action:'equipBelt', data:'data-item="'+id+'"' };
       }) }], {flat:true});
@@ -46933,7 +46941,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.7';
+  var GAME_VERSION = '0.1.3.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47332,7 +47340,7 @@
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
       LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, autoSacrificeTick:autoSacrificeTick, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, BELT_RARITY_SLOTS:BELT_RARITY_SLOTS, beltBonusSlots:beltBonusSlots, beltSlotLabel:beltSlotLabel, renderBeltEquipSection:renderBeltEquipSection, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

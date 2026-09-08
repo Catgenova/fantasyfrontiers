@@ -2623,6 +2623,22 @@
     }
   });
 
+  // ---- Belt cards show the EXTRA slots a belt grants, not the total (reported: a normal belt read
+  // "1 slots" while granting none; a rare read "2" while granting one). Base is 1 slot for everyone. ----
+  suite('belt: the slot counter shows the bonus, not the total', function(){
+    eq(FF.beltBonusSlots('normal'), 0, 'a normal belt grants 0 extra slots');
+    eq(FF.beltBonusSlots('rare'), 1, 'a rare belt grants 1');
+    eq(FF.beltBonusSlots('supreme'), 2, 'a supreme belt grants 2');
+    eq(FF.beltBonusSlots('fantastic'), 3, 'a fantastic belt grants 3');
+    // The total mechanic is unchanged: BELT_RARITY_SLOTS is base 1 + the bonus.
+    eq(FF.BELT_RARITY_SLOTS.normal - 1, FF.beltBonusSlots('normal'), 'bonus = total minus the base slot');
+    // The label reads truthfully and never claims a slot a normal belt does not grant.
+    ok(/no extra slots/.test(FF.beltSlotLabel('normal')), 'a normal belt is labelled as granting no extra slots');
+    ok(/\+1 task slot\b/.test(FF.beltSlotLabel('rare')), 'a rare belt is labelled +1 task slot');
+    ok(/\+2 task slots/.test(FF.beltSlotLabel('supreme')), 'a supreme belt is labelled +2 task slots');
+    ok(!/\b1 slots\b/.test(FF.beltSlotLabel('normal')), 'the old misleading "1 slots" wording is gone');
+  });
+
   // ---- Queue targets: a finite "craft N" run credits its REAL output and stops on target --
   // Regression: queueCreditOutput counted gabCapture.items[act.itemId], but special forges
   // (craftKind acts) have no itemId at all and relic/butcher/shaft recipes produce ids unrelated
@@ -2698,8 +2714,9 @@
     ok(!!toolId, 'a fantastic tool item exists');
     ok(FF.discordItemStatsText(toolId).indexOf('speed') !== -1, 'tool tail states its speed bonus');
 
-    // A fantastic belt leads with its task slots; a stackable weapon leads with damage.
-    ok(FF.discordItemStatsText('belt_t0_fantastic').indexOf('4 task slots') !== -1, 'belt tail states its 4 task slots');
+    // A fantastic belt leads with the EXTRA task slots it grants (+3 over the base 1); a stackable weapon
+    // leads with damage. (Was "4 task slots", the total -- see the belt slot-counter fix.)
+    ok(FF.discordItemStatsText('belt_t0_fantastic').indexOf('+3 task slots') !== -1, 'belt tail states its +3 task slots');
     var wid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('stweapon_')===0 && /_fantastic$/.test(id); })[0];
     ok(!!wid, 'a fantastic stackable weapon exists');
     ok(FF.discordItemStatsText(wid).indexOf('Damage ') !== -1, 'weapon tail states its damage range');
