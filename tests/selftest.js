@@ -12160,6 +12160,13 @@
       var card = FF.renderFamiliarCard(id);
       ok(/data-action="transcendRequest" data-skill="pyromancer"/.test(card), 'a maxed familiar card shows a Transcend button');
       ok(/2★/.test(card), 'the card shows the current star badge');
+      // The button must stay READABLE: it used to override the fill to var(--bg-panel) with var(--gold)
+      // text (gold-on-panel, unreadable on this card -- reported). It now carries ONLY a gold border and
+      // inherits the base .action-btn fill/text, the pairing the Replace buttons beside it already use.
+      var _tBtn = card.match(/<button[^>]*data-action="transcendRequest"[^>]*>/);
+      ok(_tBtn, 'found the Transcend button tag');
+      ok(_tBtn && !/background\s*:/.test(_tBtn[0]) && !/color\s*:/.test(_tBtn[0]), 'the Transcend button sets no inline background or text color');
+      ok(_tBtn && /border\s*:\s*1px solid var\(--gold\)/.test(_tBtn[0]), 'it keeps the gold border as its only accent');
       s.familiars[id].level = 40;
       ok(!/data-action="transcendRequest"/.test(FF.renderFamiliarCard(id)), 'below max, no Transcend button is offered');
     } finally {

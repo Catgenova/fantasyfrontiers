@@ -30551,7 +30551,11 @@
         // Transcend: only at max level. Resets to Lv 1 for a permanent star (+10% damage/star + Barrier Shards).
         if(famLevel >= FAMILIAR_MAX_LEVEL){
           var _tTo = famStars>0 ? (starStr(famStars)+' &rarr; '+starStr(famStars+1)) : ('&rarr; '+starStr(famStars+1));
-          html += '<button class="action-btn" data-action="transcendRequest" data-skill="'+skillId+'" style="margin-top:8px;background:var(--bg-panel);color:var(--gold);border:1px solid var(--gold);" title="Reset to Lv 1 for a permanent star: +'+Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100)+'% damage/star and Barrier Shards">Transcend '+_tTo+'</button>';
+          // Distinguish it with a GOLD BORDER only: overriding the background to var(--bg-panel) while
+          // keeping var(--gold) text was gold-on-panel, unreadable on this card (reported). The plain
+          // .action-btn fill/text is the readable pairing the Replace buttons beside it already use, and a
+          // --gold border re-scopes correctly in light, the dark-marble sweep, and Dark Mode alike.
+          html += '<button class="action-btn" data-action="transcendRequest" data-skill="'+skillId+'" style="margin-top:8px;border:1px solid var(--gold);" title="Reset to Lv 1 for a permanent star: +'+Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100)+'% damage/star and Barrier Shards">Transcend '+_tTo+'</button>';
         } else {
           html += '<div class="empty-note" style="margin-top:8px;font-size:11px;">Reach Level '+FAMILIAR_MAX_LEVEL+' to Transcend for a star (+'+Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100)+'% damage) and Barrier Shards.</div>';
         }
@@ -46917,7 +46921,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.5';
+  var GAME_VERSION = '0.1.3.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
