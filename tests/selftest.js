@@ -19476,6 +19476,15 @@
       ok(tail() === lastBefore, '50 DoT slices inside one window add no rows (tail unchanged)');
       // The damage still landed even though nothing was logged.
       ok(S.activity.monsterHp < 1e12, 'the DoT damage was applied regardless of logging');
+
+      // A sub-1 DoT window must not spam "ticks for 0": clDotShown returns null below 1 (so the fraction
+      // keeps accumulating), the rounded integer at or above 1. Reported: a 0.3/s Toxin logging "for 0".
+      eq(FF.clDotShown(0), null, 'a 0 window shows nothing');
+      eq(FF.clDotShown(0.3), null, 'a 0.3/s venom window shows nothing (no "for 0" spam)');
+      eq(FF.clDotShown(0.49), null, 'still nothing just under the rounding point');
+      eq(FF.clDotShown(0.5), 1, 'once the accumulated fraction rounds to 1, it shows 1');
+      eq(FF.clDotShown(0.9), 1, '0.9 accumulated shows 1');
+      eq(FF.clDotShown(4.1e9), 4100000000, 'a real DoT is unchanged, shown in full');
     } finally { S.activity = savedAct; FF.combatLogDotReset(); }
   });
 

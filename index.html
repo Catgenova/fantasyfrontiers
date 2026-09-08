@@ -20288,6 +20288,10 @@
   // fraction of a second and tell the player nothing. Accumulate per effect and emit one row per second:
   // "Frostbite ticks the foe for 4.1B over 1s", which is also the number a player actually wants.
   var _clDotAccum = {}, CL_DOT_WINDOW_MS = 1000;
+  // The per-window DoT readout: round the accumulated damage, but a window that rounds to 0 emits NOTHING
+  // (returns null) so the fraction keeps accumulating instead of spamming "Venom ticks for 0" -- a low-level
+  // Toxin adds ~0.3/s. Pure, so the rounding boundary is unit-testable without waiting a real second.
+  function clDotShown(sum){ var n = Math.round(sum); return n >= 1 ? n : null; }
   function applyEffectDot(dmg, name, opts){
     if(!effectGateOpen(opts)) return false; // DoT slices wait for the encounter's first swing too (earned payouts excepted)
     var killed = applyChipDamage(dmg);
@@ -20298,8 +20302,16 @@
     e.sum += dmg;
     var now = Date.now(), span = now - e.since;
     if(span >= CL_DOT_WINDOW_MS){
-      combatLogPush({ dir:'skill', spName:name, dmg:Math.round(e.sum), over:Math.max(1, Math.round(span/1000)), target:clTargetName() });
-      delete _clDotAccum[name];
+      // A sub-1 DoT (a low-level Toxin adds ~0.3/s) rounds to 0. clDotShown returns null for that, so we
+      // emit NOTHING and leave the accumulator running: the fraction keeps building across seconds until it
+      // rounds to at least 1, then emits ONE truthful row ("Venom ticks the foe for 1 over 3s"). The damage
+      // itself is applied raw per frame above, so this only fixes the readout. Real DoTs (billions/s) round
+      // to >=1 on the first window and emit every second exactly as before. Reported: the "0 spam".
+      var shown = clDotShown(e.sum);
+      if(shown !== null){
+        combatLogPush({ dir:'skill', spName:name, dmg:shown, over:Math.max(1, Math.round(span/1000)), target:clTargetName() });
+        delete _clDotAccum[name];
+      }
     }
     return killed;
   }
@@ -46921,7 +46933,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.6';
+  var GAME_VERSION = '0.1.3.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47139,7 +47151,7 @@
       RARITY_TIERS:RARITY_TIERS, TOOL_RARITY_MULT:TOOL_RARITY_MULT, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, SACRIFICE_RARITY_MULT:SACRIFICE_RARITY_MULT, SELL_RARITY_MULT:SELL_RARITY_MULT,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk, estateJobFieldsFrom:estateJobFieldsFrom, estateQueueClaimOutcome:estateQueueClaimOutcome,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
-      applyEffectDamage:applyEffectDamage, combatEffectsArmed:combatEffectsArmed, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
+      applyEffectDamage:applyEffectDamage, combatEffectsArmed:combatEffectsArmed, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset, clDotShown:clDotShown,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
       estateEnqueueOrStart:estateEnqueueOrStart, estateBuildTierLevelOk:estateBuildTierLevelOk, estatePaveTierLevelOk:estatePaveTierLevelOk, SKILL_XP_FLOOR:SKILL_XP_FLOOR, estateArchitectureTierCap:estateArchitectureTierCap, estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
       improveTierLabel:improveTierLabel, popupEnqueue:popupEnqueue, POPUP_QUEUE_MAX:POPUP_QUEUE_MAX,
