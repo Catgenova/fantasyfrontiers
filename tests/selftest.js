@@ -5217,6 +5217,14 @@
     FF.combatLogPush({ dir:'out', dmg:80, target:'Bear', echo:'Twin Echo' });
     ok(/Twin Echo<\/span> hits Bear/.test(FF.combatLogHtml()), 'a Twin Echo is named too');
 
+    // A DEATH is written into the combat feed, not just the chronicle (reported: "the combat log does not
+    // show a death on my side"). It carries the killing blow's number so the cause is legible.
+    FF._clReset();
+    FF.combatLogPush({ dir:'death', text:'You were defeated by the Kinsworn Champion (final blow 300).' });
+    var deathHtml = FF.combatLogHtml();
+    ok(/defeated by the Kinsworn Champion/.test(deathHtml) && /final blow 300/.test(deathHtml), 'a death row renders in the feed with the killing blow');
+    ok(!/You hit/.test(deathHtml) && !/hit you for/.test(deathHtml), 'a death row does not read as a normal swing');
+
     // Familiar spells land in the feed too (ticket-0101): damage hits, siphon drains and utility casts.
     FF._clReset(); s.settings.advancedCombatLog = true;
     var svAct2 = s.activity, svHp2 = s.playerHp, svAm = s.familiarBuffs.armorMult, svAu = s.familiarBuffs.armorUntil;
