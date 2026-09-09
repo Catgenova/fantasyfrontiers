@@ -33570,12 +33570,19 @@
   function estWorkshopMap(){ return estIsGuild ? guildPlacedWorkshops : placedWorkshops; } // "one per skill" set for the active estate
   // Workshops owned in inventory whose tier fits on this tile's pavement and whose skill
   // isn't already placed elsewhere on this estate (one per skill).
+  // The workshops you can place on this tile: ONE per skill -- the HIGHEST owned tier whose tier fits the
+  // pavement -- for skills not already placed. Only one workshop per skill can exist, and it upgrades in
+  // place, so a lower tier is never the pick when you own a higher one; showing every owned tier just
+  // buried the choice (ticket-0227). Grouped by category in the render (ticket-0226).
   function placeableWorkshopsFor(cell){
-    var pave = pavementTierOf(cell), out = [], map = estWorkshopMap();
+    var pave = pavementTierOf(cell), map = estWorkshopMap(), bySkill = {};
     Object.keys(WORKSHOP_ITEMS).forEach(function(id){
       var it = WORKSHOP_ITEMS[id];
-      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave && map[it.skillId] === undefined) out.push(it);
+      if((state.inventory[id]||0) <= 0 || it.tierIndex > pave || map[it.skillId] !== undefined) return;
+      var cur = bySkill[it.skillId];
+      if(!cur || it.tierIndex > cur.tierIndex) bySkill[it.skillId] = it;   // keep the best that fits
     });
+    var out = Object.keys(bySkill).map(function(k){ return bySkill[k]; });
     out.sort(function(a,b){ return a.name.localeCompare(b.name); });
     return out;
   }
@@ -36954,14 +36961,21 @@
         html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+((placeable.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
         html += '</div>';
         if(estateWorkshopMenuOpen && placeable.length){
-          html += '<div class="estate-paving-library">';
-          placeable.forEach(function(it){
+          // Grouped by skill family, the same five categories the Blacksmithing tool UI uses
+          // (blacksmithToolGroupKey), so the placement list reads like the rest of the game instead of one
+          // long alphabetical run (ticket-0226). One button per skill (see placeableWorkshopsFor).
+          var _wsBtn = function(it){
             var wLvOk = estateBuildTierLevelOk(it.tierIndex); // placements level-gate too (v0.0.86.33)
-            html += '<button class="estate-paving-option'+(wLvOk?'':' locked')+'" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'" '+(wLvOk?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+fmt(state.inventory[it.id]||0)+'</span>';
-            html += '</button>';
+            return '<button class="estate-paving-option'+(wLvOk?'':' locked')+'" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'" '+(wLvOk?'':'disabled')+'>'
+              + '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+fmt(state.inventory[it.id]||0)+'</span>'
+              + '</button>';
+          };
+          BLACKSMITH_TOOL_GROUPS.forEach(function(grp){
+            var inGrp = placeable.filter(function(it){ return blacksmithToolGroupKey(it.skillId) === grp.key; });
+            if(!inGrp.length) return;
+            html += '<div class="estate-action-info" style="margin:8px 0 3px;font-weight:700;color:'+grp.color+';">'+escapeHtml(grp.label)+'</div>';
+            html += '<div class="estate-paving-library">' + inGrp.map(_wsBtn).join('') + '</div>';
           });
-          html += '</div>';
         }
         var placeableC = placeableCottagesFor(cell);
         html += '<div class="estate-action-row">';
@@ -46941,7 +46955,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.8';
+  var GAME_VERSION = '0.1.3.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47100,7 +47114,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, COTTAGE_PLANKS:COTTAGE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, estatePlaceCottage:estatePlaceCottage,
+      fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, placeableWorkshopsFor:placeableWorkshopsFor, estatePlaceCottage:estatePlaceCottage,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,

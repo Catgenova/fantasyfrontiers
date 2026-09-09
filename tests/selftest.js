@@ -3458,6 +3458,38 @@
     near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.15, 'gathering workshop top tier = 15%');
   });
 
+  // ---- Estate placement menu: ONE workshop per skill, the best that fits (tickets 0226/0227) --------
+  // The list used to show every owned tier of every skill, flat and alphabetical ("scrolling dozens of
+  // buttons to find the highest tier"). Only one workshop per skill can exist and it upgrades in place, so
+  // the highest owned tier that fits the pavement is the only sensible pick per skill.
+  suite('estate: placement menu offers the best workshop per skill', function(){
+    ok(typeof FF.placeableWorkshopsFor === 'function', 'placeableWorkshopsFor exported');
+    var s = FF._state, sv = { est:s.estate, inv:s.inventory };
+    var have = FF.WORKSHOP_ITEMS['workshop_mining_t2'] && FF.WORKSHOP_ITEMS['workshop_mining_t5'] && FF.WORKSHOP_ITEMS['workshop_mining_t9'] && FF.WORKSHOP_ITEMS['workshop_forestry_t3'];
+    ok(!!have, 'the mining/forestry workshop tiers used by the fixture exist');
+    if(!have) return;
+    try {
+      FF.estUse(false);
+      s.estate = { grid: [] }; FF.recomputePlacedWorkshops();   // nothing placed -> every skill is eligible
+      s.inventory = { workshop_mining_t2:1, workshop_mining_t5:1, workshop_mining_t9:1, workshop_forestry_t3:1 };
+      var high = FF.placeableWorkshopsFor({ type:'paved', paveTileId:'paving_t20' });
+      eq(high.length, 2, 'three owned Mining tiers plus one Forestry collapse to ONE button per skill');
+      var mining = high.filter(function(w){ return w.skillId === 'mining'; })[0];
+      var forestry = high.filter(function(w){ return w.skillId === 'forestry'; })[0];
+      ok(mining && mining.tierIndex === 9, 'Mining offers only its highest owned tier (t9), not t2 or t5');
+      ok(forestry && forestry.tierIndex === 3, 'Forestry offers its single owned tier');
+      // The pavement still caps the pick: on T5 paving the best Mining that FITS is t5, not the owned t9.
+      var low = FF.placeableWorkshopsFor({ type:'paved', paveTileId:'paving_t5' });
+      var miningLow = low.filter(function(w){ return w.skillId === 'mining'; })[0];
+      ok(miningLow && miningLow.tierIndex === 5, 'on T5 pavement the best Mining that fits is t5');
+      ok(!low.some(function(w){ return w.skillId === 'mining' && w.tierIndex === 9; }), 'the t9 that does not fit is never offered');
+      // Every offered workshop lands in one of the five blacksmith-style groups the render uses.
+      ok(high.every(function(w){ return FF.BLACKSMITH_TOOL_GROUPS.some(function(g){ return g.key === FF.blacksmithToolGroupKey(w.skillId); }); }), 'each offered workshop maps to a display category');
+    } finally {
+      s.estate = sv.est; s.inventory = sv.inv; FF.recomputePlacedWorkshops();
+    }
+  });
+
   // ---- Workshop buff shows on the action page's skill bar (bug ticket-0038) --------------
   suite('workshop buff: surfaced on the action skill bar', function(){
     ok(typeof FF.skillWorkshopBuffLabel === 'function', 'skillWorkshopBuffLabel exported');
