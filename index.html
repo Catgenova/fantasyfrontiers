@@ -23200,20 +23200,28 @@
   }
 
   // ================= RENDER: CRAFTING =================
+  // THE ONE PLACE the "Nx Name (M owned)" requirement text is composed. inputsLine (the render) and every
+  // per-tick live updater in updateDynamic MUST both read it. The updater used to rebuild the string on its
+  // own and dropped the "Normal " prefix below, so a full render and the very next tick wrote two DIFFERENT
+  // names into the same span and the Needs line flickered (ticket-0222: "flashing between material/quantity"
+  // while forging tools -- a tool eats the prior-tier tool, which is a _normal key).
+  function inputNeedText(k, need, have){
+    var name = (ALL_SELLABLE[k]||{}).name || k;
+    // Prior-tier equipment fodder (weapons/tools/armour/belts) is ALWAYS the Normal-rarity copy: rare+ are
+    // deliberately protected from being eaten (ticket-0093). Normal item names carry NO rarity prefix
+    // ("Birch Staff"), while rare+ do ("Rare Birch Staff"), so a player holding only rare priors read the
+    // generic "1x Birch Staff" as satisfied and could not tell why the Carve button stayed off. Say
+    // "Normal" so the requirement is unambiguous; the "owned" count already reflects Normal copies only.
+    if(/_normal$/.test(k) && ALL_SELLABLE[k]) name = 'Normal ' + name;
+    return fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+  }
   function inputsLine(inputs, idPrefix){
     var parts = Object.keys(inputs).map(function(k){
       var need = inputs[k];
       var have = state.inventory[k]||0;
-      var name = (ALL_SELLABLE[k]||{}).name || k;
-      // Prior-tier equipment fodder (weapons/tools/armour/belts) is ALWAYS the Normal-rarity copy: rare+ are
-      // deliberately protected from being eaten (ticket-0093). Normal item names carry NO rarity prefix
-      // ("Birch Staff"), while rare+ do ("Rare Birch Staff"), so a player holding only rare priors read the
-      // generic "1x Birch Staff" as satisfied and could not tell why the Carve button stayed off. Say
-      // "Normal" so the requirement is unambiguous; the "owned" count already reflects Normal copies only.
-      if(/_normal$/.test(k) && ALL_SELLABLE[k]) name = 'Normal ' + name;
       var ok = have >= need;
       var idAttr = idPrefix ? ' id="'+idPrefix+'-'+k+'"' : '';
-      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+fmt(need)+'x '+name+' ('+fmt(have)+' owned)</span>';
+      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+inputNeedText(k, need, have)+'</span>';
     });
     return parts.join(', ');
   }
@@ -44939,7 +44947,7 @@
           var have = state.inventory[k]||0;
           var need = recipe.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -44982,7 +44990,7 @@
           var have = state.inventory[k]||0;
           var need = data.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45005,7 +45013,7 @@
           var have = state.inventory[k]||0;
           var need = data.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45028,7 +45036,7 @@
           var have = state.inventory[k]||0;
           var need = shieldData.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45050,7 +45058,7 @@
           var have = state.inventory[k]||0;
           var need = quiverData.inputs[k];
           var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = fmt(need)+'x '+name+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45072,7 +45080,7 @@
         var el = document.getElementById('inp-ring-'+rt.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = rData.inputs[k];
-          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45087,7 +45095,7 @@
         var el = document.getElementById('inp-amulet-'+at.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = aData.inputs[k];
-          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45107,7 +45115,7 @@
         var el = document.getElementById('inp-ward-'+w.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = wData.inputs[k];
-          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45126,7 +45134,7 @@
         var el = document.getElementById('inp-scepter-'+s.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = sData.inputs[k];
-          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -45146,7 +45154,7 @@
         var el = document.getElementById('inp-wand-'+w.id+'-'+k);
         if(el){
           var have = state.inventory[k]||0, need = wData.inputs[k];
-          el.textContent = fmt(need)+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+fmt(have)+' owned)';
+          el.textContent = inputNeedText(k, need, have);   // shared with inputsLine, so the tick can never disagree with the render (ticket-0222)
           el.className = have>=need ? 'ok' : 'bad';
         }
       });
@@ -46955,7 +46963,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.9';
+  var GAME_VERSION = '0.1.3.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47115,7 +47123,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, placeableWorkshopsFor:placeableWorkshopsFor, estatePlaceCottage:estatePlaceCottage,
-      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine,
+      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,

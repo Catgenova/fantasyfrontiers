@@ -5203,6 +5203,31 @@
   });
 
   // ---- Combat log tab + advanced-pipeline toggle ------------------------------------------------
+  // ---- The Needs line: render and the per-tick live updater compose the SAME text (ticket-0222) ----------
+  // The updater used to rebuild "Nx Name (M owned)" on its own and dropped the "Normal " prefix the render
+  // adds to prior-tier fodder, so every full render and the next tick wrote two different names into the same
+  // span and the line flickered while forging tools. Both now read inputNeedText; this pins the agreement.
+  suite('needs line: render text equals live-tick text', function(){
+    ok(typeof FF.inputNeedText === 'function' && typeof FF.inputsLine === 'function', 'inputNeedText + inputsLine exported');
+    var s = FF._state;
+    var normalKey = Object.keys(FF.ALL_SELLABLE).filter(function(k){ return /_normal$/.test(k); })[0];
+    var plainKey = Object.keys(FF.ALL_SELLABLE).filter(function(k){ return !/_normal$/.test(k); })[0];
+    ok(!!normalKey && !!plainKey, 'a _normal fodder key and a plain key exist to test against');
+    if(!normalKey || !plainKey) return;
+    // The prefix rule lives in ONE place now.
+    ok(/^1x Normal /.test(FF.inputNeedText(normalKey, 1, 2)), 'prior-tier fodder is labelled "Normal ..." by the shared helper');
+    ok(/\(2 owned\)$/.test(FF.inputNeedText(normalKey, 1, 2)), 'the owned count is appended');
+    ok(!/Normal /.test(FF.inputNeedText(plainKey, 3, 0)) || /Normal /.test((FF.ALL_SELLABLE[plainKey]||{}).name||''), 'a plain material gets no injected "Normal " prefix');
+    // THE FLICKER GUARANTEE: what the render puts inside the span must be byte-identical to what the tick
+    // would write into it. If these ever diverge, the Needs line strobes between the two strings again.
+    var inputs = {}; inputs[normalKey] = 1;
+    var html = FF.inputsLine(inputs, 'inp-t');
+    var m = /<span[^>]*>([^<]*)<\/span>/.exec(html);
+    ok(!!m, 'inputsLine renders the requirement inside a span');
+    var have = s.inventory[normalKey] || 0;
+    eq(m && m[1], FF.inputNeedText(normalKey, 1, have), 'render text === tick text for the same key (no flicker)');
+  });
+
   suite('chat: combat log + advanced toggle', function(){
     var s = FF._state;
     var sv = { adv: s.settings && s.settings.advancedCombatLog };
