@@ -2143,7 +2143,7 @@
     var w3 = FF.getWorkshopTierData('mining', 3).inputs;
     ok(w3.carpentry_t3 > 0 && w3.stonecutting_t3 === 10 && w3.stonecutting_t5 === 4, 'a t3 workshop bill = planks + 10 Bricks + 4 Pillars');
     var c0 = FF.getCottageTierData(0).inputs;
-    ok(c0.carpentry_t0 === 10 && c0.stonecutting_t0 === 10 && c0.stonecutting_t2 === 4, 'a t0 cottage bill = 10 planks + 10 Bricks + 4 Pillars');
+    ok(c0.carpentry_t0 === 15 && c0.stonecutting_t0 === 15 && c0.stonecutting_t2 === 6, 'a t0 cottage bill = 15 planks + 15 Bricks + 6 Pillars (1.5x a t0 Workshop, ticket-0225)');
     // Stonecutting names confirm the Brick/Pillar positions the bills point at.
     ok(/ Brick$/.test(FF.ALL_CRAFT_RECIPES.stonecutting_t0.name) && / Pillar$/.test(FF.ALL_CRAFT_RECIPES.stonecutting_t2.name), 'the billed stonecutting tiers really are Bricks and Pillars');
     // Estate builds now train Architecture, not Carpentry.
@@ -3523,13 +3523,17 @@
     ok(c['cottage_t0'] && c['cottage_t20'], 'cottage items exist across tiers');
     eq(c['cottage_t0'].tierIndex, 0, 'cottage tierIndex');
     var d0 = FF.getCottageTierData(0), d3 = FF.getCottageTierData(3);
-    // The plank count is an owner-set number (10, cut from 100 in v0.0.86.40), so pin the VALUE here and
-    // read the constant in the per-tier rows below. A silent drift back to 100 fails this line, not a
-    // vacuous constant-equals-itself comparison.
-    eq(FF.COTTAGE_PLANKS, 10, 'a cottage bills 10 planks at every tier (owner order)');
-    eq(d0.inputs['carpentry_t0'], FF.COTTAGE_PLANKS, 'cottage t0 costs the flat plank count');
+    // Owner order (ticket-0225): a Cottage bills ~1.5x a same-tier Workshop's materials. It used to bill a
+    // FLAT 10 planks on the shared stone bill, so above t0 it UNDERCUT a Workshop whose planks scale 10+3t
+    // (while paying more XP). Pin the VALUE of the multiplier here (a silent drift fails this line), then
+    // hold the RATIO per tier against the Workshop bill it is derived from.
+    eq(FF.COTTAGE_COST_MULT, 1.5, 'a cottage costs 1.5x a workshop (owner order)');
+    var w0 = FF.workshopMaterialInputs(0), w3 = FF.workshopMaterialInputs(3);
+    eq(d0.inputs['carpentry_t0'], Math.ceil(w0['carpentry_t0']*1.5), 'cottage t0 planks = 1.5x the t0 workshop planks');
     ok(!('cottage_t-1' in d0.inputs), 'cottage t0 has no prior-cottage input');
-    eq(d3.inputs['carpentry_t3'], FF.COTTAGE_PLANKS, 'cottage t3 costs the same flat count (planks do not scale with tier)');
+    eq(d3.inputs['carpentry_t3'], Math.ceil(w3['carpentry_t3']*1.5), 'cottage t3 planks = 1.5x the t3 workshop planks (they scale with tier now)');
+    ok(d3.inputs['carpentry_t3'] > d0.inputs['carpentry_t0'], 'cottage planks rise with tier, like a workshop');
+    Object.keys(w3).forEach(function(k){ eq(d3.inputs[k], Math.ceil(w3[k]*1.5), 'cottage t3 '+k+' = 1.5x the workshop line (stone included)'); });
     eq(d3.inputs['cottage_t2'], 1, 'cottage t3 consumes the previous-tier cottage');
     near(FF.peonSpeedFactor(0), 0.05, 'peon speed 5% at t0');
     near(FF.peonSpeedFactor(FF.TIER_COUNT - 1), 1.0, 'peon speed 100% at t20');
