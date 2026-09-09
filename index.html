@@ -730,6 +730,11 @@
      viewport resized with devtools open). */
   .settings-card{max-width:min(560px,96vw); max-height:calc(100dvh - 32px); overflow:hidden; text-align:left; display:flex; flex-direction:column;}
   .settings-scroll{flex:1 1 auto; min-height:0; overflow-y:auto;}
+  /* An ingredient in a "Needs:" line that can jump to its source (goItemSource). Styled by ATTRIBUTE, not
+     a class: the per-tick live updater overwrites the span's className every frame, so a class would be
+     stripped on the first tick; data-action survives it. Keeps the ok/bad colour, adds only the cue. */
+  .inputs-line span[data-action="goItemSource"]{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;}
+  .inputs-line span[data-action="goItemSource"]:hover{text-decoration-style:solid;}
   .settings-card .familiar-popup-title{text-align:center;}
   .settings-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px 24px; align-items:start; text-align:left; margin-top:12px;}
   .settings-col{display:flex; flex-direction:column; min-width:0;}
@@ -6309,7 +6314,7 @@
     if(block.recipes) block.recipes.forEach(function(r){
       ALL_CRAFT_RECIPES[r.id] = r;
       addSearchAlias(r.id, (block.label || sk) + ' ' + (r.keywords || ''));
-      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'craft' };
+      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'craft', skillId:sk };
     });
   });
   Object.keys(GATHERING_SKILLS).forEach(function(sk){
@@ -6317,16 +6322,16 @@
     if(block.recipes) block.recipes.forEach(function(r){
       ALL_CRAFT_RECIPES[r.id] = r;
       addSearchAlias(r.id, (block.label || sk) + ' ' + (r.keywords || ''));
-      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'refine' };
+      ITEM_SOURCE[r.id] = { label:(block.label || sk), kind:'refine', skillId:sk };
     });
   });
   ALL_CRAFT_RECIPES[CRAFTING_SKILLS.fletching.shaftRecipe.id] = CRAFTING_SKILLS.fletching.shaftRecipe;
-  ITEM_SOURCE[CRAFTING_SKILLS.fletching.shaftRecipe.id] = { label:(CRAFTING_SKILLS.fletching.label || 'Fletching'), kind:'craft' };
+  ITEM_SOURCE[CRAFTING_SKILLS.fletching.shaftRecipe.id] = { label:(CRAFTING_SKILLS.fletching.label || 'Fletching'), kind:'craft', skillId:'fletching' };
   // Gathered raw materials hang off `.items`, not `.recipes`, so the loops above never saw them: an ore
   // was unfindable by "mining". Same alias treatment, so the rule holds for everything in the bag.
   Object.keys(GATHERING_SKILLS).forEach(function(sk){
     var block = GATHERING_SKILLS[sk];
-    (block.items || []).forEach(function(it){ addSearchAlias(it.id, (block.label || sk) + ' ' + (it.keywords || '')); ITEM_SOURCE[it.id] = { label:(block.label || sk), kind:'gather' }; });
+    (block.items || []).forEach(function(it){ addSearchAlias(it.id, (block.label || sk) + ' ' + (it.keywords || '')); ITEM_SOURCE[it.id] = { label:(block.label || sk), kind:'gather', skillId:sk }; });
   });
   // Mixology Teas: the drinkable XP-rate buff (activeTea slot).
   var TEA_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
@@ -23212,6 +23217,20 @@
   }
 
   // ================= RENDER: CRAFTING =================
+  // Click an ingredient in a "Needs:" line and go straight to where it is made or gathered (Gutwrench,
+  // #suggestions). Resolves the producing skill via ITEM_SOURCE, lands on that skill's tab exactly as a
+  // Workflows link does, then scrolls the item's recipe card into view where the page has one (craft
+  // recipe cards carry id="card-<id>"; gather rows have none, so a gather ingredient lands on its tab).
+  function goItemSource(itemId){
+    var src = ITEM_SOURCE[itemId]; if(!src || !src.skillId) return false;
+    var t = skillNavTarget(src.skillId); if(!t || !t.cat) return false;
+    if(t.sub && DEFAULT_SUB[t.cat]) navLastSub[t.cat] = t.sub;   // set BEFORE navPickCat so it honours the sub
+    navPickCat(t.cat);
+    if(t.sub){ currentSub = t.sub; navSeenTiers[t.sub] = navUnlockedTiers(skillLevel(t.sub, (state.xp && state.xp[t.sub]) || 0)); }
+    render(true);
+    setTimeout(function(){ var el = document.getElementById('card-'+itemId); if(el && el.scrollIntoView) el.scrollIntoView({ behavior:'smooth', block:'center' }); }, 0);
+    return true;
+  }
   // THE ONE PLACE the "Nx Name (M owned)" requirement text is composed. inputsLine (the render) and every
   // per-tick live updater in updateDynamic MUST both read it. The updater used to rebuild the string on its
   // own and dropped the "Normal " prefix below, so a full render and the very next tick wrote two DIFFERENT
@@ -23233,7 +23252,12 @@
       var have = state.inventory[k]||0;
       var ok = have >= need;
       var idAttr = idPrefix ? ' id="'+idPrefix+'-'+k+'"' : '';
-      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+'>'+inputNeedText(k, need, have)+'</span>';
+      // The jump-to-source affordance lives in ATTRIBUTES on this span, never inner markup: the per-tick
+      // live updater rewrites its textContent and className every frame, and attributes survive both --
+      // inner markup would be wiped on the first tick and flicker back on the next render (ticket-0222).
+      var src = ITEM_SOURCE[k];
+      var goAttr = (src && src.skillId) ? ' data-action="goItemSource" data-item="'+escapeHtml(k)+'" role="button" title="Go to where this is made or gathered"' : '';
+      return '<span class="'+(ok?'ok':'bad')+'"'+idAttr+goAttr+'>'+inputNeedText(k, need, have)+'</span>';
     });
     return parts.join(', ');
   }
@@ -23318,7 +23342,9 @@
       var canStart = !locked && hasInputs(recipe.inputs);
       var successPctCard = Math.round(craftSuccessRate(state, skillKey)*100);
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
+      // id="card-<id>" is the scroll target for goItemSource: clicking this item as an ingredient elsewhere
+      // lands on this tab and centres this card.
+      html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'" id="card-'+escapeHtml(recipe.id)+'">';
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: <span id="craftOwned-'+recipe.id+'">'+fmt(state.inventory[recipe.id]||0)+'</span></div></div></div>';
       // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
       var _arrowDmg = arrowBaseDamage(recipe.id);
@@ -45391,6 +45417,8 @@
     menagerieCollapseAll: function(btn, e){ menagerieExpanded = {}; },
     menagerieSetFilter: function(btn, e){ menagerieFilter = btn.getAttribute('data-filter') || 'all'; },
     menagerieToggleHideLocked: function(btn, e){ menagerieHideLocked = !menagerieHideLocked; },
+    // An ingredient in a recipe's "Needs:" line -> the tab where it is made or gathered (Gutwrench).
+    goItemSource: function(btn, e){ goItemSource(btn.getAttribute('data-item')); },
     // Workflows tree node -> open that skill's page (Gathering/Refining/Cooking/Outfitting/Construction
     // sub-tab, or Lands > Farming). Setting navLastSub BEFORE navPickCat makes it honour the sub.
     wfNav: function(btn, e){
@@ -46975,7 +47003,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.11';
+  var GAME_VERSION = '0.1.3.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47135,7 +47163,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, placeableWorkshopsFor:placeableWorkshopsFor, estatePlaceCottage:estatePlaceCottage,
-      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText,
+      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText, skillNavTarget:skillNavTarget, goItemSource:goItemSource,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,

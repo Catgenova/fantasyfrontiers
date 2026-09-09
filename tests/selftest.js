@@ -5211,6 +5211,30 @@
   // The updater used to rebuild "Nx Name (M owned)" on its own and dropped the "Normal " prefix the render
   // adds to prior-tier fodder, so every full render and the next tick wrote two different names into the same
   // span and the line flickered while forging tools. Both now read inputNeedText; this pins the agreement.
+  // ---- Click an ingredient in a "Needs:" line to jump to where it is made or gathered (Gutwrench) --------
+  // The affordance is ATTRIBUTES on the existing span (data-action/data-item), never inner markup, because
+  // the per-tick live updater rewrites that span's textContent every frame (ticket-0222). Only an item with a
+  // known producing skill is clickable; the target resolves through skillNavTarget like a Workflows link.
+  suite('needs line: ingredients jump to their source tab', function(){
+    ok(typeof FF.goItemSource === 'function' && typeof FF.skillNavTarget === 'function', 'goItemSource + skillNavTarget exported');
+    var plank = 'carpentry_t0', ore = (FF.GATHERING_SKILLS.mining.items || [])[0] && FF.GATHERING_SKILLS.mining.items[0].id;
+    ok(!!FF.ALL_SELLABLE[plank] && !!ore, 'a crafted ingredient (planks) and a gathered one (ore) exist to test');
+    if(!FF.ALL_SELLABLE[plank] || !ore) return;
+    var one = {}; one[plank] = 1;
+    var html = FF.inputsLine(one, 'inp-t');
+    ok(html.indexOf('data-action="goItemSource"') !== -1 && html.indexOf('data-item="'+plank+'"') !== -1, 'a crafted ingredient carries the jump affordance');
+    eq((html.match(/<span/g) || []).length, 1, 'the affordance adds NO inner markup (one span, so the live tick cannot wipe it)');
+    var g = {}; g[ore] = 1;
+    ok(FF.inputsLine(g, 'inp-t').indexOf('data-item="'+ore+'"') !== -1, 'a gathered ingredient carries it too');
+    var none = {}; none['no_such_item_xyz'] = 1;
+    ok(FF.inputsLine(none, 'inp-t').indexOf('data-action="goItemSource"') === -1, 'an item with no known source is NOT clickable');
+    // The navigation target is the producing skill's own tab, as the Workflows links resolve it.
+    var tm = FF.skillNavTarget('mining');
+    eq(tm.cat, 'gathering', 'a gathered ingredient jumps to the Gathering tab'); eq(tm.sub, 'mining', '...on the Mining sub-tab');
+    var tc = FF.skillNavTarget('carpentry');
+    eq(tc.sub, 'carpentry', 'a crafted ingredient jumps to its own skill sub-tab'); eq(tc.cat, FF.craftCatForSkill('carpentry'), '...under the category that skill lives in');
+  });
+
   suite('needs line: render text equals live-tick text', function(){
     ok(typeof FF.inputNeedText === 'function' && typeof FF.inputsLine === 'function', 'inputNeedText + inputsLine exported');
     var s = FF._state;
