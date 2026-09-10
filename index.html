@@ -12466,13 +12466,9 @@
   // placed workshop for this skill) to yield one more of it. Only doubles the base gather, not the
   // rare bonus drops (coal/gems/treasure/seeds).
   function gatherDoubleRoll(itemId, skillId){
-    if(Math.random() < workshopDoubleChance(state, skillId)){
-      addItem(itemId, 1);
-    }
-    if(prospectorBonusRoll(skillId)){ // Prospector's Nose: a bonus ore/soil from Mining/Prospecting/Digging
-      addItem(itemId, 1);
-    }
-    if(brewYieldRoll()){ // active Brewing Brew: a chance at one more of the gathered resource
+    // ONE bonus copy at most: the Workshop double, Prospector's Nose and an active Brew ADD their chances
+    // into a single roll (bonusOutputChance) instead of each rolling and each adding a copy.
+    if(bonusOutputRoll(skillId)){
       addItem(itemId, 1);
     }
     var _mastery = overLevelDoubles(skillId); // Over-100 Mastery: +1% double-output per level past 100
@@ -15115,9 +15111,8 @@
       // A placed Workshop -- and an active Brewing Brew -- can each add a bonus copy of item-producing
       // crafts. Each output rolls its OWN rarity, so a bonus never clones a Rare/Supreme/Fantastic.
       var _canBonus = SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1;
-      var _wsDouble = _canBonus && Math.random() < workshopDoubleChance(state, skillId);
-      var _brewBonus = _canBonus && brewYieldRoll();
-      var outputs = 1 + (_wsDouble?1:0) + (_brewBonus?1:0);
+      var _bonus = _canBonus && bonusOutputRoll(skillId);   // ONE bonus copy at most: Workshop + Brew chances ADDED into a single roll (bonusOutputChance)
+      var outputs = 1 + (_bonus?1:0);
       for(var o=0;o<outputs;o++){
         var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage' || act.craftKind==='building') ? 'normal' : rollCraftRarity(state, act.tierIndex);
         var made = produceSpecialOutput(act, rarity);
@@ -15211,10 +15206,9 @@
           // Butchering Workshop's double-output never fired (the reported bug). One roll per carcass multiplies
           // the whole yield, mirroring the generic craft branch below.
           var got = [];
-          var _wsD = Math.random() < workshopDoubleChance(state, act.skill);   // Butchering Workshop: double output
-          var _brewD = brewYieldRoll();                                        // active Brew: bonus output
-          var _mastD = overLevelDoubles(act.skill);                            // over-100 Butchering Mastery: +1%/lvl
-          var _bMult = 1 + (_wsD?1:0) + (_brewD?1:0) + _mastD;                 // extra full copies of the carcass yield
+          var _bonusD = bonusOutputRoll(act.skill);                             // ONE bonus copy at most: Workshop + Brew chances ADDED into a single roll
+          var _mastD = overLevelDoubles(act.skill);                            // over-100 Butchering Mastery: +1%/lvl (its own channel, not under the cap)
+          var _bMult = 1 + (_bonusD?1:0) + _mastD;                             // extra full copies of the carcass yield
           var meatQty = butcherOutputQty(state, recipe.meatPhysique) * _bMult;
           if(meatQty > 0){ addItem(recipe.meatId, meatQty); got.push(meatQty + ' Meat'); }
           var hideQty = butcherOutputQty(state, recipe.hidePhysique) * _bMult;
@@ -15248,9 +15242,8 @@
           bumpStat('crafted_' + act.skill); // per-SKILL successful-craft tally (any tier/recipe), powers "Cook 10 Meals", "Bake 10", etc.
           bumpStat('made_' + act.skill + '_t' + recipeTier(recipe, act.itemId)); // per-SKILL-per-TIER tally: a uniform tier-gated craft counter the Frontier generator reads for every skill. Use recipeTier(), not raw recipe.tierIndex: Alchemy's potion recipes (Toxin/Firebomb/Elixir/Catalyst) carry no tierIndex field, so the raw read produced `made_alchemy_tundefined` and the "Work the Alchemy" Frontier quest never advanced (reported: craft a Bryony Toxin, 0/10 stays). recipeTier derives the tier from the item id when the field is absent.
           addItem(act.itemId, _wq);
-          if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); }
-          if(brewYieldRoll()){ addItem(act.itemId, _wq); } // active Brewing Brew: a chance at a bonus craft output
-          var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100
+          if(bonusOutputRoll(act.skill)){ addItem(act.itemId, _wq); } // ONE bonus copy at most: Workshop + Brew (+ Prospector) chances ADDED into a single roll (bonusOutputChance)
+          var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100 -- its own channel, deliberately NOT under the cap
           if(_cmastery > 0){ addItem(act.itemId, _wq * _cmastery); }
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
         } else {
@@ -15956,7 +15949,8 @@
   function greenThumbExtraYield(){ return Math.random() < physBonus('greenThumb', 0.15) ? 1 : 0; }
   function composterRefund(){ return Math.random() < physBonus('composter', 0.20); }   // Fertilizer not consumed
   function composterTripleYield(){ return Math.random() < physBonus('composter', 0.20); } // fertilized crop -> 3x
-  function prospectorBonusRoll(skillId){ return (skillId==='mining'||skillId==='prospecting'||skillId==='digging') && Math.random() < physBonus('prospectorsNose', 0.12); }
+  function prospectorBonusChance(skillId){ return (skillId==='mining'||skillId==='prospecting'||skillId==='digging') ? physBonus('prospectorsNose', 0.12) : 0; } // chance form: added into bonusOutputChance
+  function prospectorBonusRoll(skillId){ var c = prospectorBonusChance(skillId); return c > 0 && Math.random() < c; }
   function huntsmanOutputBonus(){ return physBonus('huntsman', 0.12); }                // +butcher recovery chance
   function quartermasterRefund(){ return Math.random() < physBonus('quartermaster', 0.15); } // refund one input
   function diligenceCraftXpMult(){ return 1 + physBonus('diligence', 0.15); }          // +craft XP
@@ -16880,10 +16874,24 @@
   // During offline catch-up offlineBrewYield stands in for the live isBrewActive() check (same reason as
   // offlineTeaMult/offlineTomeMult): it is the time-weighted bonus-output chance the Brew provided across the
   // away window, so a Brew that lapsed mid-window pays only for the slice it was alive.
-  function brewYieldRoll(){
-    if(typeof offlineBrewYield === 'number') return offlineBrewYield > 0 && Math.random() < offlineBrewYield;
-    return isBrewActive() && Math.random() < (state.activeBrew.yield||0);
+  // The Brew's bonus-output CHANCE (offline-aware), so it can be ADDED to the other sources' chances in
+  // bonusOutputChance rather than rolled on its own.
+  function brewYieldChance(){
+    if(typeof offlineBrewYield === 'number') return Math.max(0, offlineBrewYield);
+    return isBrewActive() ? Math.max(0, state.activeBrew.yield||0) : 0;
   }
+  function brewYieldRoll(){ var c = brewYieldChance(); return c > 0 && Math.random() < c; }
+  // ONE bonus copy per completion from the CHANCE-based sources, at most (owner order; ticket "double output
+  // triggers twice"). A Workshop double, an active Brew and Prospector's Nose used to roll INDEPENDENTLY and
+  // each add a copy, so a Brew on top of a Workshop could pay 3 items from 1 craft. Their chances now ADD
+  // into a single roll, capped at 100%: Workshop 30% + Brew 20% is one 50% roll for the one bonus copy.
+  // Over-100 Mastery is deliberately NOT folded in (owner call): it pays deterministic extra copies as its
+  // own reward for levels past 100 and stays a separate channel on top. Every producing branch (craft,
+  // gather, butcher, special forge) reads this, and the offline catch-up uses the same chance.
+  function bonusOutputChance(skillId){
+    return Math.min(1, workshopDoubleChance(state, skillId) + brewYieldChance() + prospectorBonusChance(skillId));
+  }
+  function bonusOutputRoll(skillId){ return Math.random() < bonusOutputChance(skillId); }
   // Scroll ward: reading an Inscription Scroll reduces all incoming damage for a while (folded into
   // the monster's attack). Its own timed channel -- the defensive counterpart to Feasts (offense).
   function isScrollActive(){
@@ -21748,9 +21756,13 @@
       // speedMultiplier(). 1 when no tome covered the window.
       var _tomeMult = (typeof offlineTomeMult === 'number' && offlineTomeMult > 0) ? offlineTomeMult : 1;
       var ticks = Math.floor(capped/1000 / item.time * _tomeMult);
-      // An active Brew's bonus-output chance, credited as expected value over the successful pulls (round(gain
-      // * chance)): extra copies only, no quest-counter bump, exactly like the live gatherDoubleRoll brew arm.
-      var _brewBonus = function(id, gain){ if(typeof offlineBrewYield === 'number' && offlineBrewYield > 0 && gain > 0){ var b = Math.round(gain * offlineBrewYield); if(b > 0) addItem(id, b); } };
+      // The ONE bonus copy per pull, credited as expected value over the successful pulls (round(gain * chance)):
+      // extra copies only, no quest-counter bump. Reads bonusOutputChance -- the same capped, ADDED chance the
+      // live gatherDoubleRoll rolls (Workshop double + Brew + Prospector's Nose; brewYieldChance is offline-aware
+      // through offlineBrewYield) -- so offline pays exactly what live play does. This used to credit the Brew
+      // alone and never the Workshop double, an offline under-pay closed by the same change. (Name kept: the
+      // per-skill arms below all call _brewBonus.)
+      var _brewBonus = function(id, gain){ if(gain > 0){ var b = Math.round(gain * bonusOutputChance(act.skill)); if(b > 0) addItem(id, b); } };
       if(ticks > 0){
         addXp(act.skill, ticks*item.xp * (1 + curiosityGatherXpBonus(state))); // match live gathering's Curiosity bonus
         bumpStat('gathered', ticks); // lifetime gather-action tally, exactly as the live loop bumps per tick
@@ -47006,7 +47018,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.13';
+  var GAME_VERSION = '0.1.3.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47166,7 +47178,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, placeableWorkshopsFor:placeableWorkshopsFor, estatePlaceCottage:estatePlaceCottage,
-      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText, skillNavTarget:skillNavTarget, goItemSource:goItemSource,
+      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText, skillNavTarget:skillNavTarget, goItemSource:goItemSource, bonusOutputChance:bonusOutputChance, bonusOutputRoll:bonusOutputRoll, brewYieldChance:brewYieldChance, prospectorBonusChance:prospectorBonusChance,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,

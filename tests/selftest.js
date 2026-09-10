@@ -5215,6 +5215,42 @@
   // The affordance is ATTRIBUTES on the existing span (data-action/data-item), never inner markup, because
   // the per-tick live updater rewrites that span's textContent every frame (ticket-0222). Only an item with a
   // known producing skill is clickable; the target resolves through skillNavTarget like a Workflows link.
+  // ---- Bonus output: ONE extra copy per completion at most, chances ADDED (owner order) -----------------
+  // Ticket: "double output triggers twice" (3 items from 1 craft). The Workshop double, an active Brew and
+  // Prospector's Nose used to roll independently and each add a copy. They now add their chances into one
+  // roll (bonusOutputChance, capped 100%). Over-100 Mastery is deliberately NOT under the cap (owner call).
+  suite('bonus output: hard cap of one bonus copy, chances additive', function(){
+    ok(typeof FF.bonusOutputChance === 'function' && typeof FF.bonusOutputRoll === 'function' && typeof FF.brewYieldChance === 'function' && typeof FF.prospectorBonusChance === 'function', 'bonus-output helpers exported');
+    var s = FF._state, sv = { brew:s.activeBrew, inv:s.inventory };
+    var ore = (FF.GATHERING_SKILLS.mining.items || [])[0] && FF.GATHERING_SKILLS.mining.items[0].id;
+    ok(!!ore, 'a mining item exists (Mining is the skill where Prospector\'s Nose is ALSO live, so two sources are in play)');
+    if(!ore) return;
+    try {
+      // A 100% Brew saturates the single roll: the combined chance caps at exactly 1.
+      s.activeBrew = { itemId:'brew_t0', yield:1, expiresAt: Date.now() + 3600000 };
+      eq(FF.brewYieldChance(), 1, 'a 100% Brew reads as chance 1');
+      eq(FF.bonusOutputChance('mining'), 1, 'Brew 100% + Prospector + Workshop cap at a single 100% chance, never above');
+      // THE CAP: N pulls add EXACTLY N bonus copies. Under the old independent rolls a live Prospector's Nose
+      // could add a SECOND copy on top of the guaranteed Brew copy, so this count would creep above N.
+      s.inventory = {};
+      var N = 25;
+      for(var i = 0; i < N; i++) FF.gatherDoubleRoll(ore, 'mining');
+      eq(s.inventory[ore] || 0, N, N + ' pulls at a saturated chance add exactly ' + N + ' bonus copies -- one per pull, never two');
+      // ADDITIVE, not independent: with a 50% Brew the single chance is at least 0.5 + Prospector's share
+      // (a Workshop, if any, only adds more), and still never above 1.
+      s.activeBrew = { itemId:'brew_t0', yield:0.5, expiresAt: Date.now() + 3600000 };
+      var c = FF.bonusOutputChance('mining'), p = FF.prospectorBonusChance('mining');
+      ok(c >= 0.5 + p - 1e-9, 'Prospector\'s chance is ADDED to the Brew\'s (chance >= 0.5 + prospector)');
+      ok(c <= 1, 'the combined chance never exceeds 100%');
+      ok(FF.prospectorBonusChance('forestry') === 0, 'a skill outside Mining/Prospecting/Digging gets no Prospector share');
+      // No Brew at all: the Brew contributes nothing to the sum.
+      s.activeBrew = null;
+      eq(FF.brewYieldChance(), 0, 'no active Brew reads as chance 0');
+    } finally {
+      s.activeBrew = sv.brew; s.inventory = sv.inv;
+    }
+  });
+
   suite('needs line: ingredients jump to their source tab', function(){
     ok(typeof FF.goItemSource === 'function' && typeof FF.skillNavTarget === 'function', 'goItemSource + skillNavTarget exported');
     var plank = 'carpentry_t0', ore = (FF.GATHERING_SKILLS.mining.items || [])[0] && FF.GATHERING_SKILLS.mining.items[0].id;
