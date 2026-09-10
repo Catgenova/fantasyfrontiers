@@ -7371,15 +7371,17 @@
     // 2+3) SPECIAL_DOUBLEABLE_KINDS and STACKABLE_SAC_CATEGORIES are now DERIVED from the registry,
     //      so comparing them back to it would be tautological. Pin the expected contents here instead
     //      -- an independent copy, so a wrong flag in the registry changes the derived list and fails.
-    var EXPECTED_DOUBLEABLE = ['amulet','belt','bodyarmor','ring','stackquiver','stackshield','stackweapon','tool','ward','workshop'];
+    var EXPECTED_DOUBLEABLE = ['amulet','belt','bodyarmor','cottage','ring','stackquiver','stackshield','stackweapon','tool','ward','workshop'];
     eq((FF.SPECIAL_DOUBLEABLE_KINDS || []).slice().sort().join(','), EXPECTED_DOUBLEABLE.slice().sort().join(','),
-       'derived SPECIAL_DOUBLEABLE_KINDS still holds exactly the 10 doubleable families');
+       'derived SPECIAL_DOUBLEABLE_KINDS still holds exactly the 11 doubleable families');
     var EXPECTED_SAC = ['amulet','belt','relic','ring','stackquiver','stackshield','stackweapon','tool'];
     eq((FF.STACKABLE_SAC_CATEGORIES || []).slice().sort().join(','), EXPECTED_SAC.slice().sort().join(','),
        'derived STACKABLE_SAC_CATEGORIES still holds the 7 sacrificeable families plus relic');
     ok((FF.STACKABLE_SAC_CATEGORIES || []).indexOf('relic') !== -1, "'relic' survives derivation (a drop, not a craft family)");
-    // cottage/offhand must NOT be doubleable -- they were the two false flags, easy to flip by accident.
-    ok((FF.SPECIAL_DOUBLEABLE_KINDS || []).indexOf('cottage') === -1, 'cottage is not doubleable');
+    // cottage IS doubleable (owner order: it was a deliberate false flag, but a Cottage is forged by the same
+    // Architecture skill as a Workshop, and players saw 0 bonus outputs in 50 crafts at 39%). offhand stays
+    // the one false flag, easy to flip by accident.
+    ok((FF.SPECIAL_DOUBLEABLE_KINDS || []).indexOf('cottage') !== -1, 'cottage is doubleable, like a workshop');
     ok((FF.SPECIAL_DOUBLEABLE_KINDS || []).indexOf('offhand') === -1, 'offhand is not doubleable');
 
     // 4) Every card's tier-stepper target must exist, or its +/- stepper silently does nothing.
