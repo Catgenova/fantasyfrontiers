@@ -1379,6 +1379,25 @@
     eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1 } }), 0, 'the First Frontier Armorer still wants a Bronze forge');
   });
 
+  // ---- SteakHouse: the estate's 2D/3D view is a persisted setting, and the view button IS that setting ----
+  suite('estate view: 2D default is a setting the estate button also writes', function(){
+    var tg = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'estateTopDown'; })[0];
+    ok(!!tg && tg.cat === 'interface', 'an "Estate opens in 2D" toggle lives under Interface');
+    var s = FF._state, sv = s.settings.estateTopDown, was = FF._estateTopDown();
+    try {
+      s.settings.estateTopDown = true; FF.applyEstateViewPref();
+      ok(FF._estateTopDown() === true, 'the setting ON opens the estate top-down');
+      s.settings.estateTopDown = false; FF.applyEstateViewPref();
+      ok(FF._estateTopDown() === false, 'the setting OFF opens it in 3D');
+      FF.estateToggleTopDown();
+      ok(FF._estateTopDown() === true && s.settings.estateTopDown === true, 'the estate button flips the view AND writes the setting (so a refresh keeps it)');
+      FF.estateToggleTopDown();
+      ok(FF._estateTopDown() === false && s.settings.estateTopDown === false, 'and flips both back');
+      delete s.settings.estateTopDown; FF.applyEstateViewPref();
+      ok(FF._estateTopDown() === false, 'an unset preference opens in 3D (unchanged default)');
+    } finally { s.settings.estateTopDown = sv; FF.applyEstateViewPref(); if(FF._estateTopDown() !== was){ FF.estateToggleTopDown(); s.settings.estateTopDown = sv; } }
+  });
+
   // ---- ticket-0229 (Meri): the ingredient-link underline is an Interface toggle, not a removal ----
   suite('ingredient links: the Interface toggle drops the underline via a class on <html>', function(){
     var tg = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'plainIngredientLinks'; })[0];
