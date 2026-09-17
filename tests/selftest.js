@@ -2792,9 +2792,16 @@
       eq(FF.autoSacFlaggedNames('tool', tinIds).join('|'), "Rare Tin Architect's Square", 'a flag on ANY rarity of the output resolves to its name, without owning one');
       eq(FF.autoSacFlaggedNames('tool', ['tool_architecture_t1_normal']).length, 0, 'an unflagged tool yields nothing');
       ok(/Auto-sacrifice is ON/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the card warning renders for a flagged output');
-      ok(/Faith tab/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the warning says where to switch it off');
+      ok(/Turn auto-sacrifice off/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the warning offers to switch it off right there');
       eq(FF.autoSacCardWarnHtml('tool', ['tool_architecture_t1_normal']), '', 'no warning for an unflagged output');
       eq(FF.autoSacCardWarnHtml('tool', tinIds).indexOf(String.fromCharCode(0x2014)), -1, 'no em dash in the warning (owner rule)');
+      // Vargasmic: the off switch rides on the card, and one tap clears the flag for every rarity of the output.
+      ok(/data-action="autoSacClearOutput"/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the warning carries an off switch');
+      S.autoSacrifice = { 'tool|tool_architecture_t2_rare': true, 'tool|tool_architecture_t2_normal': true, 'tool|tool_carpentry_t2_normal': true };
+      eq(FF.autoSacClearOutput('tool', tinIds), 2, 'the switch clears every flag on this output (both rarities)');
+      eq(FF.autoSacCardWarnHtml('tool', tinIds), '', 'and the warning is gone from the card');
+      ok(S.autoSacrifice['tool|tool_carpentry_t2_normal'], 'a different tool\'s flag is untouched');
+      eq(FF.autoSacClearOutput('tool', tinIds), 0, 'clearing again is a no-op');
       // The Architect's Square forge card itself carries the warning: that card is where the player was
       // looking. Flag every tier's normal id so the card's tier selection cannot dodge the check.
       S.autoSacrifice = {};
