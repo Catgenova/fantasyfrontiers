@@ -1307,6 +1307,34 @@
     }
   });
 
+  // ---- Frontier quests count "Tier T or better" (owner, 2026-09-17) ----
+  // A player already working Tier 10 was sent back to craft Tin, Iron and Steel to clear the Second-to-Fifth
+  // Frontiers. Every tier-gated Frontier objective now sums its tier and every tier above it; a lower tier
+  // still never satisfies a higher ask. The First Frontier (Tier 1, the tutorial line) is untouched.
+  suite('quests: tier-gated Frontier objectives count their tier or better', function(){
+    eq(FF.statTierAtLeast({ stats:{ made_metallurgy_t2:3, made_metallurgy_t7:4, made_metallurgy_t20:1 } }, 'made_metallurgy', 2), 8, 'the counter sums the tier and every tier above');
+    eq(FF.statTierAtLeast({ stats:{ made_metallurgy_t1:50 } }, 'made_metallurgy', 2), 0, 'a lower tier counts for nothing');
+    eq(FF.statTierAtLeast({}, 'made_metallurgy', 2), 0, 'safe on an empty state');
+    // Second Frontier (hand-written, Tier 2): higher-tier work clears it.
+    eq(FF.questById('into_tin').progress({ stats:{ made_metallurgy_t10:100 } }), 100, 'Into Tin is cleared by Tier 10 bars');
+    eq(FF.questById('strike_tin').progress({ stats:{ gathered_mining_t6:150 } }), 150, 'Strike Tin is cleared by Tier 6 ore');
+    eq(FF.questById('strike_tin').progress({ stats:{ gathered_mining_t1:150 } }), 0, 'Copper ore does not clear Strike Tin');
+    eq(FF.questById('into_tin').orBetter, 2, 'the quest carries the or-better flag for its card');
+    // Generated Third/Fourth/Fifth Frontiers: same rule at t3/t4/t5.
+    [['thirdfrontier',3],['fourthfrontier',4],['fifthfrontier',5]].forEach(function(p){
+      var q = FF.questById(p[0]+'_r_metallurgy'); if(!q) return;
+      var hi = {stats:{}}; hi.stats['made_metallurgy_t'+(p[1]+3)] = 10;
+      var lo = {stats:{}}; lo.stats['made_metallurgy_t'+(p[1]-1)] = 10;
+      eq(q.progress(hi), 10, p[0]+' metallurgy quest counts Tier '+(p[1]+3)+' work');
+      eq(q.progress(lo), 0, p[0]+' metallurgy quest ignores Tier '+(p[1]-1)+' work');
+      eq(q.orBetter, p[1], p[0]+' quest carries the or-better flag');
+      ok(/or better/.test(q.how), p[0]+' quest text says "or better": ' + q.how);
+      var g = FF.questById(p[0]+'_g_mining'); if(g){ var gs={stats:{}}; gs.stats['gathered_mining_t20']=100; eq(g.progress(gs), 100, p[0]+' mining quest counts Tier 20 ore'); }
+    });
+    // The First Frontier's Tier 1 forges keep their exact-tier gate (the earlier ticket).
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1 } }), 0, 'the First Frontier Armorer still wants a Bronze forge');
+  });
+
   // ---- ticket-0229 (Meri): the ingredient-link underline is an Interface toggle, not a removal ----
   suite('ingredient links: the Interface toggle drops the underline via a class on <html>', function(){
     var tg = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'plainIngredientLinks'; })[0];
@@ -12134,7 +12162,8 @@
     eq(FF.questById('the_shieldwright').progress({ stats:{ made_shieldsmithing_t1:1 } }), 1, 'The Shieldwright reads a Bronze (t1) shield forge');
     // Every Second Frontier craft quest whose text names a Tier 2 now gates on the t2 counter, not any-tier.
     eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t2:1 } }), 1, 'Ward Reforged reads a Tier 2 ward');
-    eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t5:1 } }), 0, 'Ward Reforged ignores a higher-tier ward');
+    eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t5:1 } }), 1, 'Ward Reforged counts a HIGHER-tier ward too (owner: "or better", 2026-09-17)');
+    eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t1:1 } }), 0, 'but never a LOWER-tier ward');
     eq(FF.questById('first_brew').progress({ stats:{ made_brewing_t2:10 } }), 10, 'First Brew reads Tier 2 Amber Ale');
     eq(FF.questById('carve_the_idol').progress({ stats:{ made_woodcarving_t2:1 } }), 1, 'Carve the Idol reads a Tier 2 carving');
     // Quests whose text names NO tier stay tier-agnostic (any-tier craft is correct there).
