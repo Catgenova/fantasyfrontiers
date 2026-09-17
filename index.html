@@ -23915,6 +23915,7 @@
       : ('+'+Math.round(data.speedBonus*100)+'% speed');
     html += '<div class="item-stats">'+xpStat('blacksmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLine+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+    html += autoSacCardWarnHtml('tool', ['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
     // WIELDING is a separate bar from FORGING: this card's Lv gate is Blacksmithing, but the tool asks
     // for the skill it serves before it can be equipped. Surfaced here so nobody forges a tier they
@@ -24176,6 +24177,7 @@
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+fmt(beltData.defense)+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success. Normal grants no extra slots; Rare = +1, Supreme = +2, Fantastic = +3</div>';
+    html += autoSacCardWarnHtml('belt', ['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="inputs-line">Needs: '+inputsLine(beltData.inputs, 'inp-belt')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(beltIsActive?' id="'+beltFillId+'"':'')+' style="width:'+beltPct+'%"></div></div>';
     if(beltIsActive){
@@ -24211,6 +24213,7 @@
       html += '<div class="inputs-line">Tier: '+tierStepper('quiver',q.id,tierRange(maxUnlocked),sel,WILDLIFE_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(q.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += autoSacCardWarnHtml('stackquiver', ['normal','rare','supreme','fantastic'].map(function(r){ return 'stquiver_'+q.id+'_t'+sel+'_'+r; }));
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stq-'+q.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
@@ -24311,6 +24314,7 @@
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += autoSacCardWarnHtml('ring', ['normal','rare','supreme','fantastic'].map(function(r){ return 'ring_'+rt.id+'_t'+sel+'_'+r; }));
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ring-'+rt.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
@@ -24346,6 +24350,7 @@
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
       html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+fmt(amData.defense)+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += autoSacCardWarnHtml('amulet', ['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
       html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet-'+at.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(amIsActive?' id="'+amFillId+'"':'')+' style="width:'+amPct+'%"></div></div>';
       if(amIsActive){
@@ -24387,6 +24392,7 @@
       html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+fmtRange(data.dmgMin, data.dmgMax, '-')+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += autoSacCardWarnHtml('stackweapon', ['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stw-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
@@ -24782,6 +24788,7 @@
       html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+fmt(data.defense)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += autoSacCardWarnHtml('stackshield', ['normal','rare','supreme','fantastic'].map(function(r){ return 'stshield_'+s.id+'_t'+sel+'_'+r; }));
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-sts-'+s.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
@@ -37757,7 +37764,7 @@
     var flagged = Object.keys(state.autoSacrifice).filter(function(k){ return state.autoSacrifice[k]; });
     if(!flagged.length) return;
     var flag = {}; flagged.forEach(function(k){ flag[k] = true; });
-    var mx = faithMax(state), guard = 0, count = 0, gained = 0;
+    var mx = faithMax(state), guard = 0, count = 0, gained = 0, tally = {}, order = [];
     while(guard++ < 500){
       var deficit = mx - state.faith;
       if(deficit <= 0.5) break;
@@ -37775,9 +37782,14 @@
       if(!best) break;
       gained += sacrificeItem(best.r.category, best.r.id, true) || 0; // silent -- summarised below
       count++;
+      var nm = (best.r.item && best.r.item.name) || best.r.id;
+      if(!tally[nm]){ tally[nm] = 0; order.push(nm); }
+      tally[nm]++;
     }
     if(count > 0){
-      addLog('Auto-sacrificed ' + count + ' flagged item' + (count===1?'':'s') + ', restoring ' + Math.round(gained) + ' Faith.', 'important');
+      // Names, not a count (ticket-0231): "Auto-sacrificed 1 flagged item" read as a Faith event, and the
+      // player kept forging the very item it was eating.
+      addLog('Auto-sacrificed ' + autoSacTallyText(order, tally) + ' (flagged for Faith), restoring ' + Math.round(gained) + ' Faith.', 'important');
       needsRender = true;
     }
   }
@@ -37830,6 +37842,36 @@
     }
     if(!item) return { name:id, tier:0, owned:(state.inventory[id]||0) };
     return { name:item.name, tier:((item.tierIndex|0)+1), owned:(state.inventory[id]||0) };
+  }
+  // ticket-0231 (Vargasmic): "Tin Architect's Square fails nine in a row at 95% success, the materials are
+  // consumed, Owned stays 0." The forge never failed once. The player WEARS a Tin square, so at some point
+  // their spare Tin squares had been flagged for auto-sacrifice, and the Faith top-up offered each new copy
+  // within a frame of it being forged. The only trace was a one-line "Auto-sacrificed 1 flagged item" in a
+  // 40-line Chronicle, phrased as a Faith event, nowhere near the forge card the player was staring at. Same
+  // defect class as the silent forge failure and applyChipDamage: an event that changes the player's world,
+  // written down where they are not looking. Two fixes: the Chronicle line NAMES what was offered, and every
+  // forge card whose output can carry a flag says so on the card, whatever rarity the flag is on.
+  function autoSacFlaggedNames(category, ids){
+    var flags = state.autoSacrifice; if(!flags || typeof flags !== 'object') return [];
+    var out = [];
+    [].concat(ids).forEach(function(id){
+      var key = category + '|' + id;
+      if(!flags[key]) return;
+      out.push(sacKeyDisplay(key).name);
+    });
+    return out;
+  }
+  function autoSacCardWarnHtml(category, ids){
+    var names = autoSacFlaggedNames(category, ids);
+    if(!names.length) return '';
+    return '<div class="lock-note">Auto-sacrifice is ON for the ' + escapeHtml(names.join(', ')) + ': every one you forge is '
+         + 'offered for Faith as soon as your Faith bar has room for it. Switch it off on the Faith tab, under Sacrifice.</div>';
+  }
+  // "2x Tin Architect's Square, 1x Oak Belt and 3 more": the first three names in the order they were offered.
+  function autoSacTallyText(order, tally){
+    var parts = order.slice(0, 3).map(function(n){ return fmt(tally[n]) + 'x ' + n; });
+    var rest = order.length - 3;
+    return parts.join(', ') + (rest > 0 ? ' and ' + rest + ' more' : '');
   }
   function renderSacrificeTab(){
     var lvl = getLevel(state.xp.sacrifice);
@@ -47027,7 +47069,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.15';
+  var GAME_VERSION = '0.1.3.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47424,7 +47466,7 @@
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
-      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, autoSacrificeTick:autoSacrificeTick, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
+      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, autoSacrificeTick:autoSacrificeTick, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, autoSacFlaggedNames:autoSacFlaggedNames, autoSacCardWarnHtml:autoSacCardWarnHtml, autoSacTallyText:autoSacTallyText, renderForgeToolCard:renderForgeToolCard, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, BELT_RARITY_SLOTS:BELT_RARITY_SLOTS, beltBonusSlots:beltBonusSlots, beltSlotLabel:beltSlotLabel, renderBeltEquipSection:renderBeltEquipSection, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES

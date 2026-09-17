@@ -2639,6 +2639,52 @@
     ok(!/\b1 slots\b/.test(FF.beltSlotLabel('normal')), 'the old misleading "1 slots" wording is gone');
   });
 
+  // ---- ticket-0231 (Vargasmic): a flagged auto-sacrifice eating every forge is now VISIBLE ----
+  // "Tin Architect's Square fails 9 in a row at 95%, materials consumed, Owned 0." The forge never failed:
+  // the output was flagged for auto-sacrifice and offered the frame it was made. The Chronicle line now
+  // names the offering, and the forge card whose output is flagged says so, for any rarity of the flag.
+  suite('auto-sacrifice: a flagged forge output is named in the log and warned on its card', function(){
+    var S = FF._state;
+    var savedInv = S.inventory, savedFlags = S.autoSacrifice, savedFaith = S.faith, savedLog = S.log,
+        savedLocked = S.lockedItems, savedPhys = S.physique;
+    try {
+      S.inventory = {}; S.lockedItems = {}; S.log = [];
+      S.physique = Object.assign({}, S.physique || {}, { oblation: 0 }); // no "the item comes back" roll
+      var rarities = ['normal','rare','supreme','fantastic'];
+      var tinIds = rarities.map(function(r){ return 'tool_architecture_t2_' + r; });
+      S.autoSacrifice = { 'tool|tool_architecture_t2_rare': true };
+      eq(FF.autoSacFlaggedNames('tool', tinIds).join('|'), "Rare Tin Architect's Square", 'a flag on ANY rarity of the output resolves to its name, without owning one');
+      eq(FF.autoSacFlaggedNames('tool', ['tool_architecture_t1_normal']).length, 0, 'an unflagged tool yields nothing');
+      ok(/Auto-sacrifice is ON/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the card warning renders for a flagged output');
+      ok(/Faith tab/.test(FF.autoSacCardWarnHtml('tool', tinIds)), 'the warning says where to switch it off');
+      eq(FF.autoSacCardWarnHtml('tool', ['tool_architecture_t1_normal']), '', 'no warning for an unflagged output');
+      eq(FF.autoSacCardWarnHtml('tool', tinIds).indexOf(String.fromCharCode(0x2014)), -1, 'no em dash in the warning (owner rule)');
+      // The Architect's Square forge card itself carries the warning: that card is where the player was
+      // looking. Flag every tier's normal id so the card's tier selection cannot dodge the check.
+      S.autoSacrifice = {};
+      for(var t=0; t<21; t++) S.autoSacrifice['tool|tool_architecture_t' + t + '_normal'] = true;
+      var tt = FF.findToolType('architecture');
+      ok(/Auto-sacrifice is ON/.test(FF.renderForgeToolCard(tt, 2, 20).html), 'the Architect\'s Square forge card warns while its output is flagged');
+      S.autoSacrifice = {};
+      ok(!/Auto-sacrifice is ON/.test(FF.renderForgeToolCard(tt, 2, 20).html), 'no warning once the flag is cleared');
+      // The Chronicle names what was offered. One flagged Tin square in the bag, Faith empty.
+      ok(FF.faithMax(S) > 1, 'precondition: the Faith bar has room');
+      S.autoSacrifice = { 'tool|tool_architecture_t2_normal': true };
+      S.inventory = { tool_architecture_t2_normal: 1 };
+      S.faith = 0;
+      FF.autoSacrificeItemsCheck();
+      eq(S.inventory.tool_architecture_t2_normal, 0, 'the flagged square was offered the moment the top-up ran');
+      var last = S.log[S.log.length - 1];
+      ok(!!last && /Auto-sacrificed 1x Tin Architect's Square \(flagged for Faith\)/.test(last.msg), 'the Chronicle names the offering: ' + (last && last.msg));
+      ok(!!last && !/flagged item/.test(last.msg), 'the old anonymous "N flagged items" wording is gone');
+      eq(FF.autoSacTallyText(['A','B','C','D'], {A:2,B:1,C:1,D:5}), '2x A, 1x B, 1x C and 1 more', 'the tally lists three names and counts the rest');
+      eq(FF.autoSacTallyText(['A'], {A:1}), '1x A', 'a single offering reads plainly');
+    } finally {
+      S.inventory = savedInv; S.autoSacrifice = savedFlags; S.faith = savedFaith; S.log = savedLog;
+      S.lockedItems = savedLocked; S.physique = savedPhys;
+    }
+  });
+
   // ---- Queue targets: a finite "craft N" run credits its REAL output and stops on target --
   // Regression: queueCreditOutput counted gabCapture.items[act.itemId], but special forges
   // (craftKind acts) have no itemId at all and relic/butcher/shaft recipes produce ids unrelated
