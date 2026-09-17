@@ -2241,6 +2241,59 @@
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
   });
 
+  // ---- ticket-0230 (SteakHouse): the Longhouse queue drains through an offline gap like the personal one ----
+  // Same rules as the personal drain below; the guild-specific rules are the occupancy check (a tile another
+  // member is working on is refunded and skipped) and ignoring my own just-finished row.
+  suite('guild estate: offline queue drain (ticket-0230)', function(){
+    var s = FF._state, G = FF.guildEstate;
+    var saved = { status:G.status, grid:G.grid, jobs:G.jobs, job:G.job, log:G.log, q:s.guildEstateQueue };
+    var g = s.estate.grid;   // a ready guild grid with the personal grid's shape
+    var cells = { c10:Object.assign({}, g[1][0]), c11:Object.assign({}, g[1][1]), c20:Object.assign({}, g[2][0]) };
+    var MIN = 60*1000;
+    try {
+      G.status = 'ready'; G.grid = g; G.jobs = []; G.job = null; G.log = [];
+      FF.estUse(true);
+      g[1][0] = { type:'dirt', height:1, owned:true };
+      g[1][1] = { type:'dirt', height:1, owned:true };
+      g[2][0] = { type:'dirt', height:1, owned:true };
+      s.guildEstateQueue = [
+        { kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } },
+        { kind:'field', x:1, y:1, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }
+      ];
+      eq(FF.guildDrainQueueOffline(5*MIN), 1, 'a 5-min gap drains exactly one 5-min field');
+      eq(s.guildEstateQueue.length, 1, 'the second field stays queued');
+      eq(g[1][0].fieldTier, 0, 'the drained field was applied to the guild grid');
+      ok(g[1][1].fieldTier == null, 'the still-queued field was not applied');
+      eq(FF.guildDrainQueueOffline(60*MIN), 1, 'the remaining field drains once the gap covers it');
+      eq(s.guildEstateQueue.length, 0, 'the queue is empty after a full drain');
+      eq(g[1][1].fieldTier, 0, 'the last field was applied');
+      // Live case: completion lands right at readyAt, no overhang, nothing drains.
+      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      eq(FF.guildDrainQueueOffline(0), 0, 'no overhang -> nothing drains (live behaviour unchanged)');
+      eq(s.guildEstateQueue.length, 1, 'the queued action is left for a live start');
+      // Guild-specific: a tile another member is working on right now is refunded and skipped, never built over.
+      G.jobs = [{ owner:'someone-else', kind:'field', x:2, y:0, readyAt:Date.now()+MIN }];
+      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'a tile held by another member drains nothing');
+      eq(s.guildEstateQueue.length, 0, 'and the voided head is dropped from the queue (refunded)');
+      ok(g[2][0].fieldTier == null, 'nothing was built on the contested tile');
+      // My OWN finished row (still listed until the refresh runs) must not block the drain.
+      G.jobs = [{ owner:'me-id', kind:'pave', x:2, y:0, readyAt:0 }];
+      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      eq(FF.guildDrainQueueOffline(60*MIN, { owner:'me-id' }), 1, 'my own finished row does not block the drain');
+      eq(g[2][0].fieldTier, 0, 'the field went up on the tile my own job just vacated');
+      // Guild grid not loaded -> nothing happens and the queue is untouched (it drains on a later completion).
+      G.jobs = [];
+      s.guildEstateQueue = [{ kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      G.status = 'loading';
+      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'no drain while the guild estate is not loaded');
+      eq(s.guildEstateQueue.length, 1, 'the queue is untouched');
+    } finally {
+      g[1][0] = cells.c10; g[1][1] = cells.c11; g[2][0] = cells.c20;
+      G.status = saved.status; G.grid = saved.grid; G.jobs = saved.jobs; G.job = saved.job; G.log = saved.log; s.guildEstateQueue = saved.q;
+      FF.estUse(false);
+    }
+  });
+
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target

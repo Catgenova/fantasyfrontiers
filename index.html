@@ -32459,6 +32459,41 @@
     saveGame();
     needsRender = true;
   }
+  // ticket-0230 (SteakHouse): "Personal estate queue works while offline. Guild estate queue (from special
+  // building) doesnt work while offline." True, and the asymmetry was structural: the personal completion
+  // handler runs estateDrainQueueOffline over the OVERHANG (time elapsed past the finished job's readyAt) and
+  // finishes every queued action the gap fully covers, while the guild completion only released its one
+  // server row and left the whole Longhouse queue to start live, one job per login. Same drain, same rules:
+  // the overhang is spent in queue order, an action that does not fully fit is left for a live start, and a
+  // voided head is refunded and skipped at no cost. Guild-specific: a tile another member is working right
+  // now is not buildable (the advance's occupancy rule), and my OWN just-finished row is ignored because the
+  // refresh that clears it has not run yet when this drains.
+  function guildDrainQueueOffline(overhangMs, doneJob){
+    if(!(overhangMs > 0)) return 0;
+    if(!guildEstate || guildEstate.status !== 'ready' || !guildEstate.grid) return 0;
+    var me = (doneJob && doneJob.owner) || (authUser && authUser.id) || null;   // the finished row's owner IS me
+    var drained = 0;
+    while(guildQueueArr().length){
+      var head = guildQueueArr()[0];
+      var cell = guildEstate.grid[head.x] && guildEstate.grid[head.x][head.y];
+      var v = estateQueuedJobValid(head, cell, guildEstate);
+      var held = (guildEstate.jobs || []).some(function(j){ return !(me && j.owner === me) && j.kind !== 'border' && j.x === head.x && j.y === head.y; });
+      if(v.ok && held) v = { ok:false, msg:'another member is working on that tile' };
+      if(!v.ok){
+        estateJobRefund(head);
+        guildQueueArr().shift();
+        addLog('Skipped a queued guild action: ' + v.msg + ' (materials returned).', 'danger');
+        continue;                                   // invalid heads cost no overhang
+      }
+      var dur = Math.max(1, head.localMs|0);
+      if(dur > overhangMs) break;                   // does not fully fit the gap -> starts live via the advance
+      applyEstateJobCompletion(guildEstate, head, true, true);
+      guildQueueArr().shift();
+      overhangMs -= dur;
+      drained++;
+    }
+    return drained;
+  }
   // Dispatch the head once my guild job clears. Called after a guild completion and from the tick, and it is
   // VIEW-INDEPENDENT for the same reason the personal one is: an earlier version of the personal advance
   // read estIsGuild and the queue silently froze whenever the other estate was open.
@@ -42376,7 +42411,15 @@
         var done = d.job;
         if(done.kind !== 'assist'){                    // an assist earns nothing; only the doer does
           var key = done.owner+'|'+done.x+'|'+done.y+'|'+Number(done.readyAt);
-          if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, guildJobFromServer(done), true, true); guildJobDone[key]=1; recomputeGuildWorkshops(); recomputeGuildAqueducts(); guildEstatePersist(); }
+          if(!guildJobDone[key]){
+            applyEstateJobCompletion(guildEstate, guildJobFromServer(done), true, true); guildJobDone[key]=1;
+            // The overhang past this job's readyAt is ~0 live and covers many queued actions after an absence:
+            // drain the Longhouse queue through it (ticket-0230), exactly as the personal completion does.
+            var _drained = guildDrainQueueOffline(Date.now() - (Number(done.readyAt) || Date.now()), done);
+            if(_drained > 0) addLog('While away, your Longhouse queue finished ' + _drained + ' action' + (_drained===1?'':'s') + '.', 'important');
+            recomputeGuildWorkshops(); recomputeGuildAqueducts(); guildEstatePersist();
+            if(_drained > 0) saveGame();               // the shortened queue lives in MY save
+          }
         }
         guildEstateJobsRefresh(); needsRender = true;
       } else { guildEstateJobsRefresh(); }             // 'early' (client clock ahead) / 'none' -> resync
@@ -47069,7 +47112,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.16';
+  var GAME_VERSION = '0.1.3.17';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47340,7 +47383,7 @@
       improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
       peonSlotCap:peonSlotCap, PEON_SLOT_CEILING:PEON_SLOT_CEILING, BUNKHOUSE_MAX:BUNKHOUSE_MAX,
       buildingTiersFor:buildingTiersFor, buildingIsGuildOnly:buildingIsGuildOnly, gridHasBuilding:gridHasBuilding, gridCountBuilding:gridCountBuilding,
-      guildQueueArr:guildQueueArr, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
+      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile, isGuestAccount:isGuestAccount, guestWallHtml:guestWallHtml, _authUserSet:function(o){ authUser = o; },
