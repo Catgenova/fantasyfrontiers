@@ -100,12 +100,10 @@ furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`
 - **`renderPatchNotes()` escapes `heading`** — headings are PLAIN TEXT, only `items` take HTML. An `&rsquo;`
   in a heading ships as literal `&rsquo;` and fails "the notes lead with the newest release heading".
 
-**Known pre-existing bug found while doing this, NOT fixed (it is a balance decision):** `noAttack` is never
-set to `true` anywhere in the file. `STAFF_TYPE` has `staff:true` but no `noAttack`, so
-`getWeaponStyle('staff').noAttack === false` and the guard at the attack tick ("A Staff has no attack speed
--- it never auto-attacks") never fires. Staves DO auto-attack every 5s (a fantastic top-tier staff rolls
-5,368–13,416 base), while the Arcanism tab text says a staff "deals no damage and never attacks". Setting the
-flag would change Summoner damage, so it needs the owner's call.
+**Staves swing, by owner decision (2026-09-17, closing the v0.0.77 open item).** `noAttack` was never set for
+`STAFF_TYPE`, so staves have always auto-attacked every 5s; the old Arcanism copy claiming a staff "never
+attacks" was retired before this and the tab now says the opposite outright (the 5s swing IS the Summoner's
+Downbeat). The SU_FAM_MULT derivation assumes the swing stays; if it is ever removed the knob re-derives.
 
 ## The wall/fence/curb border system (v0.0.94.0): three types, three jobs
 

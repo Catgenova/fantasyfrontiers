@@ -604,6 +604,7 @@
   .dungeon-tab.on{border-color:#8a5fb0; color:#8a5fb0; font-weight:600;}
   .dungeon-tab.locked{opacity:0.65;}
   /* Blacksmithing: collapsible tool-family groups (nested navigation). */
+  .forge-group-head.static{cursor:default;}
   .forge-group-head{display:flex; align-items:center; gap:8px; width:100%; text-align:left; margin-top:8px; padding:9px 12px; border:1px solid var(--border); border-left:4px solid var(--fg-accent,var(--cat-crafting)); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer; font-family:inherit;}
   .forge-group-head:hover{border-color:var(--fg-accent,var(--cat-crafting));}
   .forge-group-head.open{background:color-mix(in srgb, var(--fg-accent,var(--cat-crafting)) 10%, var(--bg-card));}
@@ -21768,8 +21769,13 @@
       // An active Tome speeds the away window's gathering (offlineTomeMult is the time-weighted throughput it
       // provided), so the bulk sim does more pulls -- matching the craft path, which reads the same figure via
       // speedMultiplier(). 1 when no tome covered the window.
-      var _tomeMult = (typeof offlineTomeMult === 'number' && offlineTomeMult > 0) ? offlineTomeMult : 1;
-      var ticks = Math.floor(capped/1000 / item.time * _tomeMult);
+      // THE SAME effective time the live loop uses (processGatherActivity): base time x the global speed
+      // multiplier (which carries the tome, offline-aware) x the gather TOOL x the Endurance physique on
+      // long gathers. This used to read item.time x tome only, so a primary-slot gather ignored its tool and
+      // physique offline while a belt-slot gather (the live engine) honoured them: two identical fishing
+      // tasks paid differently overnight (owner list item 6, 2026-09-17).
+      var _offEff = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
+      var ticks = _offEff > 0 ? Math.floor(capped / _offEff) : 0;
       // The ONE bonus copy per pull, credited as expected value over the successful pulls (round(gain * chance)):
       // extra copies only, no quest-counter bump. Reads bonusOutputChance -- the same capped, ADDED chance the
       // live gatherDoubleRoll rolls (Workshop double + Brew + Prospector's Nose; brewYieldChance is offline-aware
@@ -29603,7 +29609,7 @@
     { id:'break_the_limestone', cat:'secondfrontier', title:'Break the Limestone',
       desc:'Sand built your first floors; limestone builds walls that stand. Quarry the frontier’s first true building stone.',
       how:'In Gathering → Mining, mine 200 Limestone (the Tier 1 stone).',
-      target:200, progress:function(st){ return (st.stats && st.stats['gathered_mining_t1']) || 0; },
+      target:200, progress:function(st){ return statTierAtLeast(st, 'gathered_mining', 1); }, orBetter:1,
       nav:{ cat:'gathering', sub:'mining' },
       reward:{ items:[ { itemId:'stonecutting_t1', qty:50 }, { itemId:'tool_metallurgy_t1_normal', qty:1 } ] } },
     { id:'strike_tin', cat:'secondfrontier', title:'Strike Tin',
@@ -29615,25 +29621,25 @@
     { id:'cast_the_bronze', cat:'secondfrontier', title:'Cast the Bronze',
       desc:'Copper and tin, fed together to the fire, come out as something neither could be alone. Smelt the bars the whole Bronze Age is beaten from.',
       how:'In Resources → Refining → Metallurgy, smelt 150 Bronze Bars (Copper + Tin + Coal).',
-      target:150, progress:function(st){ return (st.stats && st.stats['made_metallurgy_t1']) || 0; },
+      target:150, progress:function(st){ return statTierAtLeast(st, 'made_metallurgy', 1); }, orBetter:1,
       nav:{ cat:'refining', sub:'metallurgy' },
       reward:{ items:[ { itemId:'metallurgy_t1', qty:100 } ] } },
     { id:'the_weaponsmith', cat:'secondfrontier', title:'The Weaponsmith',
       desc:'A blade is not a bar. It is a bar with intent hammered into it. Take your bronze to the Weaponsmith and forge a weapon worthy of the name.',
       how:'In Outfitting → Weaponsmithing, forge any Bronze (Tier 1) weapon.',
-      target:1, progress:function(st){ return (st.stats && st.stats['made_weaponsmithing_t1']) || 0; },
+      target:1, progress:function(st){ return statTierAtLeast(st, 'made_weaponsmithing', 1); }, orBetter:1,
       nav:{ cat:'outfitting', sub:'weaponsmithing' },
       reward:{ itemId:'stweapon_scimitar_t1_rare', qty:1 } },
     { id:'the_armorer', cat:'secondfrontier', title:'The Armorer',
       desc:'The frontier gives its wounds freely to the unarmored. Forge bronze plate at the Armorer and close another gap the wilds meant to use.',
       how:'In Outfitting → Armorsmithing, forge any Bronze (Tier 1) plate piece.',
-      target:1, progress:function(st){ return (st.stats && st.stats['made_armorsmithing_t1']) || 0; },
+      target:1, progress:function(st){ return statTierAtLeast(st, 'made_armorsmithing', 1); }, orBetter:1,
       nav:{ cat:'outfitting', sub:'armorsmithing' },
       reward:{ items:[ { itemId:'amulet_t2_normal', qty:1 } ], gold:5000 } },
     { id:'the_shieldwright', cat:'secondfrontier', title:'The Shieldwright',
       desc:'The best blow is the one that never lands. Forge a bronze shield at the Shieldwright and give the frontier something to break against.',
       how:'In Outfitting → Shieldsmithing, forge any Bronze (Tier 1) shield.',
-      target:1, progress:function(st){ return (st.stats && st.stats['made_shieldsmithing_t1']) || 0; },
+      target:1, progress:function(st){ return statTierAtLeast(st, 'made_shieldsmithing', 1); }, orBetter:1,
       nav:{ cat:'outfitting', sub:'shieldsmithing' },
       reward:{ itemId:'stshield_shieldSmall_t1_rare', qty:1 } },
     { id:'into_tin', cat:'secondfrontier', title:'Into Tin',
@@ -34976,8 +34982,11 @@
           var prods = peonPickerProducers.filter(function(p){ return p.skillId === ws.skillId; });
           if(!opts.length && !prods.length) return;
           anything = true;
-          if(multi) html += '<div class="empty-note" style="margin:10px 0 4px;">'+peonSkillIcon(ws.skillId)+' <b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+')</div>';
-          else html += '<div class="empty-note" style="margin-bottom:6px;"><b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+').</div>';
+          // Owner decision (2026-09-17, ticket-0230): a Peon's cast never snags a Treasure Chest, online or
+          // offline. Said here, where the peon is assigned, so nobody files "no chests while offline" again.
+          var _wsNote = ws.skillId === 'fishing' ? ' &bull; catches fish only, never Treasure Chests' : '';
+          if(multi) html += '<div class="empty-note" style="margin:10px 0 4px;">'+peonSkillIcon(ws.skillId)+' <b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+')'+_wsNote+'</div>';
+          else html += '<div class="empty-note" style="margin-bottom:6px;"><b>'+escapeHtml(skillDisplayLabel(ws.skillId))+'</b> (tier ≤ '+TIER_NAMES[ws.tierCap]+')'+_wsNote+'.</div>';
           if(opts.length){
             html += '<div class="tracker-picker-grid">';
             opts.forEach(function(o){ html += '<button class="tracker-chip" data-action="peonPickTask" data-kind="'+o.kind+'" data-item="'+escapeHtml(o.itemId)+'" data-skill="'+escapeHtml(o.skillId)+'">'+escapeHtml(o.name)+'</button>'; });
@@ -37149,10 +37158,14 @@
               + '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">'+(wLvOk?'':'Architecture Lv'+TIER_LEVELS[it.tierIndex]+' &bull; ')+'x'+fmt(state.inventory[it.id]||0)+'</span>'
               + '</button>';
           };
+          // The SAME family header the Forge Tools and the Architecture tab use (forge-group-head), static
+          // here because the list is short and already filtered to what can be placed (owner list item 16).
           BLACKSMITH_TOOL_GROUPS.forEach(function(grp){
             var inGrp = placeable.filter(function(it){ return blacksmithToolGroupKey(it.skillId) === grp.key; });
             if(!inGrp.length) return;
-            html += '<div class="estate-action-info" style="margin:8px 0 3px;font-weight:700;color:'+grp.color+';">'+escapeHtml(grp.label)+'</div>';
+            html += '<div class="forge-group-head open static" style="--fg-accent:'+grp.color+';margin-top:8px">'
+              + '<span class="forge-group-name">'+escapeHtml(grp.label)+'</span>'
+              + '<span class="forge-group-meta">'+inGrp.length+' ready</span></div>';
             html += '<div class="estate-paving-library">' + inGrp.map(_wsBtn).join('') + '</div>';
           });
         }
@@ -43407,7 +43420,7 @@
   var SKILL_LABELS = { farming:'Farming', fiberharvesting:'Fiber Harvesting', grainharvesting:'Grain Harvesting', herbharvesting:'Herb Harvesting' };
   var SKILL_INFO = {
     runesmithing: 'Inscribe elemental Wards -- offhands that reflect a share of incoming damage of their element back at the attacker -- and light-infused Scepters. Scepters are made from Metal and elemental Glyphs recovered from Elementals in combat and Wards additionally require wood from Logs.',
-    arcanism: 'Craft elemental Wands -- one-handed weapons that deal elemental damage of their element -- and arcane Staves to aid in conjuring familiars and defense. These implements are created from Logs and elemental Glyphs recovered from Elementals in Combat.',
+    arcanism: 'Craft elemental Wands -- one-handed weapons that deal elemental damage of their element -- and arcane Staves to aid in conjuring familiars and defense. A Staff still swings, every 5 seconds: that swing is the Downbeat a Summoner\'s familiars keep time to. These implements are created from Logs and elemental Glyphs recovered from Elementals in Combat.',
     digging: 'Dig for Sand, Soil, Clay, and similar materials, with a chance for bonus Coal (to fuel Metallurgy and Glassblowing) and Muddy Artifacts for Archaeologists to excavate. These earths are applied in the crafting of Fertilizer, Pottery, Masonry, as well as creating Fields to farm on your Estate.',
     forestry: 'Chop logs from increasingly exotic trees, starting with Willow and up to Sequoia -- a base resource further processed in Carpentry and Papermaking or used directly in the crafts of Arcanism, Bowyery, Fletching, and Runesmithing.',
     mining: 'Mine stone and ore, with a chance for bonus Coal (to fuel Metallurgy and Glassblowing) and Gems suitable for Jewelrycrafting Rings. Stone is worked in Stone Cutting and ore is refined through Metallurgy.',
@@ -46429,6 +46442,8 @@
   // ================= MAIN LOOP =================
   var lastTick = Date.now();
   var _loopErrorNoted = false;
+  var THROTTLE_NOTE_MIN_MS = 15000;   // a frame this long is a paused tab, never a slow device
+  var _throttleNotedAt = 0;
   function loop(){
     // Fenced out by another window: stop the simulation dead and do NOT reschedule. Continuing would
     // accrue progress this tab can never persist (cloudSave is closed), which reads to the player as
@@ -46450,9 +46465,20 @@
     var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
     var now = Date.now();
     var dt = now - lastTick;
+    var _rawDt = dt;
     if(dt > 60000) dt = 60000;
     if(dt < 0) dt = 0;   // a backward clock step (NTP correction) must not run the simulation in reverse
     lastTick = now;
+    // A big frame means the browser paused this tab (a background tab is throttled to a frame a minute, or
+    // to none at all), and the gap is replayed in one step: several enemy swings, DoT ticks and crafts at
+    // once. Three ticket classes came from players not knowing that had happened ("it just died", "the
+    // queue stalled", "the bar jumped"), so say so once, in the Chronicle. Rate-limited so a tab left in the
+    // background all day does not fill the 40-line log with it.
+    if(_rawDt > THROTTLE_NOTE_MIN_MS && now - _throttleNotedAt > 5*60000){
+      _throttleNotedAt = now;
+      var _secs = Math.round(_rawDt/1000);
+      addLog('Your browser paused this tab for ' + (_secs >= 60 ? Math.round(_secs/60) + ' min' : _secs + 's') + '. Everything that happened in that time was replayed just now, in one step.', '');
+    }
 
     ensureCraftSlotCapacity();
     state.extraCraftSlots.forEach(function(slot){
@@ -47348,7 +47374,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.1';
+  var GAME_VERSION = '0.1.4.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

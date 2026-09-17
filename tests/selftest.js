@@ -1307,6 +1307,29 @@
     }
   });
 
+  // ---- Offline gathering honours the gather tool (owner list item 6, 2026-09-17) ----
+  // The primary-slot offline sim read item.time x tome only, so a tool sped up live play and belt-slot
+  // gathers but never the primary gather overnight. It now uses the live effective time.
+  suite('offline gathering: the primary slot pays at the tool-sped rate, like live play', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, extra:S.extraCraftSlots, inv:S.inventory, tools:S.gatherTools, rar:S.gatherToolRarities, hp:S.playerHp, log:S.log, settings:S.settings };
+    try {
+      S.extraCraftSlots = []; S.settings = Object.assign({}, S.settings || {}, { autoOpenChests:false });
+      function run(tier){
+        S.inventory = { fishing_t0: 0 }; S.log = []; S.playerHp = 100;
+        S.gatherTools = Object.assign({}, sv.tools || {}, { fishing: tier }); S.gatherToolRarities = Object.assign({}, sv.rar || {}, { fishing:'normal' });
+        S.activity = { type:'gather', skill:'fishing', itemId:'fishing_t0', progress:0 };
+        FF.applyOfflineProgress(2*3600*1000);
+        return S.inventory.fishing_t0 || 0;
+      }
+      var bare = run(0), tooled = run(21);
+      ok(bare > 0, 'a bare-handed 2h offline fish returns fish (' + bare + ')');
+      ok(tooled > bare, 'a top-tier Fishing Rod returns MORE offline (' + tooled + ' vs ' + bare + '), as it does live');
+    } finally {
+      S.activity = sv.act; S.extraCraftSlots = sv.extra; S.inventory = sv.inv; S.gatherTools = sv.tools; S.gatherToolRarities = sv.rar; S.playerHp = sv.hp; S.log = sv.log; S.settings = sv.settings;
+    }
+  });
+
   // ---- Firsts: the milestone race boards (v0.1.4.0, owner order 2026-09-17) ----
   // The client's threshold tables MIRROR milestone_keys_for in migration 20260917120000; the key shapes
   // pinned here are the ones the server stamps. A board lists every mark, claimed or not.
@@ -1375,8 +1398,9 @@
       ok(/or better/.test(q.how), p[0]+' quest text says "or better": ' + q.how);
       var g = FF.questById(p[0]+'_g_mining'); if(g){ var gs={stats:{}}; gs.stats['gathered_mining_t20']=100; eq(g.progress(gs), 100, p[0]+' mining quest counts Tier 20 ore'); }
     });
-    // The First Frontier's Tier 1 forges keep their exact-tier gate (the earlier ticket).
-    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1 } }), 0, 'the First Frontier Armorer still wants a Bronze forge');
+    // The First Frontier's Tier 1 forges follow the same rule (owner list item 7).
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1 } }), 1, 'the First Frontier Armorer takes any forge at Bronze or better');
+    eq(FF.questById('the_armorer').orBetter, 1, 'and its card says Tier 1 or better counts');
   });
 
   // ---- SteakHouse: the estate's 2D/3D view is a persisted setting, and the view button IS that setting ----
@@ -12228,7 +12252,8 @@
     // wrongly completed "The Armorer", which asks for Bronze/t1).
     eq(FF.questById('the_weaponsmith').progress({ stats:{ made_weaponsmithing_t1:1 } }), 1, 'The Weaponsmith reads Bronze (armorsmithing t1) crafts');
     eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t1:1 } }), 1, 'The Armorer reads a Bronze (t1) plate forge');
-    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1, crafted_armorsmithing:9 } }), 0, 'The Armorer does NOT complete on a Tungsten (t20) forge (the ticket)');
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t20:1, crafted_armorsmithing:9 } }), 1, 'The Armorer completes on a Tungsten (t20) forge too (owner: "or better" everywhere, 2026-09-17)');
+    eq(FF.questById('the_armorer').progress({ stats:{ made_armorsmithing_t0:1, crafted_armorsmithing:9 } }), 0, 'but never on a Copper (t0) forge: a lower tier still does not count');
     eq(FF.questById('the_shieldwright').progress({ stats:{ made_shieldsmithing_t1:1 } }), 1, 'The Shieldwright reads a Bronze (t1) shield forge');
     // Every Second Frontier craft quest whose text names a Tier 2 now gates on the t2 counter, not any-tier.
     eq(FF.questById('ward_reforged').progress({ stats:{ made_runesmithing_t2:1 } }), 1, 'Ward Reforged reads a Tier 2 ward');
