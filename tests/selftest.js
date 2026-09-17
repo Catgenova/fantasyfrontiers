@@ -1272,6 +1272,26 @@
     } finally { s.settings.darkMode = sv; document.documentElement.classList.toggle('ff-dark', had); }
   });
 
+  // ---- ticket-0229 (Meri): the ingredient-link underline is an Interface toggle, not a removal ----
+  suite('ingredient links: the Interface toggle drops the underline via a class on <html>', function(){
+    var tg = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'plainIngredientLinks'; })[0];
+    ok(!!tg, 'a plainIngredientLinks setting toggle exists');
+    eq(tg.cat, 'interface', 'it lives under the Interface settings section');
+    var s = FF._state, sv = s.settings.plainIngredientLinks, had = document.documentElement.classList.contains('ff-plain-links');
+    try {
+      s.settings.plainIngredientLinks = true; FF.applyIngredientLinkPref();
+      ok(document.documentElement.classList.contains('ff-plain-links'), 'turning it on adds the ff-plain-links class to <html>');
+      s.settings.plainIngredientLinks = false; FF.applyIngredientLinkPref();
+      ok(!document.documentElement.classList.contains('ff-plain-links'), 'turning it off restores the underline (class removed)');
+      delete s.settings.plainIngredientLinks; FF.applyIngredientLinkPref();
+      ok(!document.documentElement.classList.contains('ff-plain-links'), 'an unset preference keeps the underline (default is discoverable)');
+    } finally { s.settings.plainIngredientLinks = sv; document.documentElement.classList.toggle('ff-plain-links', had); }
+    // The link itself is untouched: the Needs line still renders the tappable span either way.
+    var line = FF.inputsLine({ fishing_t0: 1 }, 'inp-test');
+    ok(/data-action="goItemSource"/.test(line), 'the Needs line keeps its jump affordance regardless of the underline setting');
+    ok(FF.TICKER_TIPS.some(function(t){ return /Tap an ingredient/.test(t) && /Hide ingredient link underlines/.test(t); }), 'a Did-you-know ticker tip teaches the jump and names the toggle');
+  });
+
   // ---- AQUEDUCT: water only if the chain reaches real water, and only within its own tier's range ---
   suite('estate buildings: the Aqueduct carries water along a chain', function(){
     var s = FF._state, savedGrid = s.estate.grid, savedPlots = s.farmingPlots;
