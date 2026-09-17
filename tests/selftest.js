@@ -2844,7 +2844,9 @@
     var savedAct = S.activity, savedExtra = S.extraCraftSlots;
     try {
       S.activity = { type:null }; S.extraCraftSlots = [];   // an active build renders Stop instead of the box
+      FF.workshopGroupsOpen.gathering = true;                 // the families start closed (ticket-0226); open Mining's
       var html = FF.renderWorkshopForge();
+      delete FF.workshopGroupsOpen.gathering;
       ok(/data-qkey="buildWorkshop:mining:t\d+"[^>]*><button [^>]*data-action="buildWorkshop" data-skill="mining"/.test(html),
          'a workshop card renders its queue box directly beside its Build button');
       ok(/data-qkey="buildCottage:t\d+"[^>]*><button [^>]*data-action="buildCottage"/.test(html),
@@ -5704,15 +5706,23 @@
   // Butchering is a refining activity, not a gather -- the nav tabs already lead Refining with it and
   // strip it from Gathering (REFINING_TAB_SKILL_IDS / GATHERING_TAB_SKILL_IDS); the workshop groups on
   // the Architecture page now follow the same split.
-  suite('architecture forge: Butchering workshop sits in the Crafting group', function(){
-    var html = FF.renderWorkshopForge();
-    var ci = html.indexOf('Crafting Workshops'), gi = html.indexOf('Gathering Workshops');
-    ok(ci !== -1 && gi !== -1 && ci < gi, 'both workshop groups render, Crafting first');
-    var craftHalf = html.slice(0, gi), gatherHalf = html.slice(gi);
-    ok(craftHalf.indexOf('data-skill="butchering"') !== -1, 'the Butchering workshop card is in the Crafting group');
-    eq(gatherHalf.indexOf('data-skill="butchering"'), -1, 'and it is GONE from the Gathering group');
-    ok(gatherHalf.indexOf('data-skill="mining"') !== -1, 'other gathering workshops stay put');
-    ok(craftHalf.indexOf('data-skill="metallurgy"') !== -1, 'crafting workshops untouched');
+  // v0.1.3.20 (ticket-0226): the two groups became the five Forge Tools families; Butchering files under
+  // Refining there, exactly where its Forge Tool sits, by the shared classifier.
+  suite('architecture forge: Butchering workshop sits in the Refining family, never Gathering', function(){
+    var W = FF.workshopGroupsOpen, saved = Object.assign({}, W);
+    try {
+      Object.keys(W).forEach(function(k){ delete W[k]; });
+      W.refining = true;
+      var html = FF.renderWorkshopForge();
+      ok(html.indexOf('data-skill="butchering"') !== -1, 'the Butchering workshop card is in the Refining family');
+      ok(html.indexOf('data-skill="metallurgy"') !== -1, 'refining workshops sit beside it');
+      eq(html.indexOf('data-skill="mining"'), -1, 'a gathering workshop is not in the Refining family');
+      delete W.refining; W.gathering = true;
+      var g = FF.renderWorkshopForge();
+      eq(g.indexOf('data-skill="butchering"'), -1, 'and Butchering is GONE from the Gathering family');
+      ok(g.indexOf('data-skill="mining"') !== -1, 'other gathering workshops stay put');
+      eq(FF.blacksmithToolGroupKey('butchering'), 'refining', 'the shared classifier is the single source of that placement');
+    } finally { Object.keys(W).forEach(function(k){ delete W[k]; }); Object.assign(W, saved); }
   });
 
   // ---- Architecture forge shows the craft success rate (ticket-0168) --------------------------------
@@ -5720,7 +5730,9 @@
   // completeSpecialCraft (a build can FAIL), but none of the three cards said the odds while every
   // ordinary recipe card does. Each card now carries the standard Success Chance line.
   suite('architecture forge: every card shows the success rate (ticket-0168)', function(){
+    FF.workshopGroupsOpen.gathering = true;     // the families start closed (ticket-0226); open one so a workshop card renders
     var html = FF.renderWorkshopForge();
+    delete FF.workshopGroupsOpen.gathering;
     var pct = Math.round(FF.craftSuccessRate(FF._state, 'architecture') * 100);
     var line = 'Success Chance: <b>' + pct + '%</b>';
     var n = html.split(line).length - 1;
@@ -6388,6 +6400,74 @@
 
     S.activity = sv.act; S.playerHp = sv.hp; S.autoEatThreshold = sv.thr; S.inventory = sv.inv;
     S.lockedItems = sv.locked; S._autoEatWarned = sv.warned; S._autoEatLogged = sv.logged; S.cbAsceticRun = sv.asc;
+  });
+
+  // ---- ticket-0221 (Gutwrench): auto-eat keeps eating until the bar is back above the threshold ----
+  // One bite per check let a small food lose to a big swing inside a background tab's catch-up burst: HP
+  // trended down through a 60% threshold to zero with ~2,000 food in the bag. A check now eats until the
+  // threshold is cleared (bounded), never burns food into a full bar, and still eats nothing when there is none.
+  suite('combat: auto-eat takes as many bites as the threshold needs, never past a full bar', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, hp:S.playerHp, thr:S.autoEatThreshold, inv:S.inventory, locked:S.lockedItems,
+               warned:S._autoEatWarned, logged:S._autoEatLogged, asc:S.cbAsceticRun };
+    try {
+      S.inventory = {}; S.lockedItems = {}; S._autoEatWarned = false; S._autoEatLogged = false;
+      var food = FF.getAutoEatFoodTypes()[0];
+      var h = food.heal, M = FF.maxHp(S);
+      S.inventory[food.id] = 100;
+      S.activity = { type:'combat', monsterId:'archdemon', monsterHp: 1e12 };
+      S.autoEatThreshold = 0.99;
+      ok(FF.AUTO_EAT_MAX_BITES >= 10, 'the per-check bite cap is a bound, not a budget');
+      // Down by three-and-a-bit bites' worth: ONE bite cannot clear a 99% threshold, four can.
+      if(M > 4*h + 2){
+        S.playerHp = M - (3*h + 1);
+        FF.autoEatCheck();
+        var bites = 100 - S.inventory[food.id];
+        ok(bites >= 4, 'one check took several bites to clear the threshold (took ' + bites + ')');
+        ok(S.playerHp / M > 0.99, 'and HP is back above the threshold after the one check');
+        ok(bites <= FF.AUTO_EAT_MAX_BITES, 'bounded by the cap');
+      } else { ok(true, 'max HP too small for the multi-bite case on this state; skipped'); }
+      // Full bar: no food is spent.
+      S.playerHp = M; var before = S.inventory[food.id];
+      FF.autoEatCheck();
+      eq(S.inventory[food.id], before, 'a full bar eats nothing');
+      // Exactly one bite when one clears it: no over-eating.
+      if(M > 2*h + 2){
+        S.playerHp = M - 1; before = S.inventory[food.id];
+        FF.autoEatCheck();
+        eq(before - S.inventory[food.id], 1, 'one bite when one bite is enough');
+      }
+      // No food: warns once, eats nothing, HP untouched.
+      S.inventory[food.id] = 0; S.playerHp = Math.floor(M/2); S._autoEatWarned = false;
+      FF.autoEatCheck();
+      eq(S.playerHp, Math.floor(M/2), 'no food -> no phantom heal');
+      ok(S._autoEatWarned, 'no food -> the warning fired');
+    } finally {
+      S.activity = sv.act; S.playerHp = sv.hp; S.autoEatThreshold = sv.thr; S.inventory = sv.inv;
+      S.lockedItems = sv.locked; S._autoEatWarned = sv.warned; S._autoEatLogged = sv.logged; S.cbAsceticRun = sv.asc;
+    }
+  });
+
+  // ---- ticket-0226 (SteakHouse): the Architecture tab groups its workshops like the Forge Tools ----
+  suite('architecture: workshop cards sit in the five collapsible Forge Tools families', function(){
+    var W = FF.workshopGroupsOpen, saved = Object.assign({}, W);
+    try {
+      Object.keys(W).forEach(function(k){ delete W[k]; });
+      var html = FF.renderWorkshopForge();
+      var heads = (html.match(/data-action="workshopToggleGroup"/g) || []).length;
+      eq(heads, 5, 'five family headers (Gathering / Refining / Cooking / Outfitting / Construction)');
+      ['Gathering','Refining','Cooking','Outfitting','Construction'].forEach(function(n){ ok(html.indexOf('>'+n+'</span>') !== -1, 'the ' + n + ' family is present'); });
+      ok(!/data-action="buildWorkshop"/.test(html), 'families start closed: no workshop card is rendered until one is opened');
+      ok(/\d+ workshops? &bull; \d+ placed/.test(html), 'each header counts its workshops and how many are placed');
+      W.cooking = true;
+      var open = FF.renderWorkshopForge();
+      ok(/data-action="buildWorkshop"/.test(open), 'opening a family renders its workshop cards');
+      ok(/data-skill="cooking"/.test(open), 'the Cooking family holds the Cooking workshop');
+      ok(!/data-skill="mining"/.test(open), 'and not a Gathering one');
+      ok(/Cottages/.test(open) && /workshopToggleGroup/.test(open), 'the Cottage and Building sections still follow below the families');
+    } finally {
+      Object.keys(W).forEach(function(k){ delete W[k]; }); Object.assign(W, saved);
+    }
   });
 
   // The voting call-to-action is a HIGH-PRIORITY ticker line (woven in like the disclaimer, not one entry
