@@ -42502,7 +42502,10 @@
     { idx:4, name:'Maw of the Deep',       icon:svgIcon('shield','#6fd3e0'),      floor:40 }
   ];
   function guildBossReward(idx){ return (idx|0) + 1; }   // 1..5 Barrier Shards to every member (mirrors the server)
-  var guildBossState = { status:'idle', guildId:null, bosses:[], myEntryBoss:null, pending:0, day:null, busy:false, error:'', _lastPoll:0 };
+  // notice: the LAST fight's outcome, shown in gold on the Bosses tab (ticket-0228: The Hollow King has ~126k
+  // HP, so an endgame player kills it on the first swing, the kill jumps them out of the arena to this tab
+  // by design, and with nothing on screen to say so it read as "instantly kicked me out and used my entry").
+  var guildBossState = { status:'idle', guildId:null, bosses:[], myEntryBoss:null, pending:0, day:null, busy:false, error:'', notice:'', _lastPoll:0 };
   function guildBossInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body={action:action}; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
@@ -42597,7 +42600,7 @@
     }
     if(guildBossState.busy) return;
     var d = GUILD_BOSSES[idx]; if(!d) return;
-    guildBossState.busy=true; guildBossState.error=''; render();
+    guildBossState.busy=true; guildBossState.error=''; guildBossState.notice=''; render();
     guildBossInvoke('enter', { boss_idx:idx }).then(function(res){
       guildBossState.busy=false;
       if(!res.ok){ guildBossState.error=res.error||'Could not enter.'; if(res.bosses) guildBossApply(res); render(); return; }
@@ -42613,33 +42616,62 @@
   }
   // Boss defeated in your client -> report the clear. First member to report wins it for the guild; the
   // shard payout (to every current member) is server-side and arrives via the pending claim.
+  // "in 1 second" / "in 2 minutes 5 seconds": how long the boss lasted, for the result note.
+  function guildBossFightDurText(startedAt){
+    var secs = Math.max(1, Math.round((Date.now() - (Number(startedAt) || Date.now())) / 1000));
+    if(secs < 60) return secs + ' second' + (secs===1?'':'s');
+    var m = Math.floor(secs/60), s = secs % 60;
+    return m + ' minute' + (m===1?'':'s') + (s ? ' ' + s + ' second' + (s===1?'':'s') : '');
+  }
+  // A transport failure on the clear report would otherwise burn the day's entry on a network blip (the
+  // kill is client-side; only this report tells the guild). Retry those a few times; a real refusal
+  // ('noentry', 'alreadycleared', anything with a server verdict) is never retried.
+  var GUILD_BOSS_CLEAR_RETRIES = 3, GUILD_BOSS_CLEAR_RETRY_MS = 2500;
+  function guildBossClearIsTransport(res){ return !res || (!res.ok && !res.alreadycleared && (res.error === 'Network error.' || res.error === 'Request failed.')); }
   function guildBossOnKill(monster){
     bumpStat('cb_guildboss_kills');   // Combat quest: you landed the last blow, in front of everyone
-    var gb = state.activity && state.activity.guildBoss;
+    var act = state.activity, gb = act && act.guildBoss, startedAt = act && act.duelStartedAt;
     state.activity = { type:null };
     if(!gb) return;
     bumpStat('kills');
-    var d = GUILD_BOSSES[gb.idx], reward = guildBossReward(gb.idx);
-    addLog('You defeated ' + ((d&&d.name)||'the Guild Boss') + '!', 'important');
+    var d = GUILD_BOSSES[gb.idx], reward = guildBossReward(gb.idx), name = (d&&d.name)||'the Guild Boss';
+    var dur = guildBossFightDurText(startedAt);
+    addLog('You defeated ' + name + ' in ' + dur + '!', 'important');
+    guildBossState.notice = 'You defeated ' + name + ' in ' + dur + '. Reporting the clear to your guild...';
     if(!offlineCapture && currentCategory === 'combat'){ currentCategory='guild'; currentArea=areaOf('guild'); guildSub='bosses'; }
-    guildBossInvoke('clear', { boss_idx: gb.idx }).then(function(res){
-      if(res.ok){
-        addLog('Your guild cleared ' + ((d&&d.name)||'a Guild Boss') + '! Every member is credited ' + reward + ' Barrier Shard' + (reward===1?'':'s') + '.', 'important');
-        guildBossApply(res);   // refresh the roster + auto-claim your own share
-      } else if(res.alreadycleared){
-        addLog('A guildmate defeated ' + ((d&&d.name)||'that boss') + ' first. The clear (and its reward) went to them.', 'danger');
-        if(res.bosses) guildBossApply(res);
-      } else {
-        guildBossState.error = res.error || 'Could not record the clear.'; guildBossLoad();
-      }
-      if(currentCategory==='guild') render();
-    });
+    var attempt = 0;
+    function report(){
+      attempt++;
+      guildBossInvoke('clear', { boss_idx: gb.idx }).then(function(res){
+        if(guildBossClearIsTransport(res) && attempt < GUILD_BOSS_CLEAR_RETRIES){
+          guildBossState.notice = 'You defeated ' + name + ' in ' + dur + '. Still reporting the clear (attempt ' + (attempt+1) + ')...';
+          if(currentCategory==='guild') render();
+          setTimeout(report, GUILD_BOSS_CLEAR_RETRY_MS);
+          return;
+        }
+        if(res.ok){
+          guildBossState.notice = 'You defeated ' + name + ' in ' + dur + '. Your guild cleared it: every member is credited ' + reward + ' Barrier Shard' + (reward===1?'':'s') + '.';
+          addLog('Your guild cleared ' + name + '! Every member is credited ' + reward + ' Barrier Shard' + (reward===1?'':'s') + '.', 'important');
+          guildBossApply(res);   // refresh the roster + auto-claim your own share
+        } else if(res.alreadycleared){
+          guildBossState.notice = 'You defeated ' + name + ' in ' + dur + ', but a guildmate cleared it first. The clear (and its reward) went to them.';
+          addLog('A guildmate defeated ' + name + ' first. The clear (and its reward) went to them.', 'danger');
+          if(res.bosses) guildBossApply(res);
+        } else {
+          guildBossState.notice = 'You defeated ' + name + ' in ' + dur + '.';
+          guildBossState.error = (res.error || 'Could not record the clear.') + ' Your entry for today was used.'; guildBossLoad();
+        }
+        if(currentCategory==='guild') render();
+      });
+    }
+    report();
     saveGame(); needsRender = true;
   }
   function renderGuildBoss(){
     guildBossEnsure();
     var html='';
     if(guildBossState.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildBossState.error)+'</div>'; }
+    if(guildBossState.notice){ html += '<div class="empty-note" style="border-color:var(--gold);color:var(--gold);">'+escapeHtml(guildBossState.notice)+'</div>'; }
     if(guildBossState.status==='loading' || guildBossState.status==='idle'){ return html+'<div class="empty-note">Scouting the lairs&hellip;</div>'; }
     html += '<div class="section-intro">Five Guild Bosses, each a single <b>Tower-strength</b> fight. You may take on <b>one boss per day</b>. The <b>first</b> guildmate to defeat a boss clears it for the whole guild that day and awards <b>every member</b> Barrier Shards. <b>1</b> for the easiest up to <b>5</b> for the hardest. Bosses and your daily entry reset at <b>00:00 UTC</b>.</div>';
     var inFight = !!(state.activity && state.activity.type==='combat' && state.activity.guildBoss);
@@ -47128,7 +47160,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.3.18';
+  var GAME_VERSION = '0.1.3.19';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47310,7 +47342,7 @@
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, frontierGuideSync:frontierGuideSync, firstFrontierComplete:firstFrontierComplete, gatheringBeginnerNudge:gatheringBeginnerNudge, renderGatherTab:renderGatherTab, TICKER_STARTER_TIPS:TICKER_STARTER_TIPS, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, subNavVisible:subNavVisible, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
-      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
+      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
       sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,

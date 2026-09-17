@@ -1272,6 +1272,41 @@
     } finally { s.settings.darkMode = sv; document.documentElement.classList.toggle('ff-dark', had); }
   });
 
+  // ---- ticket-0228: a one-swing Guild Boss kill announces itself on the Bosses tab ----
+  // The Hollow King has ~126k HP, so an endgame player kills it on the first swing; the kill jumps the
+  // player out of the arena by design, and with nothing on screen to say so it read as "instantly kicked
+  // me out and used my entry". The kill now leaves a gold result note (with the fight's duration) that
+  // the server's verdict updates, and a transport failure on the clear report is retried, never a refusal.
+  suite('guild boss: a kill leaves a result note and the clear report retries only on transport failures', function(){
+    var s = FF._state, G = FF.guildBossState;
+    eq(FF.guildBossFightDurText(Date.now() - 1000), '1 second', 'a one-second fight reads "1 second"');
+    eq(FF.guildBossFightDurText(Date.now() - 125000), '2 minutes 5 seconds', 'minutes and seconds spell out');
+    eq(FF.guildBossFightDurText(Date.now() - 60000), '1 minute', 'a whole minute drops the seconds');
+    ok(FF.guildBossClearIsTransport({ ok:false, error:'Network error.' }), 'a network error is a transport failure (retried)');
+    ok(FF.guildBossClearIsTransport(null), 'a missing response is a transport failure');
+    ok(!FF.guildBossClearIsTransport({ ok:false, alreadycleared:true, error:'Another member cleared it first.' }), 'a guildmate winning the race is a verdict, never retried');
+    ok(!FF.guildBossClearIsTransport({ ok:false, error:"You didn't enter that boss today." }), 'a server refusal is a verdict, never retried');
+    ok(!FF.guildBossClearIsTransport({ ok:true }), 'success is not retried');
+    var saved = { act:s.activity, log:s.log, notice:G.notice, error:G.error };
+    try {
+      s.log = [];
+      s.activity = FF.makeGuildBossActivity(2);
+      s.activity.duelStartedAt = Date.now() - 3000;
+      var mon = FF.buildGuildBossMonster(2);
+      ok(mon.hp < 200000, 'The Hollow King really is a one-swing foe at endgame (hp ' + mon.hp + ')');
+      G.notice = ''; G.error = '';
+      FF.guildBossOnKill(mon);
+      eq(s.activity.type, null, 'the kill ends the fight');
+      ok(/You defeated The Hollow King in 3 seconds/.test(G.notice), 'the Bosses tab carries a result note naming the boss and the duration: ' + G.notice);
+      ok(/Reporting the clear/.test(G.notice), 'the note says the clear is being reported');
+      var last = s.log[s.log.length - 1];
+      ok(!!last && /defeated The Hollow King in 3 seconds/.test(last.msg), 'the Chronicle line carries the duration too');
+      ok(/You defeated The Hollow King/.test(FF.renderGuildBoss()), 'the Bosses tab renders the result note');
+    } finally {
+      s.activity = saved.act; s.log = saved.log; G.notice = saved.notice; G.error = saved.error;
+    }
+  });
+
   // ---- ticket-0229 (Meri): the ingredient-link underline is an Interface toggle, not a removal ----
   suite('ingredient links: the Interface toggle drops the underline via a class on <html>', function(){
     var tg = FF.SETTINGS_TOGGLES.filter(function(t){ return t.key === 'plainIngredientLinks'; })[0];
