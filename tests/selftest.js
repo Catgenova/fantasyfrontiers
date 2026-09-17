@@ -1307,6 +1307,62 @@
     }
   });
 
+  // ---- Owner list batch B (2026-09-17): items 5, 12, 13, 15 ----
+  suite('owner list B: re-enter button, per-flag eaten count, eat rows + auto-eat on the death report, guild projection', function(){
+    var S = FF._state;
+    // 5: the Bosses tab offers "Fight it again" for the boss my entry is on while it is uncleared.
+    var G = FF.guildBossState, gsv = { status:G.status, bosses:G.bosses, entry:G.myEntryBoss, busy:G.busy };
+    var svAct = S.activity;
+    try {
+      S.activity = { type:null };
+      G.status = 'ready'; G.busy = false; G.myEntryBoss = 2;
+      G.bosses = [0,1,2,3,4].map(function(i){ return { idx:i, cleared:false, cleared_by:null }; });
+      var html = FF.renderGuildBoss();
+      ok(/data-action="guildBossEnter" data-idx="2"/.test(html), 'the boss my entry is on can be fought again');
+      ok(/Fight it again/.test(html), 'and the button says so');
+      ok(!/data-action="guildBossEnter" data-idx="3"/.test(html), 'a different boss stays locked behind the used entry');
+      G.bosses[2].cleared = true; G.bosses[2].cleared_by = 'Someone';
+      ok(!/data-action="guildBossEnter" data-idx="2"/.test(FF.renderGuildBoss()), 'once cleared there is nothing to re-enter');
+    } finally { G.status = gsv.status; G.bosses = gsv.bosses; G.myEntryBoss = gsv.entry; G.busy = gsv.busy; S.activity = svAct; }
+    // 12: each flag counts what it ate this session.
+    var flags = S.autoSacrifice, inv = S.inventory, faith = S.faith, phys = S.physique, log = S.log, locked = S.lockedItems;
+    try {
+      S.inventory = { tool_architecture_t2_normal: 2 }; S.lockedItems = {}; S.log = [];
+      S.physique = Object.assign({}, S.physique || {}, { oblation: 0 });
+      S.autoSacrifice = { 'tool|tool_architecture_t2_normal': true }; S.faith = 0;
+      var before = FF.autoSacEaten['tool|tool_architecture_t2_normal'] || 0;
+      FF.autoSacrificeItemsCheck();
+      var ate = (FF.autoSacEaten['tool|tool_architecture_t2_normal'] || 0) - before;
+      ok(ate >= 1, 'the flag\'s session count grew by what it ate (' + ate + ')');
+    } finally { S.autoSacrifice = flags; S.inventory = inv; S.faith = faith; S.physique = phys; S.log = log; S.lockedItems = locked; }
+    // 13: the feed renders an eat row, and the death report carries the auto-eat setting and food left.
+    var row = FF.combatLogLineHtml({ dir:'eat', dmg:120, bites:3, hp:400 });
+    ok(/Auto-Eat heals you for <b>120<\/b>/.test(row) && /3 bites/.test(row) && /to 400 HP/.test(row), 'an eat row shows the heal, the bites and the HP after');
+    var svThr = S.autoEatThreshold, svInv = S.inventory, svRep = S.deathReport, svAct2 = S.activity;
+    try {
+      S.autoEatThreshold = 0.6; S.inventory = {}; S.activity = { type:'combat', monsterId:'archdemon', monsterHp:1 };
+      FF.recordDeathReport({ name:'Kinsworn Champion' }, { kind:'attack', dmg:1 });
+      eq(S.deathReport.autoEat.threshold, 0.6, 'the report records the auto-eat threshold');
+      eq(S.deathReport.autoEat.foodLeft, 0, 'and how much usable food was left');
+    } finally { S.autoEatThreshold = svThr; S.inventory = svInv; S.deathReport = svRep; S.activity = svAct2; }
+    // 15: my own queued pave projects onto the guild cell, so a workshop can be queued behind it.
+    var GE = FF.guildEstate, gesv = { status:GE.status, grid:GE.grid, job:GE.job, q:S.guildEstateQueue };
+    try {
+      var g = [[{ type:'dirt', height:1, owned:true }]];
+      GE.status = 'ready'; GE.grid = g; GE.job = null;
+      S.guildEstateQueue = [{ kind:'pave', x:0, y:0, paveTileId:'paving_t5', localMs:1000, payload:{} }];
+      var p = FF.guildProjectedCell(0, 0);
+      eq(p.type, 'paved', 'my queued pave is projected onto the guild cell');
+      eq(p.paveTileId, 'paving_t5', 'with its tile');
+      eq(g[0][0].type, 'dirt', 'the real shared cell is untouched');
+      GE.job = { kind:'workshop', x:0, y:0, workshopId:'workshop_mining_t0', readyAt: Date.now()+1000 };
+      ok(!!FF.guildProjectedCell(0, 0).workshopId, 'my running job projects too');
+      GE.job = { kind:'assist', x:0, y:0, assistOf:'other', readyAt: Date.now()+1000 };
+      ok(!FF.guildProjectedCell(0, 0).workshopId, 'an assist row projects nothing');
+      eq(FF.guildProjectedCell(5, 5), null, 'off-grid is null');
+    } finally { GE.status = gesv.status; GE.grid = gesv.grid; GE.job = gesv.job; S.guildEstateQueue = gesv.q; }
+  });
+
   // ---- Offline gathering honours the gather tool (owner list item 6, 2026-09-17) ----
   // The primary-slot offline sim read item.time x tome only, so a tool sped up live play and belt-slot
   // gathers but never the primary gather overnight. It now uses the live effective time.

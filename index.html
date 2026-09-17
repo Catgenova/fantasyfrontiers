@@ -20640,6 +20640,9 @@
       blow: blow || null,
       maxHp: Math.round(maxHp(state)),
       wasMortal: !!state.mortal,
+      // Auto-eat at the moment of death: the setting and the food it could have used. Gutwrench's report
+      // (ticket-0221) needed both to be diagnosed and neither was on the modal (owner list item 13).
+      autoEat: { threshold: state.autoEatThreshold || 0, foodLeft: getTotalAutoEatFoodQty() },
       // The fight's final moments (live deaths only -- the log doesn't run during offline catch-up).
       log: offlineCapture ? [] : combatLog.slice(-8).map(function(e){ return Object.assign({}, e); })
     };
@@ -20704,6 +20707,7 @@
       html += '<div style="margin-bottom:6px"><b>Killing blow:</b> you succumbed to <b>'+escapeHtml(r.blow.word||'a lingering wound')+'</b>. Damage over time finished the fight.</div>';
     }
     html += '<div class="item-meta" style="margin-bottom:6px">Your max Health at the time: '+fmt(r.maxHp)+'.</div>';
+    if(r.autoEat) html += '<div class="item-meta" style="margin-bottom:6px"><b>Auto-Eat:</b> '+(r.autoEat.threshold > 0 ? 'set to eat below '+Math.round(r.autoEat.threshold*100)+'%' : 'off')+' &bull; '+fmt(r.autoEat.foodLeft||0)+' food it could use left in the bag'+((r.autoEat.threshold > 0 && !(r.autoEat.foodLeft > 0)) ? ' <b style="color:#d08a3f">(it had nothing to eat)</b>' : '')+'.</div>';
     if(r.wasMortal) html += '<div style="margin-bottom:6px;color:#d08a3f"><b>&#128367;&#65039; Your Mortal run ended here</b>. You continue on as an Immortal, keeping your skills, gear and gold.</div>';
     if(r.log && r.log.length){
       html += '<div class="inputs-line" style="margin:8px 0 4px">The final moments</div>';
@@ -21225,7 +21229,13 @@
       state.cbAsceticRun = 0; // Auto-Eat also breaks the Ascetic (Mortal Feat) run streak
       if(h <= 0) break;       // the bar is full (or the food heals nothing): never burn food for no HP
     }
-    if(bites > 0) spawnCombatFloat('Auto-Eat +' + healed + ' HP' + (bites > 1 ? ' (x' + bites + ')' : ''), 'ft-success', false);
+    if(bites > 0){
+      spawnCombatFloat('Auto-Eat +' + healed + ' HP' + (bites > 1 ? ' (x' + bites + ')' : ''), 'ft-success', false);
+      // The feed showed every hit taken and never a heal, so a death's "final moments" read as unbroken
+      // damage even when auto-eat had been firing between the swings (owner list item 13, after
+      // ticket-0221). One row per check, aggregated across its bites; no-ops during offline capture.
+      combatLogPush({ dir:'eat', dmg:Math.round(healed), bites:bites, hp:Math.round(state.playerHp) });
+    }
   }
 
   // ---- Teas (Mixology): manually-drunk consumables that temporarily boost all skill
@@ -32272,6 +32282,23 @@
     estateQueue().forEach(function(q){ if(q.kind !== 'border' && q.x === x && q.y === y) estateApplyProjection(p, q); });
     return p;
   }
+  // The guild estate's counterpart (owner list item 15, 2026-09-17): a copy of the REAL shared cell with MY
+  // OWN running job and MY OWN queued actions on that tile projected onto it, so a pave-then-build chain on
+  // one tile can be queued ahead of time on the guild estate too. Deliberately narrower than the personal
+  // projection's reach: nothing another member is doing is projected (their rows are not mine to predict),
+  // which is why dispatch and the offline drain still validate against the real cell.
+  function guildProjectedCell(x, y){
+    var g = guildEstate && guildEstate.grid;
+    var cell = g && g[x] && g[x][y];
+    if(!cell) return null;
+    var p = { height:cell.height, type:cell.type, obstacle:cell.obstacle, paveTileId:cell.paveTileId,
+              workshopId:cell.workshopId, cottageId:cell.cottageId, totemId:cell.totemId, buildingId:cell.buildingId,
+              fieldTier:cell.fieldTier, owned:cell.owned };
+    var mine = guildEstate.job;
+    if(mine && mine.kind !== 'border' && mine.kind !== 'assist' && mine.x === x && mine.y === y) estateApplyProjection(p, mine);
+    guildQueueArr().forEach(function(q){ if(q.kind !== 'border' && q.x === x && q.y === y) estateApplyProjection(p, q); });
+    return p;
+  }
   // ONE definition of "this tile is occupied", used by every placement path and every queue precondition.
   // These were four hand-written lists, and two of them read `workshopId || totemId` -- the Cottage was
   // missing, so a queued Workshop validated against a tile holding a Cottage. Single-sourcing it fixes that
@@ -32425,7 +32452,9 @@
             addLog('Your guild queue is full (' + ESTATE_QUEUE_MAX + ' actions).', 'danger');
             needsRender = true; return;
           }
-          var gv = estateQueuedJobValid(jobBase, estActive.grid[x] && estActive.grid[x][y], guildEstate);
+          // Validated against MY projection of the cell (my running job + my queue on that tile), so a chain
+          // on one tile queues here as it does on My Estate; dispatch re-validates against the real cell.
+          var gv = estateQueuedJobValid(jobBase, guildProjectedCell(x, y), guildEstate);
           if(!gv.ok){ addLog('Can\'t queue that: ' + gv.msg + '.', 'danger'); needsRender = true; return; }
           estateJobConsume(jobBase);                   // reserved now, refunded on cancel/skip
           guildQueueArr().push(Object.assign({ kind:kind, x:x, y:y, localMs:localMs, payload:payload || {} }, jobFields));
@@ -37874,6 +37903,10 @@
   // current Faith deficit (no waste), largest-fitting first -- the same top-up rule as Broken Relics, just
   // applied to individual equipment cards. Runs from the game loop after the relic pass. Broken Relics
   // (category 'relic') keep their own global toggle and are skipped here to avoid double-driving them.
+  // How many copies each flag has eaten THIS SESSION (owner list item 12, after ticket-0231): shown on the
+  // flag's chip on the Sacrifice tab, so a stray flag is obvious from the number next to it. Session-scoped
+  // on purpose (a lifetime count would just grow); it resets on reload.
+  var autoSacEaten = {};
   function autoSacrificeItemsCheck(){
     if(!state.autoSacrifice) return;
     var flagged = Object.keys(state.autoSacrifice).filter(function(k){ return state.autoSacrifice[k]; });
@@ -37900,6 +37933,7 @@
       var nm = (best.r.item && best.r.item.name) || best.r.id;
       if(!tally[nm]){ tally[nm] = 0; order.push(nm); }
       tally[nm]++;
+      autoSacEaten[sacRowKey(best.r)] = (autoSacEaten[sacRowKey(best.r)] || 0) + 1;   // per-flag session count (owner list item 12)
     }
     if(count > 0){
       // Names, not a count (ticket-0231): "Auto-sacrificed 1 flagged item" read as a Faith event, and the
@@ -38037,13 +38071,15 @@
         + '<div style="font-size:12px;margin-bottom:5px;">Auto-sacrifice list <span style="color:var(--text-dim);">These items refill Faith automatically, including every copy you craft later. Click one to stop.</span></div>'
         + '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
       autoShown.forEach(function(d){
-        html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+fmt(d.owned||0)+' &times;</button>';
+        var _ate = autoSacEaten[d.key] || 0;
+        html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+fmt(d.owned||0)+(_ate?' · Ate '+fmt(_ate)+' this session':'')+' &times;</button>';
       });
       if(!autoShown.length) html += '<span style="font-size:11px;color:var(--text-dim);">None of your flagged items are in your inventory right now.</span>';
       html += '</div>';
       if(autoZero.length){
         html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">'
-          + fmt(autoZero.length) + ' more on items you own none of. They still catch future copies. '
+          + fmt(autoZero.length) + ' more on items you own none of. They still catch future copies'
+          + (function(){ var n = 0; autoZero.forEach(function(d){ n += autoSacEaten[d.key] || 0; }); return n ? ' (they ate ' + fmt(n) + ' this session)' : ''; })() + '. '
           + '<button class="mini-btn" data-action="sacAutoToggleZero">' + (sacAutoShowZero ? 'Hide' : 'Show') + '</button> '
           + '<button class="mini-btn" data-action="sacAutoClearZero">Clear all ' + fmt(autoZero.length) + '</button>'
           + '</div>';
@@ -40769,6 +40805,7 @@
     else if(e.dir==='fam' && e.dmg != null) line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+'&#8217;s '+escapeHtml(e.spName||'spell')+' hits '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='fam') line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+' casts <b>'+escapeHtml(e.spName||'a spell')+'</b>'+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='death') line = '<span class="cl-in"><b>'+escapeHtml(e.text||'You were defeated.')+'</b></span>';
+    else if(e.dir==='eat') line = '<span class="cl-skill">&#10010; Auto-Eat heals you for <b>'+fmt(e.dmg)+'</b>'+(e.bites>1?' <span class="cl-tag">'+e.bites+' bites</span>':'')+(e.hp!=null?' <span class="cl-tag">to '+fmt(e.hp)+' HP</span>':'')+'</span>';
     else if(e.dir==='miss') line = '<span class="cl-faint">You missed '+escapeHtml(e.target||'the foe')+'</span>';
     else if(e.dir==='dodge') line = '<span class="cl-faint">You dodged '+escapeHtml(e.target||'the foe')+'</span>';
     else line = '<span class="cl-faint">'+escapeHtml(e.text||'')+'</span>';
@@ -42877,6 +42914,12 @@
         html += '<div class="item-meta" style="color:var(--rarity-superior);font-weight:700;">&#10003; Cleared today by '+escapeHtml(srv.cleared_by||'a guildmate')+'</div>';
       } else if(inFight && state.activity.guildBoss.idx===d.idx){
         html += '<div class="item-meta">Fight underway. Watch it on the <b>Combat</b> tab. <button class="mini-btn" data-action="navToActivity" data-nav-cat="combat">Go to Combat</button></div>';
+      } else if(entryUsed && guildBossState.myEntryBoss===d.idx && !inFight){
+        // The boss my entry is on, still uncleared: fight it again (owner list item 5, after ticket-0228).
+        // The server accepts a re-entry on the SAME boss (migration 20260917140000), so a clear report
+        // that failed no longer burns the day; the kill can simply be repeated and reported.
+        html += '<div class="item-meta" style="margin:4px 0;">You took this on today and it is not cleared yet. Your entry still stands: fight it again.</div>';
+        html += '<button class="action-btn" data-action="guildBossEnter" data-idx="'+d.idx+'" '+(guildBossState.busy?'disabled':'')+'>Fight it again</button>';
       } else if(entryUsed){
         html += '<button class="action-btn" disabled>'+(guildBossState.myEntryBoss===d.idx?'You took this on today':'Daily entry used')+'</button>';
       } else if(inFight){
@@ -47374,7 +47417,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.2';
+  var GAME_VERSION = '0.1.4.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47647,7 +47690,7 @@
       improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
       peonSlotCap:peonSlotCap, PEON_SLOT_CEILING:PEON_SLOT_CEILING, BUNKHOUSE_MAX:BUNKHOUSE_MAX,
       buildingTiersFor:buildingTiersFor, buildingIsGuildOnly:buildingIsGuildOnly, gridHasBuilding:gridHasBuilding, gridCountBuilding:gridCountBuilding,
-      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
+      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildProjectedCell:guildProjectedCell, autoSacEaten:autoSacEaten, combatLogLineHtml:combatLogLineHtml, recordDeathReport:recordDeathReport, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile, isGuestAccount:isGuestAccount, guestWallHtml:guestWallHtml, _authUserSet:function(o){ authUser = o; },
