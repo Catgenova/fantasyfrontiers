@@ -300,6 +300,24 @@ Deno.serve(async (req) => {
   };
   const tower = cleanTower((body as { tower?: unknown }).tower);
 
+  // Class levels { classId: level } for the Firsts boards (migration 20260917120000): class XP is NOT in the
+  // ranked skills map, so it rides along here, cosmetic + client-authoritative like tower, bounded the same
+  // way (id charset, 1..200, at most 40 entries, zeros dropped). The milestone trigger stamps class marks
+  // from this column; nothing else reads it.
+  const cleanClasses = (raw: unknown) => {
+    const out: Record<string, number> = {};
+    const o = (raw && typeof raw === "object" && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+    let n = 0;
+    for (const k of Object.keys(o)) {
+      if (n >= 40) break;
+      if (!/^[a-z][a-zA-Z0-9_]{0,23}$/.test(k)) continue;
+      const v = o[k];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) { out[k] = Math.min(200, Math.floor(v)); n++; }
+    }
+    return out;
+  };
+  const classes = cleanClasses((body as { classes?: unknown }).classes);
+
   // Mortal-path flag (leaderboard styling + guild segregation). Client-authoritative, like the rest
   // of the game's progress — a Mortal's death flips this to false when they republish as Immortal.
   const mortal = (body as { mortal?: unknown }).mortal === true;
@@ -341,6 +359,7 @@ Deno.serve(async (req) => {
     equipment,
     stats,
     tower,
+    classes,
     mortal,
     class: cls,
     title,
@@ -357,7 +376,7 @@ Deno.serve(async (req) => {
   if (upErr) {
     // An optional cosmetic column (estate / mastery / title / tower) may not be migrated yet -- retry WITHOUT
     // them so a leaderboard update never fails purely on deploy order. (Deploy-order safety.)
-    delete record.estate; delete record.mastery; delete record.title; delete record.tower;
+    delete record.estate; delete record.mastery; delete record.title; delete record.tower; delete record.classes;
     ({ error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" }));
   }
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);

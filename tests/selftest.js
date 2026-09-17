@@ -1307,6 +1307,50 @@
     }
   });
 
+  // ---- Firsts: the milestone race boards (v0.1.4.0, owner order 2026-09-17) ----
+  // The client's threshold tables MIRROR milestone_keys_for in migration 20260917120000; the key shapes
+  // pinned here are the ones the server stamps. A board lists every mark, claimed or not.
+  suite('firsts: the milestone boards list every mark and render holders in order', function(){
+    var s = FF._state;
+    // Thresholds mirror the migration (change both sides or neither).
+    eq(FF.FIRSTS_TOTAL_MARKS.join(','), '500,1000,2000,3000,5000,7500,10000,12500,15000', 'total-level marks mirror the migration');
+    eq(FF.FIRSTS_SKILL_MARKS.join(','), '100,120,150,200', 'skill marks mirror the migration (100 and 120 are the owner\'s ask)');
+    eq(FF.FIRSTS_TOWER_MARKS.join(','), '25,50,75,100,120,150,200,250,300,400,500', 'tower marks mirror the migration');
+    eq(FF.FIRSTS_CLASS_MARKS.join(','), '50,100', 'class marks mirror the migration');
+    var boards = FF.firstsBoards();
+    ok(boards.length === 4, 'four sections: Total Level, Tower, Skills, Classes (got ' + boards.length + ')');
+    var keys = []; boards.forEach(function(b){ b.rows.forEach(function(r){ keys.push(r.key); }); });
+    ok(keys.indexOf('total_1000') !== -1, 'lists Total Level 1000');
+    ok(keys.indexOf('tower_all_100') !== -1 && keys.indexOf('tower_all_120') !== -1, 'lists the All-Classes Tower floors 100 and 120');
+    ok(keys.indexOf('skill_mining_100') !== -1, 'lists Mining Level 100 by default');
+    ok(keys.indexOf('class_knight_100') !== -1 && keys.indexOf('class_knight_50') !== -1, 'lists Knight Level 50 and 100');
+    ok(keys.every(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }), 'every key is charset-safe (the server rejects anything else)');
+    ok(keys.length === keys.filter(function(k, i){ return keys.indexOf(k) === i; }).length, 'no duplicate keys');
+    // Holders render in rank order, a held row says so, an unclaimed mark says so.
+    var rows = [
+      { key:'total_1000', rank:2, user_id:'u2', username:'Bob', reached_at:'2026-09-15T10:00:00Z', backfilled:false },
+      { key:'total_1000', rank:1, user_id:'u1', username:'Alice', reached_at:'2026-09-12T10:00:00Z', backfilled:true },
+      { key:'skill_mining_100', rank:1, user_id:'u3', username:'Carol<b>', reached_at:'2026-09-16T10:00:00Z', backfilled:false }
+    ];
+    var by = FF.firstsByKey(rows);
+    eq(by.total_1000.map(function(r){ return r.username; }).join(','), 'Alice,Bob', 'holders sort by rank');
+    var html = FF.renderFirstsBoard(rows);
+    ok(html.indexOf('1. <b data-action="viewProfile" data-id="u1" role="button">Alice</b> <i>(held)</i>') !== -1, 'a backfilled holder reads as held, with a profile link');
+    ok(/2\. <b[^>]*>Bob<\/b>/.test(html), 'the second holder is numbered 2');
+    ok(html.indexOf('Carol&lt;b&gt;') !== -1, 'usernames are escaped');
+    ok(/Unclaimed\. Be the first\./.test(html), 'an unreached mark is the goal');
+    ok(html.indexOf('Total Level 15,000') !== -1 || html.indexOf('Total Level 15000') !== -1, 'the top mark is listed even with nobody on it');
+    // Class levels ride along in the profile as their own compact map, never in the ranked skills sum.
+    var savedXp = s.xp; s.xp = Object.assign({}, s.xp, { knight: FF.xpFloorForLevel(50) });
+    try {
+      var cl = FF.classLevelsForProfile();
+      eq(cl.knight, 50, 'a trained class reports its level');
+      var prof = FF.computeProfileStats();
+      eq(prof.classes.knight, 50, 'the profile carries the classes map');
+      eq(prof.total_level, Object.keys(prof.skills).reduce(function(a,k){ return a + prof.skills[k]; }, 0), 'the classes map never disturbs total_level == sum(skills), the server invariant');
+    } finally { s.xp = savedXp; }
+  });
+
   // ---- Frontier quests count "Tier T or better" (owner, 2026-09-17) ----
   // A player already working Tier 10 was sent back to craft Tin, Iron and Steel to clear the Second-to-Fifth
   // Frontiers. Every tier-gated Frontier objective now sums its tier and every tier above it; a lower tier
