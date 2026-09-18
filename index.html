@@ -28174,10 +28174,13 @@
     html += '<div class="ar2-stats" id="ar2Stats">' + arenaFightStatsHtml() + '</div>';
     // ---------- the feed spans the stage; the effect panels follow it ----------
     html += '<div class="ar2-low">';
-    html += '<div>';
-    html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
-    html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
-    html += '</div>'; // companions column
+    // The effects column has its OWN id so a buff appearing or expiring re-renders THIS column in place
+    // (arenaFxRenderOnly) instead of flagging a full #content rebuild. The rebuild was the mobile scroll
+    // jump (Anferny: "more noticeable when effects are applied or fall off"): every DoT tick that added
+    // or dropped a status rebuilt the page and the browser reset the scroller to the top.
+    html += '<div id="ar2Fx">';
+    html += arenaFxHtml();
+    html += '</div>'; // effects column
     html += '<div>';
     // The feed folds too (owner order, v0.0.86.25). Only the FRAME goes: the ring buffer keeps
     // accruing (it is the same log the Chat tab's Combat channel reads) and arenaMiniLogRenderOnly
@@ -40831,6 +40834,31 @@
     if(!combatLog.length) return '<div class="chat-empty">The fight begins&hellip;</div>';
     return combatLog.slice(-ARENA_MINI_LOG_ROWS).map(combatLogLineHtml).join('');
   }
+  // The arena's effects column: both panels, in one string, so the full render and the in-place refresh
+  // cannot draw them differently.
+  function arenaFxHtml(){ return renderFxBars(combatPlayerBuffs(), 'Your Effects') + renderFxBars(combatEnemyDebuffs(), 'Enemy Effects'); }
+  // Re-render ONLY the effects column (owner list item 1, 2026-09-17). Returns true when the column was on
+  // screen and got refreshed; false means there is no arena to refresh (the caller then leaves the flag alone).
+  function arenaFxRenderOnly(){
+    var el = document.getElementById('ar2Fx'); if(!el) return false;
+    invalidateContentCache();   // wrote into #content outside render()
+    el.innerHTML = arenaFxHtml();
+    return true;
+  }
+  // Move a companion's "next spell" pip in place (owner list item 1). A cast used to flag a full render
+  // every 10s per companion: with six companions that is a page rebuild every couple of seconds, each
+  // one a scroll reset on a phone. Returns false when the row is not on screen.
+  function arenaRotaRenderOnly(cid, nextIndex){
+    var row = document.getElementById('arenaRota-'+cid); if(!row) return false;
+    var comp = FAMILIAR_DATA[cid], spells = (comp && comp.spells) || [];
+    for(var i=0; i<spells.length; i++){
+      var pip = document.getElementById('arenaRota-'+cid+'-'+i);
+      if(pip) pip.classList.toggle('next', i === nextIndex);
+    }
+    var fam = document.getElementById('ar2Fam-'+cid);
+    if(fam && comp) fam.setAttribute('title', comp.name + (spells[nextIndex] ? '. Next: ' + spells[nextIndex].name : ''));
+    return true;
+  }
   function arenaMiniLogRenderOnly(){
     var el = document.getElementById('arenaMiniLog'); if(!el) return;
     invalidateContentCache();   // wrote into #content outside render()
@@ -45270,7 +45298,11 @@
       // Buff/debuff timer bars: rebuild the arena when the SET of effects changes (one appears/expires),
       // otherwise just deplete each bar's fill + remaining-seconds label live.
       var _fxSig = combatFxSignature();
-      if(_fxSig !== _arenaFxSig){ _arenaFxSig = _fxSig; needsRender = true; }
+      // A status appearing or expiring changes the column's STRUCTURE, so it must be re-drawn -- but only the
+      // column. This line used to flag a full render, which on a phone reset the page scroller to the top
+      // every time a DoT or buff came or went (the Combat scroll-jump reports). No arena on screen -> fall
+      // back to the full flag so the next view is right.
+      if(_fxSig !== _arenaFxSig){ _arenaFxSig = _fxSig; if(!arenaFxRenderOnly()) needsRender = true; }
       else {
         combatPlayerBuffs().concat(combatEnemyDebuffs()).forEach(function(b){
           var nEl = document.getElementById('arenaFxN-'+b.key); if(nEl && b.stacks != null) nEl.innerHTML = '&times;'+b.stacks; // live stack count
@@ -46731,7 +46763,7 @@
             var cspells = FAMILIAR_DATA[cid].spells;
             castFamiliarSpell(cspells[cc.index % cspells.length], getFamiliarLevel(cid), cid);
             cc.index = (cc.index + 1) % cspells.length;
-            needsRender = true;   // refresh the spell-cycle highlight in the combat UI
+            if(!arenaRotaRenderOnly(cid, cc.index)) needsRender = true;   // move the spell-cycle pip in place; full render only if the row is not on screen
           }
         });
       }
@@ -47417,7 +47449,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.3';
+  var GAME_VERSION = '0.1.4.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47690,7 +47722,7 @@
       improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
       peonSlotCap:peonSlotCap, PEON_SLOT_CEILING:PEON_SLOT_CEILING, BUNKHOUSE_MAX:BUNKHOUSE_MAX,
       buildingTiersFor:buildingTiersFor, buildingIsGuildOnly:buildingIsGuildOnly, gridHasBuilding:gridHasBuilding, gridCountBuilding:gridCountBuilding,
-      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildProjectedCell:guildProjectedCell, autoSacEaten:autoSacEaten, combatLogLineHtml:combatLogLineHtml, recordDeathReport:recordDeathReport, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
+      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildProjectedCell:guildProjectedCell, arenaFxRenderOnly:arenaFxRenderOnly, arenaFxHtml:arenaFxHtml, arenaRotaRenderOnly:arenaRotaRenderOnly, renderArena:renderArena, FAMILIAR_DATA:FAMILIAR_DATA, autoSacEaten:autoSacEaten, combatLogLineHtml:combatLogLineHtml, recordDeathReport:recordDeathReport, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile, isGuestAccount:isGuestAccount, guestWallHtml:guestWallHtml, _authUserSet:function(o){ authUser = o; },

@@ -1307,6 +1307,43 @@
     }
   });
 
+  // ---- Owner list item 1 (2026-09-17): the arena updates its effects column and spell pips IN PLACE ----
+  // A buff/debuff appearing or expiring, and every companion cast, used to flag a full #content rebuild,
+  // and on a phone each rebuild reset the scroller to the top (the Combat scroll-jump reports). Both now
+  // write into the existing arena and only fall back to the full flag when the arena is not on screen.
+  suite('combat arena: effects and spell pips refresh in place, never via a full render', function(){
+    var S = FF._state, sv = S.activity;
+    try {
+      var wolf = FF.monsterById('wildlife_wolf');
+      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp: wolf.hp, duelStartedAt: Date.now(), tickAccum:0, monsterTickAccum:0 };
+      var html = FF.renderArena();
+      ok(/id="ar2Fx"/.test(html), 'the arena gives its effects column an id');
+      // No arena in the document -> the in-place refresh declines, so the caller keeps the full-render fallback.
+      var stray = document.getElementById('ar2Fx'); if(stray) stray.parentNode.removeChild(stray);
+      eq(FF.arenaFxRenderOnly(), false, 'no column on screen -> false (caller falls back to a full render)');
+      eq(FF.arenaRotaRenderOnly('mining', 1), false, 'no companion row on screen -> false');
+      // With the column mounted, the refresh writes into it and reports success.
+      var host = document.createElement('div'); host.id = 'ar2Fx'; host.innerHTML = 'stale'; document.body.appendChild(host);
+      try {
+        eq(FF.arenaFxRenderOnly(), true, 'a mounted column is refreshed in place');
+        eq(host.innerHTML, FF.arenaFxHtml(), 'and it holds exactly what the full render would draw');
+      } finally { host.parentNode.removeChild(host); }
+      // Spell pips: the "next" class moves to the given index without a rebuild.
+      var fam = Object.keys(FF.FAMILIAR_DATA).filter(function(id){ return (FF.FAMILIAR_DATA[id].spells||[]).length >= 2; })[0];
+      if(fam){
+        var row = document.createElement('div'); row.id = 'arenaRota-'+fam;
+        var n = FF.FAMILIAR_DATA[fam].spells.length;
+        for(var i=0;i<n;i++){ var p = document.createElement('span'); p.id = 'arenaRota-'+fam+'-'+i; p.className = 'ar2-pip'+(i===0?' next':''); row.appendChild(p); }
+        document.body.appendChild(row);
+        try {
+          eq(FF.arenaRotaRenderOnly(fam, 1), true, 'a mounted companion row is updated in place');
+          ok(!document.getElementById('arenaRota-'+fam+'-0').classList.contains('next'), 'the old pip loses "next"');
+          ok(document.getElementById('arenaRota-'+fam+'-1').classList.contains('next'), 'the new pip gains it');
+        } finally { row.parentNode.removeChild(row); }
+      }
+    } finally { S.activity = sv; }
+  });
+
   // ---- Owner list batch B (2026-09-17): items 5, 12, 13, 15 ----
   suite('owner list B: re-enter button, per-flag eaten count, eat rows + auto-eat on the death report, guild projection', function(){
     var S = FF._state;
