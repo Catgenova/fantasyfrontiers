@@ -773,7 +773,12 @@ HELD, and a cycling stance spends itself, so it under-reads what a real fight se
 SM_ZANSHIN_REFUND 3 (was 4), SM_SWING_MULT 0.23 -> 0.29.** Baseline D1-pinned pack read Silkweaver 2.86M
 (+36% over mean): the saturation. First cut (1.5x + cap 5 with Zanshin 4) overshot: the cap trimmed Silkweaver
 to +1 and it read -34%. Zanshin 3 gives its +2 back under the cap. Unpinned pack: D1 still wins the A/B (1.09M
-vs D4 0.76M), mean 1.55M -> knob 0.29 from the mean of two packs (1.58M). **FINDING, not fixed: on D1 the
+vs D4 0.76M), mean 1.55M -> knob 0.29 from the mean of two packs (1.58M). **Confirm pack at 0.29 HOLDS: mean
+1.98M vs 2.0M** (D1 1.66M won the A/B again; the crit-damage cloak tied Ruin 1.31M vs 1.29M, the retune
+pattern); Ironwind 2.70M (+36%) / Emberdraw 1.94M / Ghostblade 1.69M / Silkweaver 1.60M. Ironwind's "the Cut
+strikes twice" is a VALUE axis and now that the engine is stack-limited it sits past the Marrowsplitter zone
+(+24%), where Wyrmstalker (+39%), Runegorge (+33%) and Soulrend (+30%) were all trimmed: an owner call, not
+taken here because the list item was the saturation. **FINDING, not fixed: on D1 the
 refund katana is FLAT BY CONSTRUCTION once saturation is gone.** A Cut fires only on a landed swing, so cycles
 are integers of swings; at 4.1 stacks per D1 swing a 5-stack cycle (Silkweaver) and a 7-stack cycle (Zanshin
 alone) both take 2 swings, so the refund buys nothing there (it read -28% and -34%, i.e. noise around equality,
