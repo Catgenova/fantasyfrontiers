@@ -769,6 +769,18 @@ signal. Ruin won the cloak A/B decisively in both, like every class so far.
 Sim notes: BUILDS needs no offhand (2H). Unusually clean to measure — the kit needs neither kills nor incoming
 damage, so almost nothing is sim-dead. The exception is **Kindled Focus (D4 2pc)**, which scales with stance
 HELD, and a cycling stance spends itself, so it under-reads what a real fight sees.
+**CLOSED (v0.1.4.5-.9, owner list item 17, 2026-09-17/18): SM_UNBROKEN_MULT 1.5 (was 2), SM_REFUND_CAP 5,
+SM_ZANSHIN_REFUND 3 (was 4), SM_SWING_MULT 0.23 -> 0.29.** Baseline D1-pinned pack read Silkweaver 2.86M
+(+36% over mean): the saturation. First cut (1.5x + cap 5 with Zanshin 4) overshot: the cap trimmed Silkweaver
+to +1 and it read -34%. Zanshin 3 gives its +2 back under the cap. Unpinned pack: D1 still wins the A/B (1.09M
+vs D4 0.76M), mean 1.55M -> knob 0.29 from the mean of two packs (1.58M). **FINDING, not fixed: on D1 the
+refund katana is FLAT BY CONSTRUCTION once saturation is gone.** A Cut fires only on a landed swing, so cycles
+are integers of swings; at 4.1 stacks per D1 swing a 5-stack cycle (Silkweaver) and a 7-stack cycle (Zanshin
+alone) both take 2 swings, so the refund buys nothing there (it read -28% and -34%, i.e. noise around equality,
+in the two post-fix packs). Off D1 (2.75/swing) it is 3 swings vs 4, a real +33%. The only D1 shape in which a
+refund ever mattered was the 1-swing cycle, which IS the saturation. If Silkweaver needs an identity on the
+winning layer it wants a value axis (Cut damage) or a clock axis (SM_FOCUS_PER_SEC while the Bleed runs), an
+owner call. The original watch item follows for the record.
 **WATCH ITEM (post-ship code review): D1 + Silkweaver + Zanshin saturates the cycle.** Rate stacked on rate on
 rate: Unbroken Focus doubles both builders (2/hit + 0.7/s), and the refunds leave 6, so a cycle needs 4 stacks
 while one 5s swing provides ~5.5 — a Draw-Cut EVERY swing for that one combo. Estimated ~8.75x avgHit/swing vs
