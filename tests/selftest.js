@@ -1307,6 +1307,15 @@
     }
   });
 
+  // ---- Owner list item 18 (2026-09-17): Goldgorge buys a charge at most every second swing ----
+  // One bought charge per swing was +50% Strike rate on top of the crit's own two charges; the scimitar
+  // read +26% to +49% over its pack mean since the rarity retune against a designed +24%. Every second
+  // swing is +25%. Pinned so the cadence cannot quietly return to one-per-swing.
+  suite('goldgorge: the gold-funded charge cadence is every second swing', function(){
+    eq(FF.LEG_GOLDGORGE_BUY_EVERY, 2, 'a bought charge lands at most every 2 swings');
+    ok(FF.LEG_GOLDGORGE_PER_GOLD >= 1000, 'the gold price per charge is unchanged (the cadence, not the price, is the lever at endgame gold)');
+  });
+
   // ---- Owner list item 1 (2026-09-17): the arena updates its effects column and spell pips IN PLACE ----
   // A buff/debuff appearing or expiring, and every companion cast, used to flag a full #content rebuild,
   // and on a phone each rebuild reset the scroller to the top (the Combat scroll-jump reports). Both now

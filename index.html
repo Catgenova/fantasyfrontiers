@@ -8590,6 +8590,7 @@
   var LEG_HOARDWALL_RELICS = 100;      // Hoardwall: the hoard threshold -- a long-term goal, not a pickup
   var LEG_HOARDWALL_STRIKE_MULT = 1.25, LEG_HOARDWALL_DR = 0.25;
   var LEG_GOLDGORGE_PER_GOLD = 1000;   // Goldgorge: this much gold earned this fight buys a Grave Charge
+  var LEG_GOLDGORGE_BUY_EVERY = 2;     // ... and it can buy one at most every this many swings (the cadence cap; see the purchase site)
   var LEG_CRYPTGUARD_REFUND = 0.25;    // Cryptguard: this share of Strikes vs a Cursed foe refund the charge
   // Hits per Grave Strike, after Grave Dowsing (Lv20) and Blessed Arsenal (D1 2pc).
   function thChargeNeed(st){ st = st || state;
@@ -19505,10 +19506,17 @@
         thGraveChargeAdd(isCrit ? 2 : 1);
         // Goldgorge: gold earned this fight buys charges, so Gold Find becomes attack THROUGHPUT.
         if(legActive('goldgorge') && act){
-          // At most ONE charge per swing. Uncapped this was a runaway: a dragon's gold reward is thousands per
-          // crit-pilfer, which bought several charges a second and read 995B against a 449B field.
+          // At most one charge per LEG_GOLDGORGE_BUY_EVERY swings. Uncapped this was a runaway: a dragon's
+          // gold reward is thousands per crit-pilfer, which bought several charges a second and read 995B
+          // against a 449B field. One per swing was still +50% Strike rate on top of the crit's own two
+          // charges, and after the rarity retune (gold rewards are economy numbers the retune never touched)
+          // it read +26%, then +49%, then +43% over its pack mean against a designed +24% (owner list item
+          // 18, 2026-09-17). Every second swing is +25%: the designed margin.
+          act.thGoldSwing = (act.thGoldSwing||0) + 1;
           var _ggSteps = Math.floor((act.goldEarned||0) / LEG_GOLDGORGE_PER_GOLD);
-          if(_ggSteps > (act.thGoldCharges||0)){ thGraveChargeAdd(1); act.thGoldCharges = (act.thGoldCharges||0) + 1; }
+          if(_ggSteps > (act.thGoldCharges||0) && act.thGoldSwing >= LEG_GOLDGORGE_BUY_EVERY){
+            thGraveChargeAdd(1); act.thGoldCharges = (act.thGoldCharges||0) + 1; act.thGoldSwing = 0;
+          }
         }
         thGraveStrikeFire(act, monster);
       }
@@ -47460,7 +47468,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.5';
+  var GAME_VERSION = '0.1.4.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47858,7 +47866,7 @@
       TH_RELIC_PER_TIER:TH_RELIC_PER_TIER, TH_SWING_MULT:TH_SWING_MULT, TH_RESERVE:TH_RESERVE, TH_STRIKE_STUN_MS:TH_STRIKE_STUN_MS,
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
-      LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
+      LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD, LEG_GOLDGORGE_BUY_EVERY:LEG_GOLDGORGE_BUY_EVERY,
       LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, autoSacrificeTick:autoSacrificeTick, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, autoSacFlaggedNames:autoSacFlaggedNames, autoSacCardWarnHtml:autoSacCardWarnHtml, autoSacClearOutput:autoSacClearOutput, autoSacTallyText:autoSacTallyText, renderForgeToolCard:renderForgeToolCard, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, BELT_RARITY_SLOTS:BELT_RARITY_SLOTS, beltBonusSlots:beltBonusSlots, beltSlotLabel:beltSlotLabel, renderBeltEquipSection:renderBeltEquipSection, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, formatTypeMix:formatTypeMix, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
