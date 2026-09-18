@@ -11580,7 +11580,13 @@
     eq(FF.pyroBurnCap(setSt('pyromancer',1)), FF.PYRO_BURN_MAX_STACKS, '1 piece -> base Burn cap');
     eq(FF.frostChillCap(setSt('frostwarden',2)), 8, 'Deep Chill (2pc): Chill cap -> 8');
     eq(FF.frostChillCap(setSt('frostwarden',1)), FF.FROST_CHILL_MAX_STACKS, '1 piece -> base Chill cap');
-    eq(FF.samuraiFocusPerHit(setSt('samurai',2)), 2, 'Unbroken Focus (2pc): the stance fills twice as fast');
+    eq(FF.samuraiFocusPerHit(setSt('samurai',2)), FF.SM_UNBROKEN_MULT, 'Unbroken Focus (2pc): the stance fills SM_UNBROKEN_MULT times as fast');
+    ok(FF.SM_UNBROKEN_MULT > 1 && FF.SM_UNBROKEN_MULT < 2, 'Unbroken Focus is a real rate bonus but no longer a doubling (the saturation fix, owner list item 17)');
+    // THE SATURATION GUARD: with the rate layer AND the refund katana at Lv80, one katana swing (5s) must
+    // build LESS than a whole cycle, or the Draw-Cut fires every swing and the stance is decoration.
+    var _swingStacks = (FF.SM_FOCUS_PER_HIT + FF.SM_FOCUS_PER_SEC * 5) * FF.SM_UNBROKEN_MULT;
+    var _cycle = FF.samuraiFocusCap(setSt('samurai',2)) - Math.min(FF.SM_REFUND_CAP, FF.SM_ZANSHIN_REFUND + FF.LEG_SILKWEAVER_REFUND);
+    ok(_swingStacks < _cycle, 'D1 + Silkweaver + Zanshin: one swing builds ' + _swingStacks.toFixed(2) + ' stacks against a ' + _cycle + '-stack cycle (must stay below)');
     eq(FF.samuraiFocusPerHit(setSt('samurai',1)), 1, '1 piece -> the stance fills at the base rate');
 
     // Poison / ailment multipliers.

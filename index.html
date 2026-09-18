@@ -6575,7 +6575,7 @@
     { key:'spectralaegis',  name:'Wraithguard',     group:'slash', slot:'mainhand', base:'scythe',       cls:'reaper',         desc:'Your Siphon Shield cap doubles, and while the shield holds your Rot ticks 25% faster.' },
     // --- Pierce weapons (mainhand) ---
     { key:'engarde',        name:'Gossamer',        group:'pierce', slot:'mainhand', base:'rapier',      cls:'duelist',        desc:'Your Sidestep clock runs every 4.5s instead of 6.' },
-    { key:'flowingblade',   name:'Silkweaver',      group:'pierce', slot:'mainhand', base:'falchion',    cls:'samurai',        desc:'A miss drops a single Focus instead of breaking your stance, and every Draw-Cut leaves two extra Focus behind.' },
+    { key:'flowingblade',   name:'Silkweaver',      group:'pierce', slot:'mainhand', base:'falchion',    cls:'samurai',        desc:'A miss drops a single Focus instead of breaking your stance, and every Draw-Cut leaves up to two extra Focus behind (a Cut never leaves more than 5 in total).' },
     { key:'resonantecho',   name:'Cavern Echo',     group:'pierce', slot:'mainhand', base:'greatsword',  cls:'spellblade',     desc:'The cavern answers: Resonance ratio +8%.' },
     { key:'relentlessassault', name:'Highbanner',   group:'pierce', slot:'mainhand', base:'claymore', cls:'knight',      desc:'Your Banner plants at 15. Every stack feeds the Decree.' },
     // --- Blunt weapons (mainhand) ---
@@ -7605,7 +7605,7 @@
       b2:{ key:'persistentailments',name:'Persistent Ailments',desc:'Your ailments last noticeably longer.' },
       bf:{ key:'toxicfletching',name:'Toxic Fletching',desc:'Each ailment’s proc chance rises to 40%.' } },
     samurai:       { cls:'samurai',       pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'leather' },
-      b2:{ key:'unbrokenfocus', name:'Unbroken Focus', desc:'Your stance fills twice as fast.' },
+      b2:{ key:'unbrokenfocus', name:'Unbroken Focus', desc:'Your stance fills half again as fast.' },
       bf:{ key:'flowingstrikes',name:'Flowing Strikes',desc:'For a few seconds after a Draw-Cut, you attack faster.' } },
     lumen:         { cls:'lumen',         pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'leather' },
       b2:{ key:'radiantsurge',  name:'Radiant Surge',  desc:'The light gathers 50% faster.' },
@@ -8093,7 +8093,13 @@
     return cap; }
   function pyroBurnCap(st){ st = st || state; return (set2('pyromancer', st) ? 8 : PYRO_BURN_MAX_STACKS) + (legActive('cindermaw', st) ? 3 : 0); } // Pyromancer Wildfire (2pc); Cindermaw (D2 fire wand): +3 cap
   function frostChillCap(st){ return set2('frostwarden', st) ? 8 : FROST_CHILL_MAX_STACKS; }     // Frostwarden Deep Chill (2pc)
-  function samuraiFocusPerHit(st){ return set2('samurai', st) ? 2 : 1; }                         // Unbroken Focus (Samurai D1 2pc): the whole stance -- clock AND hits -- fills twice as fast (see smFocusAdd)
+  // Unbroken Focus (Samurai D1 2pc): the whole stance -- clock AND hits -- fills faster (see smFocusAdd). Was 2x:
+  // at 2x a 5s swing built 5.5 stacks against a 6-stack Lv80 cycle, so D1 alone sat a hair from a Draw-Cut EVERY
+  // swing and any refund on top (Silkweaver) saturated it -- the watch item that reproduced in every sim pack
+  // since v0.0.75 (+34%, +32%, +36% over the pack mean). 1.5x keeps D1 the rate layer (~1.45 swings per Cut)
+  // with the cycle still real (owner list item 17, 2026-09-17).
+  var SM_UNBROKEN_MULT = 1.5;
+  function samuraiFocusPerHit(st){ return set2('samurai', st) ? SM_UNBROKEN_MULT : 1; }
   function rangerProcChance(st){ return 0; }     // retired with the arrow procs. Ranger Toxic Fletching (full)
   function rangerAilmentDurMult(st){ return 1; }                      // retired with the arrow procs. Ranger Persistent Ailments (2pc)
   function plagueBloomMult(st){ return set2('plaguebearer', st) ? 1.5 : 1; }                     // Plaguebearer Plague Bloom (2pc): poison ticks harder
@@ -11135,10 +11141,15 @@
   function smSheathed(st){ st = st || state; return samuraiBonus(1, st) && samuraiFocusStacks(st) >= samuraiFocusCap(st); }
   // How much Focus a Draw-Cut leaves behind. Zanshin is the RATE capstone: residual stance means each cycle
   // needs fewer stacks than the last, which is the axis that matters on a cycling engine.
+  // The refunds are CAPPED as a total (owner list item 17): Zanshin 4 + Silkweaver 2 left a 4-stack cycle that
+  // one D1 swing filled outright, so the refund katana read +32-36% over its pack in every sim since v0.0.75.
+  // At 5 the pair leaves a 5-stack cycle: Silkweaver still shortens it (its whole point), it just cannot
+  // shorten it past the swing.
+  var SM_REFUND_CAP = 5;
   function smCutRefund(st){ st = st || state;
     var r = samuraiBonus(80, st) ? SM_ZANSHIN_REFUND : 0;
     if(legActive('flowingblade', st)) r += LEG_SILKWEAVER_REFUND;              // Silkweaver
-    return Math.min(samuraiFocusCap(st) - 1, r); }                             // never leave a full stance, or the Cut would re-fire forever
+    return Math.min(SM_REFUND_CAP, samuraiFocusCap(st) - 1, r); }              // never leave a full stance, or the Cut would re-fire forever
   // Build Focus. Fractional accrual is banked so the clock is tick-rate independent (the same reason the
   // Reaver's Cuts accumulate as fractional stack-seconds) and `samuraiFocus` itself stays an integer.
   function smFocusAdd(n, st){ st = st || state; var a = st.activity;
@@ -47449,7 +47460,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.4';
+  var GAME_VERSION = '0.1.4.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47786,7 +47797,7 @@
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
-      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_SWING_MULT:SM_SWING_MULT, BZ_SWING_MULT:BZ_SWING_MULT, RP_SWING_MULT:RP_SWING_MULT, QD_SWING_MULT:QD_SWING_MULT, HD_SWING_MULT:HD_SWING_MULT, AS_SWING_MULT:AS_SWING_MULT, DL_SWING_MULT:DL_SWING_MULT,
+      SM_CUT_CRIT_MULT:SM_CUT_CRIT_MULT, SM_ZANSHIN_REFUND:SM_ZANSHIN_REFUND, SM_UNBROKEN_MULT:SM_UNBROKEN_MULT, SM_REFUND_CAP:SM_REFUND_CAP, SM_SWING_MULT:SM_SWING_MULT, BZ_SWING_MULT:BZ_SWING_MULT, RP_SWING_MULT:RP_SWING_MULT, QD_SWING_MULT:QD_SWING_MULT, HD_SWING_MULT:HD_SWING_MULT, AS_SWING_MULT:AS_SWING_MULT, DL_SWING_MULT:DL_SWING_MULT,
       SM_CUT_MULT_D2:SM_CUT_MULT_D2, SM_CRIMSON_MULT_D2:SM_CRIMSON_MULT_D2, SM_BLEED_STACKS_D2:SM_BLEED_STACKS_D2,
       SM_FLOW_MS:SM_FLOW_MS, SM_FLOW_PCT:SM_FLOW_PCT, SM_SOULS_PER_CUT:SM_SOULS_PER_CUT,
       SM_FINALCUT_PER_SOUL:SM_FINALCUT_PER_SOUL, SAMURAI_FOCUS_MAX:SAMURAI_FOCUS_MAX,
