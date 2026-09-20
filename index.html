@@ -37588,10 +37588,21 @@
       return { head:'Assisting &bull; '+escapeHtml(job.assistOfName||'a teammate')+'’s task ('+job.x+', '+job.y+')',
                note:'You’re both busy until it finishes &bull; you earn no rewards, but their remaining time was halved' };
     }
+    // ticket-0232: a BORDER job fell through to the terraforming fallback below and the running-job card
+    // read "Terraforming, Digging down (4, 5), +Digging XP" for a Fence, so the player thought their fence
+    // click had queued a dig on the field beside it. A border is addressed in EDGE space (between two tiles),
+    // so it is named by its edge, not a tile.
+    if(job.kind === 'border'){
+      var brec = borderRecipeOf(job.masonryTileId), bsp = borderSpecialOf(job.masonryTileId);
+      var bT = itemTierFromId(job.masonryTileId);
+      var edgeTxt = estateEdgeDescription({ orient:job.orient, x:job.x, y:job.y });   // the border menu's own wording, outer boundaries included
+      return { head:(bsp && bsp.upgradeOf ? 'Raising' : 'Building')+' &bull; '+((brec && brec.name) || 'Border')+' &bull; '+escapeHtml(edgeTxt),
+               note:'Runs in the background &bull; +'+estateBuildXp(bT)+' Masonry XP when it finishes' };
+    }
     return { head:'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')',
              note:'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes' };
   }
-  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', totem:'raising a totem', build:'building', assist:'assisting' };
+  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', totem:'raising a totem', build:'building', border:'building a border', assist:'assisting' };
   function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
   // On the shared guild estate, show who else is doing what: each working member's action,
   // tile coords and (live) timer -- matching the red tiles on the canvas -- plus a compact
@@ -47485,7 +47496,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.9';
+  var GAME_VERSION = '0.1.4.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47758,7 +47769,7 @@
       improveRefundPct:improveRefundPct, improveRefundChance:improveRefundChance, bestRefundBuildingTier:bestRefundBuildingTier,
       peonSlotCap:peonSlotCap, PEON_SLOT_CEILING:PEON_SLOT_CEILING, BUNKHOUSE_MAX:BUNKHOUSE_MAX,
       buildingTiersFor:buildingTiersFor, buildingIsGuildOnly:buildingIsGuildOnly, gridHasBuilding:gridHasBuilding, gridCountBuilding:gridCountBuilding,
-      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildProjectedCell:guildProjectedCell, arenaFxRenderOnly:arenaFxRenderOnly, arenaFxHtml:arenaFxHtml, arenaRotaRenderOnly:arenaRotaRenderOnly, renderArena:renderArena, FAMILIAR_DATA:FAMILIAR_DATA, autoSacEaten:autoSacEaten, combatLogLineHtml:combatLogLineHtml, recordDeathReport:recordDeathReport, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
+      guildQueueArr:guildQueueArr, guildDrainQueueOffline:guildDrainQueueOffline, guildProjectedCell:guildProjectedCell, estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, arenaFxRenderOnly:arenaFxRenderOnly, arenaFxHtml:arenaFxHtml, arenaRotaRenderOnly:arenaRotaRenderOnly, renderArena:renderArena, FAMILIAR_DATA:FAMILIAR_DATA, autoSacEaten:autoSacEaten, combatLogLineHtml:combatLogLineHtml, recordDeathReport:recordDeathReport, guildQueueUnlocked:guildQueueUnlocked, guildQueueReady:guildQueueReady, guildCancelQueued:guildCancelQueued,
       salvageBonusSlots:salvageBonusSlots,
       spendImprovePlan:spendImprovePlan, buildingIntervalMs:buildingIntervalMs,
       _aqueductFed:function(){ return aqueductFed; }, ESTATE_APIARY_CAP_MS:ESTATE_APIARY_CAP_MS, ESTATE_BUILD_MS_PER_TIER:ESTATE_BUILD_MS_PER_TIER, estFertilizes:estFertilizes, KOFI_URL:KOFI_URL, KOFI_LABEL:KOFI_LABEL, kofiLinkHtml:kofiLinkHtml, SCAPELIKES_SLUG:SCAPELIKES_SLUG, scapelikesVoteUrl:scapelikesVoteUrl, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue, lbMetricLabel:lbMetricLabel, lbMetricOptions:lbMetricOptions, lbMetricIsTower:lbMetricIsTower, towerBestsForProfile:towerBestsForProfile, isGuestAccount:isGuestAccount, guestWallHtml:guestWallHtml, _authUserSet:function(o){ authUser = o; },

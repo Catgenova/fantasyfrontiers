@@ -1316,6 +1316,25 @@
     ok(FF.LEG_GOLDGORGE_PER_GOLD >= 1000, 'the gold price per charge is unchanged (the cadence, not the price, is the lever at endgame gold)');
   });
 
+  // ---- ticket-0232: a running BORDER job is named as a border, never as a dig ----
+  // estateActiveJobHead had no border arm, so a Fence fell through to the terraforming fallback and the
+  // running-job card read "Terraforming, Digging down (4, 5), +Digging XP": the player thought their fence
+  // click had queued a dig on the field beside the border.
+  suite('estate: the running-job card names a border job by its edge, not as digging down', function(){
+    var tile = Object.keys(FF.MASONRY_TILE_ITEMS || {})[0] || 'masonry_t1';
+    var job = { kind:'border', orient:'x', x:5, y:5, masonryTileId:tile, startAt:0, readyAt:1 };
+    var h = FF.estateActiveJobHead(job, null);
+    ok(!/Digging down/.test(h.head) && !/Terraforming/.test(h.head), 'a border job never reads as terraforming: ' + h.head);
+    ok(/Building|Raising/.test(h.head), 'it reads as building or raising');
+    ok(/Between Tile \(4, 5\) and Tile \(5, 5\)/.test(h.head), 'and it names the EDGE (between the two tiles, the border menu\'s own wording), not one tile: ' + h.head);
+    ok(/Masonry XP/.test(h.note) && !/Digging XP/.test(h.note), 'the note pays Masonry XP, not Digging');
+    var hy = FF.estateActiveJobHead({ kind:'border', orient:'y', x:5, y:5, masonryTileId:tile }, null);
+    ok(/Between Tile \(5, 4\) and Tile \(5, 5\)/.test(hy.head), 'a y-oriented border names the tiles above and below');
+    ok(/Outer boundary/.test(FF.estateActiveJobHead({ kind:'border', orient:'x', x:0, y:5, masonryTileId:tile }, null).head), 'an outer-boundary border says so instead of naming a tile that does not exist');
+    eq(FF.GUILD_JOB_KIND_LABEL.border, 'building a border', 'the guild activity list has a label for border jobs too');
+    ok(/Digging down/.test(FF.estateActiveJobHead({ kind:'lower', x:1, y:1 }, null).head), 'a real dig still reads as digging down');
+  });
+
   // ---- Owner list item 1 (2026-09-17): the arena updates its effects column and spell pips IN PLACE ----
   // A buff/debuff appearing or expiring, and every companion cast, used to flag a full #content rebuild,
   // and on a phone each rebuild reset the scroller to the top (the Combat scroll-jump reports). Both now
