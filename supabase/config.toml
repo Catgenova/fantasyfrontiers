@@ -385,6 +385,25 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# ---- Per-function JWT verification (2026-09-24, the login-gate CORS outage) -----------------------
+# `supabase functions deploy <name>` re-enables gateway JWT verification unless told otherwise, and a
+# function called BEFORE the caller has a session (register / register_guest: the client only carries the
+# publishable key, which is not a JWT) or by a third party (scapelikes_vote) then fails its CORS preflight
+# with "does not have HTTP ok status" (the gateway answers OPTIONS with 401) and the gate shows "Something
+# went wrong". bug_report validates the caller's token itself (see its header). Pinning verify_jwt here makes
+# a plain redeploy keep the setting; each function's header says the same, and --no-verify-jwt still works.
+[functions.register]
+verify_jwt = false
+
+[functions.register_guest]
+verify_jwt = false
+
+[functions.bug_report]
+verify_jwt = false
+
+[functions.scapelikes_vote]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
