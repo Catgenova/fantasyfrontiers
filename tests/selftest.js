@@ -24732,6 +24732,45 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Ticket-0233: an offline resolve no longer ejects an auto-advance Tower run ----------
+  // The wake handler runs the offline sim after one minute hidden. towerOnKill used to end the run on any
+  // kill made under offlineCapture, so a phone player who switched apps mid-floor came back "randomly
+  // ejected" at full health. Now the run keeps climbing offline, the capture tallies the floors, and the
+  // offline sim re-reads its foe when the activity rolls onto the next floor.
+  suite('tower: auto-advance survives an offline resolve (ticket-0233)', function(){
+    var s = FF._state;
+    var sv = { act:s.activity, tower:s.tower, hp:s.playerHp, pq:s.popupQueue, pbt:s.popupBatchTotal, shards:s.inventory.barrier_shard, log:s.log.slice() };
+    try {
+      s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.inventory.barrier_shard = 0; s.playerHp = 50;
+      var cap = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:120000, activityType:'combat', familiars:[], rareCrafts:{}, rareCraftsOverflow:0 };
+      FF._setOfflineCapture(cap);
+      s.activity = FF.makeTowerActivity('all', 22, true, []);
+      FF.towerOnKill(null);
+      ok(s.activity.type === 'combat' && !!s.activity.tower, 'an offline kill keeps an auto-advance run alive');
+      eq(s.activity.tower.floor, 23, 'and it rolled onto Floor 23');
+      eq(s.activity.monsterId, 'tower_all_f23', 'the next activity carries the next floor\'s foe id (the sim re-reads it)');
+      FF.towerOnKill(null);
+      eq(s.activity.tower.floor, 24, 'a second offline clear climbs again');
+      eq(cap.towerFloors, 2, 'the capture tallies the floors climbed while away');
+      eq(cap.towerFrom, 22, '...from the first floor cleared');
+      eq(cap.towerTo, 23, '...to the last');
+      eq(cap.towerEntrance, 'all', '...and remembers the entrance for the summary line');
+      eq(s.popupQueue.length, 0, 'no shard popup interrupts an offline climb');
+      // The run still ends where it would live: a non-auto entry clears one floor and stops.
+      s.activity = FF.makeTowerActivity('all', 5, false, []);
+      FF.towerOnKill(null);
+      eq(s.activity.type, null, 'a non-auto clear still ends the run offline');
+      // And a fall ends it: hp at zero at kill time means no next floor.
+      s.activity = FF.makeTowerActivity('all', 5, true, []); s.playerHp = 0;
+      FF.towerOnKill(null);
+      eq(s.activity.type, null, 'a fallen player does not auto-advance, offline or live');
+    } finally {
+      FF._setOfflineCapture(null);
+      s.activity = sv.act; s.tower = sv.tower; s.playerHp = sv.hp; s.popupQueue = sv.pq; s.popupBatchTotal = sv.pbt; s.log = sv.log;
+      if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards;
+    }
+  });
+
   // ---- Ticket-0237: sell a chosen amount of one stack ------------------------------------
   suite('sellQty: a chosen amount, clamped to the stack, paid at the vendor rate', function(){
     var s = FF._state;
