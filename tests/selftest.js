@@ -4992,13 +4992,12 @@
     // states, because every one of these systems is young enough to be re-tuned. A tip that quotes a figure
     // is a promise, so the figures are read from the SHARED constants rather than retyped here: change the
     // constant and this fails instead of the ticker quietly lying to players.
-    ok(T.some(function(t){ return /Curbs, Fences and Walls/.test(t) && /one minute per tier/.test(t) && /Architecture/.test(t); }),
-       'a tip states the border build timer and the Architecture gate');
+    ok(T.some(function(t){ return /Curbs, Fences and Walls/.test(t) && /one minute per tier/.test(t) && /only the Masonry level/.test(t) && !/Architecture/.test(t); }),
+       'a tip states the border build timer and that Masonry alone gates placement (ticket-0235)');
     // The three multipliers ARE 1/2/3, so the tip's "one/two/three minutes per tier" is checked against them.
     eq([FF.ESTATE_BORDER_TYPE_TIME_MULT.curb, FF.ESTATE_BORDER_TYPE_TIME_MULT.fence, FF.ESTATE_BORDER_TYPE_TIME_MULT.wall].join(','), '1,2,3',
        'and the multipliers it quotes are the ones the game uses');
     eq(FF.ESTATE_BORDER_MS_PER_TIER, 60000, 'the per-tier minute the tip quotes is a real minute');
-    eq(FF.ESTATE_BORDER_GATE_SKILL, 'architecture', 'the skill the tip names is the skill that gates');
     ok(T.some(function(t){ return /<b>Curb<\/b>/.test(t) && /Aqueduct/.test(t) && /free/.test(t); }),
        'a tip explains that a Curb lines an Aqueduct link');
     ok(T.some(function(t){ return /fenced on all four borders/.test(t) && /15%/.test(t) && /weakest/.test(t); }),
@@ -23924,14 +23923,11 @@
       eq(FF.borderBuildMs('masonry_t18') / ((18 + 1) * FF.ESTATE_BORDER_MS_PER_TIER), 1, 'and a Curb 1x');
       eq(FF.ESTATE_BORDER_MS_PER_TIER, 60000, 'the per-tier minute the server arm also hardcodes');
       eq(FF.ESTATE_BORDER_TYPE_TIME_MULT.curb + FF.ESTATE_BORDER_TYPE_TIME_MULT.fence + FF.ESTATE_BORDER_TYPE_TIME_MULT.wall, 6, 'the three multipliers are 1/2/3');
-      // The gate: the tier's own level, on Architecture, in the shape buildingGateOk uses.
-      eq(FF.ESTATE_BORDER_GATE_SKILL, 'architecture', 'borders gate on the estate structure skill');
-      eq(FF.borderGateLevel('masonry_t20'), FF.TIER_LEVELS[20], 'a top-tier border wants the top-tier level');
-      S.xp.architecture = 0;
-      ok(FF.borderGateOk('masonry_t0'), 'the first stone needs nothing');
-      ok(!FF.borderGateOk('masonry_t20'), 'the last stone is refused at Architecture 1');
-      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]);
-      ok(FF.borderGateOk('masonry_t20'), 'and allowed at the level');
+      // The gate is Masonry ALONE (ticket-0235): the v0.0.94.0 Architecture predicate is gone from the
+      // seam, so a reintroduced one shows up here as an unexpected export.
+      eq(typeof FF.borderGateOk, 'undefined', 'no Architecture border gate predicate exists');
+      eq(typeof FF.ESTATE_BORDER_GATE_SKILL, 'undefined', 'and no border gate skill constant');
+      eq(FF.getMasonryRecipe('masonry_t20').levelReq, FF.TIER_LEVELS[20], 'a top-tier border wants the top-tier MASONRY level');
     } finally { S.xp.architecture = svArch; S.xp.masonry = svMas; S.log = svLog; }
   });
 
@@ -23950,16 +23946,17 @@
       // No materials -> nothing starts, and nothing is charged.
       FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
       ok(!S.estate.job, 'a raise with no stone does not start');
-      // THE GATE IS CONSULTED BY THE REAL PATH, not merely computable. borderGateOk is asserted as a
-      // predicate in the suite above, and a predicate nothing calls is a gate that does not exist: with
-      // materials in hand and Masonry maxed, Architecture alone must refuse this.
+      // THE GATE IS MASONRY, CONSULTED BY THE REAL PATH (ticket-0235). Below the stone's Masonry level
+      // the raise refuses and names Masonry; Architecture at 0 must NOT refuse it (Anferny's 132
+      // Andesite Walls sat unplaceable behind an Architecture bar their Masonry had long cleared).
       S.inventory['masonry_t2'] = 1;   // the CRAFTED stone is the bill now (v0.0.96.33)
-      S.xp.architecture = 0;
+      S.xp.masonry = 0;
       FF.estateBuildBorder('x', 20, 7, 'masonry_t2');
-      ok(!S.estate.job, 'no border raise below the Architecture bar');
+      ok(!S.estate.job, 'no border raise below the Masonry bar');
       eq(S.inventory['masonry_t2'], 1, 'and a refused raise does not spend the stone');
-      ok(/Architecture/.test((S.log[S.log.length-1] || {}).msg || ''), 'the refusal names the missing skill');
-      S.xp.architecture = FF.xpFloorForLevel(FF.TIER_LEVELS[20]);
+      ok(/Masonry/.test((S.log[S.log.length-1] || {}).msg || ''), 'the refusal names Masonry');
+      S.xp.masonry = FF.xpFloorForLevel(100);
+      S.xp.architecture = 0;   // Architecture is no bar at all
       // THE OUTER BOUNDARY. An edge x runs 0..GRID_SIZE, so this addresses grid[20], which does not
       // exist. applyEstateJobCompletion's tile lookup would have refunded the stone and told the player
       // their own border was "not on your estate" -- every time one finished on the outside of the plot.

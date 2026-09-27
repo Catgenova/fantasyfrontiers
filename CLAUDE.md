@@ -120,10 +120,13 @@ distinct mechanical job, and makes raising one a timed job instead of an instant
   `(t+1) * 60000 * ((t % 3) + 1)`. The server figure is authoritative for a personal job, so **change both
   sides or neither**; the five reference durations are asserted in `tests/selftest.js` and repeated in the
   migration's verify block.
-- **Gate: Architecture at the tier's own level** (`buildingGateOk`'s shape), on top of the Masonry recipe
-  level that already gated the stone. Deliberately ONE skill for all three rather than three invented
-  thematic mappings. The types are separated by build TIME, not by which skill you need. This also gives
-  Architecture a second use; it was read by Workshops alone.
+- **Gate: MASONRY ONLY (owner decision 2026-09-27, ticket-0235, v0.1.4.12).** v0.0.94.0 shipped a second
+  gate, Architecture at the tier's own level (`buildingGateOk`'s shape), on top of the Masonry recipe level,
+  to give Architecture a second use. It locked crafted stone in the pack of anyone whose Architecture
+  trailed their Masonry (Anferny: 132 Andesite Walls, Masonry 40, Architecture under 40), and the owner
+  ruled the skill that cuts a stone is the skill that lays it. `borderGateOk`/`borderGateLabel`/
+  `ESTATE_BORDER_GATE_SKILL` are deleted and a test asserts they stay out of the seam. Architecture still
+  gates Workshops and Buildings. The types remain separated by build TIME, not by skill.
 - **A BORDER IS NOT A TILE, and the two coordinate spaces OVERLAP.** An edge x/y runs 0..GRID_SIZE while a
   tile's runs 0..GRID_SIZE-1, so a border job at (5,5) would otherwise read as tile (5,5) being worked.
   Four sites had to learn the difference: `estJobOnTile` and `estJobTileMap` skip border jobs,

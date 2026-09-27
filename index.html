@@ -22644,7 +22644,7 @@
   // grid of 840 selectable edges that did nothing a player could discover. Each claim here is pinned in
   // tests/selftest.js so a rework of the same system fails there instead of leaving a tip that misinforms.
   TICKER_TIPS = TICKER_TIPS.concat([
-    "<b>Curbs, Fences and Walls</b> take time to raise now: one minute per tier for a Curb, two for a Fence, three for a Wall. Placing one wants Architecture at that stone's own level.",
+    "<b>Curbs, Fences and Walls</b> take time to raise now: one minute per tier for a Curb, two for a Fence, three for a Wall. Placing one needs only the Masonry level that crafts the stone.",
     "A <b>Curb</b> on the border between two Aqueducts lines the channel, and water crosses a lined border for free. Line the whole run and range stops being the limit.",
     "A <b>Field fenced on all four borders</b> grows up to 15% faster, priced off the weakest of the four. Three grand sides and one cheap one buys you the cheap one.",
     "The <b>Estate Appraisal</b> is the share of your outer perimeter carrying a Wall, and it works your Peons up to 20% faster. Buying new ground lengthens that perimeter, so it dilutes until you wall the new edge.",
@@ -35232,15 +35232,10 @@
     var mult = sp ? ((v % 3) + 1) : (ESTATE_BORDER_TYPE_TIME_MULT[borderTypeOf(masonryTileId)] || 1);
     return (v + 1) * ESTATE_BORDER_MS_PER_TIER * mult;
   }
-  // THE SKILL GATE. Masonry already gated the RECIPE (you cannot raise a stone you cannot cut); this is
-  // the separate ESTATE gate, in exactly the shape buildingGateOk uses -- the tier's own level
-  // requirement, read off Architecture, which is the estate's structure skill and until now was read by
-  // Workshops alone. Deliberately ONE skill for all three types rather than three invented mappings:
-  // the types are separated by build TIME, not by which skill you need.
-  var ESTATE_BORDER_GATE_SKILL = 'architecture';
-  function borderGateLevel(masonryTileId){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, itemTierFromId(masonryTileId)))]; }
-  function borderGateOk(masonryTileId){ return getLevel((state.xp && state.xp[ESTATE_BORDER_GATE_SKILL]) || 0) >= borderGateLevel(masonryTileId); }
-  function borderGateLabel(masonryTileId){ return skillDisplayLabel(ESTATE_BORDER_GATE_SKILL) + ' Lv ' + borderGateLevel(masonryTileId); }
+  // THE SKILL GATE IS MASONRY ALONE (ticket-0235, 2026-09-27). v0.0.94.0 added a second gate on
+  // Architecture at the stone's tier level (borderGateOk, now deleted); it locked crafted stone in the
+  // pack of anyone whose Architecture trailed their Masonry, and the owner ruled the skill that cuts a
+  // stone is the skill that lays it. Architecture still gates Workshops and Buildings (buildingGateOk).
   // The four borders of tile (x,y), as edge descriptors. Derived from the storage layout stated at
   // generateEstateEdges: edgesY[x][y] separates (x,y-1) from (x,y), and edgesX[x][y] separates
   // (x-1,y) from (x,y). Getting this backwards is a silent wrong-answer bug, so it is written once.
@@ -35325,12 +35320,11 @@
     // A border is not a tile, so the tile-busy check does not cover it -- two jobs on ONE edge would
     // both complete and the second would pay nothing for the stone it consumed.
     if(estJobOnBorder(orient, x, y)){ addLog('That border is already being built.', 'danger'); return; }
+    // MASONRY IS THE ONLY LEVEL GATE (ticket-0235, owner decision 2026-09-27). v0.0.94.0 also asked for
+    // Architecture at the stone's tier level, so a player who had crafted 132 Andesite Walls at Masonry
+    // 40 could not raise one at Architecture 30. The skill that made the stone is the skill that lays it.
     if(getLevel(state.xp.masonry) < recipe.levelReq){
       addLog('Building a ' + recipe.name + ' requires Masonry level ' + recipe.levelReq + '.', 'danger');
-      return;
-    }
-    if(!borderGateOk(masonryTileId)){
-      addLog('Raising a ' + recipe.name + ' on the estate requires ' + borderGateLabel(masonryTileId) + '.', 'danger');
       return;
     }
     if(!hasInputs(borderBuildBill(masonryTileId))){
@@ -36811,15 +36805,14 @@
       if(!lv.ok) return;                                   // not legal here: say nothing rather than tease
       if(estJobOnBorder(edge.orient, edge.x, edge.y)) return;
       var levelOk = getLevel(state.xp.masonry) >= sp.levelReq;
-      var gateOk = borderGateOk(id);
       var matsOk = hasInputs(sp.inputs);
-      var ok = levelOk && gateOk && matsOk;
+      var ok = levelOk && matsOk;
       var mats = Object.keys(sp.inputs).map(function(k){
         return ((ALL_SELLABLE[k]||{}).name || k) + ' x' + fmt(sp.inputs[k]) + ' (have ' + fmt(state.inventory[k]||0) + ')';
       }).join(', ');
       out += '<div class="estate-action-row">';
       out += '<div class="estate-action-info"><b>'+escapeHtml(sp.name)+'</b><br>'+escapeHtml(sp.blurb)
-          +  '<br><span class="style-lvl">Masonry Lv'+sp.levelReq+' &bull; '+borderGateLabel(id)+' &bull; '+formatHoursCompact(borderBuildMs(id))+' &bull; '+mats+'</span></div>';
+          +  '<br><span class="style-lvl">Masonry Lv'+sp.levelReq+' &bull; '+formatHoursCompact(borderBuildMs(id))+' &bull; '+mats+'</span></div>';
       out += '<button class="action-btn" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+id+'" '+(ok?'':'disabled')+'>'+(ok?'Build':'Locked')+'</button>';
       out += '</div>';
     });
@@ -36850,7 +36843,7 @@
            +  '</div></div>';
       ['curb','fence','wall'].forEach(function(borderType){
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Build '+ESTATE_BORDER_TYPE_LABEL[borderType]+'</b><br>Choose a stone -- cost and Masonry level match that stone\'s normal recipe. '
+        html += '<div class="estate-action-info"><b>Build '+ESTATE_BORDER_TYPE_LABEL[borderType]+'</b><br>Choose a stone -- it needs the Masonry level that crafts it, nothing more. '
              +  'A '+ESTATE_BORDER_TYPE_LABEL[borderType]+' takes '+ESTATE_BORDER_TYPE_TIME_MULT[borderType]+' minute'+(ESTATE_BORDER_TYPE_TIME_MULT[borderType]===1?'':'s')+' per tier to raise.</div>';
         html += '<button class="action-btn" data-action="estateToggleBorderMenu" data-type="'+borderType+'">'+(estateBorderMenuOpen===borderType?'Close List':'Choose Stone')+'</button>';
         html += '</div>';
@@ -36858,17 +36851,16 @@
           html += '<div class="estate-paving-library">';
           getMasonryRecipesByType(borderType).forEach(function(r){
             var levelOk = masonryLvl >= r.levelReq;
-            var gateOk = borderGateOk(r.id);
             var rBill = borderBuildBill(r.id);
             var matsOk = hasInputs(rBill);
-            var ok = levelOk && gateOk && matsOk;
+            var ok = levelOk && matsOk;
             var matsSummary = Object.keys(rBill).map(function(k){
               var itemName = (ALL_SELLABLE[k]||{}).name || k;
               var owned = state.inventory[k]||0;
               return itemName+' x'+fmt(rBill[k])+' (have '+fmt(owned)+')';
             }).join(', ');
             html += '<button class="estate-paving-option'+(ok?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+(ok?'':'disabled')+'>';
-            html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+borderGateLabel(r.id)+' &bull; '+formatHoursCompact(borderBuildMs(r.id))+' &bull; '+matsSummary+'</span>';
+            html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Masonry Lv'+r.levelReq+' &bull; '+formatHoursCompact(borderBuildMs(r.id))+' &bull; '+matsSummary+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -47553,7 +47545,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.11';
+  var GAME_VERSION = '0.1.4.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47806,8 +47798,8 @@
       placeableBuildingsFor:placeableBuildingsFor, cellHasBuilding:cellHasBuilding, aqueductRange:aqueductRange, sunTerracePenaltyCut:sunTerracePenaltyCut,
       apiaryIntervalMs:apiaryIntervalMs, apiaryYieldBonusAt:apiaryYieldBonusAt, sunTerraceCutAt:sunTerraceCutAt, estateCellWatersFields:estateCellWatersFields,
       getMasonryRecipe:getMasonryRecipe, getMasonryRecipesByType:getMasonryRecipesByType, ESTATE_BORDER_TYPE_LABEL:ESTATE_BORDER_TYPE_LABEL,
-      borderTypeOf:borderTypeOf, borderBuildMs:borderBuildMs, borderGateOk:borderGateOk, borderGateLevel:borderGateLevel, borderGateLabel:borderGateLabel,
-      ESTATE_BORDER_MS_PER_TIER:ESTATE_BORDER_MS_PER_TIER, ESTATE_BORDER_TYPE_TIME_MULT:ESTATE_BORDER_TYPE_TIME_MULT, ESTATE_BORDER_GATE_SKILL:ESTATE_BORDER_GATE_SKILL,
+      borderTypeOf:borderTypeOf, borderBuildMs:borderBuildMs,
+      ESTATE_BORDER_MS_PER_TIER:ESTATE_BORDER_MS_PER_TIER, ESTATE_BORDER_TYPE_TIME_MULT:ESTATE_BORDER_TYPE_TIME_MULT,
       borderEdgesOfTile:borderEdgesOfTile, borderEdgeBetween:borderEdgeBetween, edgeCellIn:edgeCellIn, edgeTypeIn:edgeTypeIn,
       estateBuildBorder:estateBuildBorder, estateDestroyBorder:estateDestroyBorder, estJobOnBorder:estJobOnBorder, estJobOnTile:estJobOnTile,
       ESTATE_BORDER_SPECIALS:ESTATE_BORDER_SPECIALS, borderSpecialOf:borderSpecialOf, borderRecipeOf:borderRecipeOf, borderBuildBill:borderBuildBill,
