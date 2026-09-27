@@ -24735,6 +24735,43 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Ticket-0237: sell a chosen amount of one stack ------------------------------------
+  suite('sellQty: a chosen amount, clamped to the stack, paid at the vendor rate', function(){
+    var s = FF._state;
+    var save = { inv:s.inventory, gold:s.gold, locks:s.lockedItems, phys:Object.assign({}, s.physique) };
+    try {
+      s.inventory = {}; s.lockedItems = {}; s.gold = 0;
+      var id = 'fishing_t0';
+      var item = FF.ALL_SELLABLE[id];
+      ok(item && item.sell > 0, 'fixture is a vendorable stackable');
+      s.inventory[id] = 10;
+      eq(FF.sellQtyClamp(id, 4), 4, 'an amount inside the stack is kept');
+      eq(FF.sellQtyClamp(id, 500), 10, 'an amount past the stack clamps to the whole stack');
+      eq(FF.sellQtyClamp(id, 0), 1, 'zero or less reads as 1');
+      eq(FF.sellQtyClamp(id, 'abc'), 1, 'garbage reads as 1');
+      eq(FF.sellQtyClamp(id, 3.9), 3, 'fractions floor');
+      var rate = FF.merchantSellMult();
+      var expect = Math.round(4 * item.sell * rate);
+      eq(FF.invSellQtyGold(id, 4), FF.fmt(expect), 'the button quotes the gold the vendor actually pays (Merchant\'s Savvy included)');
+      eq(FF.sellQty(id, 4), 4, 'sellQty returns the count sold');
+      eq(s.inventory[id], 6, 'four left the stack');
+      eq(s.gold, expect, 'the purse gained exactly the quoted gold');
+      s.gold = 0;
+      eq(FF.sellQty(id, 99), 6, 'past the stack sells what is there');
+      eq(s.inventory[id], 0, 'the stack is empty, never negative');
+      eq(s.gold, Math.round(6 * item.sell * rate), 'paid for six');
+      s.inventory[id] = 5; s.lockedItems[id] = true; s.gold = 0;
+      eq(FF.sellQty(id, 2), 0, 'a locked stack refuses');
+      eq(s.inventory[id], 5, 'locked stack untouched');
+      eq(s.gold, 0, 'no gold from a refused sale');
+      s.lockedItems[id] = false;
+      var bid = FF.masterworkBlueprintId('d2','plate');
+      s.inventory[bid] = 3;
+      eq(FF.sellQty(bid, 2), 0, 'a sell-0 stack (Blueprint) refuses like sellOne/sellItem');
+      eq(s.inventory[bid], 3, 'Blueprints untouched');
+    } finally { s.inventory = save.inv; s.gold = save.gold; s.lockedItems = save.locks; s.physique = save.phys; }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

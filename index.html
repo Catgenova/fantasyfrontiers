@@ -44121,6 +44121,32 @@
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return; }
     earnGold(Math.round(item.sell*merchantSellMult())); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
   }
+  // Sell a CHOSEN number of one stack (ticket-0237: the card offered only "Sell 1" and "Sell all"). The
+  // amount is clamped to the stack, so a request past the stack sells everything and never goes negative.
+  // Returns the number actually sold (0 when refused), which is what the test seam asserts on.
+  function sellQtyClamp(id, n){
+    var qty = state.inventory[id]||0;
+    n = Math.floor(Number(n));
+    if(!isFinite(n) || n < 1) n = 1;
+    return Math.max(0, Math.min(qty, n));
+  }
+  function sellQty(id, n){
+    var item = ALL_SELLABLE[id]; var qty = state.inventory[id]||0;
+    if(qty <= 0 || !item) return 0;
+    if(!(item.sell > 0)){ addLog('The vendor won’t buy that. List it on the Marketplace instead.', 'danger'); return 0; }
+    if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return 0; }
+    n = sellQtyClamp(id, n);
+    if(n <= 0) return 0;
+    earnGold(Math.round(n*item.sell*merchantSellMult())); state.inventory[id] = qty - n; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
+    return n;
+  }
+  // The typed amount on the open item card, kept across the card's rebuilds (the card refreshes with
+  // every dynamic tick). Keyed by item so a stale draft never carries from one stack to the next.
+  var invSellQtyDraft = { id:null, n:1 };
+  function invSellQtyFor(id){ return invSellQtyDraft.id === id ? invSellQtyDraft.n : 1; }
+  // The gold the vendor really pays for n of a stack (Merchant's Savvy included), so the three sell
+  // buttons on the card all quote the figure that lands in the purse.
+  function invSellQtyGold(id, n){ var item = ALL_SELLABLE[id]; return item && item.sell > 0 ? fmt(Math.round(n*item.sell*merchantSellMult())) : '0'; }
   function renderInventoryPanel(){
     var searchInputEl = document.getElementById('invSearchInput');
     var hadFocus = searchInputEl && document.activeElement === searchInputEl;
@@ -44326,14 +44352,27 @@
     }
     acts += '<button class="action-btn'+(isLocked?' stop':'')+'" data-action="toggleItemLock" data-item="'+id+'">'+(isLocked?'Unlock':'Lock')+'</button>';
     if(item.sell > 0){
-      acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+item.sell+'g)</button>';
-      acts += '<button class="action-btn" data-action="sell" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell all (+'+fmt(qty*item.sell)+'g)</button>';
+      acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+invSellQtyGold(id, 1)+'g)</button>';
+      acts += '<button class="action-btn" data-action="sell" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell all (+'+invSellQtyGold(id, qty)+'g)</button>';
+      if(qty > 1){
+        // Ticket-0237: a chosen amount. The box and button update in place as you type (the input
+        // listener rewrites the two spans), and the card skips its rebuild while the box has focus.
+        var _sq = Math.min(qty, invSellQtyFor(id));
+        acts += '<div class="inv-sell-qty" style="flex-basis:100%;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;">'
+             +  '<input id="invSellQty" class="chat-input" type="number" inputmode="numeric" min="1" max="'+qty+'" value="'+_sq+'" aria-label="Amount to sell" style="width:90px;flex:0 0 auto;text-align:center;">'
+             +  '<button class="action-btn" data-action="sellQty" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell <span id="invSellQtyN">'+fmt(_sq)+'</span> (+<span id="invSellQtyGold">'+invSellQtyGold(id, _sq)+'</span>g)</button>'
+             +  '</div>';
+      }
     } else {
       // Non-vendorable (Blueprints, legendary accessories): the Marketplace is the only way to sell.
       acts += '<div class="item-meta" style="flex-basis:100%">The vendor won&rsquo;t buy this. Sell it on the <b>Marketplace</b> (Social &rarr; Marketplace &rarr; Sell).</div>';
     }
 
     overlay.style.display = 'flex';
+    // Typing in the amount box: leave the DOM alone (a rebuild would drop the caret mid-number). The
+    // draft is re-embedded on the next refresh after the box blurs.
+    var _ae = document.activeElement;
+    if(_ae && _ae.id === 'invSellQty' && overlay.contains(_ae)) return;
     setOverlayHtml(overlay, '<div class="skill-info-card">'+body+
       '<div class="inv-detail-actions">'+acts+'</div>'+
       '<button class="action-btn" data-action="closeInvDetail" style="margin-top:14px">Close</button>'+
@@ -46173,6 +46212,14 @@
     openInvDetail: function(btn, e){ inventoryDetailItem = btn.getAttribute('data-item'); },
     closeInvDetail: function(btn, e){ inventoryDetailItem = null; },
     sellOne: function(btn, e){ sellOne(btn.getAttribute('data-item')); },
+    sellQty: function(btn, e){
+      var _id = btn.getAttribute('data-item');
+      var _inp = document.getElementById('invSellQty');
+      var _n = sellQtyClamp(_id, _inp ? _inp.value : invSellQtyFor(_id));
+      if(_inp) _inp.blur(); // let the card rebuild with the new stack count
+      sellQty(_id, _n);
+      invSellQtyDraft = { id:_id, n:Math.max(1, Math.min(state.inventory[_id]||1, _n)) };
+    },
     setAutoEatThreshold: function(btn, e){ setAutoEatThreshold(parseFloat(btn.getAttribute('data-value'))); },
     activatePotion: function(btn, e){ activatePotion(btn.getAttribute('data-item')); },
     deactivatePotion: function(btn, e){ deactivatePotion(); },
@@ -46515,6 +46562,16 @@
       renderMarketResults(); // update only the results list so the search box keeps focus
     } else if(e.target.classList && e.target.classList.contains('market-num')){
       marketUpdatePreview(); // live cost/net preview without a re-render (keeps input focus)
+    } else if(e.target.id === 'invSellQty'){
+      // Ticket-0237: live amount + gold on the Sell button, no re-render (keeps focus and the caret).
+      var _sid = inventoryDetailItem;
+      if(_sid){
+        var _sn = sellQtyClamp(_sid, e.target.value);
+        invSellQtyDraft = { id:_sid, n:Math.max(1, _sn) };
+        var _nEl = document.getElementById('invSellQtyN'), _gEl = document.getElementById('invSellQtyGold');
+        if(_nEl) _nEl.textContent = fmt(Math.max(1, _sn));
+        if(_gEl) _gEl.textContent = invSellQtyGold(_sid, Math.max(1, _sn));
+      }
     } else if(e.target.id === 'dungeonJoinCodeInput'){
       dungeonJoinCodeDraft = e.target.value; // preserve the pasted party code across re-renders (no re-render here, keeps focus)
     } else if(e.target.classList && e.target.classList.contains('card-queue')){
@@ -47496,7 +47553,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.10';
+  var GAME_VERSION = '0.1.4.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47681,7 +47738,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
+      sellItem:sellItem, sellOne:sellOne, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
