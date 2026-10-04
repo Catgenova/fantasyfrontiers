@@ -24732,6 +24732,40 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Ticket-0241: a Rare-or-better base still in the bag can be Enhanced directly ---------
+  // The Enhance section was gated on "unique or equipped", so a forged bow sitting in the bag showed no
+  // Enhance button (bow users hit it first: their equipped bow is the unique they already enhanced).
+  suite('improvement: a bag base can be Enhanced directly (ticket-0241)', function(){
+    var s = FF._state;
+    var sv = { inv:s.inventory, uq:s.uniqueItems, ack:s.enhanceLockWarnAck, warn:s.enhanceWarnHiTier, bar:s.settings.enhanceUseBarrier, log:s.log.slice() };
+    var savedRand = Math.random;
+    try {
+      var id = 'stweapon_bowMedium_t9_supreme';
+      s.inventory = {}; s.inventory[id] = 2; s.inventory.scroll_t9 = 5; s.uniqueItems = {};
+      s.enhanceLockWarnAck = true; s.enhanceWarnHiTier = false; s.settings.enhanceUseBarrier = false;
+      FF.improveSelect(id);
+      var html = FF.renderImprovementTab();
+      ok(new RegExp('data-action="improveEnhance" data-uid="' + id + '"').test(html), 'a bag bow offers an Enhance button');
+      ok(/one becomes a unique when you Enchant or Enhance it/.test(html), 'and says the click converts one of the stack');
+      Math.random = function(){ return 0; };   // force the roll to succeed
+      FF.enhanceItem(id);
+      eq(s.inventory[id], 1, 'one bow left the stack');
+      var uids = Object.keys(s.uniqueItems);
+      eq(uids.length, 1, 'a unique was minted for it');
+      var u = s.uniqueItems[uids[0]];
+      eq(u.base, id, 'the unique carries the bow as its base');
+      eq(u.enhance, 1, 'and it was Enhanced to +1');
+      // A Normal bag base stays refused, exactly as the picker never lists it.
+      s.inventory['stweapon_bowMedium_t9'] = 1;
+      FF.enhanceItem('stweapon_bowMedium_t9');
+      eq(Object.keys(s.uniqueItems).length, 1, 'a Normal bag base is refused');
+      eq(s.inventory['stweapon_bowMedium_t9'], 1, 'and untouched');
+    } finally {
+      Math.random = savedRand;
+      s.inventory = sv.inv; s.uniqueItems = sv.uq; s.enhanceLockWarnAck = sv.ack; s.enhanceWarnHiTier = sv.warn; s.settings.enhanceUseBarrier = sv.bar; s.log = sv.log;
+    }
+  });
+
   // ---- Ticket-0233: an offline resolve no longer ejects an auto-advance Tower run ----------
   // The wake handler runs the offline sim after one minute hidden. towerOnKill used to end the run on any
   // kill made under offlineCapture, so a phone player who switched apps mid-floor came back "randomly
