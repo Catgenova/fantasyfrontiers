@@ -24732,6 +24732,51 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Ticket-0243: one Shafts run per log tier across every slot ------------------------------
+  suite('fletching: Shafts refuse a second run on the same log tier (ticket-0243)', function(){
+    var s = FF._state;
+    var sv = { act:s.activity, slots:s.extraCraftSlots, inv:s.inventory, xp:s.xp.fletching, log:s.log.slice() };
+    try {
+      s.inventory = { forestry_t3:50, forestry_t5:50 }; s.xp.fletching = FF.xpFloorForLevel(100);
+      s.activity = { type:null, tier:0 }; s.extraCraftSlots = [{ type:null }, { type:null }, { type:null }];
+      FF.startShaftCraft(3);
+      var first = s.activity.type === 'craft' && s.activity.itemId === 'fletching_shaft' ? 'primary' : (s.extraCraftSlots.filter(function(x){ return x && x.itemId === 'fletching_shaft'; }).length ? 'belt' : 'none');
+      ok(first !== 'none', 'the first run starts (' + first + ' slot)');
+      var countShaft = function(){ var n = (s.activity.type === 'craft' && s.activity.itemId === 'fletching_shaft') ? 1 : 0; s.extraCraftSlots.forEach(function(x){ if(x && x.type === 'craft' && x.itemId === 'fletching_shaft') n++; }); return n; };
+      eq(countShaft(), 1, 'one Shafts run is running');
+      FF.startShaftCraft(3);
+      eq(countShaft(), 1, 'a second run on the SAME log tier is refused');
+      ok(/already cutting Shafts/.test((s.log[s.log.length-1] || {}).msg || ''), 'and the refusal says so');
+      FF.startShaftCraft(5);
+      eq(countShaft(), 2, 'a different log tier may run alongside (one run per tier)');
+      // The card reads every slot: with tier 3 selected it shows Stop, never a second Cut button.
+      FF._state.activity = s.activity;
+      var html = FF.renderFletchingTab();
+      ok(/Stop<\/button>/.test(html), 'the Shafts card shows Stop for a tier already running');
+    } finally { s.activity = sv.act; s.extraCraftSlots = sv.slots; s.inventory = sv.inv; s.xp.fletching = sv.xp; s.log = sv.log; }
+  });
+
+  // ---- Ticket-0242: the combat log marks an away window instead of a bare gap --------------
+  suite('combat log: an away window leaves one row (ticket-0242)', function(){
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
+    try {
+      var row = FF.combatLogLineHtml({ dir:'away', ms:37*60000, kills:12 });
+      ok(/Away for <b>37:00<\/b>/.test(row), 'the row names the time away (formatDuration, m:ss)');
+      ok(/<b>12<\/b> foes slain/.test(row), 'and the foes slain inside it');
+      ok(!/slain/.test(FF.combatLogLineHtml({ dir:'away', ms:90000, kills:0 })), 'no kill clause when nothing died');
+      // The catch-up pushes the row for a combat absence of a minute or more (the sim itself is muted).
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:'__no_such_monster__', monsterHp:10 };
+      s.playerHp = 50;
+      var before = FF._combatLog().length;
+      FF.applyOfflineProgress(90*1000);
+      var log = FF._combatLog(), last = log[log.length-1];
+      eq(log.length, before + 1, 'exactly one row joined the combat log');
+      eq(last && last.dir, 'away', 'and it is the away marker');
+      FF.applyOfflineProgress(30*1000);
+      eq(FF._combatLog().length, before + 1, 'a sub-minute blip adds nothing');
+    } finally { s.activity = sv.act; s.playerHp = sv.hp; }
+  });
+
   // ---- Ticket-0241: a Rare-or-better base still in the bag can be Enhanced directly ---------
   // The Enhance section was gated on "unique or equipped", so a forged bow sitting in the bag showed no
   // Enhance button (bow users hit it first: their equipped bow is the unique they already enhanced).

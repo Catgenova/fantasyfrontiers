@@ -12410,9 +12410,21 @@
   // into a tier-N Plank, and the same ladder Forestry needed to fell it.
   function shaftLogLevelReq(logTierIndex){ return TIER_LEVELS[Math.max(0, Math.min(TIER_COUNT-1, logTierIndex|0))] || 1; }
   function shaftLogLevelOk(logTierIndex){ return getLevel(state.xp.fletching||0) >= shaftLogLevelReq(logTierIndex); }
+  // The slot (primary or belt) already cutting Shafts from THIS log tier, or null. Shape matches
+  // findActiveCraftSlotFor so the card can point its Stop button at the right slot.
+  function findActiveShaftSlot(logTierIndex){
+    var a = state.activity;
+    if(a && a.type==='craft' && a.itemId==='fletching_shaft' && (a.logTierIndex|0) === (logTierIndex|0)) return { primary:true, act:a };
+    for(var i=0;i<(state.extraCraftSlots||[]).length;i++){
+      var x = state.extraCraftSlots[i];
+      if(x && x.type==='craft' && x.itemId==='fletching_shaft' && (x.logTierIndex|0) === (logTierIndex|0)) return { primary:false, index:i, act:x };
+    }
+    return null;
+  }
   function startShaftCraft(logTierIndex){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     if((state.inventory['forestry_t'+logTierIndex]||0) <= 0) return;
+    if(findActiveShaftSlot(logTierIndex)){ blockedNotice('You are already cutting Shafts from that log. Pick another log tier, or stop that run first.'); return; }
     if(!shaftLogLevelOk(logTierIndex)){
       var _slName = (GATHERING_SKILLS.forestry.items[logTierIndex]||{}).name || 'that log';
       addLog('Cutting shafts from ' + _slName + ' needs Fletching Lv ' + shaftLogLevelReq(logTierIndex) + '.', 'danger');
@@ -20055,6 +20067,7 @@
   // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
+    if(offlineCapture) offlineCapture.kills = (offlineCapture.kills || 0) + 1;   // ticket-0242: the wake note counts them
     var act = state.activity;
     // PARTY DUNGEON: the enemy is server-authoritative. This local foe is only a mirror of the shared HP,
     // driven down by our own attacks so we can MEASURE and report damage -- it must never die or reward
@@ -22055,6 +22068,12 @@
     offlineCapture.gold = state.gold - goldBefore;
     var _sum = offlineCapture;
     offlineCapture = null;
+    // ticket-0242 (Gutwrench): the combat log is muted while the catch-up sim runs, so a fight that
+    // carried on through a 37-minute absence showed a bare gap between two timestamps and read as the
+    // foe having "stopped fighting". One row now marks the window and what the sim did inside it.
+    if(_sum.activityType === 'combat' && capped >= 60000){
+      combatLogPush({ dir:'away', ms:capped, kills:(_sum.kills || 0) });
+    }
     // Only surface the "while you were away" popup for real absences. A brief blip -- a reload, a
     // new-build refresh, or a momentary disconnect -- shouldn't pop a summary, so we require at
     // least 30s away. The progress itself was already applied above; we're only gating the popup.
@@ -23923,7 +23942,11 @@
       selectedShaftLogTier = ownedLogTiers.length ? ownedLogTiers[ownedLogTiers.length-1] : 0;
     }
     var shaftPct = Math.round(shaftSuccessRate(state)*100);
-    var shaftIsActive = act.type==='craft' && act.skill==='fletching' && act.itemId==='fletching_shaft';
+    // ticket-0243: the card used to read the PRIMARY slot only, so once a Shafts run landed in a belt
+    // slot the button came back and the same log tier could be queued five times over. It now reads every
+    // slot for the SELECTED tier (one run per log tier, the recipe-per-id rule the generic cards follow).
+    var shaftSlot = findActiveShaftSlot(selectedShaftLogTier);
+    var shaftIsActive = !!shaftSlot; act = shaftIsActive ? shaftSlot.act : act;
     html += '<div class="card-grid"><div class="item-card'+(shaftIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('dowel','#a8895c')+'</div><div><div class="item-name">Shafts</div><div class="item-meta">Each Log tier needs its Fletching level</div></div></div>';
     if(ownedLogTiers.length===0){
@@ -23936,9 +23959,11 @@
       html += '<div class="chance-line">Output: <b>'+expectedShafts+'x Shaft</b> at <b>'+shaftPct+'%</b> success (base 70%, Fletching Jig adds more)</div>';
       var effTimeShaft = CRAFTING_SKILLS.fletching.shaftRecipe.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state,'fletching');
       var shaftBarPct = shaftIsActive ? clamp(act.progress/effTimeShaft*100,0,100) : 0;
-      html += '<div class="progress-track"><div class="progress-fill"'+(shaftIsActive?' id="liveActionFill"':'')+' style="width:'+shaftBarPct+'%"></div></div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(shaftIsActive?' id="'+(shaftSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+shaftSlot.index)+'"':'')+' style="width:'+shaftBarPct+'%"></div></div>';
       if(shaftIsActive){
-        html += '<button class="action-btn stop" data-action="stop">Stop</button>';
+        html += shaftSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+shaftSlot.index+'">Stop</button>';
       } else if(!shaftLogLevelOk(selectedShaftLogTier)){
         // Same treatment as a locked recipe card: name the requirement rather than offering a dead button.
         html += '<div class="lock-note">Locked until Fletching level '+shaftLogLevelReq(selectedShaftLogTier)+'</div>';
@@ -40880,6 +40905,7 @@
     else if(e.dir==='fam' && e.dmg != null) line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+'&#8217;s '+escapeHtml(e.spName||'spell')+' hits '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='fam') line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+' casts <b>'+escapeHtml(e.spName||'a spell')+'</b>'+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='death') line = '<span class="cl-in"><b>'+escapeHtml(e.text||'You were defeated.')+'</b></span>';
+    else if(e.dir==='away') line = '<span class="cl-faint">Away for <b>'+escapeHtml(formatDuration(e.ms||0))+'</b>: the fight carried on without the log'+(e.kills>0 ? ', <b>'+fmt(e.kills)+'</b> foe'+(e.kills===1?'':'s')+' slain' : '')+'.</span>';
     else if(e.dir==='eat') line = '<span class="cl-skill">&#10010; Auto-Eat heals you for <b>'+fmt(e.dmg)+'</b>'+(e.bites>1?' <span class="cl-tag">'+e.bites+' bites</span>':'')+(e.hp!=null?' <span class="cl-tag">to '+fmt(e.hp)+' HP</span>':'')+'</span>';
     else if(e.dir==='miss') line = '<span class="cl-faint">You missed '+escapeHtml(e.target||'the foe')+'</span>';
     else if(e.dir==='dodge') line = '<span class="cl-faint">You dodged '+escapeHtml(e.target||'the foe')+'</span>';
@@ -42838,8 +42864,16 @@
     var body={action:action}; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
     return chatClient.functions.invoke('guild_boss', { body: body }).then(function(r){
       if(r && r.data) return r.data;
+      // Non-2xx (ticket-0240): the function answers 409 with a real reason ("You've already taken on a
+      // boss today", "Another member has already cleared that boss today") and the snapshot, but
+      // supabase-js wraps that in r.error (FunctionsHttpError) whose body sits on r.error.context, so
+      // the player saw only "Edge Function returned a non-2xx status code". Same unpacking the bank does.
+      if(r && r.error && r.error.context && typeof r.error.context.json === 'function'){
+        return r.error.context.json().then(function(b){ return (b && b.error) ? b : { ok:false, error:(r.error.message || 'Request failed.') }; },
+          function(){ return { ok:false, error:(r.error.message || 'Request failed.') }; });
+      }
       return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
-    }, function(){ return { ok:false, error:'Network error.' }; });
+    }, function(){ return { ok:false, error:'Could not reach the server. Check your connection and try again.' }; });
   }
   // Copy a server snapshot into state WITHOUT touching pending (used by the claim path to avoid a loop).
   function guildBossCopySnapshot(res){
@@ -47578,7 +47612,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.14';
+  var GAME_VERSION = '0.1.4.15';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
