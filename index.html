@@ -29109,7 +29109,7 @@
     { id:'full_crew', cat:'estatequests', title:'Full Crew',
       desc:'Five peons is the ceiling, and a full crew is the difference between an estate and a hobby.',
       how:'Run all 5 Peon slots at once.',
-      target:5, progress:function(st){ return (st.peons && st.peons.filter ? st.peons.filter(function(p){ return p && p.taskId; }).length : 0); },
+      target:5, progress:function(st){ return peonTasksLive(st.peons); },
       nav:{ cat:'estate' },
       reward:{ gold:100000 } },
     { id:'specialist', cat:'estatequests', title:'Specialist',
@@ -29313,7 +29313,7 @@
     { id:'guild_crew', cat:'estatequests', title:'Guild Crew',
       desc:'Five peons on guild ground, working for the guild, housed by the guild. Your name is on none of it.',
       how:'Run 5 guild Peon slots at once.',
-      target:5, progress:function(st){ return (st.guildPeons && st.guildPeons.filter ? st.guildPeons.filter(function(p){ return p && p.taskId; }).length : 0); },
+      target:5, progress:function(st){ return peonTasksLive(st.guildPeons); },
       nav:{ cat:'estate' },
       reward:{ gold:1500000 } },
     { id:'treasury_works', cat:'estatequests', title:'Treasury Works',
@@ -34611,6 +34611,10 @@
   }
   function peonGridFor(scope){ return scope==='guild' ? (guildEstate.status==='ready' ? guildEstate.grid : null) : (state.estate && state.estate.grid); }
   function peonTasksFor(scope){ return scope==='guild' ? state.guildPeons : state.peons; }
+  // Working peons in a task array. A task is {x, y, skillId, kind, itemId | craftKind+tierIndex, ...};
+  // it has never carried a taskId, which is what the Full Crew quests filtered on, so they read 0/5 with
+  // five peons at work (ticket-0239, Anferny). Counted by kind, the field every task is written with.
+  function peonTasksLive(arr){ return Array.isArray(arr) ? arr.filter(function(p){ return !!(p && (p.kind || p.itemId || p.craftKind)); }).length : 0; }
   function peonSetTasks(scope, arr){ if(scope==='guild') state.guildPeons = arr; else state.peons = arr; }
   function peonTaskAt(scope, x, y){ return peonTasksFor(scope).filter(function(t){ return t.x===x && t.y===y; })[0] || null; }
   // Recipe/gather options a source can run (tier <= that skill's tierCap), across EVERY workshop the Cottage
@@ -47612,7 +47616,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.15';
+  var GAME_VERSION = '0.1.4.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

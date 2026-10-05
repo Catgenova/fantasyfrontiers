@@ -24732,6 +24732,22 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Ticket-0239: Full Crew / Guild Crew count working peons by the fields a task carries ----
+  suite('quests: Full Crew counts real peon tasks (ticket-0239)', function(){
+    var fc = FF.questById('full_crew'), gc = FF.questById('guild_crew');
+    ok(!!fc && !!gc, 'both crew quests exist');
+    var gatherTask = { x:1, y:2, skillId:'mining', kind:'gather', itemId:'mining_t7', progress:0 };
+    var craftTask  = { x:3, y:4, skillId:'stonecutting', kind:'craft', itemId:'stonecutting_t14', progress:0 };
+    var specialTask= { x:5, y:6, skillId:'blacksmithing', kind:'special', craftKind:'tool', params:{}, tierIndex:3, progress:0 };
+    var five = [gatherTask, craftTask, specialTask, gatherTask, craftTask];
+    eq(fc.progress({ peons:five }), 5, 'five working peons read 5/5 (gather, craft and special kinds all count)');
+    eq(fc.progress({ peons:[gatherTask, null, craftTask] }), 2, 'holes in the array are skipped');
+    eq(fc.progress({ peons:[] }), 0, 'no peons reads 0');
+    eq(fc.progress({}), 0, 'a save without the array reads 0, not a throw');
+    eq(gc.progress({ guildPeons:five }), 5, 'Guild Crew reads the guild array the same way');
+    eq(gc.progress({ peons:five }), 0, 'and never the personal one');
+  });
+
   // ---- Ticket-0243: one Shafts run per log tier across every slot ------------------------------
   suite('fletching: Shafts refuse a second run on the same log tier (ticket-0243)', function(){
     var s = FF._state;
