@@ -164,6 +164,18 @@ distinct mechanical job, and makes raising one a timed job instead of an instant
   writes them), so every effect above resolves its OWN estate's edge holder explicitly rather than reading
   whichever estate is on screen, the same rule `gridHasBuilding` follows for grids.
 
+## The `leaderboard` view: every recreate must keep the clamp clause (2026-10-08)
+
+`create or replace view public.leaderboard` appears in FOUR migrations. `20260724210000_account_clamps`
+added `where not public.is_clamped(id, 'leaderboard')` so a clamped account drops off every board;
+`20260831120000_profile_tower` was drafted from the earlier shape and recreated the view WITHOUT it, so
+applied as written it puts clamped accounts back on the boards. `20261008120000_leaderboard_view_tower_classes_clamped`
+is the definition to apply now (tower + classes + the clause). **Any future widen of the view copies the
+LATEST migration's body, not the one you remember** (the same rule the item-sweep migrations follow), and
+`create or replace view` can only APPEND columns, so new ones go after `classes`. The Tower and Firsts
+boards read empty until three things land: that migration, the repo's `submit_profile` (writes `tower` and
+`classes`, and silently retries without them on a project that lacks the columns), and a profile republish.
+
 ## The Guild Hall (v0.0.97.0): the guild progression axis and the treasury gold sink
 
 `guilds.hall_level` (0..15), raised by the LEADER from the shared treasury; each level adds ONE roster
