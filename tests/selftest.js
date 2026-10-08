@@ -24732,6 +24732,41 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Inventory grid: quantity ticks update cells in place; the grid is not rebuilt (owner, 2026-10-08) ----
+  // Every owned-count change made the panel's HTML differ, so the whole grid was replaced on nearly every
+  // crafting tick and the phone's scroll anchor snapped to the top. Same structure -> counts written into
+  // the live cells; a structural change (new item, sold out, search) still rebuilds.
+  suite('inventory panel: counts update in place', function(){
+    var s = FF._state, sv = { inv:s.inventory, uq:s.uniqueItems, q:FF._state };
+    var made = false, panel = document.getElementById('inventoryPanel');
+    if(!panel){ panel = document.createElement('div'); panel.id = 'inventoryPanel'; panel.style.display = 'none'; document.body.appendChild(panel); made = true; }
+    try {
+      s.inventory = { fishing_t0: 10, mining_t1: 5 }; s.uniqueItems = {};
+      panel._ffInvStruct = null; panel.innerHTML = '';
+      FF.renderInventoryPanel();
+      var cellA = panel.querySelector('.inv-cell[data-item="fishing_t0"]');
+      ok(!!cellA, 'the first render builds the grid');
+      eq(cellA.querySelector('.qty').textContent, '10', 'and shows the count');
+      s.inventory.fishing_t0 = 11;
+      FF.renderInventoryPanel();
+      var cellA2 = panel.querySelector('.inv-cell[data-item="fishing_t0"]');
+      ok(cellA2 === cellA, 'a quantity change keeps the SAME cell element (no rebuild)');
+      eq(cellA2.querySelector('.qty').textContent, '11', 'and the count was written in place');
+      s.inventory.herbalism_t0 = 3;   // a new stack: structure changes, the grid rebuilds
+      FF.renderInventoryPanel();
+      var cellA3 = panel.querySelector('.inv-cell[data-item="fishing_t0"]');
+      ok(cellA3 !== cellA, 'a new item rebuilds the grid');
+      ok(!!panel.querySelector('.inv-cell[data-item="herbalism_t0"]'), 'and the new cell is present');
+      s.inventory.mining_t1 = 0;      // a sold-out stack: structure changes again
+      FF.renderInventoryPanel();
+      ok(!panel.querySelector('.inv-cell[data-item="mining_t1"]'), 'a sold-out stack leaves the grid');
+      eq(FF.invPanelWriteCounts(panel), 0, 'with nothing changed the in-place writer touches no cell');
+    } finally {
+      s.inventory = sv.inv; s.uniqueItems = sv.uq;
+      if(made && panel.parentNode) panel.parentNode.removeChild(panel); else { panel._ffInvStruct = null; }
+    }
+  });
+
   // ---- Wards are improvable (Gutwrench ticket, retest 2026-10-05) ------------------------------
   // parseImprovable never listed the 'stward_' prefix, so no ward, in the bag or equipped, reached the
   // Improvement picker; the equipped lister only knew shields; and the equip-lock readout called a ward

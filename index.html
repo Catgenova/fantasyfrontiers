@@ -44247,6 +44247,18 @@
   // The gold the vendor really pays for n of a stack (Merchant's Savvy included), so the three sell
   // buttons on the card all quote the figure that lands in the purse.
   function invSellQtyGold(id, n){ var item = ALL_SELLABLE[id]; return item && item.sell > 0 ? fmt(Math.round(n*item.sell*merchantSellMult())) : '0'; }
+  // Write the current owned count into every live stackable cell of the Inventory grid without touching
+  // the DOM shape. Returns the number of cells updated (the test seam reads it).
+  function invPanelWriteCounts(panel){
+    var cells = panel.querySelectorAll('.inv-cell[data-item]'), n = 0;
+    for(var i=0;i<cells.length;i++){
+      var id = cells[i].getAttribute('data-item'), q = cells[i].querySelector('.qty');
+      if(!q) continue;
+      var txt = fmt(state.inventory[id]||0);
+      if(q.textContent !== txt){ q.textContent = txt; n++; }
+    }
+    return n;
+  }
   function renderInventoryPanel(){
     var searchInputEl = document.getElementById('invSearchInput');
     var hadFocus = searchInputEl && document.activeElement === searchInputEl;
@@ -44354,7 +44366,21 @@
       });
     }
     var _invEl = document.getElementById('inventoryPanel'); if(!_invEl) return; // only present on the Inventory view
+    // IN-PLACE COUNTS (owner report, 2026-10-08: "the inventory screen keeps snapping to the top"). While
+    // anything crafts or gathers, an owned count somewhere in the grid changes on nearly every tick, which
+    // made the whole panel's HTML differ and setOverlayHtml replace the entire grid; on a phone the scroll
+    // anchor then resets to the top, and the page-level push-back only runs for gesture renders. So the
+    // panel is compared on its STRUCTURE (the html with every stackable cell's quantity blanked): same
+    // structure means the same cells in the same order, and only the quantity text is written into the
+    // live cells. A new item, a sold-out stack, a search, a sort, a lock, or an accordion toggle changes
+    // the structure and takes the full rewrite as before. (The arena fx/rota in-place pattern.)
+    var _struct = html.replace(/<span class="qty">[^<]*<\/span>/g, '<span class="qty"></span>');
+    if(_invEl._ffInvStruct === _struct && _invEl.childElementCount > 0){
+      invPanelWriteCounts(_invEl);
+      return; // nothing else below applies: the search box was never rebuilt, so its focus is intact
+    }
     setOverlayHtml(_invEl, html);
+    _invEl._ffInvStruct = _struct;
 
     if(hadFocus){
       var newInput = document.getElementById('invSearchInput');
@@ -47654,7 +47680,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.21';
+  var GAME_VERSION = '0.1.4.22';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47839,7 +47865,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
+      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
