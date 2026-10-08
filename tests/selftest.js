@@ -24732,6 +24732,40 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Wards are improvable (Gutwrench ticket, retest 2026-10-05) ------------------------------
+  // parseImprovable never listed the 'stward_' prefix, so no ward, in the bag or equipped, reached the
+  // Improvement picker; the equipped lister only knew shields; and the equip-lock readout called a ward
+  // unique "Cannot equip".
+  suite('improvement: wards are improvable like shields', function(){
+    var s = FF._state;
+    var sv = { inv:s.inventory, uq:s.uniqueItems, oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohr:s.equippedOffhandRarity, ohu:s.equippedOffhandUid, ack:s.enhanceLockWarnAck, warn:s.enhanceWarnHiTier, bar:s.settings.enhanceUseBarrier };
+    var savedRand = Math.random;
+    try {
+      var id = 'stward_wardFire_t9_rare';
+      ok(!!FF.ALL_SELLABLE[id], 'fixture ward exists');
+      var p = FF.parseImprovable(id);
+      ok(!!p && p.kind === 'offhand' && p.tier === 9 && p.rarity === 'rare', 'a ward parses as an improvable offhand');
+      ok(!FF.isImprovableRarity(FF.parseImprovable('stward_wardFire_t9').rarity), 'a Normal ward parses but stays below the Rare-or-better gate');
+      s.inventory = {}; s.inventory[id] = 1; s.uniqueItems = {};
+      ok(/data-uid="stward_wardFire_t9_rare"/.test(FF.renderImprovementTab()), 'a bag ward shows in the picker');
+      // Equipped: the lister names it under the offhand slot with its ward base id.
+      s.inventory = {}; s.equippedOffhand = 'wardFire'; s.equippedOffhandTier = 10; s.equippedOffhandRarity = 'rare'; s.equippedOffhandUid = null;
+      var eq0 = FF.equippedImprovableBases().filter(function(e){ return e.slot === 'offhand'; })[0];
+      ok(!!eq0 && eq0.baseId === id, 'an equipped ward is listed as the offhand base');
+      // And it Enhances in place, minting a unique whose lock readout is clear (wards have no proficiency gate).
+      s.inventory.scroll_t9 = 5; s.enhanceLockWarnAck = true; s.enhanceWarnHiTier = false; s.settings.enhanceUseBarrier = false;
+      Math.random = function(){ return 0; };
+      FF.enhanceItem('equip:offhand');
+      var u = s.equippedOffhandUid && s.uniqueItems[s.equippedOffhandUid];
+      ok(!!u && u.base === id && u.kind === 'offhand', 'the equipped ward converted to a unique in place');
+      eq(u && u.enhance, 1, 'and was Enhanced to +1');
+      eq(FF.uniqueEquipLock(u), null, 'the unique ward reads as equippable, not "Cannot equip"');
+    } finally {
+      Math.random = savedRand;
+      s.inventory = sv.inv; s.uniqueItems = sv.uq; s.equippedOffhand = sv.oh; s.equippedOffhandTier = sv.oht; s.equippedOffhandRarity = sv.ohr; s.equippedOffhandUid = sv.ohu; s.enhanceLockWarnAck = sv.ack; s.enhanceWarnHiTier = sv.warn; s.settings.enhanceUseBarrier = sv.bar;
+    }
+  });
+
   // ---- Uniques are bound: the pickers and the unique's cards say so (Anferny, owner 2026-10-08) ----
   // A Mastercrafted set piece or legendary weapon is a UNIQUE and never lists on the Marketplace or in the
   // guild bank (both trade stackable bag items). The owner kept them bound; the note is the fix.

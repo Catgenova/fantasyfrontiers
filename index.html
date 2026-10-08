@@ -17300,8 +17300,11 @@
   // rings/amulets are improvable. Returns null for anything else.
   function parseImprovable(id){
     if(typeof id!=='string') return null;
+    // Wards (ticket, Gutwrench, 2026-09-21): 'stward_' was never listed here, so no ward, bag or equipped,
+    // was improvable at all, while a Mastercrafted legendary ward (a unique, which skips this parser) was.
     var kind = id.indexOf('stweapon_')===0 ? 'weapon'
       : id.indexOf('stshield_')===0 ? 'offhand'
+      : id.indexOf('stward_')===0 ? 'offhand'
       : id.indexOf('bodyarmor_')===0 ? 'bodyarmor'
       : id.indexOf('ring_')===0 ? 'ring'
       : (id.indexOf('amulet_t')===0 || id.indexOf('amulet_warding_t')===0) ? 'amulet'
@@ -17877,8 +17880,8 @@
     var out = [];
     if(!slotHasValidUnique(state.equippedMainhandUid) && isStackableWeapon(state.equippedMainhand) && state.equippedMainhandTier > 0)
       out.push({ slot:'mainhand', baseId:'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity });
-    if(!slotHasValidUnique(state.equippedOffhandUid) && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0)
-      out.push({ slot:'offhand', baseId:'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity });
+    if(!slotHasValidUnique(state.equippedOffhandUid) && (isStackableShield(state.equippedOffhand) || isWard(state.equippedOffhand)) && state.equippedOffhandTier > 0)
+      out.push({ slot:'offhand', baseId:(isWard(state.equippedOffhand) ? 'stward_' : 'stshield_')+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity });
     if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl];
       if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.material) out.push({ slot:'armor:'+sl, baseId:'bodyarmor_'+s.material+'_'+sl+'_t'+(s.tier-1)+'_'+s.rarity }); });
     if(state.jewelrySlots) RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl];
@@ -18342,8 +18345,9 @@
       return meetsProficiencyRequirement(state.xp[pw], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[pw]||pw)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='offhand'){
-      var mo=/^stshield_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
+      var mo=/^st(?:shield|ward)_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
       var to=mo[1];
+      if(isWard(to)) return null; // a ward has no per-type proficiency gate (equipUniqueOffhand skips it too)
       return meetsProficiencyRequirement(state.xp[to], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[to]||to)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='bodyarmor'){
@@ -47650,7 +47654,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.20';
+  var GAME_VERSION = '0.1.4.21';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47840,7 +47844,7 @@
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
-      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, itemEffectLine:itemEffectLine, itemSourceLine:itemSourceLine, ITEM_SOURCE:ITEM_SOURCE, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantAutoForecast:enchantAutoForecast, enchantCrystalsAvailable:enchantCrystalsAvailable, AUTOROLL_CONFIRM_AT:AUTOROLL_CONFIRM_AT, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
+      parseImprovable:parseImprovable, itemSearchAlias:itemSearchAlias, itemEffectLine:itemEffectLine, itemSourceLine:itemSourceLine, ITEM_SOURCE:ITEM_SOURCE, ownedIdsBreakdown:ownedIdsBreakdown, improveMaterialSpan:improveMaterialSpan, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, improveMatTier:improveMatTier, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, uniqueEquipLock:uniqueEquipLock, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantAutoForecast:enchantAutoForecast, enchantCrystalsAvailable:enchantCrystalsAvailable, AUTOROLL_CONFIRM_AT:AUTOROLL_CONFIRM_AT, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, equipCandidateRowHtml:equipCandidateRowHtml, bankUniqueBlob:bankUniqueBlob, bankUniqueRevive:bankUniqueRevive, uniqueBaseName:uniqueBaseName, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
