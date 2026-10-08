@@ -24768,6 +24768,36 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Item card: a click in the sell-amount box never closes the card (Gutwrench, Opera GX) ------
+  // The overlay carried its own close action, so the dispatcher closed the card on any click inside it
+  // that had no action of its own. Now: a click inside a text field fires no ancestor action, and the
+  // card closes on the backdrop only, like every other popup.
+  suite('item card: the sell-amount box keeps the card open', function(){
+    var s = FF._state;
+    var sv = { inv:s.inventory, cat:FF._currentCategory(), det:FF._inventoryDetailItem(), locks:s.lockedItems };
+    var ov = document.getElementById('invDetailOverlay');
+    ok(!!ov, 'the item-detail overlay exists on the page');
+    try {
+      s.inventory = { fishing_t0: 7 }; s.lockedItems = {};
+      FF._setCurrentCategory('inventory'); FF._setInventoryDetailItem('fishing_t0');
+      FF.renderInvDetailOverlay();
+      var box = document.getElementById('invSellQty');
+      ok(!!box, 'the card renders the amount box for a stack of 7');
+      ok(!ov.hasAttribute('data-action'), 'the overlay no longer carries the close action itself');
+      box.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+      eq(FF._inventoryDetailItem(), 'fishing_t0', 'a click in the amount box leaves the card open');
+      // The Close button still works through the dispatcher...
+      var closeBtn = ov.querySelector('[data-action="closeInvDetail"]');
+      ok(!!closeBtn, 'the card still has its Close button');
+      // ...and the backdrop closes it (a click on the overlay element itself, outside the card).
+      FF._setInventoryDetailItem('fishing_t0'); FF.renderInvDetailOverlay();
+      ov.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+      eq(FF._inventoryDetailItem(), null, 'a click on the backdrop closes the card');
+    } finally {
+      s.inventory = sv.inv; s.lockedItems = sv.locks; FF._setInventoryDetailItem(sv.det); FF._setCurrentCategory(sv.cat); FF.renderInvDetailOverlay();
+    }
+  });
+
   // ---- Inventory grid: quantity ticks update cells in place; the grid is not rebuilt (owner, 2026-10-08) ----
   // Every owned-count change made the panel's HTML differ, so the whole grid was replaced on nearly every
   // crafting tick and the phone's scroll anchor snapped to the top. Same structure -> counts written into

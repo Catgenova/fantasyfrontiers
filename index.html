@@ -3092,11 +3092,11 @@
 </svg>
 <div id="app">
   <div id="familiarPopupOverlay"></div>
-  <div id="skillInfoOverlay" class="skill-info-overlay" data-action="closeSkillInfo" style="display:none"></div>
-  <div id="invDetailOverlay" class="skill-info-overlay" data-action="closeInvDetail" style="display:none"></div>
-  <div id="itemLinkOverlay" class="skill-info-overlay" data-action="closeItemLink" style="display:none"></div>
-  <div id="uniqueDetailOverlay" class="skill-info-overlay" data-action="closeUniqueDetail" style="display:none"></div>
-  <div id="mastercraftResultOverlay" class="skill-info-overlay" data-action="closeMastercraftResult" style="display:none"></div>
+  <div id="skillInfoOverlay" class="skill-info-overlay" style="display:none"></div>
+  <div id="invDetailOverlay" class="skill-info-overlay" style="display:none"></div>
+  <div id="itemLinkOverlay" class="skill-info-overlay" style="display:none"></div>
+  <div id="uniqueDetailOverlay" class="skill-info-overlay" style="display:none"></div>
+  <div id="mastercraftResultOverlay" class="skill-info-overlay" style="display:none"></div>
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="towerPreviewOverlay"></div>
@@ -46598,6 +46598,11 @@
   document.getElementById('app').addEventListener('click', function(e){
     var btn = e.target.closest('[data-action]');
     if(!btn) return;
+    // A click INSIDE a text field (placing the caret, or the spinner of a number box) must never fire an
+    // ancestor's action: with the item card's close action on its overlay, tapping the sell-amount box
+    // closed the card (Gutwrench, Opera GX). A field that carries its own data-action (a checkbox toggle)
+    // still fires, since then btn IS the target.
+    if(btn !== e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName || '')) return;
     var action = btn.getAttribute('data-action');
     if(COMBAT_LOCKED_ACTIONS[action] && combatLocksGear()){ combatGearLockNotice(); render(true); needsRender = false; return; }
     // Read the run length off the card that was clicked and hand it to placeNewActivity. Done here, once,
@@ -46656,6 +46661,12 @@
   bindBackdropClose('playerProfileOverlay', function(){ if(playerProfileTarget){ closePlayerProfile(); } });
   bindBackdropClose('settingsOverlay', function(){ if(settingsOpen){ settingsOpen = false; renderSettingsModal(); } });
   bindBackdropClose('familiarPopupOverlay', function(){ if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); } });
+  // The five skill-info-style cards used to carry their close action ON the overlay element, so the
+  // central dispatcher closed them on any click inside the card that had no action of its own (the
+  // sell-amount box, a label, the card's own text). Backdrop-only, like every popup above.
+  [['skillInfoOverlay','closeSkillInfo'],['invDetailOverlay','closeInvDetail'],['itemLinkOverlay','closeItemLink'],['uniqueDetailOverlay','closeUniqueDetail'],['mastercraftResultOverlay','closeMastercraftResult']].forEach(function(pair){
+    bindBackdropClose(pair[0], function(){ var h = ACTIONS[pair[1]]; if(h){ h(null, null); render(true); } });
+  });
 
   // Workflows: hovering a node lights up the whole chain feeding it (its ancestors in the tree), so you
   // can trace "what do I need to make this?" upstream to the raw gather. Pure DOM, no re-render.
@@ -47685,7 +47696,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.23';
+  var GAME_VERSION = '0.1.4.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47870,7 +47881,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
+      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
