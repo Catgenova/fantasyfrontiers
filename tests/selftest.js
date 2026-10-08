@@ -24732,6 +24732,24 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Uniques are bound: the pickers and the unique's cards say so (Anferny, owner 2026-10-08) ----
+  // A Mastercrafted set piece or legendary weapon is a UNIQUE and never lists on the Marketplace or in the
+  // guild bank (both trade stackable bag items). The owner kept them bound; the note is the fix.
+  suite('uniques: the bound-item note shows where players look', function(){
+    var s = FF._state, sv = { uq:s.uniqueItems, inv:s.inventory };
+    try {
+      ok(typeof FF.UNIQUE_BOUND_NOTE === 'string' && /bound to you/.test(FF.UNIQUE_BOUND_NOTE), 'the note exists and says bound');
+      ok(/Marketplace/.test(FF.UNIQUE_BOUND_NOTE) && /guild bank/.test(FF.UNIQUE_BOUND_NOTE), 'and names both places it does not go');
+      ok(/rings, amulets and cloaks/.test(FF.UNIQUE_BOUND_NOTE), 'and says the forged accessories DO trade');
+      s.uniqueItems = { u_bound1: { uid:'u_bound1', base:'stweapon_rapier_t9_supreme', kind:'weapon', tier:9, rarity:'supreme', enchants:[], enhance:0 } };
+      s.inventory = {};
+      FF.improveSelect('u_bound1');
+      var html = FF.renderImprovementTab();
+      ok(html.indexOf(FF.UNIQUE_BOUND_NOTE) !== -1, 'the Improvement tab shows it under Trade for a unique');
+      ok(/Permanently sell|data-action="improveSell"|Sell/.test(html), 'next to the vendor sale it still offers');
+    } finally { s.uniqueItems = sv.uq; s.inventory = sv.inv; }
+  });
+
   // ---- Guild directory: the roster cap follows the Hall (Meri, 2026-10-08) ------------------------
   // The All Guilds list was fetched once per session, so a Hall raised from Level 1 to 3 kept reading
   // "11/11 members" against a roster of 13. The cached row is patched on upgrade and the list goes stale.
