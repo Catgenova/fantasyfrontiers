@@ -101,6 +101,24 @@ for (const [re, what] of SECRET_PATTERNS) {
   }
 }
 
+// ---- Source guard: no browser form history on game fields (owner, 2026-10-08) --------------------
+// The guild treasury amount box popped Chrome's own history dropdown ("1000000", "5000"). Every text-like
+// <input> the game renders must carry an autocomplete attribute (the game fields say "off"; the login gate
+// keeps its explicit new-password / current-password values so password managers still fill it). This is
+// checked HERE, against the SOURCE, because the obfuscator rewrites the markup strings and the selftest
+// page never mounts the chat dock or the guild bank, so a browser-side scan reported clean on a planted
+// omission (proven 2026-10-08). Checkbox / radio / range / color / file / hidden inputs never autofill.
+{
+  const tags = html.match(/<input\b[^>]*>/g) || [];
+  const missing = tags.filter((t) => !/autocomplete=/.test(t) && !/type="(checkbox|radio|range|color|file|hidden)"/.test(t));
+  if (missing.length) {
+    console.error("build: refusing to build -- " + missing.length + " text-like <input> tag(s) have no autocomplete attribute:");
+    missing.forEach((t) => console.error("  " + t.slice(0, 120)));
+    console.error("  Add autocomplete=\"off\" (or an explicit value on a login-gate field).");
+    process.exit(1);
+  }
+}
+
 // Bake the build id into the client (replaces the readable copy's 'dev' sentinel, which disables the
 // update check). Must run BEFORE obfuscation so the value ends up inside the obfuscated script.
 if (!html.includes("var FF_BUILD_ID = 'dev';")) {
