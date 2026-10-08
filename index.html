@@ -41921,13 +41921,25 @@
   ];
   var guildSub = 'roster';
   // Guild directory: browse every guild (world-readable guilds + guild_members) and view its roster.
-  var guildDir = { status:'idle', list:[], viewId:null, viewGuild:null, viewMembers:[], viewStatus:'idle' };
+  var guildDir = { status:'idle', list:[], viewId:null, viewGuild:null, viewMembers:[], viewStatus:'idle', loadedAt:0 };
+  // The list used to be fetched ONCE per session and reused until Refresh, so a Hall raised from Level 1
+  // to 3 left the All Guilds row reading "11/11 members" against a roster of 13 (Meri, 2026-10-08). A
+  // ready list older than this is refetched the next time the directory is opened; a Hall upgrade also
+  // patches the cached row directly (guildDirPatchHall) so the leader's own row never waits for it.
+  var GUILD_DIR_TTL_MS = 120000;
+  function guildDirStale(now){ return guildDir.status==='ready' && ((now||Date.now()) - (guildDir.loadedAt||0)) >= GUILD_DIR_TTL_MS; }
+  function guildDirPatchHall(guildId, hallLevel){
+    var n = 0;
+    (guildDir.list||[]).forEach(function(g){ if(g && g.id===guildId){ g.hall_level = hallLevel; n++; } });
+    if(guildDir.viewGuild && guildDir.viewGuild.id===guildId){ guildDir.viewGuild.hall_level = hallLevel; }
+    return n;
+  }
   function guildDirLoad(force){
     if(!chatClient || guildDir.status==='loading') return;
-    if(!force && guildDir.status==='ready') return;
+    if(!force && guildDir.status==='ready' && !guildDirStale()) return;
     guildDir.status='loading';
     chatClient.from('guilds').select('id,name,tag,description,member_count,mortal,hall_level').order('member_count',{ascending:false}).limit(100).then(function(res){
-      guildDir.list = (res && res.data) || []; guildDir.status='ready';
+      guildDir.list = (res && res.data) || []; guildDir.status='ready'; guildDir.loadedAt = Date.now();
       if(currentCategory==='guild') render();
     }, function(){ guildDir.status='error'; if(currentCategory==='guild') render(); });
   }
@@ -42004,7 +42016,7 @@
           : 'Could not raise the Hall.';
         render(); return;
       }
-      if(guildState.guild) guildState.guild.hall_level = d.hall_level;
+      if(guildState.guild){ guildState.guild.hall_level = d.hall_level; guildDirPatchHall(guildState.guild.id, d.hall_level); }
       guildBankState.treasury = Number(d.treasury) || 0;
       addLog('The Guild Hall rises to Level ' + d.hall_level + '. The roster now holds ' + guildMaxMembers(guildState.guild) + ' members (' + fmt(d.cost) + 'g from the treasury).', 'important');
       render();
@@ -42187,7 +42199,7 @@
   }
   // The Guilds directory: browse every guild's name/tag/size, tap one to view its roster (read-only).
   function renderGuildDirectory(){
-    if(guildDir.status==='idle') guildDirLoad(false);
+    if(guildDir.status==='idle' || guildDirStale()) guildDirLoad(false);
     if(guildDir.viewId){
       var gd = guildDir.viewGuild || {};
       var h = '<button class="action-btn" data-action="guildDirBack" style="width:auto;flex:0 0 auto;margin-bottom:8px;">&lsaquo; All guilds</button>';
@@ -47628,7 +47640,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.18';
+  var GAME_VERSION = '0.1.4.19';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47837,7 +47849,7 @@
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       chatChanNote:chatChanNote, chatChanClear:chatChanClear, chatChanPipsUpdate:chatChanPipsUpdate, _chatChanUnread:function(){ return chatChanUnread; }, chatHeadStatusHtml:chatHeadStatusHtml, chatTagColor:chatTagColor, CHAT_TAG_PALETTE:CHAT_TAG_PALETTE, renderChatTab:renderChatTab,
-      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_HALL_MAX_LEVEL:GUILD_HALL_MAX_LEVEL, GUILD_HALL_COSTS:GUILD_HALL_COSTS, guildHallCost:guildHallCost, guildHallLevel:guildHallLevel, guildMaxMembers:guildMaxMembers, renderGuildHallPanel:renderGuildHallPanel, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
+      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_HALL_MAX_LEVEL:GUILD_HALL_MAX_LEVEL, GUILD_HALL_COSTS:GUILD_HALL_COSTS, guildHallCost:guildHallCost, guildHallLevel:guildHallLevel, guildMaxMembers:guildMaxMembers, renderGuildHallPanel:renderGuildHallPanel, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir, guildDirStale:guildDirStale, guildDirPatchHall:guildDirPatchHall, GUILD_DIR_TTL_MS:GUILD_DIR_TTL_MS,
       render:render, softRender:softRender, _setPointerHeld:function(v){ _pointerHeld = !!v; }, _needsRender:function(){ return needsRender; }, _setNeedsRender:function(v){ needsRender = !!v; }, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; }, _setCurrentCategory:function(c){ currentCategory = c; }, renderEstateJobStatus:renderEstateJobStatus,
       currentSubId:function(){ return currentSub; }, navBusySkills:navBusySkills, subBtnHtml:subBtnHtml, _navLastSub:function(){ return navLastSub; },
       navCatSkillIds:navCatSkillIds, navCatRollupHtml:navCatRollupHtml, navUnlockedTiers:navUnlockedTiers, subTipText:subTipText, navTotalPlinth:navTotalPlinth, _navSeenTiers:function(){ return navSeenTiers; },

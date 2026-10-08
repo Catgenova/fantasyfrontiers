@@ -24732,6 +24732,28 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Guild directory: the roster cap follows the Hall (Meri, 2026-10-08) ------------------------
+  // The All Guilds list was fetched once per session, so a Hall raised from Level 1 to 3 kept reading
+  // "11/11 members" against a roster of 13. The cached row is patched on upgrade and the list goes stale.
+  suite('guild directory: Hall upgrades reach the cached list', function(){
+    var D = FF.guildDir, sv = { list:D.list, status:D.status, at:D.loadedAt, view:D.viewGuild };
+    try {
+      D.list = [ { id:'g1', name:'Masons of Marble', tag:'MM', member_count:11, hall_level:1 }, { id:'g2', name:'Other', tag:'OT', member_count:3, hall_level:0 } ];
+      D.viewGuild = D.list[0];
+      eq(FF.guildMaxMembers(D.list[0]), 11, 'before: Hall 1 reads a cap of 11');
+      eq(FF.guildDirPatchHall('g1', 3), 1, 'the upgrade patches exactly the one cached row');
+      eq(FF.guildMaxMembers(D.list[0]), 13, 'after: the same row reads 13');
+      eq(D.viewGuild.hall_level, 3, 'and the open roster view follows');
+      eq(D.list[1].hall_level, 0, 'other guilds are untouched');
+      eq(FF.guildDirPatchHall('nope', 5), 0, 'an unknown id patches nothing');
+      D.status = 'ready'; D.loadedAt = Date.now();
+      ok(!FF.guildDirStale(), 'a fresh list is reused');
+      ok(FF.guildDirStale(Date.now() + FF.GUILD_DIR_TTL_MS), 'past the TTL it is refetched on the next open');
+      D.status = 'idle';
+      ok(!FF.guildDirStale(), 'staleness only applies to a loaded list');
+    } finally { D.list = sv.list; D.status = sv.status; D.loadedAt = sv.at; D.viewGuild = sv.view; }
+  });
+
   // ---- Ticket-0239: Full Crew / Guild Crew count working peons by the fields a task carries ----
   suite('quests: Full Crew counts real peon tasks (ticket-0239)', function(){
     var fc = FF.questById('full_crew'), gc = FF.questById('guild_crew');
