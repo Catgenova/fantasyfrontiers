@@ -449,9 +449,12 @@
     // Workshop: simple passthrough by craft skill id.
     var cs = FF.CRAFT_SKILL_IDS[0];
     eqInp(T.workshop.inputs(cs, 1), FF.getWorkshopTierData(cs, 1).inputs, 'workshop inputs: passthrough at tier');
-    // Targets that never went through craftFilterTier stay unfiltered (no inputs fn -> full tier range).
-    ok(!T.amulet.inputs && !T.belt.inputs && !T.shaft.inputs, 'amulet/belt/shaft have no affordable filter (full range)');
-    ok(typeof T.melee.inputs === 'function' && typeof T.ring.inputs === 'function', 'filtered targets expose inputs()');
+    // Targets that never go through craftFilterTier stay unfiltered (no inputs fn -> full tier range).
+    // The belt is NOT one of them: its card snaps the selection to an affordable tier, so its stepper must
+    // filter too, or a step lands on an unaffordable tier and snaps back (Anferny's "stuck on Rabbit").
+    ok(!T.amulet.inputs && !T.shaft.inputs, 'amulet/shaft have no affordable filter (full range)');
+    ok(typeof T.melee.inputs === 'function' && typeof T.ring.inputs === 'function' && typeof T.belt.inputs === 'function', 'filtered targets (belt included) expose inputs()');
+    eqInp(T.belt.inputs('', 2), FF.getBeltTierData(2).inputs, 'belt inputs: passthrough at tier');
   });
 
   // ---- Craft filter: with the filter ON, the tier stepper offers ONLY affordable tiers ----------
@@ -24766,6 +24769,28 @@
       s.xp.prayer = FF.xpFloorForLevel(100);
       eq(FF.faithMax(s) - atLv1, 99*100, 'Lv100 is 99 levels x 100 above Lv1 (base 100 + 10,000)');
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
+  });
+
+  // ---- Belt stepper honours "only show items I have mats for" (Anferny, Aug to Oct 2026) ----------
+  // The belt entry in TIER_STEP_TARGETS was the only one without an inputs() reader, so the stepper
+  // offered every tier under the filter, a step landed on an unaffordable tier, and the card's
+  // affordability snap pulled the selection back to Rabbit every time.
+  suite('belt stepper: only-mats filter offers affordable tiers', function(){
+    var s = FF._state, sv = { inv:s.inventory, only:FF._craftOnlyAffordable() };
+    try {
+      s.inventory = {};
+      var give = function(t){ var inp = FF.getBeltTierData(t).inputs; Object.keys(inp).forEach(function(k){ s.inventory[k] = (s.inventory[k]||0) + inp[k]; }); };
+      give(0); give(3);   // mats for Rabbit and for tier 3 only
+      FF._setCraftOnlyAffordable(true);
+      var html = FF.tierStepper('belt', '', [0,1,2,3,4,5], 0, 'Rabbit', false);
+      var m = /data-tier-values="([^"]*)"/.exec(html);
+      ok(!!m, 'the stepper renders its value list');
+      eq(m && m[1], '0,3', 'with the filter on, the belt stepper offers only the tiers you can afford');
+      ok(!/data-tier-dir="1"[^>]*disabled/.test(html), 'and the + button is live on Rabbit (there is an affordable tier above)');
+      FF._setCraftOnlyAffordable(false);
+      var m2 = /data-tier-values="([^"]*)"/.exec(FF.tierStepper('belt', '', [0,1,2,3,4,5], 0, 'Rabbit', false));
+      eq(m2 && m2[1], '0,1,2,3,4,5', 'with the filter off every tier is offered');
+    } finally { s.inventory = sv.inv; FF._setCraftOnlyAffordable(sv.only); }
   });
 
   // ---- Item card: a click in the sell-amount box never closes the card (Gutwrench, Opera GX) ------

@@ -45911,7 +45911,10 @@
     building: { get:function(sub){ return selectedBuildingTier[sub]; },    set:function(sub,v){ selectedBuildingTier[sub]=v; }, inputs:function(sub,t){ return getBuildingTierData(sub, t).inputs; } },
     armor:    { get:function(sub){ return selectedBodyArmorTier[sub]; },   set:function(sub,v){ selectedBodyArmorTier[sub]=v; }, inputs:function(sub,t){ var slot=null,material=null; for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){ var s=BODY_ARMOR_SLOTS[i]; if(sub.length>s.length && sub.slice(-(s.length+1))==='_'+s){ slot=s; material=sub.slice(0, sub.length-s.length-1); break; } } return (slot&&material) ? getBodyArmorTierData(material, slot, t).inputs : {}; } },
     shaft:    { get:function(){ return selectedShaftLogTier; },            set:function(sub,v){ selectedShaftLogTier=v; } },
-    belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
+    // inputs() was MISSING here alone (Anferny, Aug-Oct 2026: "stuck on Rabbit with only-mats on"): without
+    // it the stepper offered every tier, the step landed on an unaffordable one, and the card's affordable
+    // snap (craftFilterTier) pulled the selection straight back to the lowest tier you could afford.
+    belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; },           inputs:function(sub,t){ return getBeltTierData(t).inputs; } },
     melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; }, inputs:function(sub,t){ return getStackableWeaponTierData(sub, t).inputs; } },
     shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; },    inputs:function(sub,t){ return getStackableShieldTierData(sub, t).inputs; } },
     quiver:   { get:function(sub){ return selectedQuiverTier[sub]; },      set:function(sub,v){ selectedQuiverTier[sub]=v; },    inputs:function(sub,t){ return getStackableQuiverTierData(sub, t).inputs; } },
@@ -47707,7 +47710,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.25';
+  var GAME_VERSION = '0.1.4.26';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47869,7 +47872,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       fmt:fmt, fmtRange:fmtRange, fmtDec:fmtDec, fmtPct:fmtPct, fieldDiggingReq:fieldDiggingReq, fieldDiggingOk:fieldDiggingOk, estatePlaceField:estatePlaceField, totemLevelReq:totemLevelReq, totemLevelOk:totemLevelOk, estateUpgradeTotem:estateUpgradeTotem, estatePlaceTotem:estatePlaceTotem, estatePlaceWorkshop:estatePlaceWorkshop, placeableWorkshopsFor:placeableWorkshopsFor, estatePlaceCottage:estatePlaceCottage,
-      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText, skillNavTarget:skillNavTarget, goItemSource:goItemSource, bonusOutputChance:bonusOutputChance, bonusOutputRoll:bonusOutputRoll, brewYieldChance:brewYieldChance, prospectorBonusChance:prospectorBonusChance,
+      tierStepper:tierStepper, tierRange:tierRange, _craftOnlyAffordable:function(){ return craftOnlyAffordable; }, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs, inputsLine:inputsLine, inputNeedText:inputNeedText, skillNavTarget:skillNavTarget, goItemSource:goItemSource, bonusOutputChance:bonusOutputChance, bonusOutputRoll:bonusOutputRoll, brewYieldChance:brewYieldChance, prospectorBonusChance:prospectorBonusChance,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, craftTierBaseInputs:craftTierBaseInputs, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab,
