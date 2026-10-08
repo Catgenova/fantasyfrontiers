@@ -24771,6 +24771,14 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Guests are told where the upgrade is (guest chat question, 2026-10-08) ----------------------
+  suite('guest upgrade: a starter tip names the two ways in', function(){
+    var tip = FF.TICKER_STARTER_TIPS.filter(function(x){ return /Playing as a guest/.test(x); })[0];
+    ok(!!tip, 'a starter tip addresses guests');
+    ok(/<b>Upgrade<\/b> button beside Settings/.test(tip) && /Settings &rarr; Account/.test(tip), 'it names the top-bar chip and the Settings tab');
+    ok(/pick your own name/.test(tip) && /carries over/.test(tip), 'and says the name is theirs to choose and progress carries over');
+  });
+
   // ---- Belt stepper honours "only show items I have mats for" (Anferny, Aug to Oct 2026) ----------
   // The belt entry in TIER_STEP_TARGETS was the only one without an inputs() reader, so the stepper
   // offered every tier under the filter, a step landed on an unaffordable tier, and the card's
