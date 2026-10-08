@@ -7029,7 +7029,8 @@
     Object.keys(CRAFT_PHYSIQUE).forEach(function(k){ CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['quartermaster',1],['diligence',1]]); });
     // Outfitting crafts: Masterwork (rarity rolls).
     // NOTE: masterwork is deliberately NOT bundled into the per-craft physique list -- it trains only when a
-    // craft yields rare+ equipment, awarded via awardMasterworkXp() at the two rarity-rolling craft sites.
+    // craft yields rare+ equipment, awarded via awardMasterworkXp() at the three rarity-rolling craft sites
+    // (special-craft equipment, Blueprint forges, and Archaeology relics).
     // Logic is the REFINING physique: it trains from (and ONLY from) the Refining skills. Ensure every
     // refining craft grants it, and strip it from every non-refining craft (cooking/outfitting/construction).
     REFINING_SKILL_IDS.forEach(function(k){
@@ -15259,6 +15260,10 @@
             var rarityId = rollRelicRarity(state);
             var relicId = 'relic_t'+recipe.tierIndex+'_'+rarityId;
             addItem(relicId, 1);
+            // Relics roll the unified rarity odds, which Masterwork RAISES, yet a rare+ relic never trained
+            // it (ticket "Relics don't give Mastery XP", owner order 2026-10-08): the third rarity-rolling
+            // craft site, paid exactly like the other two.
+            awardMasterworkXp(rarityId, recipe.tierIndex);
             addLog('You recovered a ' + RELIC_ITEMS[relicId].name + '!', 'important');
             maybeShowRarityPopup(rarityId, RELIC_ITEMS[relicId].name, RELIC_ITEMS[relicId].icon);
             if(rarityId==='fantastic') discordFeedPost({ kind:'relic', name:RELIC_ITEMS[relicId].name, item_key:relicId, rarity:'fantastic', stats:discordItemStatsText(relicId) });
@@ -47680,7 +47685,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.22';
+  var GAME_VERSION = '0.1.4.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for

@@ -18699,6 +18699,42 @@
     } finally { s.physique = sv; }
   });
 
+  // ---- Archaeology: a rare+ relic trains Masterwork (ticket, owner order 2026-10-08) -------------
+  // Relics roll the unified rarity odds (which Masterwork raises) but the relic branch never paid the
+  // physique; it is the third rarity-rolling craft site and now pays like the other two.
+  suite('masterwork physique: a rare+ relic craft trains it', function(){
+    var s = FF._state;
+    var rid = Object.keys(FF.ALL_CRAFT_RECIPES).filter(function(k){ return FF.ALL_CRAFT_RECIPES[k].relicCraft; })[0];
+    ok(!!rid, 'a relic recipe exists');
+    var recipe = FF.ALL_CRAFT_RECIPES[rid];
+    var sv = { inv:s.inventory, phys:s.physique, xp:s.xp.archaeology, act:s.activity };
+    var savedRand = Math.random;
+    try {
+      s.physique = {}; s.inventory = {};
+      Object.keys(recipe.inputs || {}).forEach(function(k){ s.inventory[k] = (recipe.inputs[k] || 1) * 10; });
+      var act = { type:'craft', skill:'archaeology', itemId:rid, progress:0 };
+      s.activity = act;
+      // Math.random 0 -> success roll passes AND the rarity roll lands fantastic.
+      Math.random = function(){ return 0; };
+      // One generous tick: a relic takes seconds whatever the tool, so a minute of elapsed time always
+      // completes exactly one craft here (the loop only runs again while inputs and time remain).
+      var effTime = Math.max(60000, recipe.time * 1000 * 4);
+      FF.processCraftActivity(act, effTime);
+      var fant = Object.keys(s.inventory).filter(function(k){ return /^relic_t\d+_fantastic$/.test(k) && s.inventory[k] > 0; });
+      ok(fant.length >= 1, 'the forced roll produced a fantastic relic');
+      ok((s.physique.masterwork || 0) > 0, 'and the fantastic relic trained Masterwork');
+      // A normal relic (rarity roll fails, success still passes) pays nothing.
+      s.physique = {};
+      var calls = 0; Math.random = function(){ calls++; return calls === 1 ? 0 : 0.999; };   // success passes, every rarity roll misses
+      s.activity = act = { type:'craft', skill:'archaeology', itemId:rid, progress:0 };
+      FF.processCraftActivity(act, effTime);
+      eq((s.physique.masterwork || 0), 0, 'a normal relic grants no Masterwork XP');
+    } finally {
+      Math.random = savedRand;
+      s.inventory = sv.inv; s.physique = sv.phys; s.xp.archaeology = sv.xp; s.activity = sv.act;
+    }
+  });
+
   // ---- Faith: auto-sacrifice Broken Relics to top up Faith (no-overflow) ----------------
   suite('faith: auto-sacrifice broken relics', function(){
     ok(typeof FF.autoSacrificeRelicsCheck === 'function' && typeof FF.brokenRelicFaithRestore === 'function', 'auto-sacrifice helpers exported');
