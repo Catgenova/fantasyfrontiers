@@ -20818,7 +20818,11 @@
     var poolMagic = FF.enchantPoolListHtml('weapon', { magicWeapon:true });
     ok(!/Fire Damage/.test(poolMagic) && !/Flat Physical Damage/.test(poolMagic), 'a wand/staff/scepter card hides the raw-damage lines');
     var poolA = FF.enchantPoolListHtml('bodyarmor');
-    eq((poolA.match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.armor.length, 'armour pool lists every armour enchant mod');
+    // Every armour line EXCEPT the quiver-only ones (Arrow Thrift, 2026-10-08); a quiver card lists it too.
+    var armourShared = FF.ENCHANT_MODS.armor.filter(function(m){ return !m.quiverOnly; }).length;
+    eq((poolA.match(/inputs-line/g)||[]).length, armourShared, 'armour pool lists every shared armour enchant mod');
+    ok(!/Arrow Thrift/.test(poolA), 'and never the quiver-only Arrow Thrift line');
+    eq((FF.enchantPoolListHtml('offhand', { quiver:true }).match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.armor.length, 'a quiver card lists every armour line, Arrow Thrift included');
     ok(/HP Regen \/ 5s/.test(poolA) && /\+1 – \+6/.test(poolA), 'armour pool shows HP Regen per 5s with its range');
     eq((FF.enchantPoolListHtml('ring').match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.jewelry.length, 'jewelry (ring) pool lists every jewelry enchant mod');
     // Defense (armour): a % multiplier on total Armor (also lifts the stat-panel Armor row).
@@ -24769,6 +24773,40 @@
       s.xp.prayer = FF.xpFloorForLevel(100);
       eq(FF.faithMax(s) - atLv1, 99*100, 'Lv100 is 99 levels x 100 above Lv1 (base 100 + 10,000)');
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
+  });
+
+  // ---- Quivers are improvable and carry Arrow Thrift (ticket 2026-10-08, owner decision) ----------
+  suite('improvement: quivers improve like shields, with a quiver-only Arrow Thrift line', function(){
+    var s = FF._state;
+    var sv = { inv:s.inventory, uq:s.uniqueItems, oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohr:s.equippedOffhandRarity, ohu:s.equippedOffhandUid, mh:s.equippedMainhand };
+    var savedRand = Math.random;
+    try {
+      var qid = Object.keys(FF.ALL_SELLABLE).filter(function(k){ return /^stquiver_.*_t9_rare$/.test(k); })[0];
+      ok(!!qid, 'a Rare t9 quiver exists');
+      var p = FF.parseImprovable(qid);
+      ok(!!p && p.kind === 'offhand' && p.rarity === 'rare', 'a quiver parses as an improvable offhand');
+      // The pool: Arrow Thrift for a quiver only.
+      var qpool = FF.enchantPoolForItem('offhand', false, true).map(function(m){ return m.id; });
+      var spool = FF.enchantPoolForItem('offhand', false, false).map(function(m){ return m.id; });
+      ok(qpool.indexOf('arrowThrift') !== -1, 'a quiver can roll Arrow Thrift');
+      ok(spool.indexOf('arrowThrift') === -1, 'a shield or ward cannot');
+      ok(FF.baseIsQuiver(qid) && !FF.baseIsQuiver('stshield_shieldSmall_t9_rare'), 'baseIsQuiver keys the pool off the base id');
+      // The effect: the equipped quiver's line, Enhance-scaled, as a chance that a shot spends no arrow.
+      s.uniqueItems = { u_q1: { uid:'u_q1', base:qid, kind:'offhand', tier:9, rarity:'rare', enchants:[{ mod:'arrowThrift', roll:10 }], enhance:0 } };
+      s.equippedOffhandUid = 'u_q1';
+      ok(Math.abs(FF.arrowThriftChance(s) - 0.10) < 1e-9, 'a +10% line is a 10% chance');
+      s.uniqueItems.u_q1.enhance = 15;
+      ok(Math.abs(FF.arrowThriftChance(s) - 0.25) < 1e-9, 'and +15 scales it x2.5 like any enchant line');
+      Math.random = function(){ return 0.2; };
+      ok(FF.arrowThriftSaves(s), 'a roll under the chance saves the arrow');
+      Math.random = function(){ return 0.3; };
+      ok(!FF.arrowThriftSaves(s), 'a roll over it spends the arrow');
+      s.equippedOffhandUid = null;
+      eq(FF.arrowThriftChance(s), 0, 'no quiver line, no thrift');
+    } finally {
+      Math.random = savedRand;
+      s.inventory = sv.inv; s.uniqueItems = sv.uq; s.equippedOffhand = sv.oh; s.equippedOffhandTier = sv.oht; s.equippedOffhandRarity = sv.ohr; s.equippedOffhandUid = sv.ohu; s.equippedMainhand = sv.mh;
+    }
   });
 
   // ---- Hidden tabs keep ticking (Gutwrench, Maw of the Deep DPS collapse in a background tab) ------

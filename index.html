@@ -5926,6 +5926,11 @@
   // The arrow a bow shot spends. An EQUIPPED arrow (state.equippedArrow) is PREFERRED while stocked; when it
   // runs out the shot falls back to the next usable unlocked arrow (highest tier <= the bow). "Auto" (no
   // selection) picks that highest-tier owned arrow directly. Returns the arrow id, or null if none remain.
+  // Arrow Thrift (a quiver's own enchant line): the summed line, as a percent chance that a plain shot
+  // spends no arrow. Rolled AFTER the Quiver's preserve roll on the same shot, so the two stack as
+  // independent chances. Read off the equipped enchant totals, so Enhance scales it like any line.
+  function arrowThriftChance(st){ st = st || state; var t = equippedEnchantTotals(st); return Math.max(0, Math.min(0.9, ((t && t.arrowThrift) || 0) / 100)); }
+  function arrowThriftSaves(st){ var c = arrowThriftChance(st); return c > 0 && Math.random() < c; }
   function bowArrowToConsume(st){
     st = st || state;
     var cap = bowArrowTierCap(st);
@@ -17243,7 +17248,10 @@
       { id:'dmgReduction', label:'Damage Reduction', stat:'dmgReduction', min:1, max:7,  pct:true },
       { id:'blockChance',  label:'Block Chance',     stat:'blockChance',  min:2, max:10, pct:true },
       { id:'thorns',       label:'Thorns',           stat:'thorns',       min:3, max:18, pct:false },
-      { id:'hpRegen',      label:'HP Regen',         stat:'hpRegen',      min:1, max:6,  pct:false }
+      { id:'hpRegen',      label:'HP Regen',         stat:'hpRegen',      min:1, max:6,  pct:false },
+      // Quiver-only (owner, 2026-10-08): a chance that a shot spends no arrow. Lives in the armour pool
+      // because a quiver is kind 'offhand', and enchantPoolForItem keeps it off every other offhand.
+      { id:'arrowThrift',  label:'Arrow Thrift',     stat:'arrowThrift',  min:3, max:15, pct:true, quiverOnly:true }
     ],
     jewelry: [
       { id:'critDamage',   label:'Critical Damage', stat:'critDamage', min:4, max:22, pct:true },
@@ -17264,18 +17272,20 @@
     var t = m[1]; return isWandWeapon(t) || isScepter(t); // staves swing physically now -- they roll raw-damage lines
   }
   // The enchant pool for a SPECIFIC item: a magic weapon (wand/staff/scepter) drops the raw-damage lines.
-  function enchantPoolForItem(kind, magicWeapon){
+  function enchantPoolForItem(kind, magicWeapon, quiver){
     var pool = ENCHANT_MODS[enchantCategoryForKind(kind)];
     if(kind==='weapon' && magicWeapon) return pool.filter(function(m){ return !m.raw; });
+    if(!quiver) pool = pool.filter(function(m){ return !m.quiverOnly; });   // Arrow Thrift is a quiver's line alone
     return pool;
   }
+  function baseIsQuiver(baseId){ return typeof baseId === 'string' && baseId.indexOf('stquiver_') === 0; }
   // Enchant context {tier, magicWeapon} used for range-scaling and raw-mod filtering. Works off a unique.
-  function enchantCtxForUnique(u){ return { tier: (u && u.tier)|0, magicWeapon: baseIsMagicWeapon(u && u.base) }; }
+  function enchantCtxForUnique(u){ return { tier: (u && u.tier)|0, magicWeapon: baseIsMagicWeapon(u && u.base), quiver: baseIsQuiver(u && u.base) }; }
   // Roll one enchant: a random mod from the item's pool (raw lines excluded for magic weapons) at a random
   // inclusive value in its range (raw lines' range scales with the weapon's tier).
   function rollEnchant(kind, ctx){
     ctx = ctx || {};
-    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon);
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon, !!ctx.quiver);
     var mod = pool[Math.floor(Math.random()*pool.length)];
     var r = enchantModRange(mod, ctx.tier||0);
     return { mod: mod.id, roll: r.min + Math.floor(Math.random()*(r.max - r.min + 1)) };
@@ -17290,7 +17300,7 @@
   // scales the raw-damage ranges to the weapon's tier and hides the raw lines on wands/staffs/scepters.
   function enchantPoolListHtml(kind, ctx){
     ctx = ctx || {};
-    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon); if(!pool || !pool.length) return '';
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon, !!ctx.quiver); if(!pool || !pool.length) return '';
     var tier = ctx.tier||0;
     var rows = pool.map(function(m){
       var r = enchantModRange(m, tier);
@@ -17322,6 +17332,7 @@
     var kind = id.indexOf('stweapon_')===0 ? 'weapon'
       : id.indexOf('stshield_')===0 ? 'offhand'
       : id.indexOf('stward_')===0 ? 'offhand'
+      : id.indexOf('stquiver_')===0 ? 'offhand'   // quivers (ticket 2026-10-08, owner: improvable + Arrow Thrift)
       : id.indexOf('bodyarmor_')===0 ? 'bodyarmor'
       : id.indexOf('ring_')===0 ? 'ring'
       : (id.indexOf('amulet_t')===0 || id.indexOf('amulet_warding_t')===0) ? 'amulet'
@@ -17471,9 +17482,10 @@
   }
   function equipUniqueOffhand(uid){
     var u = state.uniqueItems[uid];
-    var m = /^st(?:shield|ward)_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
+    var m = /^st(?:shield|ward|quiver)_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     var typeId = m[1], mh = getWeaponStyle(state.equippedMainhand);
-    if(mh.hand !== '1h'){ blockedNotice('Off-hand gear requires a one-handed weapon in your main hand.'); return false; }
+    if(isStackableQuiver(typeId)){ if(mh.hand !== 'bow'){ blockedNotice('A Quiver can only be equipped alongside a bow.'); return false; } }
+    else if(mh.hand !== '1h'){ blockedNotice('Off-hand gear requires a one-handed weapon in your main hand.'); return false; }
     if(!isWard(typeId) && !meetsProficiencyRequirement(state.xp[typeId], u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; } // wards use Warding, not a per-type weapon proficiency
     unequipOffhandAny();
     state.equippedOffhand = typeId; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
@@ -17897,8 +17909,8 @@
     var out = [];
     if(!slotHasValidUnique(state.equippedMainhandUid) && isStackableWeapon(state.equippedMainhand) && state.equippedMainhandTier > 0)
       out.push({ slot:'mainhand', baseId:'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity });
-    if(!slotHasValidUnique(state.equippedOffhandUid) && (isStackableShield(state.equippedOffhand) || isWard(state.equippedOffhand)) && state.equippedOffhandTier > 0)
-      out.push({ slot:'offhand', baseId:(isWard(state.equippedOffhand) ? 'stward_' : 'stshield_')+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity });
+    if(!slotHasValidUnique(state.equippedOffhandUid) && (isStackableShield(state.equippedOffhand) || isWard(state.equippedOffhand) || isStackableQuiver(state.equippedOffhand)) && state.equippedOffhandTier > 0)
+      out.push({ slot:'offhand', baseId:(isWard(state.equippedOffhand) ? 'stward_' : isStackableQuiver(state.equippedOffhand) ? 'stquiver_' : 'stshield_')+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity });
     if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl];
       if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.material) out.push({ slot:'armor:'+sl, baseId:'bodyarmor_'+s.material+'_'+sl+'_t'+(s.tier-1)+'_'+s.rarity }); });
     if(state.jewelrySlots) RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl];
@@ -18029,7 +18041,7 @@
   var AUTOROLL_CONFIRM_AT = 250;   // expected crystals above which the button arms instead of firing
   var improveAutoArmed = null;     // '<mod>|<target>|<slot>' once warned, so changing the target re-arms
   function enchantAutoForecast(kind, ctx, modId, target, enchantCount){
-    var pool = enchantPoolForItem(kind, !!(ctx && ctx.magicWeapon));
+    var pool = enchantPoolForItem(kind, !!(ctx && ctx.magicWeapon), !!(ctx && ctx.quiver));
     var m = enchantModById(kind, modId);
     if(!pool || !pool.length || !m) return null;
     var r = enchantModRange(m, (ctx && ctx.tier) || 0);
@@ -18077,7 +18089,7 @@
     else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ blockedNotice('That item is no longer available.'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; baseId=sel; }
     if(!isImprovableRarity(rarity)){ blockedNotice('Only Rare-or-better gear can be enchanted.'); return null; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return null; }
-    var magicWeapon = baseIsMagicWeapon(baseId);
+    var magicWeapon = baseIsMagicWeapon(baseId); var quiverBase = baseIsQuiver(baseId);
     var m = enchantModById(kind, modId);
     if(!m){ blockedNotice('Choose a target enchant for Auto-roll first.'); return null; }
     if(m.raw && magicWeapon){ addLog('Wands, staffs and scepters can’t roll raw-damage enchants.','danger'); return null; }
@@ -18103,7 +18115,7 @@
     // ARM-AND-CONFIRM on an expensive run (ticket-0164). Every guard above has passed, so this is a run
     // that WILL spend; forecast it and make the player agree to the number first. Placed here, after the
     // "already satisfied" checks, so a click that was going to cost nothing never asks for confirmation.
-    var _fc = enchantAutoForecast(kind, { tier:tier, magicWeapon:magicWeapon }, modId, target, curEnchants.length);
+    var _fc = enchantAutoForecast(kind, { tier:tier, magicWeapon:magicWeapon, quiver:quiverBase }, modId, target, curEnchants.length);
     if(_fc && _fc.crystals > AUTOROLL_CONFIRM_AT){
       var _armKey = modId + '|' + target + '|' + slotChoice;
       if(improveAutoArmed !== _armKey){
@@ -18362,9 +18374,10 @@
       return meetsProficiencyRequirement(state.xp[pw], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[pw]||pw)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='offhand'){
-      var mo=/^st(?:shield|ward)_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
+      var mo=/^st(?:shield|ward|quiver)_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
       var to=mo[1];
       if(isWard(to)) return null; // a ward has no per-type proficiency gate (equipUniqueOffhand skips it too)
+      if(isStackableQuiver(to) && getWeaponStyle(state.equippedMainhand).hand !== 'bow') return 'Needs a bow in your main hand';
       return meetsProficiencyRequirement(state.xp[to], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[to]||to)+' Lv '+equipTierLevel(u.tier));
     }
     if(u.kind==='bodyarmor'){
@@ -18533,7 +18546,7 @@
   function renderAutoRollControls(kind, curEnchants, slots, ctx){
     ctx = ctx || {};
     var tier = ctx.tier||0;
-    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon); if(!pool || !pool.length) return '';
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon, !!ctx.quiver); if(!pool || !pool.length) return '';
     curEnchants = curEnchants || [];
     var poolHas = function(id){ return pool.some(function(m){ return m.id===id; }); };
     var curMod = (improveAutoMod && poolHas(improveAutoMod)) ? improveAutoMod : pool[0].id;
@@ -18589,7 +18602,7 @@
     var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(isEq ? eqBaseId : improveSel);
     if(!isU2 && !pp) return '';
     var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
-    var enchCtx = { tier: tier, magicWeapon: baseIsMagicWeapon(isU2 ? u.base : (isEq ? eqBaseId : improveSel)) };
+    var enchCtx = { tier: tier, magicWeapon: baseIsMagicWeapon(isU2 ? u.base : (isEq ? eqBaseId : improveSel)), quiver: baseIsQuiver(isU2 ? u.base : (isEq ? eqBaseId : improveSel)) };
     var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
     var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[isEq ? eqBaseId : improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
@@ -19842,7 +19855,7 @@
       // Fletcher's Economy (Quickdraw Lv20): a Trick Arrow spends no ammo at all (the Quiver's preserve
       // roll still covers plain shots). The arrow-damage doubling shipped in the first draft measured hot
       // in the max-ceiling sim and was cut in the same batch.
-      if(!(_qdTrick && quickdrawBonus(20)) && Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1);
+      if(!(_qdTrick && quickdrawBonus(20)) && Math.random() >= quiverAmmoPreserve(state) && !arrowThriftSaves(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1);
     }
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
@@ -47760,7 +47773,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.29';
+  var GAME_VERSION = '0.1.4.30';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47945,7 +47958,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, wakeAwayMs:wakeAwayMs, loopSchedulerMode:loopSchedulerMode, LOOP_HIDDEN_MS:LOOP_HIDDEN_MS, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
+      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, enchantPoolForItem:enchantPoolForItem, baseIsQuiver:baseIsQuiver, arrowThriftChance:arrowThriftChance, arrowThriftSaves:arrowThriftSaves, wakeAwayMs:wakeAwayMs, loopSchedulerMode:loopSchedulerMode, LOOP_HIDDEN_MS:LOOP_HIDDEN_MS, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
