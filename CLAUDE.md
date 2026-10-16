@@ -181,6 +181,11 @@ LATEST migration's body, not the one you remember** (the same rule the item-swee
 `create or replace view` can only APPEND columns, so new ones go after `classes`. The Tower and Firsts
 boards read empty until three things land: that migration, the repo's `submit_profile` (writes `tower` and
 `classes`, and silently retries without them on a project that lacks the columns), and a profile republish.
+**The Firsts boards (ticket-0250, 2026-10-16): `20261016120000_milestone_firsts_apply.sql` is the one to
+paste.** The panel sat on "Checking who got there first" because `milestone_firsts` was never applied; that
+file is the 20260917120000 body made re-runnable, plus the `tower` column and the clamp clause inside the
+RPC's ranking subquery (a clamped account neither shows nor holds a place). Any future change to the Firsts
+thresholds edits `milestone_keys_for` there AND the client's `FIRSTS_*` tables, or neither.
 
 ## The Guild Hall (v0.0.97.0): the guild progression axis and the treasury gold sink
 
