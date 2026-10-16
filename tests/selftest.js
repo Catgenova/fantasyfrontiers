@@ -25304,6 +25304,45 @@
   });
 
   // ---- Ticket-0237: sell a chosen amount of one stack ------------------------------------
+  // ---- ticket-0253: Merchant's Savvy trains per item sold, by tier ----
+  // It paid a flat 1 XP per click (2 for Sell All) against a curve that needs 16.9M for level 100, so a lone
+  // Sand and ten thousand Tungsten Longswords trained it the same and nobody could level it. Every vendor
+  // path now pays (tier+1) per item, the rule every other physique follows.
+  suite("merchant's savvy: a sale trains per item sold, scaled by tier", function(){
+    eq(FF.merchantSavvyXp('ore_t19', 10), 200, 'ten tier-19 items: (19+1) x 10');
+    eq(FF.merchantSavvyXp('ore_t0', 7), 7, 'tier 0 pays 1 per item');
+    eq(FF.merchantSavvyXp('rabbit_meat', 3), 3, 'an id without a tier counts as tier 0');
+    eq(FF.merchantSavvyXp('ore_t5', 0), 0, 'nothing sold, nothing trained');
+    eq(FF.merchantSavvyXp('ore_t5', -4), 0, 'a negative count never trains');
+    eq(FF.merchantSavvyXp('ore_t5', 2.9), 12, 'a fractional count floors');
+    // Live: every vendor path pays through the same rule. Ratios against a one-item sale, so the familiar,
+    // server-buff and Mortal multipliers cancel out.
+    var s = FF._state;
+    var ids = Object.keys(FF.ALL_SELLABLE).filter(function(id){ var it = FF.ALL_SELLABLE[id]; return it && it.sell > 0 && /_t\d+$/.test(id); });
+    var a = ids.filter(function(id){ return FF.itemTierFromId(id) === 0; })[0], b = ids.filter(function(id){ return FF.itemTierFromId(id) >= 4; })[0];
+    ok(!!a && !!b, 'fixtures: a tier-0 and a tier-4+ vendorable item');
+    var sv = { inv: JSON.stringify(s.inventory), phys: s.physique.merchantsSavvy, gold: s.gold, locks: JSON.stringify(s.lockedItems || {}) };
+    try{
+      s.lockedItems = {};
+      s.inventory = {}; s.inventory[a] = 10;
+      var p0 = s.physique.merchantsSavvy || 0;
+      eq(FF.sellQty(a, 1), 1, 'sold one'); var d1 = (s.physique.merchantsSavvy || 0) - p0;
+      ok(d1 > 0, 'selling one trains (' + d1 + ')');
+      p0 = s.physique.merchantsSavvy; eq(FF.sellQty(a, 3), 3, 'sold three'); var d3 = (s.physique.merchantsSavvy || 0) - p0;
+      eq(Math.round(d3 / d1 * 100), 300, 'three of a stack train exactly three times one');
+      var tb = FF.itemTierFromId(b);
+      s.inventory = {}; s.inventory[a] = 2; s.inventory[b] = 5;
+      p0 = s.physique.merchantsSavvy; FF.sellAll(); var dAll = (s.physique.merchantsSavvy || 0) - p0;
+      eq(Math.round(dAll / d1 * 100), (2 + 5 * (tb + 1)) * 100, 'Sell All sums every stack by its own tier (2 x tier 0 + 5 x tier ' + tb + ')');
+      eq(s.inventory[a], 0, 'and sells the first stack'); eq(s.inventory[b], 0, 'and the second');
+      s.inventory = {}; s.inventory[b] = 4;
+      p0 = s.physique.merchantsSavvy; FF.sellOne(b); var dOne = (s.physique.merchantsSavvy || 0) - p0;
+      eq(Math.round(dOne / d1 * 100), (tb + 1) * 100, 'Sell 1 of a tier-' + tb + ' item trains ' + (tb + 1) + ' units');
+      p0 = s.physique.merchantsSavvy; FF.sellItem(b); var dStack = (s.physique.merchantsSavvy || 0) - p0;
+      eq(Math.round(dStack / d1 * 100), 3 * (tb + 1) * 100, 'selling the remaining stack of three trains three times that');
+    } finally { s.inventory = JSON.parse(sv.inv); s.physique.merchantsSavvy = sv.phys; s.gold = sv.gold; s.lockedItems = JSON.parse(sv.locks); }
+  });
+
   suite('sellQty: a chosen amount, clamped to the stack, paid at the vendor rate', function(){
     var s = FF._state;
     var save = { inv:s.inventory, gold:s.gold, locks:s.lockedItems, phys:Object.assign({}, s.physique) };

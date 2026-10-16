@@ -18236,7 +18236,7 @@
     if(uniqueIsEquipped(uid)) unequipUnique(uid);
     var val = uniqueSellValue(u);
     removeUnique(uid); if(improveSel===uid){ improveSel = null; } improvePending = null;
-    earnGold(val); addPhysiqueXp([['merchantsSavvy',1]]);
+    earnGold(val); awardMerchantSavvyXp(merchantSavvyXp(u.base, 1)); // one item of its base tier
     addLog('Sold '+uniqueDisplayName(u)+' for '+val+' gold.','important');
     saveGame(); render();
   }
@@ -21584,6 +21584,18 @@
     needsRender = true;
   }
 
+  // Merchant's Savvy XP for a vendor sale (ticket-0253: "Mercantile EXP 1.5 no matter how much you sell, or
+  // what its value is"). It paid a flat 1 per click (2 for Sell All), against a curve that needs 16.9M for
+  // level 100: a lone Sand and a stack of ten thousand Tungsten Longswords trained it the same, and nobody
+  // could ever level it. Now every item sold trains it as one action of its tier, the (tier+1) rule every
+  // gather/craft physique follows through physTierPairs, so quantity and tier both count and the physique
+  // climbs at the pace of the crafting physiques that made the goods. An id without a tier is tier 0.
+  function merchantSavvyXp(id, qty){
+    qty = Math.floor(Number(qty) || 0);
+    if(!(qty > 0)) return 0;
+    return (Math.max(0, itemTierFromId(id) | 0) + 1) * qty;
+  }
+  function awardMerchantSavvyXp(xp){ if(xp > 0) addPhysiqueXp([['merchantsSavvy', xp]]); }
   function sellItem(id){
     var item = ALL_SELLABLE[id];
     var qty = state.inventory[id]||0;
@@ -21597,7 +21609,7 @@
     }
     earnGold(Math.round(qty*item.sell*merchantSellMult()));
     state.inventory[id] = 0;
-    addPhysiqueXp([['merchantsSavvy',1]]); // Merchant's Savvy trains on selling
+    awardMerchantSavvyXp(merchantSavvyXp(id, qty)); // Merchant's Savvy trains on selling: per item, by tier
     needsRender = true;
   }
   function toggleItemLock(id){
@@ -21605,13 +21617,13 @@
     needsRender = true;
   }
   function sellAll(){
-    var total = 0;
+    var total = 0, savvyXp = 0;
     Object.keys(state.inventory).forEach(function(id){
       var item = ALL_SELLABLE[id];
       var qty = state.inventory[id]||0;
-      if(item && qty>0 && item.sell>0 && !state.lockedItems[id]){ total += qty*item.sell; state.inventory[id]=0; } // sell-0 stacks (Blueprints, legendary accessories) are never swept
+      if(item && qty>0 && item.sell>0 && !state.lockedItems[id]){ total += qty*item.sell; savvyXp += merchantSavvyXp(id, qty); state.inventory[id]=0; } // sell-0 stacks (Blueprints, legendary accessories) are never swept
     });
-    if(total>0){ total = Math.round(total*merchantSellMult()); earnGold(total); addPhysiqueXp([['merchantsSavvy',2]]); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
+    if(total>0){ total = Math.round(total*merchantSellMult()); earnGold(total); awardMerchantSavvyXp(savvyXp); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
   }
 
   // Tools are now Equipment: forging produces a stackable inventory item for whatever
@@ -44416,7 +44428,7 @@
     if(qty <= 0 || !item) return;
     if(!(item.sell > 0)){ addLog('The vendor won’t buy that. List it on the Marketplace instead.', 'danger'); return; }
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return; }
-    earnGold(Math.round(item.sell*merchantSellMult())); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
+    earnGold(Math.round(item.sell*merchantSellMult())); state.inventory[id] = qty - 1; awardMerchantSavvyXp(merchantSavvyXp(id, 1)); needsRender = true;
   }
   // Sell a CHOSEN number of one stack (ticket-0237: the card offered only "Sell 1" and "Sell all"). The
   // amount is clamped to the stack, so a request past the stack sells everything and never goes negative.
@@ -44434,7 +44446,7 @@
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return 0; }
     n = sellQtyClamp(id, n);
     if(n <= 0) return 0;
-    earnGold(Math.round(n*item.sell*merchantSellMult())); state.inventory[id] = qty - n; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
+    earnGold(Math.round(n*item.sell*merchantSellMult())); state.inventory[id] = qty - n; awardMerchantSavvyXp(merchantSavvyXp(id, n)); needsRender = true;
     return n;
   }
   // The typed amount on the open item card, kept across the card's rebuilds (the card refreshes with
@@ -47939,7 +47951,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.37';
+  var GAME_VERSION = '0.1.4.38';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48296,6 +48308,7 @@
       maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       awayLedgerStart:awayLedgerStart, awayLedgerSettle:awayLedgerSettle, gainLedger:gainLedger, AWAY_SUMMARY_MIN_MS:AWAY_SUMMARY_MIN_MS, _setAwayLedger:function(v){ awayLedger = v; }, _awayLedger:function(){ return awayLedger; },
+      merchantSavvyXp:merchantSavvyXp, awardMerchantSavvyXp:awardMerchantSavvyXp,
       firstsAllKeys:firstsAllKeys, firstsRpcArgs:firstsRpcArgs, firstsReadPages:firstsReadPages, firstsPageSpan:firstsPageSpan, firstsPageDone:firstsPageDone, firstsErrorWantsFallback:firstsErrorWantsFallback, firstsSkillIds:firstsSkillIds, FIRSTS_PAGE_ROWS:FIRSTS_PAGE_ROWS, FIRSTS_MAX_PAGES:FIRSTS_MAX_PAGES, FIRSTS_SHOW:FIRSTS_SHOW,
       invalidateContentCacheFor:invalidateContentCacheFor, contentContains:contentContains, contentScrollReapply:contentScrollReapply, _setContentScrollKeep:function(v){ _contentScrollKeep = v; }, _lastContentHtml:function(){ return _lastContentHtml; }, _setLastContentHtml:function(v){ _lastContentHtml = v; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
