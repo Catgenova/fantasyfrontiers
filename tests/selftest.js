@@ -24771,6 +24771,31 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Workflows: the stage chips do something, and the physiques fold remembers itself (Anferny) ----
+  suite('workflows: stage chips highlight a stage; the physiques fold keeps its state', function(){
+    var svF = FF._wfStageFocus(), open = FF._wfPhysOpen(), svOpen = JSON.stringify(open);
+    try {
+      FF._setWfStageFocus(null);
+      var html = FF.renderWorkflowsTab();
+      ok(/data-action="wfStage" data-stage="refine"/.test(html), 'the Refine chip is a real button with an action');
+      ok(/wf-legend-lbl">Stage:</.test(html), 'and the strip is labelled as a stage filter');
+      ok(!/wf-focus-/.test(html), 'no stage is highlighted by default');
+      FF._setWfStageFocus('refine');
+      html = FF.renderWorkflowsTab();
+      ok(/class="wf-list wf-focus-refine"/.test(html), 'choosing Refine marks every line list for the dimming rule');
+      ok(/data-stage="refine" aria-pressed="true"/.test(html), 'and the chip reads as pressed');
+      // The fold: closed by default, open once the player opened it, across re-renders.
+      var root = FF.WORKFLOW_TREES[0].node.id;
+      Object.keys(open).forEach(function(k){ delete open[k]; });
+      ok(new RegExp('<details class="wf-phys" data-wf-root="'+root+'">').test(FF.renderWorkflowsTab()), 'the physiques fold renders closed by default');
+      open[root] = true;
+      ok(new RegExp('<details class="wf-phys" data-wf-root="'+root+'" open>').test(FF.renderWorkflowsTab()), 'once opened it renders open on the next render too');
+    } finally {
+      FF._setWfStageFocus(svF);
+      Object.keys(open).forEach(function(k){ delete open[k]; }); var back = JSON.parse(svOpen); Object.keys(back).forEach(function(k){ open[k] = back[k]; });
+    }
+  });
+
   // ---- Guests are told where the upgrade is (guest chat question, 2026-10-08) ----------------------
   suite('guest upgrade: a starter tip names the two ways in', function(){
     var tip = FF.TICKER_STARTER_TIPS.filter(function(x){ return /Playing as a guest/.test(x); })[0];
