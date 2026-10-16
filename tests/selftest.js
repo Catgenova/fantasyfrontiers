@@ -24981,6 +24981,43 @@
     }
   });
 
+  // ---- ticket-0252 (Gutwrench): the Inventory jumped to the top on every dungeon spawn ----
+  // A kill writes a Chronicle line and combat-log rows; their writers invalidated the #content cache
+  // whether or not the feed they painted lives in #content (the rail dock does not), so the next render
+  // rebuilt the view and the inventory panel, which inherited a top-of-page scroll. Two guards: a writer
+  // only invalidates for an element inside #content, and a same-view rebuild re-applies its scroller
+  // position after the panel fillers run.
+  suite('content cache: feed writers outside #content never force a rebuild; a kept scroll re-applies', function(){
+    var content = document.getElementById('content');
+    ok(!!content, '#content exists in the test page');
+    var outside = document.createElement('div'); document.body.appendChild(outside);
+    var inside = document.createElement('div'); content.appendChild(inside);
+    var saved = FF._lastContentHtml();
+    try{
+      FF._setLastContentHtml('<cached>');
+      FF.invalidateContentCacheFor(null);
+      eq(FF._lastContentHtml(), '<cached>', 'a feed that is not on screen (null) leaves the cache alone');
+      FF.invalidateContentCacheFor(outside);
+      eq(FF._lastContentHtml(), '<cached>', 'a feed painted in the rail dock leaves the cache alone');
+      eq(FF.contentContains(outside), false, 'contentContains says so');
+      FF.invalidateContentCacheFor(inside);
+      eq(FF._lastContentHtml(), null, 'a feed painted inside #content makes the cached markup stale');
+      eq(FF.contentContains(inside), true, 'contentContains says so');
+    } finally { FF._setLastContentHtml(saved); outside.parentNode.removeChild(outside); inside.parentNode.removeChild(inside); }
+    // The kept scroll: a tall scroller, clamped to the top by an empty panel, is pushed back once filled.
+    var sc = document.createElement('div'); sc.style.cssText = 'height:100px;overflow:auto;position:absolute;left:-9999px;top:0;';
+    var tall = document.createElement('div'); tall.style.height = '2000px'; sc.appendChild(tall); document.body.appendChild(sc);
+    try{
+      sc.scrollTop = 700; var canScroll = sc.scrollTop === 700; sc.scrollTop = 0;   // the selftest page may not lay the box out
+      FF._setContentScrollKeep({ el:sc, top:700 });
+      eq(FF.contentScrollReapply(), true, 'a kept position is applied');
+      if(canScroll) eq(sc.scrollTop, 700, 'the scroller goes back to where the reader was');
+      eq(FF.contentScrollReapply(), false, 'and it is one-shot: nothing to apply the second time');
+      FF._setContentScrollKeep(null);
+      eq(FF.contentScrollReapply(), false, 'no kept position, no-op');
+    } finally { sc.parentNode.removeChild(sc); FF._setContentScrollKeep(null); }
+  });
+
   // ---- Inventory grid: quantity ticks update cells in place; the grid is not rebuilt (owner, 2026-10-08) ----
   // Every owned-count change made the panel's HTML differ, so the whole grid was replaced on nearly every
   // crafting tick and the phone's scroll anchor snapped to the top. Same structure -> counts written into

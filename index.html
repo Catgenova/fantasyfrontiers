@@ -16400,6 +16400,23 @@
   // Anything that writes into #content OUTSIDE render() (the in-place feed/list updaters) must clear
   // this, or a later render producing the pre-update markup would wrongly decide "nothing changed".
   function invalidateContentCache(){ _lastContentHtml = null; }
+  // The scoped form for the feed/panel writers that paint into an element OUTSIDE render(). Only a write
+  // that really landed inside #content makes the cached markup stale; the chat dock, the drawer and the
+  // expand overlay live in the rail, and invalidating for those rebuilt #content on the next render for
+  // nothing. On the Inventory view that rebuild emptied the panel before the scroller could be restored,
+  // so every combat-log row and Chronicle line (a kill writes both) threw the list back to the top
+  // (ticket-0252, "every time a new enemy spawns"). A null element never invalidates.
+  function contentContains(el){ var c = (typeof document !== 'undefined') ? document.getElementById('content') : null; return !!(el && c && c.contains(el)); }
+  function invalidateContentCacheFor(el){ if(contentContains(el)) _lastContentHtml = null; }
+  // A same-view #content rebuild's scroller position, carried from renderContent() to the end of the
+  // panel fillers in render() (see the note at the restore in renderContent). One-shot: cleared on apply.
+  var _contentScrollKeep = null;
+  function contentScrollReapply(){
+    var k = _contentScrollKeep; _contentScrollKeep = null;
+    if(!k || !k.el) return false;
+    if(k.el.scrollTop !== k.top) k.el.scrollTop = k.top;
+    return true;
+  }
   var armorPanelExpanded = false;
   var toolPanelExpanded = false;
   var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
@@ -40774,8 +40791,9 @@
     el.scrollTop = (!snap || snap.stick) ? el.scrollHeight : snap.top;   // no snapshot = first open -> newest
   }
   function chatRenderMessagesOnly(){
-    invalidateContentCache();   // wrote into #content outside render()
-    feedRenderStick(document.getElementById('chatMessages'), chatMessagesHtml());
+    var _cm = document.getElementById('chatMessages');
+    invalidateContentCacheFor(_cm);   // stale only when the feed lives in #content (the Chat tab), not the rail dock
+    feedRenderStick(_cm, chatMessagesHtml());
     chatJumpUpdate();
   }
   // Show/hide the jump-to-latest pill and keep its count honest. Counting walks back from the tail to
@@ -40801,7 +40819,7 @@
   }
   function chronicleRenderOnly(){
     var el = document.getElementById('chronicleFeed');
-    invalidateContentCache();   // wrote into #content outside render()
+    invalidateContentCacheFor(el);   // stale only when the feed lives in #content, and never for a feed that is not on screen
     feedRenderStick(el, chronicleFeedHtml());
   }
   // ---- Combat log: a blow-by-blow of every hit dealt/taken, shown as a Chat tab. Rolling ring buffer,
@@ -41039,7 +41057,7 @@
   }
   function combatLogRenderOnly(){
     var el = document.getElementById('combatFeed'); if(!el) return;
-    invalidateContentCache();   // wrote into #content outside render()
+    invalidateContentCacheFor(el);   // stale only when the feed lives in #content, not the rail dock
     feedRenderStick(el, combatLogHtml());
   }
   // The combat stage's mini feed is a TAIL of the same ring buffer the Chat tab's Combat channel renders --
@@ -41059,7 +41077,7 @@
   // screen and got refreshed; false means there is no arena to refresh (the caller then leaves the flag alone).
   function arenaFxRenderOnly(){
     var el = document.getElementById('ar2Fx'); if(!el) return false;
-    invalidateContentCache();   // wrote into #content outside render()
+    invalidateContentCacheFor(el);   // the stage is always inside #content; the scoped form keeps one rule for every writer
     el.innerHTML = arenaFxHtml();
     return true;
   }
@@ -41079,7 +41097,7 @@
   }
   function arenaMiniLogRenderOnly(){
     var el = document.getElementById('arenaMiniLog'); if(!el) return;
-    invalidateContentCache();   // wrote into #content outside render()
+    invalidateContentCacheFor(el);
     el.innerHTML = arenaMiniLogHtml();
   }
   function renderChatTab(){
@@ -43254,7 +43272,7 @@
       return '<div class="chat-msg"><span class="chat-user'+(_mortal?' mortal':'')+'"'+(_mortal?' title="Mortal path"':'')+'>'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
   }
-  function guildChatRenderOnly(){ invalidateContentCache(); feedRenderStick(document.getElementById('chatMessages'), guildChatMessagesHtml()); }
+  function guildChatRenderOnly(){ var _gm = document.getElementById('chatMessages'); invalidateContentCacheFor(_gm); feedRenderStick(_gm, guildChatMessagesHtml()); }
   function guildChatOnIncoming(m){
     if(!m || guildChatMessages.some(function(x){ return x.id===m.id; })) return;
     guildChatMessages.push(m);
@@ -43482,7 +43500,7 @@
     });
     return h;
   }
-  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el){ invalidateContentCache(); el.innerHTML = marketListHtml(); } }
+  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el){ invalidateContentCacheFor(el); el.innerHTML = marketListHtml(); } }
   function renderMarketList(){
     var ph = marketState.mode==='sell' ? 'Search your items to sell…' : (marketState.mode==='buy' ? 'Search any item to bid on…' : 'Search items for sale…');
     var html = '<div class="market-cats">' + MARKET_CATEGORIES.map(function(c){
@@ -43745,6 +43763,11 @@
       decorateCollapsibleCards(_contentEl); // fold buttons + folded state on the craft/gather/forge cards
       if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); chatChanPipsUpdate(); }
       if(_scEl && _scEl.scrollTop !== _scPos) _scEl.scrollTop = _scPos;
+      // The restore above runs while #inventoryPanel (and any other filler-owned panel) is still EMPTY:
+      // the content is a stub until render() fills it a few calls later, so a scroller clamps the restore
+      // to its short height and the fill then inherits a top-of-page position. Remember the target and
+      // let render() re-apply it once the fillers have run (ticket-0252).
+      _contentScrollKeep = (_scEl && _scPos > 0) ? { el:_scEl, top:_scPos } : null;
     }
     _lastContentView = _viewKey;
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
@@ -45272,6 +45295,7 @@
     renderSubTabs();
     renderContent();
     renderInventoryPanel();   // fills #inventoryPanel when the Inventory view is open
+    contentScrollReapply();   // a same-view rebuild's scroller position, now that the panel it clamped against is filled
     renderChatDock();         // Chat panel (lower left rail; Chronicle is a tab within it)
     renderChatDrawer();       // mobile: chat lives in a bottom-sheet drawer instead
     renderFarmFabs();         // mobile: Harvest All / Plant All quick-action bubbles
@@ -47861,7 +47885,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.35';
+  var GAME_VERSION = '0.1.4.36';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48218,6 +48242,7 @@
       maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       awayLedgerStart:awayLedgerStart, awayLedgerSettle:awayLedgerSettle, gainLedger:gainLedger, AWAY_SUMMARY_MIN_MS:AWAY_SUMMARY_MIN_MS, _setAwayLedger:function(v){ awayLedger = v; }, _awayLedger:function(){ return awayLedger; },
+      invalidateContentCacheFor:invalidateContentCacheFor, contentContains:contentContains, contentScrollReapply:contentScrollReapply, _setContentScrollKeep:function(v){ _contentScrollKeep = v; }, _lastContentHtml:function(){ return _lastContentHtml; }, _setLastContentHtml:function(v){ _lastContentHtml = v; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, applyDarkModePref:applyDarkModePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
