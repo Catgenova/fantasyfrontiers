@@ -969,11 +969,13 @@
   .wf-s-gather.wf-lg{color:#9fd08a;border-color:#4a6a3a;background:rgba(120,180,90,.08);}
   .wf-s-refine.wf-lg{color:#e0c07a;border-color:#6a5a2e;background:rgba(200,160,80,.08);}
   .wf-s-craft.wf-lg{color:#d8b04a;border-color:#6a5620;background:rgba(216,178,74,.10);}
-  .wf-legend-lbl{font-size:10.5px;color:var(--text-dim);margin-right:2px;}
-  button.wf-lg{cursor:pointer;font-family:inherit;line-height:1.4;}
+  .wf-legend-lbl{font-size:11px;color:var(--text-dim);margin-right:2px;}
+  button.wf-lg{cursor:pointer;font-family:inherit;line-height:1.5;font-size:12px;padding:5px 12px;min-height:30px;}
   .wf-lg.on{outline:2px solid currentColor;outline-offset:1px;}
-  /* Stage highlight: the chosen stage's steps stay lit, every other stage's step dims (the chain stays whole). */
-  .wf-focus-gather .wf-node:not(.wf-s-gather),.wf-focus-refine .wf-node:not(.wf-s-refine),.wf-focus-craft .wf-node:not(.wf-s-craft){opacity:.38;}
+  .wf-stage-note{margin:6px 0 2px;font-size:11.5px;}
+  /* Stage view: only the chosen stage's steps are shown; the other stages' steps are hidden (their own
+     children keep rendering in place, so a Refine view reads as every refine step, line by line). */
+  .wf-focus-gather .wf-node:not(.wf-s-gather),.wf-focus-refine .wf-node:not(.wf-s-refine),.wf-focus-craft .wf-node:not(.wf-s-craft){display:none;}
   .wf-toc{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px;}
   .wf-toc-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:5px 9px;border-radius:8px;
     background:#181409;border:1px solid #4a3e22;color:#e0d3a8;cursor:pointer;}
@@ -16410,6 +16412,19 @@
   // Stage highlight (Anferny ticket, 2026-10-08: the Gather / Refine / Craft chips looked like tabs and did
   // nothing; they were a colour legend). One stage or null; the other stages' steps dim while it is set.
   var wfStageFocus = null;
+  // Choosing a stage is a VIEW, not a tint (Anferny's retest, 2026-10-16: with every line folded, a
+  // highlight inside the folded cards changed nothing he could see). It unfolds every line, shows only
+  // that stage's steps, and scrolls to the first line; the same chip again restores the full chains.
+  function wfSetStage(st){
+    wfStageFocus = (wfStageFocus === st) ? null : (st || null);
+    if(wfStageFocus){
+      wfCollapsed = {};
+      if(typeof document !== 'undefined' && typeof setTimeout === 'function'){
+        setTimeout(function(){ var el = document.querySelector('.wf-card'); if(el && el.scrollIntoView) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 0);
+      }
+    }
+    return wfStageFocus;
+  }
   // "Physiques that affect this line" is a <details>; the tab re-renders on every tick that changes a
   // training dot, which rebuilt it CLOSED (the "auto collapses" half of the same ticket). Open state by root.
   var wfPhysOpen = {};
@@ -31602,6 +31617,10 @@
         }).join('')
       + '</span>';
     html += '</div>';
+    if(wfStageFocus){
+      var _stLbl = { gather:'Gather', refine:'Refine', craft:'Craft' }[wfStageFocus] || wfStageFocus;
+      html += '<div class="empty-note wf-stage-note">Showing only the <b>'+_stLbl+'</b> steps of every line. Tap <b>'+_stLbl+'</b> again for the full chains.</div>';
+    }
     // Jump bar: one chip per line, scrolls to that card.
     html += '<div class="wf-toc">';
     WORKFLOW_TREES.forEach(function(t){ var m = wfNodeMeta(t.node); html += '<button class="wf-toc-chip" data-action="wfJump" data-root="'+t.node.id+'">'+m.icon+'<span>'+escapeHtml(m.label)+'</span></button>'; });
@@ -46135,7 +46154,7 @@
     },
     // Workflows page: fold/scroll the production-line cards.
     wfToggleCard: function(btn, e){ var r = btn.getAttribute('data-root'); wfCollapsed[r] = !wfCollapsed[r]; },
-    wfStage: function(btn, e){ var st = btn.getAttribute('data-stage'); wfStageFocus = (wfStageFocus === st) ? null : st; },
+    wfStage: function(btn, e){ wfSetStage(btn.getAttribute('data-stage')); },
     wfCollapseAll: function(btn, e){ WORKFLOW_TREES.forEach(function(t){ wfCollapsed[t.node.id] = true; }); },
     wfExpandAll: function(btn, e){ wfCollapsed = {}; },
     wfJump: function(btn, e){
@@ -47794,7 +47813,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.31';
+  var GAME_VERSION = '0.1.4.32';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47979,7 +47998,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, firstsFetch:firstsFetch, firstsSettle:firstsSettle, _firstsState:function(){ return firstsState; }, _firstsToken:function(){ return _firstsFetchToken; }, renderFirstsPanel:renderFirstsPanel, FIRSTS_FETCH_TIMEOUT_MS:FIRSTS_FETCH_TIMEOUT_MS, enchantPoolForItem:enchantPoolForItem, baseIsQuiver:baseIsQuiver, arrowThriftChance:arrowThriftChance, arrowThriftSaves:arrowThriftSaves, wakeAwayMs:wakeAwayMs, loopSchedulerMode:loopSchedulerMode, LOOP_HIDDEN_MS:LOOP_HIDDEN_MS, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
+      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, firstsFetch:firstsFetch, firstsSettle:firstsSettle, _firstsState:function(){ return firstsState; }, _firstsToken:function(){ return _firstsFetchToken; }, renderFirstsPanel:renderFirstsPanel, FIRSTS_FETCH_TIMEOUT_MS:FIRSTS_FETCH_TIMEOUT_MS, enchantPoolForItem:enchantPoolForItem, baseIsQuiver:baseIsQuiver, arrowThriftChance:arrowThriftChance, arrowThriftSaves:arrowThriftSaves, wakeAwayMs:wakeAwayMs, loopSchedulerMode:loopSchedulerMode, LOOP_HIDDEN_MS:LOOP_HIDDEN_MS, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, wfSetStage:wfSetStage, _wfCollapsed:function(){ return wfCollapsed; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,

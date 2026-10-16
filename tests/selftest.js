@@ -24850,10 +24850,15 @@
       ok(/data-action="wfStage" data-stage="refine"/.test(html), 'the Refine chip is a real button with an action');
       ok(/wf-legend-lbl">Stage:</.test(html), 'and the strip is labelled as a stage filter');
       ok(!/wf-focus-/.test(html), 'no stage is highlighted by default');
-      FF._setWfStageFocus('refine');
+      // Choosing a stage is a view: it unfolds every line (Anferny's retest: folded lines showed nothing).
+      FF.WORKFLOW_TREES.forEach(function(tr){ FF._wfCollapsed()[tr.node.id] = true; });
+      eq(FF.wfSetStage('refine'), 'refine', 'choosing Refine sets the stage');
+      eq(Object.keys(FF._wfCollapsed()).length, 0, 'and unfolds every line so the view is visible');
       html = FF.renderWorkflowsTab();
-      ok(/class="wf-list wf-focus-refine"/.test(html), 'choosing Refine marks every line list for the dimming rule');
+      ok(/class="wf-list wf-focus-refine"/.test(html), 'every line list carries the stage-view class');
       ok(/data-stage="refine" aria-pressed="true"/.test(html), 'and the chip reads as pressed');
+      ok(/Showing only the <b>Refine<\/b> steps/.test(html), 'and a note says what is being shown');
+      eq(FF.wfSetStage('refine'), null, 'the same chip again restores the full chains');
       // The fold: closed by default, open once the player opened it, across re-renders.
       var root = FF.WORKFLOW_TREES[0].node.id;
       Object.keys(open).forEach(function(k){ delete open[k]; });
