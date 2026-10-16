@@ -41917,6 +41917,49 @@
   // whenever the Firsts view is the one on screen). A settled answer is written ONCE: a late reply after
   // the timeout cannot overwrite a newer fetch (the token check).
   var FIRSTS_FETCH_TIMEOUT_MS = 15000, _firstsFetchToken = 0;
+  // ticket-0250 retest (Anferny, 2026-10-16): once the RPC existed, only the Classes board filled. The
+  // profile's skills map carries EVERY xp key (proficiencies, styles, physiques, attunements too), so a
+  // maxed account stamps hundreds of skill_* marks and the whole reply ran past PostgREST's 1,000-row cap;
+  // rows are ordered by key, so class_* survived and skill_/total_/tower_ were cut off. Two guards: the
+  // RPC is asked for exactly the keys the panel can list (p_keys, migration 20261016140000), and the reply
+  // is read in pages until a short one. firstsAllKeys mirrors firstsBoards across every mark and scope.
+  var FIRSTS_PAGE_ROWS = 1000, FIRSTS_MAX_PAGES = 10;
+  function firstsSkillIds(){ return GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']); }
+  function firstsAllKeys(){
+    var keys = [];
+    FIRSTS_TOTAL_MARKS.forEach(function(m){ keys.push('total_'+m); });
+    FIRSTS_TOWER_MARKS.forEach(function(m){ keys.push('tower_all_'+m); });
+    CLASS_DEFS.forEach(function(c){
+      FIRSTS_CLASS_TOWER_MARKS.forEach(function(m){ keys.push('tower_'+c.id+'_'+m); });
+      FIRSTS_CLASS_MARKS.forEach(function(m){ keys.push('class_'+c.id+'_'+m); });
+    });
+    firstsSkillIds().forEach(function(id){ FIRSTS_SKILL_MARKS.forEach(function(m){ keys.push('skill_'+id+'_'+m); }); });
+    return keys;
+  }
+  function firstsRpcArgs(withKeys){ var a = { p_limit: FIRSTS_SHOW }; if(withKeys) a.p_keys = firstsAllKeys(); return a; }
+  // PostgREST names a missing overload in the error (PGRST202, "Could not find the function
+  // public.milestone_firsts(p_keys, p_limit) in the schema cache"): that is the one case worth a second,
+  // unfiltered read. Anything else (network, timeout, a real SQL error) surfaces as the error it is.
+  function firstsErrorWantsFallback(e){ var m = (e && (e.message || e.hint || e.details)) || ''; return /p_keys|schema cache|milestone_firsts\(/i.test(String(m)); }
+  // Read every page of a reply. `call(from, to)` returns the client's promise for one page ({ data, error });
+  // resolves the concatenated rows, rejects on the first error. A page shorter than `pageRows` ends the read.
+  // The two pure pieces of the page loop (tested synchronously; suite() cannot see inside a .then()).
+  function firstsPageSpan(page, pageRows){ return [page*pageRows, (page+1)*pageRows - 1]; }
+  function firstsPageDone(gotRows, pageRows, page, maxPages){ return gotRows < pageRows || page + 1 >= maxPages; }
+  function firstsReadPages(call, pageRows, maxPages){
+    pageRows = pageRows || FIRSTS_PAGE_ROWS; maxPages = maxPages || FIRSTS_MAX_PAGES;
+    var all = [];
+    function step(page){
+      var span = firstsPageSpan(page, pageRows);
+      return Promise.resolve(call(span[0], span[1])).then(function(res){
+        if(!res || res.error || !Array.isArray(res.data)) throw (res && res.error) || new Error('Could not load the Firsts.');
+        all = all.concat(res.data);
+        if(firstsPageDone(res.data.length, pageRows, page, maxPages)) return all;
+        return step(page + 1);
+      });
+    }
+    return step(0);
+  }
   function firstsViewOnScreen(){ return currentCategory === 'leaderboard' && leaderboardView === 'firsts' && !profileView; }
   function firstsSettle(token, status, rows, error){
     if(token !== _firstsFetchToken) return;                     // a newer fetch owns the state now
@@ -41936,10 +41979,21 @@
     }
     setTimeout(function(){ if(firstsState.status === 'loading') firstsSettle(token, 'error', null, 'The server took too long to answer.'); }, FIRSTS_FETCH_TIMEOUT_MS);
     try {
-      chatClient.rpc('milestone_firsts', { p_limit: FIRSTS_SHOW }).then(function(res){
-        if(res && !res.error && Array.isArray(res.data)) firstsSettle(token, 'ready', res.data, '');
-        else firstsSettle(token, 'error', null, (res && res.error && res.error.message) || 'Could not load the Firsts.');
-      }, function(e){ firstsSettle(token, 'error', null, (e && e.message) || 'Network error.'); });
+      // One page = one RPC call with a Range; a client whose builder cannot range reads a single page and
+      // answers every later page empty, so the reader stops after the first.
+      var _paged = null;
+      var _call = function(withKeys){ return function(from, to){
+        if(_paged === false && from > 0) return Promise.resolve({ data: [] });
+        var q = chatClient.rpc('milestone_firsts', firstsRpcArgs(withKeys));
+        if(_paged === null) _paged = !!(q && typeof q.range === 'function');
+        return _paged ? q.range(from, to) : q;
+      }; };
+      var _fail = function(e){ firstsSettle(token, 'error', null, (e && e.message) || 'Could not load the Firsts.'); };
+      firstsReadPages(_call(true), FIRSTS_PAGE_ROWS, FIRSTS_MAX_PAGES).then(function(rows){ firstsSettle(token, 'ready', rows, ''); }, function(e){
+        // A project still on the one-argument RPC (before migration 20261016140000) rejects p_keys: read it unfiltered.
+        if(firstsErrorWantsFallback(e)) return firstsReadPages(_call(false), FIRSTS_PAGE_ROWS, FIRSTS_MAX_PAGES).then(function(rows){ firstsSettle(token, 'ready', rows, ''); }, _fail);
+        _fail(e);
+      });
     } catch(e){ firstsSettle(token, 'error', null, (e && e.message) || 'Could not load the Firsts.'); }
   }
   // One milestone line: the label, then the holders in order (a held-before-the-board row says so), or the goal.
@@ -47885,7 +47939,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.36';
+  var GAME_VERSION = '0.1.4.37';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48242,6 +48296,7 @@
       maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       awayLedgerStart:awayLedgerStart, awayLedgerSettle:awayLedgerSettle, gainLedger:gainLedger, AWAY_SUMMARY_MIN_MS:AWAY_SUMMARY_MIN_MS, _setAwayLedger:function(v){ awayLedger = v; }, _awayLedger:function(){ return awayLedger; },
+      firstsAllKeys:firstsAllKeys, firstsRpcArgs:firstsRpcArgs, firstsReadPages:firstsReadPages, firstsPageSpan:firstsPageSpan, firstsPageDone:firstsPageDone, firstsErrorWantsFallback:firstsErrorWantsFallback, firstsSkillIds:firstsSkillIds, FIRSTS_PAGE_ROWS:FIRSTS_PAGE_ROWS, FIRSTS_MAX_PAGES:FIRSTS_MAX_PAGES, FIRSTS_SHOW:FIRSTS_SHOW,
       invalidateContentCacheFor:invalidateContentCacheFor, contentContains:contentContains, contentScrollReapply:contentScrollReapply, _setContentScrollKeep:function(v){ _contentScrollKeep = v; }, _lastContentHtml:function(){ return _lastContentHtml; }, _setLastContentHtml:function(v){ _lastContentHtml = v; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult,

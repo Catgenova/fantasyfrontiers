@@ -24776,6 +24776,48 @@
   });
 
   // ---- Firsts: a fetch always settles, and a stale answer never overwrites a newer one (ticket-0250) ----
+  // ---- ticket-0250 retest (Anferny): only the Classes board filled ----
+  // The reply ran past PostgREST's 1,000-row cap (hundreds of skill_* marks per maxed account), ordered by
+  // key, so class_* survived and the rest was cut off. The client now asks for exactly the keys it lists and
+  // reads the reply in pages.
+  suite('firsts: the fetch asks for the keys it lists and reads the reply in pages', function(){
+    var keys = FF.firstsAllKeys();
+    var seen = {}; keys.forEach(function(k){ seen[k] = (seen[k]||0) + 1; });
+    ok(keys.length > 0 && Object.keys(seen).length === keys.length, 'the key list has no duplicates (' + keys.length + ' keys)');
+    // 376 keys x 3 holders is 1,128 rows: MORE than one page even filtered, which is why the page loop exists.
+    ok(keys.length * FF.FIRSTS_SHOW > FF.FIRSTS_PAGE_ROWS, 'a fully claimed board still needs the page loop (' + (keys.length * FF.FIRSTS_SHOW) + ' rows)');
+    ok(keys.length * FF.FIRSTS_SHOW < FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES, 'and the loop can hold it (' + (FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES) + ' row capacity)');
+    ok(keys.indexOf('total_500') >= 0 && keys.indexOf('total_15000') >= 0, 'every Total Level mark');
+    ok(keys.indexOf('tower_all_25') >= 0 && keys.indexOf('tower_all_500') >= 0, 'every All-Classes tower floor');
+    var c0 = FF.CLASS_DEFS[0].id;
+    ok(keys.indexOf('tower_'+c0+'_100') >= 0 && keys.indexOf('tower_'+c0+'_120') >= 0, 'both headline floors of each Class tower');
+    ok(keys.indexOf('class_'+c0+'_50') >= 0 && keys.indexOf('class_'+c0+'_100') >= 0, 'both Class level marks');
+    ok(keys.indexOf('skill_mining_100') >= 0 && keys.indexOf('skill_mining_200') >= 0, 'every skill mark for every listed skill');
+    ok(keys.indexOf('skill_fiberharvesting_100') >= 0, 'the three harvest skills are listed');
+    ok(keys.indexOf('skill_'+c0+'_100') < 0, 'a class id never appears as a skill key (that junk is what overflowed the reply)');
+    // Every key the boards render (both tower scopes, every skill mark) is in the list, so no board can show
+    // a mark the fetch did not ask for.
+    var boards = FF.firstsBoards(); boards.forEach(function(b){ b.rows.forEach(function(r){ ok(keys.indexOf(r.key) >= 0, 'board row asked for: ' + r.key); }); });
+    var args = FF.firstsRpcArgs(true);
+    eq(args.p_limit, FF.FIRSTS_SHOW, 'the limit rides along');
+    ok(Array.isArray(args.p_keys) && args.p_keys.length === keys.length, 'the keys ride along');
+    ok(FF.firstsRpcArgs(false).p_keys === undefined, 'the unfiltered fallback sends no keys (the old one-argument RPC)');
+    // The page loop's pure pieces.
+    eq(FF.firstsPageSpan(0, 1000)[0], 0, 'page 0 starts at row 0'); eq(FF.firstsPageSpan(0, 1000)[1], 999, 'and ends at 999 (inclusive Range)');
+    eq(FF.firstsPageSpan(2, 1000)[0], 2000, 'page 2 starts at 2000');
+    eq(FF.firstsPageDone(1000, 1000, 0, 10), false, 'a full page means another follows');
+    eq(FF.firstsPageDone(999, 1000, 0, 10), true, 'a short page ends the read');
+    eq(FF.firstsPageDone(1000, 1000, 9, 10), true, 'the page cap ends it too');
+    // The reader issues its first call synchronously with page 0's span (the part suite() can see).
+    var calls = [];
+    FF.firstsReadPages(function(from, to){ calls.push([from, to]); return new Promise(function(){}); }, 1000, 10);
+    eq(calls.length, 1, 'one call issued synchronously'); eq(calls[0][0], 0, 'from row 0'); eq(calls[0][1], 999, 'to row 999');
+    // Which errors earn the unfiltered second read: only a missing overload.
+    ok(FF.firstsErrorWantsFallback({ message:'Could not find the function public.milestone_firsts(p_keys, p_limit) in the schema cache' }), 'PGRST202 for the two-argument RPC falls back');
+    ok(!FF.firstsErrorWantsFallback({ message:'The server took too long to answer.' }), 'a timeout does not');
+    ok(!FF.firstsErrorWantsFallback(null), 'nor a null error');
+  });
+
   suite('firsts: the fetch settles into ready or error, never stuck on Checking', function(){
     var F = FF._firstsState(), sv = { status:F.status, rows:F.rows, error:F.error, at:F.at };
     try {

@@ -186,6 +186,14 @@ paste.** The panel sat on "Checking who got there first" because `milestone_firs
 file is the 20260917120000 body made re-runnable, plus the `tower` column and the clamp clause inside the
 RPC's ranking subquery (a clamped account neither shows nor holds a place). Any future change to the Firsts
 thresholds edits `milestone_keys_for` there AND the client's `FIRSTS_*` tables, or neither.
+**Then `20261016140000_milestone_firsts_keys_filter.sql` (same day, the retest: "only classes are working").**
+The profile's `skills` map is EVERY xp key (proficiencies, styles, physiques, attunements), so a maxed account
+stamps hundreds of `skill_*` marks and the unfiltered reply ran past **PostgREST's 1,000-row cap**; rows are
+ordered by key, so `class_*` survived and `skill_/total_/tower_` were cut off. The RPC now takes `p_keys`
+(the one-arg signature is DROPPED, not overloaded: two candidates with defaults make named-argument
+resolution ambiguous) and the client sends `firstsAllKeys()` and reads the reply in pages (`firstsReadPages`).
+**Any RPC whose reply can grow with the player base needs a filter or a page loop; a `select *` RPC is
+silently truncated at 1,000 rows and the client sees a partial board, not an error.**
 
 ## The Guild Hall (v0.0.97.0): the guild progression axis and the treasury gold sink
 
