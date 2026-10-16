@@ -24841,6 +24841,56 @@
     eq(FF.wakeAwayMs(now, now + 5000, 0), 0, 'a clock step backward never credits a negative span');
   });
 
+  // ---- The away summary survives the ticking hidden tab (owner report, the day v0.1.4.29 shipped) ----
+  // With the loop covering the dark span itself, the wake found no gap and the "While You Were Away" popup
+  // stopped appearing on desktop. The hidden-tab ledger records what the live loop produced and settles into
+  // the same summary shape on return.
+  suite('loop: a hidden tab that kept ticking still shows the away summary on return', function(){
+    var s = FF._state, gid = Object.keys(FF.ALL_GATHER_ITEMS)[0];
+    var sv = { xp:s.xp.mining, inv:s.inventory[gid], gold:s.gold };
+    var t0 = 5000000;
+    var led = FF.awayLedgerStart(t0, { type:'combat' });
+    eq(led.hiddenAt, t0, 'the ledger stamps the hide time');
+    eq(led.activityType, 'combat', 'and what the player was doing when the tab went dark');
+    eq(led.goldAt, s.gold, 'and the gold balance at the hide');
+    FF._setAwayLedger(led);
+    try{
+      FF.addXp('mining', 100);
+      FF.addItem(gid, 3);
+      ok((led.xp.mining||0) > 0, 'XP earned while dark lands in the ledger');
+      eq(led.items[gid], 3, 'so do items');
+      eq(FF._offlineCapture(), null, 'the catch-up capture stays closed: the live loop keeps its floats, log and crit rolls');
+      ok(FF.gainLedger() === led, 'gainLedger() hands the writers the open ledger');
+      var oc = { xp:{}, physique:{}, items:{}, familiars:[], rareCrafts:{} };
+      FF._setOfflineCapture(oc);
+      ok(FF.gainLedger() === oc, 'and prefers the catch-up capture when both are open');
+      FF._setOfflineCapture(null);
+    } finally { FF._setAwayLedger(null); s.xp.mining = sv.xp; if(sv.inv === undefined) delete s.inventory[gid]; else s.inventory[gid] = sv.inv; }
+    // Settle: a real absence becomes the summary; gold is the balance difference since the hide.
+    var sum = FF.awayLedgerSettle(led, t0 + 120000, null, led.goldAt + 50);
+    ok(!!sum, 'two dark minutes with gains settle into a summary');
+    eq(sum.elapsedMs, 120000, 'its length is the whole dark span');
+    eq(sum.gold, 50, 'gold is the balance gained since the hide');
+    eq(sum.items[gid], 3, 'the items ride along');
+    eq(sum.activityType, 'combat', 'labelled by the activity at the hide');
+    eq(sum.kills, 0, 'kills default to zero');
+    eq(FF.awayLedgerSettle(led, t0 + 30000, null, led.goldAt + 50), null, 'a 30s blip stays silent (' + FF.AWAY_SUMMARY_MIN_MS + 'ms rule)');
+    var empty = FF.awayLedgerStart(t0, null);
+    eq(FF.awayLedgerSettle(empty, t0 + 600000, null, empty.goldAt), null, 'ten dark minutes that produced nothing show nothing');
+    // Merge: a page suspended partway through gets ONE popup, the catch-up summary plus the ticked part, with
+    // the catch-up's own gold subtracted so the balance difference is not counted twice.
+    var base = { xp:{ mining:10 }, physique:{}, items:{}, gold:40, elapsedMs:90000, familiars:[], rareCrafts:{}, rareCraftsOverflow:0, kills:2, activityType:'gather' };
+    var merged = FF.awayLedgerSettle(led, t0 + 120000, base, led.goldAt + 90);
+    ok(merged === base, 'the ledger merges onto the waiting summary');
+    eq(merged.gold, 90, 'gold: 40 credited by the catch-up + 50 the ticking loop earned');
+    ok(merged.xp.mining > 10, 'XP sums');
+    eq(merged.items[gid], 3, 'items sum');
+    eq(merged.elapsedMs, 120000, 'the longer span wins');
+    eq(merged.activityType, 'gather', 'the waiting summary keeps its label');
+    ok(FF.awayLedgerSettle(empty, t0 + 120000, base, base.gold + empty.goldAt) === base, 'an empty ledger leaves a waiting summary untouched');
+    eq(FF.awayLedgerSettle(null, t0, null), null, 'no ledger, no summary');
+  });
+
   // ---- Workflows: the stage chips do something, and the physiques fold remembers itself (Anferny) ----
   suite('workflows: stage chips highlight a stage; the physiques fold keeps its state', function(){
     var svF = FF._wfStageFocus(), open = FF._wfPhysOpen(), svOpen = JSON.stringify(open);

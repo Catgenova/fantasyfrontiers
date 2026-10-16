@@ -16461,6 +16461,39 @@
   // the noisy per-event log + floating text + chronicle broadcasts are suppressed; the
   // results are shown in one "while you were away" summary popup instead.
   var offlineCapture = null;
+  // The hidden-tab LEDGER (v0.1.4.34). Since v0.1.4.29 a dark tab keeps ticking on a timer, so a wake no
+  // longer finds a gap to catch up and the "While You Were Away" summary stopped appearing on desktop
+  // (reported the same day). This ledger records what the LIVE loop produced while the tab was dark and
+  // the wake presents it as that same summary. It is deliberately NOT offlineCapture: that one mutes the
+  // floats, the log and some crit rolls for the catch-up sim, none of which may happen to a live fight.
+  // Only the gain writers (addXp, addPhysiqueXp, addItem, defeatMonster; gold by difference) read it,
+  // through gainLedger(), which prefers the catch-up capture when both are open.
+  var awayLedger = null;
+  var AWAY_SUMMARY_MIN_MS = 60000;   // a dark span under this stays silent, the wake handler's own rule
+  function gainLedger(){ return offlineCapture || awayLedger; }
+  function awayLedgerStart(now, act){
+    return { xp:{}, physique:{}, items:{}, gold:0, goldAt:state.gold, hiddenAt:now, activityType:(act && act.type) || null, familiars:[], rareCrafts:{}, rareCraftsOverflow:0, kills:0 };
+  }
+  // Turn the ledger into the summary shape. Returns `base` (a summary already waiting, possibly the
+  // catch-up's own from the same wake when the page was suspended partway) when the dark span was short or
+  // nothing was gained; otherwise the ledger merged onto it, so one popup reports the whole absence. Gold is
+  // the balance difference since the hide, less what `base` already credited (the catch-up moved the same
+  // balance), so a merged wake never counts it twice.
+  function awayLedgerSettle(led, now, base, goldNow){
+    if(!led) return base || null;
+    var span = Math.max(0, now - (led.hiddenAt || 0));
+    var baseGold = base ? (base.gold || 0) : 0;
+    var gold = Math.max(0, ((goldNow === undefined ? state.gold : goldNow) - led.goldAt) - baseGold);
+    var has = gold > 0 || Object.keys(led.xp).length || Object.keys(led.physique).length || Object.keys(led.items).length;
+    if(!has || (!base && span < AWAY_SUMMARY_MIN_MS)) return base || null;
+    var out = base || { xp:{}, physique:{}, items:{}, gold:0, familiars:[], rareCrafts:{}, rareCraftsOverflow:0, kills:0, activityType:led.activityType };
+    ['xp','physique','items'].forEach(function(k){ var src = led[k] || {}, dst = out[k] || (out[k] = {}); Object.keys(src).forEach(function(id){ dst[id] = (dst[id] || 0) + src[id]; }); });
+    out.gold = (out.gold || 0) + gold;
+    out.kills = (out.kills || 0) + (led.kills || 0);
+    out.elapsedMs = Math.max(out.elapsedMs || 0, span);
+    if(!out.activityType) out.activityType = led.activityType;
+    return out;
+  }
   // When a number (only during applyOfflineProgress), addXp uses THIS as the tea XP multiplier instead of the
   // live isTeaActive() check: offline XP is credited in one lump at login, when the pre-bed tea has long
   // expired, so the live check would give it no boost. simulateOfflineTea computes the time-weighted boost
@@ -17096,7 +17129,7 @@
     if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at 90% speed (10% penalty)
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) amount *= diligenceCraftXpMult(); // Diligence: +Crafting XP
     state.xp[skill] += amount;
-    if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
+    var _ledX = gainLedger(); if(_ledX){ _ledX.xp[skill] = (_ledX.xp[skill]||0) + amount; }
     if(gabCapture){ gabCapture.xp += amount; }
     var after = skillLevel(skill, state.xp[skill]);
     if(after > before){
@@ -17116,7 +17149,7 @@
       if(!isFinite(state.physique[id])) state.physique[id] = 0;
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
-      if(offlineCapture){ offlineCapture.physique[id] = (offlineCapture.physique[id]||0) + amount; }
+      var _ledP = gainLedger(); if(_ledP){ _ledP.physique[id] = (_ledP.physique[id]||0) + amount; }
       var after = getLevel(state.physique[id]);
       if(after > before){
         needsRender = true;
@@ -17142,7 +17175,7 @@
   function addItem(id, qty, opts){
     qty = Math.floor(qty);
     if(!(qty > 0) || !isFinite(qty)) return; // ignore NaN / Infinity / zero / negative grants so inventory can't hold a broken entry
-    if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
+    var _ledI = gainLedger(); if(_ledI){ _ledI.items[id] = (_ledI.items[id]||0) + qty; }
     if(gabCapture){ gabCapture.items[id] = (gabCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
     state.inventory[id] = (state.inventory[id]||0) + qty;
@@ -20117,7 +20150,7 @@
   // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
-    if(offlineCapture) offlineCapture.kills = (offlineCapture.kills || 0) + 1;   // ticket-0242: the wake note counts them
+    var _ledK = gainLedger(); if(_ledK) _ledK.kills = (_ledK.kills || 0) + 1;   // ticket-0242: the wake note counts them
     var act = state.activity;
     // PARTY DUNGEON: the enemy is server-authoritative. This local foe is only a mirror of the shared HP,
     // driven down by our own attacks so we can MEASURE and report damage -- it must never die or reward
@@ -47200,6 +47233,9 @@
   // quick reload re-credits the same time. An ACTIVE dungeon fight is attended/real-time, so freeze it
   // instead -- resume exactly where the player left off. Progress is credited and saved BEFORE the
   // update check, which may hard-reload the page when a new build landed while the tab was away.
+  // Since v0.1.4.29 the loop keeps ticking on a timer while hidden (see scheduleLoop), so on most desktops
+  // there is no gap to catch up; the summary then comes from the hidden-tab LEDGER opened at the hide
+  // (awayLedger / awayLedgerSettle, v0.1.4.34) instead of from the catch-up sim.
   // The wake ANCHOR is stamped by the hide event itself, not read off lastTick: lastTick freezes if the
   // loop ever died (now guarded, but belt-and-braces) and is subject to whatever the loop last saw, while
   // this stamp provably marks the moment the tab went dark (offline-catchup audit, v0.0.77.32).
@@ -47208,15 +47244,21 @@
     if(cloudFenced) return;   // dead tab: don't credit catch-up progress it can never save, or show a stale away-summary
     if(document.hidden){
       _hiddenAtWall = Date.now();
-      if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); scheduleLoop(); } // swap the parked frame for the hidden-tab timer
+      if(gameStarted){ awayLedger = awayLedgerStart(_hiddenAtWall, state.activity); saveGame(); cloudSave(false, true); cloudSaveBeacon(); scheduleLoop(); } // open the dark-span ledger, swap the parked frame for the hidden-tab timer
       return;
     }
     if(gameStarted){
       scheduleLoop();                                                // back on animation frames
-      var awayMs = wakeAwayMs(Date.now(), lastTick, _hiddenAtWall);  // only the span the loop did not cover (see wakeAwayMs)
+      var _wakeAt = Date.now();
+      var awayMs = wakeAwayMs(_wakeAt, lastTick, _hiddenAtWall);     // only the span the loop did not cover (see wakeAwayMs)
+      var _led = awayLedger; awayLedger = null;                      // what the live loop produced while dark (see awayLedgerSettle)
       _hiddenAtWall = 0;
       if(awayMs > 60000){                                            // <=60s: the loop's own clamped catch-up covers it silently
-        if(dungeonPartyLocksAway()){ lastTick = Date.now(); }        // a PARTY descent is attended -- freeze it (a solo run fast-forwards, ticket-0117)
+        if(dungeonPartyLocksAway()){                                 // a PARTY descent is attended -- freeze it (a solo run fast-forwards, ticket-0117)
+          lastTick = Date.now();
+          var _sumP = awayLedgerSettle(_led, _wakeAt, offlineSummaryData);
+          if(_sumP !== offlineSummaryData){ offlineSummaryData = _sumP; render(); }
+        }
         else {
           // BEFORE crediting anything, ask the cloud whether another device wrote while this tab slept
           // (ticket-0132 -- see wakeStalenessCheck; crediting first is how Valuren's bows were clobbered:
@@ -47233,10 +47275,16 @@
             applyOfflineProgress(offlineCreditBound(awayMs, res ? res.serverAwayMs : null));
             lastTick = Date.now();                                   // stop the loop re-crediting the clamped 60s...
             state.lastSaved = Date.now();                            // ...and a quick reload re-crediting via offline-on-load
+            offlineSummaryData = awayLedgerSettle(_led, _wakeAt, offlineSummaryData); // the ticked part of the dark span joins the catch-up's summary
             cloudSave(false, true);
             render();                                                // surface the "While you were away" summary
           });
         }
+      } else {
+        // The loop covered the whole dark span itself (the hidden-tab timer, v0.1.4.29). Nothing to credit,
+        // but the player still gets the summary of what it did while they were away (v0.1.4.34).
+        var _sumT = awayLedgerSettle(_led, _wakeAt, offlineSummaryData);
+        if(_sumT !== offlineSummaryData){ offlineSummaryData = _sumT; render(); }
       }
     }
     if(updateChecksArmed) updateTick(); // a patch that landed while away refreshes now, not at the next interval
@@ -47813,7 +47861,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.33';
+  var GAME_VERSION = '0.1.4.34';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48169,6 +48217,7 @@
       RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
       maybeShowRarityPopup:maybeShowRarityPopup, retireCoatingsSweep:retireCoatingsSweep, queueCraftBatch:queueCraftBatch, offlineCraftBatchList:offlineCraftBatchList, OFFLINE_CRAFT_BATCH_KINDS_MAX:OFFLINE_CRAFT_BATCH_KINDS_MAX,
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
+      awayLedgerStart:awayLedgerStart, awayLedgerSettle:awayLedgerSettle, gainLedger:gainLedger, AWAY_SUMMARY_MIN_MS:AWAY_SUMMARY_MIN_MS, _setAwayLedger:function(v){ awayLedger = v; }, _awayLedger:function(){ return awayLedger; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, applyDarkModePref:applyDarkModePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
