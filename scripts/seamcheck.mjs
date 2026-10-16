@@ -91,6 +91,8 @@ const PERSIST_OK = new Set([
   "guardianBondUsed", "cheatDeathUsed", "d3RevenantUsed", // once-per-fight lifelines
   "goldEarned",                                     // fight-scoped tally (Greedwyrm reads it)
   "thCoffer", "thGoldCharges",                      // Treasure Hunter: fight-scoped, not foe-scoped
+  "thGoldSwing",                                    // Goldgorge's buy cadence: a 0..LEG_GOLDGORGE_BUY_EVERY swing
+                                                    // counter that self-zeroes on every bought charge (v0.1.4.6)
   "d3BurnDecayAccum", "d3PoisonDecayAccum", "d4BurnScorchAccum", "d4PoisonScorchAccum", // sub-tick remainders
   "breathCharge",                                   // has its own d4BreathReset
   "enemyMightPer", "enemyRallyMult", "siphonFrac",  // enemy special modifiers, re-derived per foe

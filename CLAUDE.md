@@ -35,9 +35,15 @@ Rules:
 - GitHub Pages deploys ONLY on push to `main` (`.github/workflows/pages.yml`): obfuscated
   build → smoke test (runs the ?selftest suite, 8k+ assertions) → publish. A failed smoke
   skips the deploy.
-- Local verification before pushing: `node scripts/typecheck.mjs`, `npm run build`, then
-  run `scripts/smoke.mjs` (in this remote env, launch Playwright with
-  `executablePath: '/opt/pw-browsers/chromium'`).
+- Local verification before pushing MUST mirror every CI step, in order: `node scripts/typecheck.mjs`,
+  `npm run typecheck:functions`, `npm run test:functions`, **`npm run seamcheck`**, `npm run build`,
+  `npm run artcheck`, then `scripts/smoke.mjs` (in this remote env, launch Playwright with
+  `executablePath: '/opt/pw-browsers/chromium'`). **seamcheck is the one the local habit skipped (2026-10-16):
+  the Pages deploy failed on it for EVERY push from 2026-09-20 to 2026-10-16 (23 releases, v0.1.4.10
+  through .32) over a test referencing an unexported seam key and one unlisted act.* field, and nobody
+  noticed because `tests.yml` stayed green and the Pages Source was set to "Deploy from a branch", which
+  serves the raw unobfuscated root of main (build id 'dev') regardless of this workflow.** A green local
+  smoke is NOT a green deploy; check the Actions tab after every push to main.
 - Supabase edge functions / migrations under `supabase/` are deployed separately by the
   owner — flag it in your summary whenever a change touches them.
 

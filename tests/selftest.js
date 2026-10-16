@@ -1324,7 +1324,7 @@
   // running-job card read "Terraforming, Digging down (4, 5), +Digging XP": the player thought their fence
   // click had queued a dig on the field beside the border.
   suite('estate: the running-job card names a border job by its edge, not as digging down', function(){
-    var tile = Object.keys(FF.MASONRY_TILE_ITEMS || {})[0] || 'masonry_t1';
+    var tile = 'masonry_t1';   // Masonry item ids are masonry_t<n>; there is no exported tile table
     var job = { kind:'border', orient:'x', x:5, y:5, masonryTileId:tile, startAt:0, readyAt:1 };
     var h = FF.estateActiveJobHead(job, null);
     ok(!/Digging down/.test(h.head) && !/Terraforming/.test(h.head), 'a border job never reads as terraforming: ' + h.head);
