@@ -24775,6 +24775,24 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Firsts: a fetch always settles, and a stale answer never overwrites a newer one (ticket-0250) ----
+  suite('firsts: the fetch settles into ready or error, never stuck on Checking', function(){
+    var F = FF._firstsState(), sv = { status:F.status, rows:F.rows, error:F.error, at:F.at };
+    try {
+      ok(FF.FIRSTS_FETCH_TIMEOUT_MS >= 5000 && FF.FIRSTS_FETCH_TIMEOUT_MS <= 60000, 'a bounded wait before the panel reports a problem');
+      var tok = FF._firstsToken();
+      FF.firstsSettle(tok, 'error', null, 'The server took too long to answer.');
+      eq(F.status, 'error', 'a settle moves the panel out of loading');
+      ok(/Retry/.test(FF.renderFirstsPanel()) && /took too long/.test(FF.renderFirstsPanel()), 'the error shows its reason and a Retry button');
+      ok(!/Checking who got there first/.test(FF.renderFirstsPanel()), 'and the Checking note is gone');
+      FF.firstsSettle(tok - 1, 'ready', [{ key:'total_500', rank:1, username:'late' }], '');
+      eq(F.status, 'error', 'a reply carrying an older token is ignored');
+      FF.firstsSettle(tok, 'ready', [{ key:'total_500', rank:1, user_id:'u', username:'Anferny', reached_at:null, backfilled:true }], '');
+      eq(F.status, 'ready', 'the owning token settles to ready');
+      ok(/Anferny/.test(FF.renderFirstsPanel()), 'and the holder is rendered on the board');
+    } finally { F.status = sv.status; F.rows = sv.rows; F.error = sv.error; F.at = sv.at; }
+  });
+
   // ---- Quivers are improvable and carry Arrow Thrift (ticket 2026-10-08, owner decision) ----------
   suite('improvement: quivers improve like shields, with a quiver-only Arrow Thrift line', function(){
     var s = FF._state;
