@@ -24771,6 +24771,20 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
+  // ---- Hidden tabs keep ticking (Gutwrench, Maw of the Deep DPS collapse in a background tab) ------
+  suite('loop: a hidden tab ticks on a timer, and a wake credits only the uncovered span', function(){
+    eq(FF.loopSchedulerMode(true), 'timer', 'hidden: the loop re-arms on a timer, not an animation frame');
+    eq(FF.loopSchedulerMode(false), 'raf', 'shown: animation frames as before');
+    ok(FF.LOOP_HIDDEN_MS >= 1000 && FF.LOOP_HIDDEN_MS <= 60000, 'the hidden cadence sits inside the loop\'s 60s dt clamp');
+    var now = 1000000;
+    // The loop ran while hidden (lastTick is recent): the wake credits only what is left since that frame.
+    eq(FF.wakeAwayMs(now, now - 2000, now - 600000), 2000, 'a ticking background loop leaves a 2s gap, not a 10-minute one');
+    // The page was suspended (no timers): lastTick froze before the hide stamp, so the whole dark span counts.
+    eq(FF.wakeAwayMs(now, now - 700000, now - 600000), 600000, 'a suspended page credits the span since it went dark');
+    eq(FF.wakeAwayMs(now, now - 700000, 0), 700000, 'with no hide stamp the span since the last frame counts');
+    eq(FF.wakeAwayMs(now, now + 5000, 0), 0, 'a clock step backward never credits a negative span');
+  });
+
   // ---- Workflows: the stage chips do something, and the physiques fold remembers itself (Anferny) ----
   suite('workflows: stage chips highlight a stage; the physiques fold keeps its state', function(){
     var svF = FF._wfStageFocus(), open = FF._wfPhysOpen(), svOpen = JSON.stringify(open);

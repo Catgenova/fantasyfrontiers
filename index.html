@@ -46819,8 +46819,32 @@
     // first failure, skip the frame, keep running.
     try{ loopFrame(); }
     catch(e){ if(!_loopErrorNoted){ _loopErrorNoted = true; try{ console.error('FF frame error (simulation continues):', e); }catch(e2){} } }
-    requestAnimationFrame(loop);
+    scheduleLoop();
   }
+  // HIDDEN TABS KEEP TICKING (Gutwrench, 2026-10-08: a Maw of the Deep fight fell from ~150k to 3.2k DPS
+  // while he was on another tab). The loop ran on requestAnimationFrame alone, which a hidden tab suspends
+  // outright, and the wake catch-up deliberately freezes an attended boss fight -- so a backgrounded boss
+  // fight gained nothing until the tab came back. A hidden tab now re-arms on a one-second timer instead
+  // (browsers allow that; after ~5 minutes Chrome stretches it to one a minute, which the 60s dt clamp
+  // still covers in full), and swaps back to animation frames when it is shown. One of the two is ever
+  // armed: each schedule cancels whatever is parked, so hide/show never leaves two chains running.
+  var LOOP_HIDDEN_MS = 1000;
+  var _loopRaf = 0, _loopTimer = 0;
+  function loopSchedulerMode(hidden){ return hidden ? 'timer' : 'raf'; }
+  function scheduleLoop(){
+    if(_loopRaf){ try{ cancelAnimationFrame(_loopRaf); }catch(e){} _loopRaf = 0; }
+    if(_loopTimer){ clearTimeout(_loopTimer); _loopTimer = 0; }
+    if(loopSchedulerMode(typeof document !== 'undefined' && document.hidden) === 'timer'){
+      _loopTimer = setTimeout(function(){ _loopTimer = 0; loop(); }, LOOP_HIDDEN_MS);
+    } else {
+      _loopRaf = requestAnimationFrame(function(){ _loopRaf = 0; loop(); });
+    }
+  }
+  // The span the loop did NOT cover while the tab was dark: from the later of the last frame and the hide
+  // stamp. With the hidden-tab timer the loop keeps advancing lastTick, so a wake credits nothing twice; a
+  // suspended page (a phone's browser put to sleep, no timers at all) leaves lastTick behind and the whole
+  // dark span is credited exactly as before.
+  function wakeAwayMs(now, lastTickAt, hiddenAt){ return Math.max(0, now - Math.max(lastTickAt || 0, hiddenAt || 0)); }
   function loopFrame(){
     _frameId++;                                  // invalidates the per-frame multiplier memo
     var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
@@ -47131,11 +47155,12 @@
     if(cloudFenced) return;   // dead tab: don't credit catch-up progress it can never save, or show a stale away-summary
     if(document.hidden){
       _hiddenAtWall = Date.now();
-      if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
+      if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); scheduleLoop(); } // swap the parked frame for the hidden-tab timer
       return;
     }
     if(gameStarted){
-      var awayMs = Date.now() - (_hiddenAtWall || lastTick);         // the loop paused while hidden -> time away
+      scheduleLoop();                                                // back on animation frames
+      var awayMs = wakeAwayMs(Date.now(), lastTick, _hiddenAtWall);  // only the span the loop did not cover (see wakeAwayMs)
       _hiddenAtWall = 0;
       if(awayMs > 60000){                                            // <=60s: the loop's own clamped catch-up covers it silently
         if(dungeonPartyLocksAway()){ lastTick = Date.now(); }        // a PARTY descent is attended -- freeze it (a solo run fast-forwards, ticket-0117)
@@ -47735,7 +47760,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.28';
+  var GAME_VERSION = '0.1.4.29';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -47840,7 +47865,7 @@
     if(!gameStarted){
       gameStarted = true;
       lastTick = Date.now();
-      requestAnimationFrame(loop);
+      scheduleLoop();
     }
     chatInit();                       // chat + chronicle subscriptions
     profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
@@ -47877,7 +47902,7 @@
     window.__FF = {
       // Sim harness (scripts/dpssim.mjs): start the REAL game loop on the selftest page, where the
       // online boot never runs (no backend). Selftest-only, like every seam export.
-      _startLoop: function(){ if(!gameStarted){ gameStarted = true; lastTick = Date.now(); requestAnimationFrame(loop); } },
+      _startLoop: function(){ if(!gameStarted){ gameStarted = true; lastTick = Date.now(); scheduleLoop(); } },
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, jewelrySuccessRate:jewelrySuccessRate, craftSuccessRate:craftSuccessRate, grossMotorCraftSuccessBonus:grossMotorCraftSuccessBonus, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime, BASE_ACTION_TIME_MULT:BASE_ACTION_TIME_MULT,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, mortalFeatsWipeOnDeath:mortalFeatsWipeOnDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       MORTAL_RESTART_STEPS:MORTAL_RESTART_STEPS, mortalRestartStepNow:mortalRestartStepNow, openMortalRestart:openMortalRestart, closeMortalRestart:closeMortalRestart, mortalRestartAdvance:mortalRestartAdvance, mortalRestartFreshState:mortalRestartFreshState, mortalRestartLeavesGuild:mortalRestartLeavesGuild,
@@ -47920,7 +47945,7 @@
       towerScaledStats:towerScaledStats, TOWER_HP_RATIO:TOWER_HP_RATIO, TOWER_ATK_RATIO:TOWER_ATK_RATIO, TOWER_CAP_FLOOR:TOWER_CAP_FLOOR, TOWER_STAT_CAP:TOWER_STAT_CAP, GBOSS_HP_RATIO:GBOSS_HP_RATIO, GBOSS_ATK_RATIO:GBOSS_ATK_RATIO,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossState:guildBossState, guildBossOnKill:guildBossOnKill, guildBossFightDurText:guildBossFightDurText, guildBossClearIsTransport:guildBossClearIsTransport, renderGuildBoss:renderGuildBoss, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, refundGold:refundGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletIsResetRecovery:walletIsResetRecovery, walletRecoveredEarned:walletRecoveredEarned, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile, cloudSaveData:cloudSaveData, savePruneZeros:savePruneZeros,
-      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
+      sellItem:sellItem, sellOne:sellOne, renderInventoryPanel:renderInventoryPanel, wakeAwayMs:wakeAwayMs, loopSchedulerMode:loopSchedulerMode, LOOP_HIDDEN_MS:LOOP_HIDDEN_MS, renderWorkflowPhysiques:renderWorkflowPhysiques, _wfStageFocus:function(){ return wfStageFocus; }, _setWfStageFocus:function(v){ wfStageFocus = v; }, _wfPhysOpen:function(){ return wfPhysOpen; }, renderInvDetailOverlay:renderInvDetailOverlay, _setInventoryDetailItem:function(v){ inventoryDetailItem = v; }, _inventoryDetailItem:function(){ return inventoryDetailItem; }, _currentCategory:function(){ return currentCategory; }, invPanelWriteCounts:invPanelWriteCounts, sellQty:sellQty, sellQtyClamp:sellQtyClamp, invSellQtyGold:invSellQtyGold, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds, UNIQUE_BOUND_NOTE:UNIQUE_BOUND_NOTE,
       scrollSnapshot:scrollSnapshot, scrollRestore:scrollRestore, setOverlayHtml:setOverlayHtml, nearestScroller:nearestScroller,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
