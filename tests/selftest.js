@@ -25304,6 +25304,39 @@
   });
 
   // ---- Ticket-0237: sell a chosen amount of one stack ------------------------------------
+  // ---- Anferny (q-and-a, 2026-10-20): "I don't see an option to sell or sacrifice" a legendary ward ----
+  // The Trade section exists for every unique but sits two phone screens below Enchant and Enhance on the
+  // Improvement tab, and Manage lands on Enchant. The piece's own card now carries Sell and Sacrifice, wired
+  // to the same confirming handlers, and the bound note says where both live.
+  suite('unique card: Sell and Sacrifice are on the card, with the confirming second click', function(){
+    var s = FF._state, uid = 'u_test_cardtrade';
+    var made = false, ov = document.getElementById('uniqueDetailOverlay');
+    if(!ov){ ov = document.createElement('div'); ov.id = 'uniqueDetailOverlay'; document.getElementById('app').appendChild(ov); made = true; }
+    var sv = { uq: s.uniqueItems, det: FF._uniqueDetailUid(), conf: FF._improveConfirm() };
+    try{
+      s.uniqueItems = {}; s.uniqueItems[uid] = { uid:uid, base:'stward_wardEarth_t20_rare', kind:'offhand', tier:20, rarity:'rare', enchants:[], enhance:0, leg:'stormveil' };
+      FF._setImproveConfirm(null); FF._setUniqueDetailUid(uid); FF.renderUniqueDetailOverlay();
+      var sell = ov.querySelector('[data-action="improveSellUnique"][data-uid="'+uid+'"]'), sac = ov.querySelector('[data-action="improveSacrificeUnique"][data-uid="'+uid+'"]');
+      ok(!!sell, 'the card offers Sell for a legendary ward');
+      ok(!!sac, 'and Sacrifice');
+      ok(/Sell \(\d[\d,]*g\)/.test(sell.textContent), 'Sell quotes the vendor gold: ' + sell.textContent);
+      ok(!!ov.querySelector('[data-action="uniqueManage"]') && !!ov.querySelector('[data-action="improveLinkChat"]'), 'Manage and Link in chat are still there');
+      ok(ov.textContent.indexOf('Click Sell again') < 0, 'no confirm line before the first click');
+      // The first click arms the confirm; the card then shows the line and relabels the button.
+      FF._setImproveConfirm('sell:'+uid); FF.renderUniqueDetailOverlay();
+      ok(ov.textContent.indexOf('Click Sell again to confirm') >= 0, 'an armed Sell shows the confirm line on the card');
+      ok(/Confirm sell/.test(ov.querySelector('[data-action="improveSellUnique"]').textContent), 'and the button reads Confirm sell');
+      FF._setImproveConfirm('sacrifice:'+uid); FF.renderUniqueDetailOverlay();
+      ok(ov.textContent.indexOf('Click Sacrifice again to confirm') >= 0, 'an armed Sacrifice shows its line');
+      ok(/Confirm sacrifice/.test(ov.querySelector('[data-action="improveSacrificeUnique"]').textContent), 'and the button reads Confirm sacrifice');
+      ok(/own card/.test(FF.UNIQUE_BOUND_NOTE) && /Trade section/.test(FF.UNIQUE_BOUND_NOTE), 'the bound note names both places the buttons live');
+      ok(!/from the Improvement tab\./.test(FF.UNIQUE_BOUND_NOTE), 'and no longer points only at the Improvement tab');
+    } finally {
+      FF._setImproveConfirm(sv.conf); FF._setUniqueDetailUid(sv.det); s.uniqueItems = sv.uq; FF.renderUniqueDetailOverlay();
+      if(made && ov.parentNode) ov.parentNode.removeChild(ov);
+    }
+  });
+
   // ---- ticket-0253: Merchant's Savvy trains per item sold, by tier ----
   // It paid a flat 1 XP per click (2 for Sell All) against a curve that needs 16.9M for level 100, so a lone
   // Sand and ten thousand Tungsten Longswords trained it the same and nobody could level it. Every vendor
