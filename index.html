@@ -22250,7 +22250,6 @@
     "<b>Multitasking:</b> every 10 levels earned in Multitasking grants one extra active craft slot. Train it by refining materials!",
     "<b>Sand</b> you dig fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
     "<b>Classes</b> aren't unlocked, they're worn: equip a full matching gear set (Cloth robes + a Staff = Summoner) and its passives switch on. Swap a piece out and it goes dormant.",
-    "Finding a <b>familiar</b> sets off a server-wide +50% EXP buff for everyone for 5 minutes, and registering a new account triggers a full hour.",
     "A <b>Staff</b> grants Block, and every swing is a Summoner Downbeat that empowers your summoned Companions to do the fighting.",
     "One <b>butchered corpse</b> gives three things: Meat for Hot Food Cooking, Hide for Leatherworking, and Fat/Tallow for Chandlery candles.",
     "<b>Fertilizer:</b> refine a Fishing catch with equal-tier Digging soil, then spread it on a same-tier growing crop to double that plot's harvest.",
@@ -22270,7 +22269,6 @@
     "<b>Merchant's Savvy</b> sharpens your prices: better vendor payouts, and it levels just by selling.",
     "<b>Sacrifice</b> unwanted gear for Faith, and slay Demonspawn for Broken Relics, since sacrificing one is worth a huge burst of Faith.",
     "<b>Green Thumb</b> speeds your crops and can drop a bonus harvest; <b>Composter</b> can keep your Fertilizer from being used up. Farm smarter.",
-    "<b>Supreme and Fantastic</b> crafts get blasted to the whole server in global chat. Forge something legendary and let everyone know."
   ];
   // 100 more tips, shown at random alongside the first set.
   TICKER_TIPS = TICKER_TIPS.concat([
@@ -22377,9 +22375,7 @@
   // on the way in. Notes where a tip is deliberately conditional are inline.
   TICKER_TIPS = TICKER_TIPS.concat([
     "Fantasy Frontiers is a one-developer passion project. If you would like to chip in, there is a <b>Support us on Ko-fi</b> button beside the community Discord link.",
-    "You can sign in with <b>Discord</b> instead of a password, and link Discord to an account you already have.",
     "The <b>Mortal</b> path earns experience at 90% rate (a 10% penalty) and ends for good on death, converting you to Immortal. It is a badge, not a shortcut.",
-    "The leaderboard's <b>Mortal</b> filter searches the whole board, not just the page in front of you.",
     "<b>Enchant before you Enhance.</b> Once an item is +1 or better it can never take another enchant line.",
     "An <b>Enhance</b> can shatter the item outright. Keep <b>Barrier Shards</b> in your bag and one is spent to save it instead.",
     "<b>Barrier Shards</b> come from starring up familiars, and you get as many as the new star count.",
@@ -22489,8 +22485,6 @@
   // A high-priority call-to-action, woven in like the disclaimer (a dedicated line on a share of cycles,
   // not one entry in the shuffled pool). A vote on Scapelikes grants the WHOLE server +50% EXP for 10
   // minutes, free, so it is worth surfacing often. Coin-gold to read as a reward, not a warning.
-  var TICKER_VOTE = '<span style="color:var(--coin);font-weight:700">Vote for Fantasy Frontiers on Scapelikes and the whole server gets +50% EXP for 10 minutes, free. Find the Vote button under Settings &rarr; Server Buffs. You can vote every 12 hours.</span>';
-  var TICKER_VOTE_CHANCE = 0.20;       // high priority: second only to the pre-alpha disclaimer in frequency
   // Sequenced "do this first" tips shown at the very start of a new player's session, before the random pool.
   var TICKER_STARTER_TIPS = [
     "<b>New here?</b> Your current goal is pinned in the tracker just above the task bar. Open <b>Quests &rarr; First Frontier</b> for a guided path through the whole game.",
@@ -22505,8 +22499,7 @@
   function nextTickerHtml(order, i, cycle){
     if(cycle >= TICKER_DISCLAIMER_GRACE){
       var r = Math.random();
-      if(r < TICKER_VOTE_CHANCE) return TICKER_VOTE;
-      if(r < TICKER_VOTE_CHANCE + TICKER_DISCLAIMER_CHANCE) return TICKER_DISCLAIMER;
+      if(r < TICKER_DISCLAIMER_CHANCE) return TICKER_DISCLAIMER;
     }
     return order[i];
   }
@@ -22557,8 +22550,7 @@
     } else {
       trackBtn = '<button class="ff-track-btn ff-track-empty" id="topTrackerBtn" data-action="openTrackerPicker" title="Track a skill or physique">Track a skill</button>';
     }
-    var guestChip = isGuestAccount() ? '<button class="ff-settings-btn ff-guest-up" data-action="guestUpgradeOpen" title="Upgrade your guest account to keep your progress and unlock chat, trading and guilds" style="background:#3a3320;border-color:#5a4a2a;color:var(--gold);">'+shellIcon('person')+'<span class="ff-settings-lbl">Upgrade</span></button>' : '';
-    html += '<div class="ff-tb-right">'+trackBtn+guestChip+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
+    html += '<div class="ff-tb-right">'+trackBtn+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
     el.innerHTML = html;
     _topbarSig = topbarSignature();
     startTicker(); // idempotent -- kicks off the tips ticker once the header is on screen
@@ -22911,7 +22903,7 @@
     var real = cardRealXp(skill, baseXp, mode);
     var chip = tierChipHtml(cardTierIndex(tierSrc));
     var xp = (real !== baseXp)
-      ? '<span>+'+fmt(baseXp)+' <span class="xp-real" title="Real XP after your Tea, familiar, server buff, '+(CRAFT_SKILL_IDS.indexOf(skill)!==-1?'Diligence':'Curiosity')+', and the Mortal deficit">(+'+fmt(real)+' real)</span> XP</span>'
+      ? '<span>+'+fmt(baseXp)+' <span class="xp-real" title="Real XP after your Tea, familiar, '+(CRAFT_SKILL_IDS.indexOf(skill)!==-1?'Diligence':'Curiosity')+', and the Mortal deficit">(+'+fmt(real)+' real)</span> XP</span>'
       : '<span>+'+fmt(baseXp)+' XP</span>';
     return chip + xp;
   }
@@ -23221,7 +23213,7 @@
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var html = '<h3 style="margin-top:16px">Workshops</h3>';
-    html += '<div class="section-intro">Build a Workshop for any Crafting or Gathering skill from planks, bricks and pillars, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill and gain a chance to double its output. Tier 0 grants +1.5% speed &amp; 2.5% double output, scaling to +9% speed / 15% double at Tier 20. Each tier above Basic also consumes one of the previous-tier Workshop, so upgrade up through the tiers. Placed workshops appear on your (and your guild\'s) Estate; only your best per skill applies, and personal + guild stack.</div>';
+    html += '<div class="section-intro">Build a Workshop for any Crafting or Gathering skill from planks, bricks and pillars, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill and gain a chance to double its output. Tier 0 grants +1.5% speed &amp; 2.5% double output, scaling to +9% speed / 15% double at Tier 20. Each tier above Basic also consumes one of the previous-tier Workshop, so upgrade up through the tiers. Placed workshops appear on your Estate; only your best per skill applies.</div>';
     // ticket-0226 (SteakHouse): "make the Architecture UI work just like the Blacksmith UI (grouped in 5
     // categories)". The first pass grouped the ESTATE placement menu; this is the tab itself. The workshop
     // cards sit in the same five collapsible families the Forge Tools use (Gathering / Refining / Cooking /
@@ -28754,7 +28746,7 @@
     // ---- Act I: Return to the Frontier (1-5) ----
     { id:'answer_the_second_call', cat:'secondfrontier', title:'Answer the Second Call',
       desc:'The frontier remembers the ones who come back. A single day proves nothing; two says you mean to stay. Return on your second day and the land opens its second chapter to you.',
-      how:'Log in on your second day of play. The count ticks over at each new day.',
+      how:'Return on your second day of play. The count ticks over at each new day.',
       target:2, progress:function(st){ return (st.stats && st.stats['login_days']) || 0; },
       nav:{ cat:'skills' },
       reward:{ items:[ { itemId:'tool_forestry_t1_normal', qty:1 } ], gold:5000 } },
@@ -29152,7 +29144,7 @@
     // Act I: Return & footing.
     push({ id:cat+'_arrival', title:'Arrival: Day '+ord,
       desc:'The frontier keeps a tally of the ones who keep coming back. Reach your '+frOrd(ord)+' day of play and the '+spec.label+' opens to you.',
-      how:'Log in on your '+frOrd(ord)+' day of play.',
+      how:'Return on your '+frOrd(ord)+' day of play.',
       target:ord, progress:frStatProgress('login_days'), nav:{cat:'skills'}, reward:{ gold:4000*ord } });
     push({ id:cat+'_calling', title:'Hold the Line',
       desc:'A higher tier is a harder fight. Stand as a Class, its weapon in hand.',
@@ -33528,7 +33520,7 @@
     else {
       var owned = (CRAFTING_SKILLS.chandlery.recipes||[]).filter(function(r){ return (state.inventory[r.id]||0) > 0; });
       var pRate = peonBurnRate(task);
-      html += '<div class="empty-note" style="margin-bottom:10px;">A lit cottage works <b>+'+Math.round(CANDLE_LIT_SPEED_BONUS*100)+'%</b> faster. The same at every tier. A higher-tier candle doesn\'t burn brighter, it burns <b>longer</b>. This peon runs a <b>T'+peonTaskTier(task)+'</b> task, so it drains candles <b>&times;'+pRate.toFixed(1)+'</b> as fast; the times below are what each candle actually lasts <i>here</i>. Candles come from your own inventory as they burn, on the guild estate too.</div>';
+      html += '<div class="empty-note" style="margin-bottom:10px;">A lit cottage works <b>+'+Math.round(CANDLE_LIT_SPEED_BONUS*100)+'%</b> faster. The same at every tier. A higher-tier candle doesn\'t burn brighter, it burns <b>longer</b>. This peon runs a <b>T'+peonTaskTier(task)+'</b> task, so it drains candles <b>&times;'+pRate.toFixed(1)+'</b> as fast; the times below are what each candle actually lasts <i>here</i>. Candles come from your own inventory as they burn.</div>';
       if(!owned.length) html += '<div class="empty-note">You have no candles. Craft them in <b>Chandlery</b>. Each one renders a Fat or Tallow from Butchering.</div>';
       owned.forEach(function(r){
         var effMs = candleBurnMs(candleTierOf(r.id)) / pRate, qty = state.inventory[r.id]||0;
@@ -33548,7 +33540,7 @@
     else {
       var owned = (CRAFTING_SKILLS.cooperage.recipes||[]).filter(function(r){ return (state.inventory[r.id]||0) > 0; });
       var pRate = peonBurnRate(task);
-      html += '<div class="empty-note" style="margin-bottom:10px;">A provisioned cottage keeps its Peon working <b>past the 12-hour offline cap</b> while you\'re away. It does nothing online or within the first 12 hours. A higher-tier barrel doesn\'t work harder, it lasts <b>longer</b>. This peon runs a <b>T'+peonTaskTier(task)+'</b> task, so it eats provisions <b>&times;'+pRate.toFixed(1)+'</b> as fast; the times below are the extra past-cap runtime each barrel buys <i>here</i>. Barrels come from your own inventory, guild estate included.</div>';
+      html += '<div class="empty-note" style="margin-bottom:10px;">A provisioned cottage keeps its Peon working <b>past the 12-hour offline cap</b> while you\'re away. It does nothing online or within the first 12 hours. A higher-tier barrel doesn\'t work harder, it lasts <b>longer</b>. This peon runs a <b>T'+peonTaskTier(task)+'</b> task, so it eats provisions <b>&times;'+pRate.toFixed(1)+'</b> as fast; the times below are the extra past-cap runtime each barrel buys <i>here</i>. Barrels come from your own inventory.</div>';
       if(!owned.length) html += '<div class="empty-note">You have no barrels. Craft them in <b>Cooperage</b>. Each binds Planks with a metal band.</div>';
       owned.forEach(function(r){
         var effMs = barrelProvisionMs(barrelTierOf(r.id)) / pRate, qty = state.inventory[r.id]||0;
@@ -36741,149 +36733,6 @@
   function playerDisplayName(){ return (typeof state !== 'undefined' && state && state.playerName) ? String(state.playerName) : 'Adventurer'; }
   function chatName(){ return authUser ? authUser.username : ''; }
   function isGuestAccount(){ return false; }
-  var authPrivacyAccepted = false, authRulesAccepted = false, authDocOpen = null; // authDocOpen: null | 'privacy' | 'rules'
-  var _hd = 'color:var(--gold);margin:12px 0 4px;';
-  var _pd = 'color:var(--gold);margin:16px 0 5px;font-size:14px;font-weight:700;';   // Privacy Policy: major (h2) section
-  var _ps = 'color:var(--gold);margin:11px 0 3px;font-size:12.5px;opacity:.9;';       // Privacy Policy: sub (h3/h4) section
-  var _pp = 'margin:0 0 6px;', _pul = 'margin:0 0 6px;padding-left:18px;', _pli = 'margin:0 0 4px;';
-  var PRIVACY_HTML = ''
-    + '<p style="'+_pp+'">Last updated: July 12, 2026</p>'
-    + '<p style="'+_pp+'">This Privacy Policy describes Our policies and procedures on the collection, use and disclosure of Your information when You use the Service and tells You about Your privacy rights and how the law protects You.</p>'
-    + '<p style="'+_pp+'">We use Your Personal Data to provide and improve the Service. By using the Service, You agree to the collection and use of information in accordance with this Privacy Policy. This Privacy Policy has been created with the help of the Privacy Policy Generator.</p>'
-    + '<h4 style="'+_pd+'">Interpretation and Definitions</h4>'
-    + '<h4 style="'+_ps+'">Interpretation</h4>'
-    + '<p style="'+_pp+'">The words whose initial letters are capitalized have meanings defined under the following conditions. The following definitions shall have the same meaning regardless of whether they appear in singular or in plural.</p>'
-    + '<h4 style="'+_ps+'">Definitions</h4>'
-    + '<p style="'+_pp+'">For the purposes of this Privacy Policy:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>Account</b> means a unique account created for You to access our Service or parts of our Service.</li>'
-      + '<li style="'+_pli+'"><b>Affiliate</b> means an entity that controls, is controlled by, or is under common control with a party, where &ldquo;control&rdquo; means ownership of 50% or more of the shares, equity interest or other securities entitled to vote for election of directors or other managing authority.</li>'
-      + '<li style="'+_pli+'"><b>Application</b> refers to Fantasy Frontiers, the software program provided by the Company.</li>'
-      + '<li style="'+_pli+'"><b>Company</b> (referred to as either &ldquo;the Company&rdquo;, &ldquo;We&rdquo;, &ldquo;Us&rdquo; or &ldquo;Our&rdquo; in this Privacy Policy) refers to Fantasy Frontiers.</li>'
-      + '<li style="'+_pli+'"><b>Cookies</b> are small files that are placed on Your computer, mobile device or any other device by a website, containing the details of Your browsing history on that website among its many uses.</li>'
-      + '<li style="'+_pli+'"><b>Country</b> refers to: New York, United States</li>'
-      + '<li style="'+_pli+'"><b>Device</b> means any device that can access the Service such as a computer, a cell phone or a digital tablet.</li>'
-      + '<li style="'+_pli+'"><b>Personal Data</b> (or &ldquo;Personal Information&rdquo;) is any information that relates to an identified or identifiable individual. We use &ldquo;Personal Data&rdquo; and &ldquo;Personal Information&rdquo; interchangeably unless a law uses a specific term.</li>'
-      + '<li style="'+_pli+'"><b>Service</b> refers to the Application or the Website or both.</li>'
-      + '<li style="'+_pli+'"><b>Service Provider</b> means any natural or legal person who processes the data on behalf of the Company. It refers to third-party companies or individuals employed by the Company to facilitate the Service, to provide the Service on behalf of the Company, to perform services related to the Service or to assist the Company in analyzing how the Service is used.</li>'
-      + '<li style="'+_pli+'"><b>Usage Data</b> refers to data collected automatically, either generated by the use of the Service or from the Service infrastructure itself (for example, the duration of a page visit).</li>'
-      + '<li style="'+_pli+'"><b>Website</b> refers to Fantasy Frontiers, accessible from www.fantasyfrontiers.com.</li>'
-      + '<li style="'+_pli+'"><b>You</b> means the individual accessing or using the Service, or the company, or other legal entity on behalf of which such individual is accessing or using the Service, as applicable.</li>'
-    + '</ul>'
-    + '<h4 style="'+_pd+'">Collecting and Using Your Personal Data</h4>'
-    + '<h4 style="'+_ps+'">Types of Data Collected</h4>'
-    + '<p style="'+_pp+'"><b>Personal Data.</b> While using Our Service, We may ask You to provide Us with certain personally identifiable information that can be used to contact or identify You.</p>'
-    + '<p style="'+_pp+'"><b>Usage Data.</b> Usage Data is collected automatically when using the Service. It may include information such as Your Device&rsquo;s Internet Protocol address (e.g. IP address), browser type, browser version, the pages of our Service that You visit, the time and date of Your visit, the time spent on those pages, unique device identifiers and other diagnostic data.</p>'
-    + '<p style="'+_pp+'">When You access the Service by or through a mobile device, We may collect certain information automatically, including, but not limited to, the type of mobile device You use, Your mobile device&rsquo;s unique ID, the IP address of Your mobile device, Your mobile operating system, the type of mobile Internet browser You use, unique device identifiers and other diagnostic data. We may also collect information that Your browser sends whenever You visit Our Service or when You access the Service by or through a mobile device.</p>'
-    + '<h4 style="'+_ps+'">Tracking Technologies and Cookies</h4>'
-    + '<p style="'+_pp+'">We use Cookies and similar tracking technologies to track the activity on Our Service and store certain information. Tracking technologies We use include beacons, tags, and scripts to collect and track information and to improve and analyze Our Service. The technologies We use may include:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>Cookies or Browser Cookies.</b> A cookie is a small file placed on Your Device. You can instruct Your browser to refuse all Cookies or to indicate when a Cookie is being sent. However, if You do not accept Cookies, You may not be able to use some parts of our Service.</li>'
-      + '<li style="'+_pli+'"><b>Web Beacons.</b> Certain sections of our Service and our emails may contain small electronic files known as web beacons (also referred to as clear gifs, pixel tags, and single-pixel gifs) that permit the Company, for example, to count users who have visited those pages or opened an email and for other related website statistics.</li>'
-    + '</ul>'
-    + '<p style="'+_pp+'">Cookies can be &ldquo;Persistent&rdquo; or &ldquo;Session&rdquo; Cookies. Persistent Cookies remain on Your personal computer or mobile device when You go offline, while Session Cookies are deleted as soon as You close Your web browser.</p>'
-    + '<p style="'+_pp+'">Where required by law, we use non-essential cookies (such as analytics, advertising, and remarketing cookies) only with Your consent. You can withdraw or change Your consent at any time using Our cookie preferences tool (if available) or through Your browser/device settings. Withdrawing consent does not affect the lawfulness of processing based on consent before its withdrawal.</p>'
-    + '<p style="'+_pp+'">We use both Session and Persistent Cookies for the purposes set out below:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>Necessary / Essential Cookies</b> (Session, administered by Us): essential to provide You with services available through the Website and to enable You to use some of its features. They help to authenticate users and prevent fraudulent use of user accounts.</li>'
-      + '<li style="'+_pli+'"><b>Cookies Policy / Notice Acceptance Cookies</b> (Persistent, administered by Us): these Cookies identify if users have accepted the use of cookies on the Website.</li>'
-      + '<li style="'+_pli+'"><b>Functionality Cookies</b> (Persistent, administered by Us): allow Us to remember choices You make when You use the Website, such as remembering your login details or language preference, for a more personal experience.</li>'
-    + '</ul>'
-    + '<p style="'+_pp+'">For more information about the cookies we use and your choices regarding cookies, please visit our Cookies Policy or the Cookies section of Our Privacy Policy.</p>'
-    + '<h4 style="'+_ps+'">Use of Your Personal Data</h4>'
-    + '<p style="'+_pp+'">The Company may use Personal Data for the following purposes:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>To provide and maintain our Service</b>, including to monitor the usage of our Service.</li>'
-      + '<li style="'+_pli+'"><b>To manage Your Account:</b> to manage Your registration as a user of the Service. The Personal Data You provide can give You access to different functionalities of the Service that are available to You as a registered user.</li>'
-      + '<li style="'+_pli+'"><b>For the performance of a contract:</b> the development, compliance and undertaking of the purchase contract for the products, items or services You have purchased or of any other contract with Us through the Service.</li>'
-      + '<li style="'+_pli+'"><b>To contact You:</b> by email, telephone calls, SMS, or other equivalent forms of electronic communication, such as push notifications regarding updates or informative communications related to the functionalities, products or contracted services, including security updates, when necessary or reasonable.</li>'
-      + '<li style="'+_pli+'"><b>To provide You</b> with news, special offers, and general information about other goods, services and events which We offer that are similar to those that you have already purchased or inquired about unless You have opted not to receive such information.</li>'
-      + '<li style="'+_pli+'"><b>To manage Your requests:</b> to attend and manage Your requests to Us.</li>'
-      + '<li style="'+_pli+'"><b>For business transfers:</b> We may use Your Personal Data to evaluate or conduct a merger, divestiture, restructuring, reorganization, dissolution, or other sale or transfer of some or all of Our assets.</li>'
-      + '<li style="'+_pli+'"><b>For other purposes:</b> such as data analysis, identifying usage trends, determining the effectiveness of our promotional campaigns and to evaluate and improve our Service, products, services, marketing and your experience.</li>'
-    + '</ul>'
-    + '<p style="'+_pp+'">We may share Your Personal Data in the following situations:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>With Service Providers:</b> to monitor and analyze the use of our Service, and to contact You.</li>'
-      + '<li style="'+_pli+'"><b>For business transfers:</b> in connection with, or during negotiations of, any merger, sale of Company assets, financing, or acquisition of all or a portion of Our business to another company.</li>'
-      + '<li style="'+_pli+'"><b>With Affiliates:</b> in which case we will require those affiliates to honor this Privacy Policy.</li>'
-      + '<li style="'+_pli+'"><b>With business partners:</b> to offer You certain products, services or promotions.</li>'
-      + '<li style="'+_pli+'"><b>With other users:</b> when You share Personal Data or otherwise interact in the public areas with other users, such information may be viewed by all users and may be publicly distributed outside.</li>'
-      + '<li style="'+_pli+'"><b>With Your consent:</b> for any other purpose with Your consent.</li>'
-    + '</ul>'
-    + '<h4 style="'+_ps+'">Retention of Your Personal Data</h4>'
-    + '<p style="'+_pp+'">The Company will retain Your Personal Data only for as long as is necessary for the purposes set out in this Privacy Policy. We will retain and use Your Personal Data to the extent necessary to comply with our legal obligations, resolve disputes, and enforce our legal agreements and policies. Where possible, We apply shorter retention periods and/or reduce identifiability by deleting, aggregating, or anonymizing data.</p>'
-    + '<p style="'+_pp+'">Unless otherwise stated, the retention periods below are maximum periods (&ldquo;up to&rdquo;) and We may delete or anonymize data sooner when it is no longer needed:</p>'
-    + '<ul style="'+_pul+'">'
-      + '<li style="'+_pli+'"><b>User Accounts:</b> retained for the duration of your account relationship plus up to 24 months after account closure to handle any post-termination issues or resolve disputes.</li>'
-      + '<li style="'+_pli+'"><b>Website analytics data</b> (cookies, IP addresses, device identifiers): up to 24 months from the date of collection.</li>'
-      + '<li style="'+_pli+'"><b>Application usage statistics:</b> up to 24 months to understand feature adoption and service improvements.</li>'
-      + '<li style="'+_pli+'"><b>Server logs</b> (IP addresses, access times): up to 24 months for security monitoring and troubleshooting purposes.</li>'
-    + '</ul>'
-    + '<p style="'+_pp+'">We may retain Personal Data beyond these periods where required by a legal obligation, to establish or defend legal claims, at Your explicit request, or due to technical limitations (e.g. data in backup systems scheduled for routine deletion). When retention periods expire, We securely delete or anonymize Personal Data. Residual copies may remain in encrypted backups for a limited period and are not restored except where necessary for security, disaster recovery, or legal compliance. Anonymized data may be retained indefinitely for research and analytics.</p>'
-    + '<h4 style="'+_ps+'">Transfer of Your Personal Data</h4>'
-    + '<p style="'+_pp+'">Your information, including Personal Data, is processed at the Company&rsquo;s operating offices and in any other places where the parties involved in the processing are located. This information may be transferred to (and maintained on) computers located outside of Your state, province, country or other governmental jurisdiction where the data protection laws may differ from those from Your jurisdiction.</p>'
-    + '<p style="'+_pp+'">Where required by applicable law, We will ensure that international transfers of Your Personal Data are subject to appropriate safeguards. The Company will take all steps reasonably necessary to ensure that Your data is treated securely and in accordance with this Privacy Policy, and no transfer of Your Personal Data will take place to an organization or a country unless there are adequate controls in place.</p>'
-    + '<h4 style="'+_ps+'">Delete Your Personal Data</h4>'
-    + '<p style="'+_pp+'">You have the right to delete or request that We assist in deleting the Personal Data that We have collected about You. Our Service may give You the ability to delete certain information about You from within the Service.</p>'
-    + '<p style="'+_pp+'">You may update, amend, or delete Your information at any time by signing in to Your Account and visiting the account settings section that allows you to manage Your personal information. You may also contact Us to request access to, correct, or delete any Personal Data that You have provided to Us. Please note that We may need to retain certain information when we have a legal obligation or lawful basis to do so.</p>'
-    + '<h4 style="'+_ps+'">Disclosure of Your Personal Data</h4>'
-    + '<p style="'+_pp+'"><b>Business Transactions.</b> If the Company is involved in a merger, acquisition or asset sale, Your Personal Data may be transferred. We will provide notice before Your Personal Data is transferred and becomes subject to a different Privacy Policy.</p>'
-    + '<p style="'+_pp+'"><b>Law enforcement.</b> Under certain circumstances, the Company may be required to disclose Your Personal Data if required to do so by law or in response to valid requests by public authorities (e.g. a court or a government agency).</p>'
-    + '<p style="'+_pp+'"><b>Other legal requirements.</b> The Company may disclose Your Personal Data in the good faith belief that such action is necessary to comply with a legal obligation; protect and defend the rights or property of the Company; prevent or investigate possible wrongdoing in connection with the Service; protect the personal safety of Users of the Service or the public; or protect against legal liability.</p>'
-    + '<h4 style="'+_ps+'">Security of Your Personal Data</h4>'
-    + '<p style="'+_pp+'">The security of Your Personal Data is important to Us, but remember that no method of transmission over the Internet, or method of electronic storage is 100% secure. While We strive to use commercially reasonable means to protect Your Personal Data, We cannot guarantee its absolute security.</p>'
-    + '<h4 style="'+_pd+'">Children&rsquo;s Privacy</h4>'
-    + '<p style="'+_pp+'">Our Service does not address anyone under the age of 16. We do not knowingly collect personally identifiable information from anyone under the age of 16. If You are a parent or guardian and You are aware that Your child has provided Us with Personal Data, please contact Us. If We become aware that We have collected Personal Data from anyone under the age of 16 without verification of parental consent, We take steps to remove that information from Our servers.</p>'
-    + '<p style="'+_pp+'">If We need to rely on consent as a legal basis for processing Your information and Your country requires consent from a parent, We may require Your parent&rsquo;s consent before We collect and use that information.</p>'
-    + '<h4 style="'+_pd+'">Links to Other Websites</h4>'
-    + '<p style="'+_pp+'">Our Service may contain links to other websites that are not operated by Us. If You click on a third party link, You will be directed to that third party&rsquo;s site. We strongly advise You to review the Privacy Policy of every site You visit. We have no control over and assume no responsibility for the content, privacy policies or practices of any third party sites or services.</p>'
-    + '<h4 style="'+_pd+'">Changes to this Privacy Policy</h4>'
-    + '<p style="'+_pp+'">We may update Our Privacy Policy from time to time. We will notify You of any changes by posting the new Privacy Policy on this page. We will let You know via email and/or a prominent notice on Our Service, prior to the change becoming effective and update the &ldquo;Last updated&rdquo; date at the top of this Privacy Policy.</p>'
-    + '<p style="'+_pp+'">You are advised to review this Privacy Policy periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page.</p>'
-    + '<h4 style="'+_pd+'">Contact Us</h4>'
-    + '<p style="'+_pp+'">If you have any questions about this Privacy Policy, You can contact us by email: perecatgenova@gmail.com</p>';
-  var GAME_RULES_HTML = ''
-    + '<p style="margin:0 0 10px;">These Game Rules keep <b>Fantasy Frontiers</b> fair and welcoming for everyone. Breaking them may lead to warnings, muting, rollbacks, or a ban.</p>'
-    + '<h4 style="'+_hd+'">1. Be Respectful</h4>'
-    + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>No harassment, hate speech, threats, doxxing, or spam in chat.</li>'
-      + '<li>No sexual, graphic, or otherwise offensive content in chat, usernames, or guild names.</li>'
-    + '</ul>'
-    + '<h4 style="'+_hd+'">2. No Cheating</h4>'
-    + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>Do not modify the client, or run bots, scripts, or external automation (beyond the game&rsquo;s own opt-in auto features).</li>'
-      + '<li>Do not manipulate the economy, the leaderboard, or any shared system.</li>'
-    + '</ul>'
-    + '<h4 style="'+_hd+'">3. No Exploiting Bugs</h4>'
-    + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>If you find a duplication or economy exploit, stop and report it. Knowingly exploiting a bug may result in a rollback or ban.</li>'
-    + '</ul>'
-    + '<h4 style="'+_hd+'">4. Play Fair in Shared Systems</h4>'
-    + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>Use the Auction House, guild banks, and dungeons in good faith, no scamming, impersonation, or deliberate market manipulation.</li>'
-      + '<li>Do not trade accounts, items, or gold for real money or outside goods.</li>'
-    + '</ul>'
-    + '<h4 style="'+_hd+'">5. Names &amp; Accounts</h4>'
-    + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>Usernames and guild names must not impersonate other players or staff, or be offensive.</li>'
-      + '<li>You are responsible for your own account and password.</li>'
-    + '</ul>';
-  function authDocMeta(which){ return which==='privacy' ? { title:'Privacy Policy', html:PRIVACY_HTML } : { title:'Game Rules', html:GAME_RULES_HTML }; }
-  function renderTermsModal(){
-    var ov = document.getElementById('termsOverlay');
-    if(!authDocOpen){ if(ov){ setOverlayHtml(ov, '', ''); } return; }
-    if(!ov){ ov = document.createElement('div'); ov.id = 'termsOverlay'; document.getElementById('app').appendChild(ov); }
-    var m = authDocMeta(authDocOpen);
-    var _termsHtml = '<div class="familiar-popup-card" style="max-width:640px;text-align:left;max-height:84vh;display:flex;flex-direction:column;">'
-      + '<div class="familiar-popup-title">' + m.title + '</div>'
-      + '<div style="overflow:auto;font-size:12.5px;line-height:1.55;color:var(--text-dim);padding-right:6px;">' + m.html + '</div>'
-      + '<div style="display:flex;gap:8px;margin-top:12px;flex-shrink:0;">'
-        + '<button class="action-btn" data-action="acceptDoc" data-doc="' + authDocOpen + '" style="flex:1;">I Have Read &amp; Accept</button>'
-        + '<button class="action-btn stop" data-action="closeDoc" style="width:auto;flex:0 0 auto;">Close</button>'
-      + '</div></div>';
-    setOverlayHtml(ov, _termsHtml, 'familiar-popup-overlay');
-  }
   // ======== Report a Bug (local-only build): the in-game ticket form posted to a server; it points at Discord now. ========
   function renderBugReportPanel(){
     return '<div class="settings-row-desc" style="margin:0 0 10px;">Found a bug, or have feedback? Tell us on Discord. Say which version you are on (v' + GAME_VERSION + ') and what you were doing when it happened.</div>'
@@ -39854,10 +39703,6 @@
     titleEquip: function(btn, e){ equipTitle(btn.getAttribute('data-title')); },
     titleUnequip: function(btn, e){ unequipTitle(); },
     titleHelpToggle: function(btn, e){ titleHelpToggle(btn.getAttribute('data-title')); },
-    viewDoc: function(btn, e){
-      e.preventDefault(); authDocOpen = (btn.getAttribute('data-doc')==='privacy') ? 'privacy' : 'rules'; renderTermsModal();
-    },
-    closeDoc: function(btn, e){ authDocOpen = null; renderTermsModal(); },
     choosePath: function(btn, e){ choosePath(btn.getAttribute('data-path')); },
     estateTogglePavingMenu: function(btn, e){ estatePavingMenuOpen = !estatePavingMenuOpen; },
     estatePaveTile: function(btn, e){
@@ -40736,10 +40581,10 @@
   var PATH_CHOICES = [
     { id:'immortal', name:'Immortal', accent:'var(--gold)', recommended:true,
       icon:svgIcon('crown','#c9a84a'),
-      desc:'The standard path, and the right choice for a first run. Death has no lasting cost, when you fall in battle you simply retreat to recover, keeping all your progress. Full access to the Auction House, guild banks, and every guild. Experience is earned at the normal rate.' },
+      desc:'The standard path, and the right choice for a first run. Death has no lasting cost, when you fall in battle you simply retreat to recover, keeping all your progress. Experience is earned at the normal rate.' },
     { id:'mortal', name:'Mortal', accent:'#8a1f2c', advanced:true,
       icon:svgIcon('hornedskull','#8a1f2c'),
-      desc:'A single, fragile life for players who want the hardest challenge. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>90%</b> the rate (a 10% penalty), cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
+      desc:'A single, fragile life for players who want the hardest challenge. If you die, your Mortal life ends for good. Your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>90%</b> the rate (a 10% penalty). In return you walk the frontier among the few who dare a life that can truly be lost, and the Mortal Feats are yours to claim.' }
   ];
   var pathSelectBusy = false;
   function pathSelectNeeded(){ return !!(state && state.mortal === null); }   // a fresh run; the load migration coerces an old save's null to Immortal
@@ -41587,8 +41432,6 @@
       PATCH_NOTES:PATCH_NOTES,
       renderPatchNotes:renderPatchNotes,
       TICKER_TIPS:TICKER_TIPS,
-      TICKER_VOTE:TICKER_VOTE,
-      TICKER_VOTE_CHANCE:TICKER_VOTE_CHANCE,
       questNoteCombat:questNoteCombat,
       questNoteKill:questNoteKill,
       cbStat:cbStat,
