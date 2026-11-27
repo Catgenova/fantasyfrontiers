@@ -24468,7 +24468,11 @@
     ok(!!man, 'and parses as JSON');
     if(man){
       eq(man.display, 'standalone', 'display is standalone (installability requires it)');
-      eq(man.start_url, '/', 'start_url is the root');
+      // Relative since the move to pere.games/fantasyfrontiers: the game is served at a SUBPATH, and an
+      // absolute '/' would launch the installed app at the portal's root instead of the game.
+      eq(man.start_url, './', 'start_url is relative (the game lives at a subpath)');
+      eq(man.scope, './', 'scope is relative too');
+      eq(man.id, './', 'and so is the id');
       var sizes = (man.icons || []).map(function(i){ return i.sizes; });
       ok(sizes.indexOf('192x192') !== -1 && sizes.indexOf('512x512') !== -1, 'the 192 and 512 icons are declared');
       ok((man.icons || []).some(function(i){ return i.purpose === 'maskable'; }), 'a maskable icon is declared (Android crops to a disc)');
@@ -24484,6 +24488,11 @@
     var sres = get('sw.js');
     eq(sres.status, 200, 'the service worker is served');
     ok(sres.text.indexOf("req.mode === 'navigate'") !== -1, 'and carries the navigation branch seamcheck pins as network-first');
+    // Subpath-safe paths (the move): every path test is anchored on the worker's own directory, never '/'.
+    ok(/var BASE = new URL\('\.\/', self\.location\.href\)\.pathname/.test(sres.text), 'the worker derives BASE from its own location');
+    ok(sres.text.indexOf("BASE + 'art/'") !== -1 && sres.text.indexOf("BASE + 'icons/'") !== -1 && sres.text.indexOf("BASE + 'favicon.svg'") !== -1, 'the art tests are BASE-relative');
+    ok(sres.text.indexOf("url.pathname === BASE ||") !== -1 && sres.text.indexOf("BASE + 'index.html'") !== -1, 'the offline-shell test is BASE-relative');
+    ok(!/indexOf\('\/art\/'\)|=== '\/favicon\.svg'|url\.pathname === '\/'/.test(sres.text), 'no root-anchored path test survives');
     // The registration call must be in the page. Whether registration SUCCEEDS is async and cannot be
     // asserted here; the shape of the worker is what seamcheck CHECK 10 owns.
     var ares = get('.well-known/assetlinks.json');
@@ -25335,6 +25344,38 @@
       FF._setImproveConfirm(sv.conf); FF._setUniqueDetailUid(sv.det); s.uniqueItems = sv.uq; FF.renderUniqueDetailOverlay();
       if(made && ov.parentNode) ov.parentNode.removeChild(ov);
     }
+  });
+
+  // ---- The move to pere.games/fantasyfrontiers: the old home hands the session over in the fragment ----
+  // Saves are cloud-only, but a guest exists only as the Supabase session in the old origin's localStorage,
+  // so the forwarding carries the refresh token as #ffho=<token>, consumed once at the new home. These are
+  // the pure pieces; the sender ships INERT (FF_NEW_HOME '') until the new address answers.
+  suite('move: the session handoff between homes', function(){
+    eq(FF.FF_NEW_HOME, '', 'the in-app sender ships inert: FF_NEW_HOME is empty until pere.games/fantasyfrontiers answers');
+    ok(FF.FF_OLD_HOMES.indexOf('fantasyfrontiers.online') >= 0 && FF.FF_OLD_HOMES.indexOf('www.fantasyfrontiers.online') >= 0, 'both spellings of the old home are listed');
+    eq(FF.supabaseStorageKey('https://varyclnmlrgdzgdxhcyd.supabase.co'), 'sb-varyclnmlrgdzgdxhcyd-auth-token', 'the stored-session key follows supabase-js v2 (sb-<ref>-auth-token)');
+    eq(FF.supabaseStorageKey(''), null, 'no URL, no key');
+    var tok = 'v1.AbC-dEf_123.ghi', stored = JSON.stringify({ access_token:'x', refresh_token:tok, user:{ id:'u1' } });
+    eq(FF.handoffRefreshToken(stored), tok, 'the refresh token is read off the stored session');
+    eq(FF.handoffRefreshToken(JSON.stringify({ currentSession:{ refresh_token:tok } })), tok, 'and off the older wrapped shape');
+    eq(FF.handoffRefreshToken('not json'), null, 'garbage yields nothing');
+    eq(FF.handoffRefreshToken(JSON.stringify({ refresh_token:'bad token with spaces' })), null, 'a token that is not URL-safe is refused');
+    eq(FF.handoffRefreshToken(null), null, 'no stored session, no token');
+    var home = 'https://pere.games/fantasyfrontiers/';
+    eq(FF.handoffTarget('', 'fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), null, 'an empty new home never redirects (the inert default)');
+    eq(FF.handoffTarget(home, 'pere.games', FF.FF_OLD_HOMES, stored), null, 'the new home itself never redirects');
+    eq(FF.handoffTarget(home, 'localhost', FF.FF_OLD_HOMES, stored), null, 'nor any other host');
+    eq(FF.handoffTarget(home, 'fantasyfrontiers.online', FF.FF_OLD_HOMES, null), home, 'an old home with no session forwards plain');
+    eq(FF.handoffTarget(home, 'WWW.fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), home + '#ffho=' + encodeURIComponent(tok), 'an old home with a session carries the token in the fragment (host match is case-insensitive)');
+    // The receiver's parsing: the token comes back out, other fragment parts survive, nothing else matches.
+    eq(FF.handoffParse('#ffho=' + encodeURIComponent(tok)), tok, 'the token parses back out of the fragment');
+    eq(FF.handoffParse('#tab=x&ffho=' + encodeURIComponent(tok) + '&y=1'), tok, 'wherever it sits among other parts');
+    eq(FF.handoffParse('#ffhox=abc'), null, 'a near-miss name does not match');
+    eq(FF.handoffParse('#ffho=%E0%A4%A'), null, 'a malformed encoding is refused, not thrown');
+    eq(FF.handoffParse(''), null, 'no fragment, no token');
+    eq(FF.handoffStripHash('#ffho=' + tok), '', 'stripping the only part leaves no fragment at all');
+    eq(FF.handoffStripHash('#tab=x&ffho=' + tok + '&y=1'), '#tab=x&y=1', 'other parts survive the strip');
+    eq(FF.handoffStripHash(''), '', 'an empty fragment stays empty');
   });
 
   // ---- ticket-0253: Merchant's Savvy trains per item sold, by tier ----

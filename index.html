@@ -38472,6 +38472,61 @@
     turnstileSiteKey: '0x4AAAAAAEC2_MfHEfBWaCHM'
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
+  // ===== THE MOVE TO pere.games/fantasyfrontiers (owner order, 2026-11-27) =====
+  // The game is served as a project site under the pere.games user site, so it lives at a SUBPATH, and
+  // the old home (fantasyfrontiers.online) forwards there. Saves are cloud-only, so nothing is lost by
+  // changing origin, but a GUEST account exists only as the Supabase session stored in the old origin's
+  // localStorage ("if the session is cleared, the guest is gone"), and a plain redirect would strand every
+  // guest. So the old home hands the session over in the URL FRAGMENT (never sent to any server): the
+  // refresh token rides along as #ffho=<token>, the new home consumes it once, strips it from the URL and
+  // signs in. Registered players get the same courtesy and skip the login gate.
+  // FF_NEW_HOME is the switch for the in-app sender: '' keeps it inert (deploying this build to the old
+  // host before the new address answers would otherwise bounce every player into a 404). The standalone
+  // page in redirect/ carries the same logic for a host that is not this build at all.
+  var FF_NEW_HOME = '';
+  var FF_OLD_HOMES = ['fantasyfrontiers.online', 'www.fantasyfrontiers.online'];
+  var FF_HANDOFF_PARAM = 'ffho';
+  // supabase-js v2 persists the session under sb-<project ref>-auth-token; the ref is the first label of the
+  // project URL's host. Reading it directly keeps the sender free of the SDK (it runs before anything loads).
+  function supabaseStorageKey(url){ var m = /^https?:\/\/([a-z0-9-]+)\./i.exec(url || ''); return m ? 'sb-' + m[1] + '-auth-token' : null; }
+  function handoffTokenOk(t){ return typeof t === 'string' && /^[A-Za-z0-9._~%+\/=-]{8,1024}$/.test(t); }
+  function handoffRefreshToken(storedJson){
+    try{ var s = JSON.parse(storedJson); var sess = s && (s.currentSession || s); var t = sess && sess.refresh_token; return handoffTokenOk(t) ? t : null; }catch(e){ return null; }
+  }
+  // Where a load on an OLD home should go, or null to stay: the new home, carrying the refresh token when
+  // one is stored. Pure, so the test seam can drive every branch without a navigation.
+  function handoffTarget(newHome, hostname, oldHomes, storedJson){
+    if(!newHome || !hostname) return null;
+    if((oldHomes || []).indexOf(String(hostname).toLowerCase()) < 0) return null;
+    var t = handoffRefreshToken(storedJson);
+    return newHome + (t ? '#' + FF_HANDOFF_PARAM + '=' + encodeURIComponent(t) : '');
+  }
+  function handoffParse(hash){
+    var m = new RegExp('(?:^#|[#&])' + FF_HANDOFF_PARAM + '=([^&]+)').exec(hash || ''); if(!m) return null;
+    var t; try{ t = decodeURIComponent(m[1]); }catch(e){ return null; }
+    return handoffTokenOk(t) ? t : null;
+  }
+  // The fragment with the handoff removed: '' when nothing else was in it, so the URL loses its '#'.
+  function handoffStripHash(hash){
+    var rest = (hash || '').replace(/^#/, '').split('&').filter(function(p){ return p.indexOf(FF_HANDOFF_PARAM + '=') !== 0 && p !== ''; });
+    return rest.length ? '#' + rest.join('&') : '';
+  }
+  // The receiver: consume a handed-over token ONCE, before the session restore. A browser that already
+  // holds a session is left alone (a stale token must never clear a live login), and any failure just
+  // falls through to the ordinary login gate. The token leaves the address bar before any network call.
+  async function handoffReceive(){
+    var tok = handoffParse(location.hash); if(!tok) return false;
+    try{ history.replaceState(null, '', location.pathname + location.search + handoffStripHash(location.hash)); }catch(e){}
+    if(!CHAT_ENABLED || !(await authEnsureClient())) return false;
+    try{
+      var cur = await chatClient.auth.getSession();
+      if(cur && cur.data && cur.data.session) return false;
+      authBindIdentity(null);   // a deliberate new session on this origin, not a foreign swap
+      var res = await chatClient.auth.refreshSession({ refresh_token: tok });
+      if(res && !res.error && res.data && res.data.session){ try{ localStorage.setItem('ff-autologin', '1'); }catch(e){} return true; }
+    }catch(e){}
+    return false;
+  }
   var chatMessages = [];
   // ---- Chat moderation (server-authoritative; see 20260724190000_chat_moderation.sql). These stay empty
   // and every mod feature stays inert until the migration is deployed (selects for the tables just error
@@ -47971,7 +48026,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.40';
+  var GAME_VERSION = '0.1.4.41';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48086,9 +48141,14 @@
     if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
   (async function onlineBoot(){
+    // An OLD home forwards to the new one first, session in hand (see FF_NEW_HOME). Inert while that
+    // constant is empty; nothing below runs on a host that is being left.
+    var _moved = handoffTarget(FF_NEW_HOME, location.hostname, FF_OLD_HOMES, (function(){ try{ return localStorage.getItem(supabaseStorageKey(CHAT_CONFIG.supabaseUrl)); }catch(e){ return null; } })());
+    if(_moved){ location.replace(_moved); return; }
     // Backend down? Show the maintenance screen instead of a login gate whose every sign-in just fails.
     // Runs before loading supabase-js (the probe is a plain fetch), so a dark backend short-circuits fast.
     if(SERVER_CLOSED || !(await checkBackendHealth())){ renderMaintenanceGate(); return; }
+    await handoffReceive();   // a session carried over from the old home signs in here, once, before the restore below
     // Did we just return from a Discord OAuth round-trip? That's an explicit login intent, so honor it
     // even if "auto-login" is off. Consume the one-shot flag regardless of outcome.
     var oauthReturn = false;
@@ -48329,6 +48389,7 @@
       _setOfflineCapture:function(v){ offlineCapture = v; }, _offlineCapture:function(){ return offlineCapture; },
       awayLedgerStart:awayLedgerStart, awayLedgerSettle:awayLedgerSettle, gainLedger:gainLedger, AWAY_SUMMARY_MIN_MS:AWAY_SUMMARY_MIN_MS, _setAwayLedger:function(v){ awayLedger = v; }, _awayLedger:function(){ return awayLedger; },
       merchantSavvyXp:merchantSavvyXp, awardMerchantSavvyXp:awardMerchantSavvyXp,
+      FF_NEW_HOME:FF_NEW_HOME, FF_OLD_HOMES:FF_OLD_HOMES, FF_HANDOFF_PARAM:FF_HANDOFF_PARAM, supabaseStorageKey:supabaseStorageKey, handoffRefreshToken:handoffRefreshToken, handoffTarget:handoffTarget, handoffParse:handoffParse, handoffStripHash:handoffStripHash, handoffTokenOk:handoffTokenOk,
       renderUniqueDetailOverlay:renderUniqueDetailOverlay, _setUniqueDetailUid:function(v){ uniqueDetailUid = v; }, _uniqueDetailUid:function(){ return uniqueDetailUid; }, _improveConfirm:function(){ return improveConfirm; }, _setImproveConfirm:function(v){ improveConfirm = v; },
       firstsAllKeys:firstsAllKeys, firstsRpcArgs:firstsRpcArgs, firstsReadPages:firstsReadPages, firstsPageSpan:firstsPageSpan, firstsPageDone:firstsPageDone, firstsErrorWantsFallback:firstsErrorWantsFallback, firstsSkillIds:firstsSkillIds, FIRSTS_PAGE_ROWS:FIRSTS_PAGE_ROWS, FIRSTS_MAX_PAGES:FIRSTS_MAX_PAGES, FIRSTS_SHOW:FIRSTS_SHOW,
       invalidateContentCacheFor:invalidateContentCacheFor, contentContains:contentContains, contentScrollReapply:contentScrollReapply, _setContentScrollKeep:function(v){ _contentScrollKeep = v; }, _lastContentHtml:function(){ return _lastContentHtml; }, _setLastContentHtml:function(v){ _lastContentHtml = v; },

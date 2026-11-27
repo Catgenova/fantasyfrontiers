@@ -195,6 +195,25 @@ resolution ambiguous) and the client sends `firstsAllKeys()` and reads the reply
 **Any RPC whose reply can grow with the player base needs a filter or a page loop; a `select *` RPC is
 silently truncated at 1,000 rows and the client sees a partial board, not an error.**
 
+## The move to pere.games/fantasyfrontiers (v0.1.4.41, owner order 2026-11-27)
+
+The game is a PROJECT SITE under the pere.games user site (`Catgenova/Catgenova.github.io`, a Jekyll
+portal with `CNAME pere.games`; games are separate repos at `pere.games/<repo>/`, registered through
+`_games/<slug>.md`). Consequences that hold forever: **the game lives at a SUBPATH.** Every asset path is
+relative, the manifest's `id`/`start_url`/`scope` are `./`, and `sw.js` anchors every path test on
+`BASE = new URL('./', self.location.href).pathname`, never on `/`. A root-anchored `'/art/'` test matches
+nothing under `/fantasyfrontiers/` and silently leaves the art uncached. `.well-known/assetlinks.json` in
+this repo is INVISIBLE to Android there (it checks the origin root), so the portal repo carries the copy.
+**The handoff:** saves are cloud-only, but a guest exists only as the Supabase session in the old origin's
+localStorage, so the old home forwards with the refresh token in the URL FRAGMENT (`#ffho=`), and
+`handoffReceive()` consumes it once before the session restore, leaving a browser that already holds a
+session alone (a stale token must never clear a live login). `FF_NEW_HOME` (the in-app sender) ships EMPTY
+and the suite pins it: deploying a build with it set to the old host before the new address answers bounces
+every player into a 404. `redirect/index.html` is the standalone forwarding page for the old domain, and
+`docs/pere-games-move.md` is the cutover runbook (CNAME release, Supabase redirect URLs, Turnstile
+hostnames, the TWA rebuild). The `CNAME` file is removed only AT cutover: the custom domain attaches to one
+repository at a time, so `pere.games/fantasyfrontiers/` cannot answer while this repo claims the old one.
+
 ## The Guild Hall (v0.0.97.0): the guild progression axis and the treasury gold sink
 
 `guilds.hall_level` (0..15), raised by the LEADER from the shared treasury; each level adds ONE roster

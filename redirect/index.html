@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Fantasy Frontiers has moved</title>
+<!--
+  THE OLD HOME'S FORWARDING PAGE (fantasyfrontiers.online -> pere.games/fantasyfrontiers, 2026-11-27).
+
+  Host this ONE file at the old domain (a one-file GitHub Pages repo whose custom domain is
+  fantasyfrontiers.online, or a Cloudflare Worker that returns it). It has no dependencies.
+
+  Why a page and not a bare redirect rule: saves are cloud-only, but a GUEST account exists only as the
+  Supabase session stored in THIS origin's localStorage. A dumb redirect strands every guest. This page
+  reads that session and hands its refresh token to the new home in the URL fragment (#ffho=...), which
+  never reaches any server; the game at the new home consumes it once, strips it from the address bar and
+  signs the player in. Registered players skip the login gate the same way. With no session it forwards
+  plain. It also unregisters the old service worker and empties its caches, so the old origin cannot keep
+  serving a cached copy of the game from before the move.
+
+  Keep PROJECT_REF in step with CHAT_CONFIG.supabaseUrl in index.html and NEW_HOME with FF_NEW_HOME.
+-->
+<style>
+  html,body{margin:0;background:#141109;color:#e8dcc4;font:16px/1.5 Georgia,serif}
+  main{max-width:520px;margin:18vh auto 0;padding:0 16px;text-align:center}
+  a{color:#e6c24a}
+  .small{font-size:13px;opacity:.75;margin-top:18px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Fantasy Frontiers has moved</h1>
+  <p>The game now lives at <a id="go" href="https://pere.games/fantasyfrontiers/">pere.games/fantasyfrontiers</a>. Taking you there.</p>
+  <p class="small">If nothing happens, tap the link. Your progress is saved to your account and comes with you.</p>
+</main>
+<noscript><meta http-equiv="refresh" content="0;url=https://pere.games/fantasyfrontiers/"></noscript>
+<script>
+(function(){
+  var NEW_HOME = 'https://pere.games/fantasyfrontiers/';
+  var PROJECT_REF = 'varyclnmlrgdzgdxhcyd';
+  var PARAM = 'ffho';
+  function tokenOk(t){ return typeof t === 'string' && /^[A-Za-z0-9._~%+\/=-]{8,1024}$/.test(t); }
+  function storedToken(){
+    try{
+      var raw = localStorage.getItem('sb-' + PROJECT_REF + '-auth-token'); if(!raw) return null;
+      var s = JSON.parse(raw), sess = s && (s.currentSession || s), t = sess && sess.refresh_token;
+      return tokenOk(t) ? t : null;
+    }catch(e){ return null; }
+  }
+  var t = storedToken();
+  var target = NEW_HOME + (t ? '#' + PARAM + '=' + encodeURIComponent(t) : '');
+  document.getElementById('go').setAttribute('href', NEW_HOME);
+  // Leave the old origin clean: no worker, no cached shell. Both are best-effort and never block the move.
+  var tidy = [];
+  try{ if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations){ tidy.push(navigator.serviceWorker.getRegistrations().then(function(rs){ return Promise.all(rs.map(function(r){ return r.unregister(); })); })); } }catch(e){}
+  try{ if(window.caches && caches.keys){ tidy.push(caches.keys().then(function(ks){ return Promise.all(ks.map(function(k){ return caches.delete(k); })); })); } }catch(e){}
+  var go = function(){ try{ location.replace(target); }catch(e){ location.href = target; } };
+  var done = false, once = function(){ if(!done){ done = true; go(); } };
+  Promise.all(tidy).then(once, once);
+  setTimeout(once, 1500);
+})();
+</script>
+</body>
+</html>

@@ -19,6 +19,11 @@
 var CACHE_PAGE = 'ff-page-v1';
 var CACHE_ART = 'ff-art-v1';
 var OFFLINE_KEY = 'ff-offline-shell';
+// The game lives at a SUBPATH since the move to pere.games/fantasyfrontiers (2026-11-27), so every path
+// test below is relative to the worker's own directory, never to the origin root: '/fantasyfrontiers/'
+// there, '/' on a root install. Root-anchored tests silently matched nothing under the subpath, which
+// would have left the art uncached and no offline shell at all.
+var BASE = new URL('./', self.location.href).pathname;
 
 self.addEventListener('install', function(){ self.skipWaiting(); });
 
@@ -43,7 +48,7 @@ self.addEventListener('fetch', function(e){
   if(req.mode === 'navigate'){
     e.respondWith(
       fetch(req).then(function(res){
-        if(res && res.ok && url.search === '' && (url.pathname === '/' || url.pathname === '/index.html')){
+        if(res && res.ok && url.search === '' && (url.pathname === BASE || url.pathname === BASE + 'index.html')){
           var copy = res.clone();
           caches.open(CACHE_PAGE).then(function(c){ c.put(OFFLINE_KEY, copy); });
         }
@@ -58,7 +63,7 @@ self.addEventListener('fetch', function(e){
   }
 
   // 2. STATIC ART: stale-while-revalidate.
-  var isArt = url.pathname.indexOf('/art/') === 0 || url.pathname.indexOf('/icons/') === 0 || url.pathname === '/favicon.svg';
+  var isArt = url.pathname.indexOf(BASE + 'art/') === 0 || url.pathname.indexOf(BASE + 'icons/') === 0 || url.pathname === BASE + 'favicon.svg';
   if(isArt){
     e.respondWith(
       caches.open(CACHE_ART).then(function(c){
