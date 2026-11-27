@@ -491,41 +491,6 @@
     FF._setCraftOnlyAffordable(false); S.inventory = sv.inv;
   });
 
-  // ---- Guild bank slot cost must match the server RPC formula ---------------------------
-  suite('bankSlotCost matches server', function(){
-    eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');
-    eq(FF.bankSlotCost(5), 10000, 'bankSlotCost(5) base');
-    eq(FF.bankSlotCost(6), 12500, 'bankSlotCost(6)');
-    for(var s = 5; s <= 20; s++){ eq(FF.bankSlotCost(s), Math.round(10000 * Math.pow(1.25, s - 5)), 'bankSlotCost matches 10000*1.25^(s-5) @' + s); }
-  });
-
-  // ---- THE GUILD HALL (v0.0.97.0): the roster ladder and its treasury cost table ---------
-  // The cost ladder is DUPLICATED in the migration's guild_hall_cost (20260809120000_guild_hall.sql):
-  // change both sides or neither (the estate_job_duration_ms rule). Owner-pinned endpoints: Level 1
-  // costs 1M, Level 15 costs 15B, ~x1.99 per step between.
-  suite('guild hall: 15 levels, +1 roster slot each, 1M to 15B', function(){
-    eq(FF.GUILD_HALL_MAX_LEVEL, 15, 'the Hall tops out at Level 15');
-    eq(FF.GUILD_HALL_COSTS.length, 15, 'one cost per level');
-    eq(FF.guildHallCost(1), 1000000, 'Level 1 costs 1M (owner pin)');
-    eq(FF.guildHallCost(15), 15000000000, 'Level 15 costs 15B (owner pin)');
-    eq(FF.guildHallCost(0), null, 'no Level 0 cost');
-    eq(FF.guildHallCost(16), null, 'nothing past 15');
-    for(var n = 2; n <= 15; n++){
-      var r = FF.guildHallCost(n) / FF.guildHallCost(n - 1);
-      ok(r > 1.85 && r < 2.15, 'the ladder climbs ~x1.99 per step (got x' + (Math.round(r * 100) / 100) + ' at ' + n + ')');
-    }
-    // Roster math: base 10, one seat per level, clamped at 25 however large the column claims.
-    eq(FF.guildMaxMembers(null), 10, 'no guild row -> the base 10');
-    eq(FF.guildMaxMembers({}), 10, 'no hall_level -> the base 10');
-    eq(FF.guildMaxMembers({ hall_level: 1 }), 11, 'each level is one seat');
-    eq(FF.guildMaxMembers({ hall_level: 15 }), 25, 'a finished Hall holds 25');
-    eq(FF.guildMaxMembers({ hall_level: 99 }), 25, 'an over-range column clamps at 25');
-    eq(FF.guildMaxMembers({ hall_level: -3 }), 10, 'a negative column clamps at the base');
-    ok(FF.guildIsFull(10, {}), '10/10 is full with no Hall');
-    ok(!FF.guildIsFull(10, { hall_level: 1 }), 'one Hall level opens the 11th seat');
-    ok(FF.guildIsFull(25, { hall_level: 15 }), 'and 25/25 is full under a finished Hall');
-  });
-
   // ---- Estate expansion cost ------------------------------------------------------------
   // THE MULTIPLIER COMPOUNDS PER TILE, and a full estate is 300 tiles (5 rings of 44/52/60/68/76 around
   // the 10x10 core), so the exponent runs 0..299. Since v0.0.97.8 the curve is defined by its two
@@ -642,137 +607,6 @@
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work;
     s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.paving = savedPaveXp;
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
-  });
-
-  // ---- Estate: a certified completion survives its mirror being nulled mid-flight -----------------
-  // Ticket (Mr Cookie, round 2: "I paved a tile and it completed, but didn't register"). The
-  // estate_job_complete DELETE removes the server row while the response is in flight; estateJobSync
-  // (fired by opening My Estate) then reads "no row" and nulled the local mirror, and the response
-  // handler's `if(!cur) return` discarded the ONLY copy of the completion -- no grid write, no XP, no
-  // refund. v0.0.73 fixed the 'none' branch; this discard sat in front of every branch.
-  suite('estate: completion survives the sync race', function(){
-    var s = FF._state;
-    FF.estUse(false);
-    var cell = s.estate.grid[1][1];
-    var saved = { type:cell.type, pave:cell.paveTileId };
-    var savedJob = s.estate.job, savedQueue = s.estate.queue;
-    var savedXp = s.xp.paving, savedStat = s.stats && s.stats.paved_estate;
-    try {
-      s.estate.queue = [];
-      var past = Date.now() - 5000;
-      var job = { kind:'pave', x:1, y:1, paveTileId:'paving_t2', startAt: past - 60000, readyAt: past };
-      // The sync predicate: only a still-RUNNING mirror may be silently dropped.
-      ok(FF.estateSyncDropsMirror({ readyAt: Date.now() + 60000 }, null, Date.now()), 'a running mirror with no server row was cancelled elsewhere -> drop');
-      ok(!FF.estateSyncDropsMirror(job, null, Date.now()), 'a FINISHED mirror with no row is a completion in flight -> keep (the ticket)');
-      ok(!FF.estateSyncDropsMirror(null, null, Date.now()), 'no mirror -> nothing to drop');
-      ok(!FF.estateSyncDropsMirror(job, { kind:'pave' }, Date.now()), 'a server row present never reaches the drop branch');
-      // 1. THE TICKET: mirror already nulled by the race, server certifies ok -> the CAPTURED job must
-      //    still be applied, with rewards (we won the delete, so they are ours exactly once).
-      cell.type = 'dirt'; cell.paveTileId = null;
-      s.estate.job = null;
-      var xpBefore = s.xp.paving || 0;
-      FF.estateJobCompleteHandle({ ok:true, job:{} }, job);
-      eq(cell.type, 'paved', 'ok + nulled mirror: the tile is still paved');
-      eq(cell.paveTileId, 'paving_t2', 'ok + nulled mirror: with the right tile');
-      ok((s.xp.paving || 0) > xpBefore, 'ok + nulled mirror: the paving XP is granted');
-      // 2. 'none' with the mirror intact (another window collected): idempotent grid write, no rewards.
-      cell.type = 'dirt'; cell.paveTileId = null;
-      s.estate.job = job;
-      xpBefore = s.xp.paving || 0;
-      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
-      eq(cell.type, 'paved', "'none' + intact mirror: the grid write still lands");
-      eq(s.xp.paving || 0, xpBefore, "'none' + intact mirror: rewards stay suppressed (the winner granted them)");
-      ok(!s.estate.job, "'none': the mirror is released");
-      // 3. 'none' with the mirror nulled = OUR OWN cancel won the delete and already refunded the
-      //    materials -> placing the build on top would mint it.
-      cell.type = 'dirt'; cell.paveTileId = null;
-      s.estate.job = null;
-      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
-      eq(cell.type, 'dirt', "'none' + nulled mirror (a cancel won): nothing is placed on top of the refund");
-      // 4. 'early' adopts the server clock onto the matching mirror only.
-      s.estate.job = job;
-      FF.estateJobCompleteHandle({ ok:false, error:'early', job:{ readyAt: past + 99000 } }, job);
-      eq(Number(s.estate.job.readyAt), past + 99000, "'early': the mirror adopts the server's remaining time");
-    } finally {
-      cell.type = saved.type; cell.paveTileId = saved.pave;
-      s.estate.job = savedJob; s.estate.queue = savedQueue;
-      if(savedXp !== undefined) s.xp.paving = savedXp;
-      if(s.stats && savedStat !== undefined) s.stats.paved_estate = savedStat;
-    }
-  });
-
-  // ---- Estate: a server-mirrored totem job keeps its payload (SteakHouse ticket) --------------------
-  // estateJobFromServer mapped every payload field EXCEPT totemId, so a totem job re-read from the
-  // server (estate_job_get on opening My Estate, or the start response) lost its totem -- and the
-  // save-load shape check then dropped it as malformed. Paired with migration 20260803200000, which
-  // teaches estate_job_start the 'totem' kind at all (totems shipped 8 days after the server took
-  // ownership of estate jobs, and the whitelist was never extended -- every start was refused 'kind',
-  // which is why direct clicks did nothing and a queued totem froze on dispatch).
-  suite('estate: totem jobs round-trip the server mirror', function(){
-    var sj = { kind:'totem', x:8, y:11, startAt:1000, readyAt:2000, payload:{ totemId:'totem_t1' } };
-    var job = FF.estateJobFromServer(sj);
-    eq(job.kind, 'totem', 'the kind survives');
-    eq(job.totemId, 'totem_t1', 'the totem payload survives the mirror (it used to be dropped)');
-    ok(FF.estateJobShapeOk(job), 'the mirrored job passes the save-load shape check');
-    // Every other buildable payload still maps (regression sweep over the same function).
-    eq(FF.estateJobFromServer({ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{ paveTileId:'paving_t3' } }).paveTileId, 'paving_t3', 'pave payload still maps');
-    eq(FF.estateJobFromServer({ kind:'workshop', x:0, y:0, startAt:1, readyAt:2, payload:{ workshopId:'workshop_mining_t0' } }).workshopId, 'workshop_mining_t0', 'workshop payload still maps');
-    eq(FF.estateJobFromServer({ kind:'field', x:0, y:0, startAt:1, readyAt:2, payload:{ fieldTier:4 } }).fieldTier, 4, 'field payload still maps');
-  });
-
-  // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
-  suite('estate: upgrade guild pavement', function(){
-    var s = FF._state, ge = FF.guildEstate;
-    var savedGrid = ge.grid, savedStatus = ge.status, savedJob = ge.job, savedInv = s.inventory['paving_t2'];
-    var savedPJob = s.estate.job, savedPQueue = s.estate.queue, savedPaveXp = s.xp.paving;
-    s.estate.job = null; s.estate.queue = [];
-    s.xp.paving = FF.SKILL_XP_FLOOR[100];              // the paving gate applies on the guild estate too
-    ge.grid = [[{ type:'paved', paveTileId:'paving_t1', workshopId:'workshop_mining_t0' }]]; // a paved guild tile with a building
-    ge.status = 'ready'; ge.job = null;
-    FF.estUse(true);                                   // point the shared engine at the guild estate
-    s.inventory['paving_t2'] = 20;
-    FF.estateUpgradePavement(0, 0);
-    var job = ge.job;
-    ok(job && job.kind === 'pave' && job.upgrade === true, 'the guild upgrade starts a timed job through the shared engine');
-    eq(job.readyAt - job.startAt, 3 * FF.ESTATE_PAVE_MS_PER_TIER, 'a t3 (index 2) upgrade takes the fresh-pave 30 min');
-    eq(ge.grid[0][0].paveTileId, 'paving_t1', 'the guild pavement waits for the job to finish');
-    eq(s.inventory['paving_t2'], 0, 'the upgrade spent 20 next-tier tiles from personal inventory');
-    FF.applyEstateJobCompletion(ge, job, false, true);
-    ge.job = null;
-    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'completion upgrades the guild pavement');
-    eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
-    // The gate holds on the guild estate too -- the reported repro was a guildmate with gifted tiles.
-    s.xp.paving = 0; s.inventory['paving_t3'] = 20;
-    var savedT3 = s.inventory['paving_t3'];
-    FF.estUse(true);
-    FF.estateUpgradePavement(0, 0);
-    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'a low-Paving guildmate cannot upgrade a guild tile');
-    eq(s.inventory['paving_t3'], savedT3, 'the refused guild upgrade spends nothing');
-    delete s.inventory['paving_t3'];
-    // restore
-    FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; ge.job = savedJob;
-    s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv; s.xp.paving = savedPaveXp;
-  });
-
-  // ---- The Longhouse queue is VISIBLE under a running guild job (ticket-0165) ----
-  // The guild arm of the job-status panel appended only the other-members list, never the queue --
-  // and entries can only be ADDED while a job runs, so a member's queue could fill to QUEUE FULL
-  // without ever being seen (the reported "can't see the queue log / apparently queue full").
-  suite('guild estate: the Longhouse queue shows under a running job (ticket-0165)', function(){
-    var s = FF._state, ge = FF.guildEstate;
-    var saved = { grid:ge.grid, status:ge.status, job:ge.job, jobs:ge.jobs, q:s.guildEstateQueue };
-    try {
-      ge.grid = [[{ type:'paved', paveTileId:'paving_t1' }]]; ge.status = 'ready'; ge.jobs = [];
-      ge.job = { kind:'raise', x:0, y:0, startAt:Date.now()-1000, readyAt:Date.now()+60000 };
-      s.guildEstateQueue = [{ kind:'raise', x:0, y:0, localMs:60000, payload:{} }];
-      FF.estUse(true);
-      var html = FF.renderEstateJobStatus();
-      ok(html.indexOf('Action Queue') !== -1, 'the Longhouse queue renders under a RUNNING guild job (the only state where one exists)');
-      ok(html.indexOf('guildCancelQueued') !== -1, 'its Remove button routes to the guild cancel handler, never the personal one');
-    } finally {
-      FF.estUse(false);
-      ge.grid = saved.grid; ge.status = saved.status; ge.job = saved.job; ge.jobs = saved.jobs; s.guildEstateQueue = saved.q;
-    }
   });
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
@@ -1082,30 +916,6 @@
     g[0][0].fieldTier = 5;
     eq(FF.totemYieldBonusAt('personal','0,0'), 20, 'the t20 at (1,1) still reaches its diagonal neighbour at (0,0)');
     g[0][0].fieldTier = null;
-    // Guild estates take totems too since v0.0.79.0 (SteakHouse ticket, owner order -- reverses the
-    // personal-only design). Each estate's aura reads ITS OWN grid, so the two never leak.
-    var savedGE = { grid: FF.guildEstate.grid, status: FF.guildEstate.status, log: FF.guildEstate.log };
-    var savedGuild = FF.guildState.guild;
-    try {
-      var gg = []; for(var hx=0; hx<5; hx++){ var hcol=[]; for(var hy=0; hy<5; hy++){ hcol.push(mkCell()); } gg.push(hcol); }
-      gg[1][1].totemId = 'totem_t7';
-      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.log = [];
-      FF.guildState.guild = FF.guildState.guild || { id:'g-totem-test', tag:'TT', name:'Totem Testers' };
-      eq(FF.totemYieldBonusAt('guild','2,2'), 7, 'a guild field beside a guild totem gets its bonus (was hard 0)');
-      ok(FF.totemYieldBonusAt('guild','2,2') !== FF.totemYieldBonusAt('personal','2,2'), "and it reads the GUILD grid, not the personal one's stronger totem");
-      eq(FF.totemYieldBonusAt('guild','0,4'), 0, 'range still applies on the guild grid');
-      eq(FF.totemYieldBonusAt('personal','2,2'), 20, "the guild totem never leaks onto personal plots");
-      // Completion raises the totem on the GUILD grid and records it in the guild activity log.
-      var savedXpG = s.xp.totems;
-      gg[0][0].type = 'paved'; gg[0][0].paveTileId = 'paving_t9';
-      FF.applyEstateJobCompletion(FF.guildEstate, { kind:'totem', x:0, y:0, totemId:'totem_t5' }, true, true);
-      eq(gg[0][0].totemId, 'totem_t5', 'completion raises a totem on the guild grid');
-      ok(JSON.stringify(FF.guildEstate.log).indexOf('raised the') !== -1, 'and the guild activity log records the raising');
-      s.xp.totems = savedXpG;
-    } finally {
-      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.log = savedGE.log;
-      FF.guildState.guild = savedGuild;
-    }
     // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +20 (the
     // best totem in range, not the sum of the two).
     var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
@@ -1133,8 +943,8 @@
   // suite walks all eight for the generic kind, so the next building inherits the coverage.
   suite('estate buildings: the generic build job kind is wired everywhere', function(){
     var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
-    ok(defs && keys && keys.length === 11, 'eleven buildings ship across batches A to E (' + (keys||[]).join(', ') + ')');
-    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium','bunkhouse','foreman','longhouse'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+    ok(defs && keys && keys.length === 10, 'ten buildings ship across batches A to E (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium','bunkhouse','foreman'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
 
     // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
     ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
@@ -1161,13 +971,10 @@
     ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t1', upgrade:true }, { type:'paved', paveTileId:'paving_t5', buildingId:'apiary_t3' }).ok, 'nor as a downgrade');
     // 5) estateJobFieldsFrom -- queue entry to live job.
     eq(FF.estateJobFieldsFrom({ buildingId:'apiary_t4' }).buildingId, 'apiary_t4', 'the queue dispatcher copies buildingId onto the claimed job');
-    // 6) estateJobFromServer -- the resync mapper (this is the arm 'totem' lost, twice).
-    eq(FF.estateJobFromServer({ kind:'build', x:1, y:2, payload:{ buildingId:'apiary_t4' } }).buildingId, 'apiary_t4', 'a server-mirrored build job carries buildingId back');
     // 7 + 8) the labels.
     ok(/Build .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4' })), 'the queue labels a build job "Build <name>"');
     ok(/Upgrade to .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4', upgrade:true })), 'and an upgrade "Upgrade to <name>"');
     ok(FF.estateActiveJobHead({ kind:'build', buildingId:'apiary_t4' }, null).head.indexOf('Apiary') !== -1, 'the active-job card names the building (not the terraforming default)');
-    ok(!!FF.GUILD_JOB_KIND_LABEL.build, 'the guild activity list labels the build kind');
 
     // The tile-occupancy rule is SINGLE-SOURCED now. The pre-fix bug: two of the four checks read
     // workshopId || totemId, so a Workshop validated against a tile holding a Cottage.
@@ -1200,7 +1007,7 @@
     // A t0 building must NOT ask for a previous tier that cannot exist.
     ok(FF.getBuildingTierData('apiary', 0).inputs.apiary_t0 === undefined, 'a t0 building never bills a t-1 of itself');
     // The single-tier defs exist at exactly the top tier, and NOT below it.
-    ['bunkhouse','foreman','longhouse'].forEach(function(k){
+    ['bunkhouse','foreman'].forEach(function(k){
       var def = defs[k];
       ok(!FF.ALL_SELLABLE[def.prefix+'0'], k + ' has no t0 item at all');
       ok(!!FF.ALL_SELLABLE[def.prefix+(FF.TIER_COUNT-1)], k + ' exists only at the top tier');
@@ -1220,13 +1027,11 @@
     try {
       s.xp.architecture = 0; // Architecture Lv 1, far below the t20 gate
       var low = FF.renderWorkshopForge();
-      ok(low.indexOf('Guild Longhouse') !== -1, 'the Guild Longhouse card shows even at Architecture Lv 1 (it was hidden before)');
       ok(low.indexOf('Bunkhouse') !== -1, 'the Bunkhouse card shows too');
       ok(low.indexOf('Foreman') !== -1, "the Foreman's Office card shows too");
       ok(low.indexOf('Locked until Architecture Lv 100') !== -1, 'and they read as locked with the Lv 100 requirement');
       s.xp.architecture = 1e12; // Lv 100 (well past): the level lock is gone, only the material bill remains
       var hi = FF.renderWorkshopForge();
-      ok(hi.indexOf('Guild Longhouse') !== -1, 'the Longhouse is still present at max Architecture');
       ok(hi.indexOf('Locked until Architecture Lv 100') === -1, 'and no longer carries the level lock');
     } finally { s.xp.architecture = saved; }
   });
@@ -1275,41 +1080,6 @@
     } finally { s.settings.darkMode = sv; document.documentElement.classList.toggle('ff-dark', had); }
   });
 
-  // ---- ticket-0228: a one-swing Guild Boss kill announces itself on the Bosses tab ----
-  // The Hollow King has ~126k HP, so an endgame player kills it on the first swing; the kill jumps the
-  // player out of the arena by design, and with nothing on screen to say so it read as "instantly kicked
-  // me out and used my entry". The kill now leaves a gold result note (with the fight's duration) that
-  // the server's verdict updates, and a transport failure on the clear report is retried, never a refusal.
-  suite('guild boss: a kill leaves a result note and the clear report retries only on transport failures', function(){
-    var s = FF._state, G = FF.guildBossState;
-    eq(FF.guildBossFightDurText(Date.now() - 1000), '1 second', 'a one-second fight reads "1 second"');
-    eq(FF.guildBossFightDurText(Date.now() - 125000), '2 minutes 5 seconds', 'minutes and seconds spell out');
-    eq(FF.guildBossFightDurText(Date.now() - 60000), '1 minute', 'a whole minute drops the seconds');
-    ok(FF.guildBossClearIsTransport({ ok:false, error:'Network error.' }), 'a network error is a transport failure (retried)');
-    ok(FF.guildBossClearIsTransport(null), 'a missing response is a transport failure');
-    ok(!FF.guildBossClearIsTransport({ ok:false, alreadycleared:true, error:'Another member cleared it first.' }), 'a guildmate winning the race is a verdict, never retried');
-    ok(!FF.guildBossClearIsTransport({ ok:false, error:"You didn't enter that boss today." }), 'a server refusal is a verdict, never retried');
-    ok(!FF.guildBossClearIsTransport({ ok:true }), 'success is not retried');
-    var saved = { act:s.activity, log:s.log, notice:G.notice, error:G.error };
-    try {
-      s.log = [];
-      s.activity = FF.makeGuildBossActivity(2);
-      s.activity.duelStartedAt = Date.now() - 3000;
-      var mon = FF.buildGuildBossMonster(2);
-      ok(mon.hp < 200000, 'The Hollow King really is a one-swing foe at endgame (hp ' + mon.hp + ')');
-      G.notice = ''; G.error = '';
-      FF.guildBossOnKill(mon);
-      eq(s.activity.type, null, 'the kill ends the fight');
-      ok(/You defeated The Hollow King in 3 seconds/.test(G.notice), 'the Bosses tab carries a result note naming the boss and the duration: ' + G.notice);
-      ok(/Reporting the clear/.test(G.notice), 'the note says the clear is being reported');
-      var last = s.log[s.log.length - 1];
-      ok(!!last && /defeated The Hollow King in 3 seconds/.test(last.msg), 'the Chronicle line carries the duration too');
-      ok(/You defeated The Hollow King/.test(FF.renderGuildBoss()), 'the Bosses tab renders the result note');
-    } finally {
-      s.activity = saved.act; s.log = saved.log; G.notice = saved.notice; G.error = saved.error;
-    }
-  });
-
   // ---- Owner list item 18 (2026-09-17): Goldgorge buys a charge at most every second swing ----
   // One bought charge per swing was +50% Strike rate on top of the crit's own two charges; the scimitar
   // read +26% to +49% over its pack mean since the rarity retune against a designed +24%. Every second
@@ -1334,7 +1104,6 @@
     var hy = FF.estateActiveJobHead({ kind:'border', orient:'y', x:5, y:5, masonryTileId:tile }, null);
     ok(/Between Tile \(5, 4\) and Tile \(5, 5\)/.test(hy.head), 'a y-oriented border names the tiles above and below');
     ok(/Outer boundary/.test(FF.estateActiveJobHead({ kind:'border', orient:'x', x:0, y:5, masonryTileId:tile }, null).head), 'an outer-boundary border says so instead of naming a tile that does not exist');
-    eq(FF.GUILD_JOB_KIND_LABEL.border, 'building a border', 'the guild activity list has a label for border jobs too');
     ok(/Digging down/.test(FF.estateActiveJobHead({ kind:'lower', x:1, y:1 }, null).head), 'a real dig still reads as digging down');
   });
 
@@ -1378,20 +1147,6 @@
   // ---- Owner list batch B (2026-09-17): items 5, 12, 13, 15 ----
   suite('owner list B: re-enter button, per-flag eaten count, eat rows + auto-eat on the death report, guild projection', function(){
     var S = FF._state;
-    // 5: the Bosses tab offers "Fight it again" for the boss my entry is on while it is uncleared.
-    var G = FF.guildBossState, gsv = { status:G.status, bosses:G.bosses, entry:G.myEntryBoss, busy:G.busy };
-    var svAct = S.activity;
-    try {
-      S.activity = { type:null };
-      G.status = 'ready'; G.busy = false; G.myEntryBoss = 2;
-      G.bosses = [0,1,2,3,4].map(function(i){ return { idx:i, cleared:false, cleared_by:null }; });
-      var html = FF.renderGuildBoss();
-      ok(/data-action="guildBossEnter" data-idx="2"/.test(html), 'the boss my entry is on can be fought again');
-      ok(/Fight it again/.test(html), 'and the button says so');
-      ok(!/data-action="guildBossEnter" data-idx="3"/.test(html), 'a different boss stays locked behind the used entry');
-      G.bosses[2].cleared = true; G.bosses[2].cleared_by = 'Someone';
-      ok(!/data-action="guildBossEnter" data-idx="2"/.test(FF.renderGuildBoss()), 'once cleared there is nothing to re-enter');
-    } finally { G.status = gsv.status; G.bosses = gsv.bosses; G.myEntryBoss = gsv.entry; G.busy = gsv.busy; S.activity = svAct; }
     // 12: each flag counts what it ate this session.
     var flags = S.autoSacrifice, inv = S.inventory, faith = S.faith, phys = S.physique, log = S.log, locked = S.lockedItems;
     try {
@@ -1413,22 +1168,6 @@
       eq(S.deathReport.autoEat.threshold, 0.6, 'the report records the auto-eat threshold');
       eq(S.deathReport.autoEat.foodLeft, 0, 'and how much usable food was left');
     } finally { S.autoEatThreshold = svThr; S.inventory = svInv; S.deathReport = svRep; S.activity = svAct2; }
-    // 15: my own queued pave projects onto the guild cell, so a workshop can be queued behind it.
-    var GE = FF.guildEstate, gesv = { status:GE.status, grid:GE.grid, job:GE.job, q:S.guildEstateQueue };
-    try {
-      var g = [[{ type:'dirt', height:1, owned:true }]];
-      GE.status = 'ready'; GE.grid = g; GE.job = null;
-      S.guildEstateQueue = [{ kind:'pave', x:0, y:0, paveTileId:'paving_t5', localMs:1000, payload:{} }];
-      var p = FF.guildProjectedCell(0, 0);
-      eq(p.type, 'paved', 'my queued pave is projected onto the guild cell');
-      eq(p.paveTileId, 'paving_t5', 'with its tile');
-      eq(g[0][0].type, 'dirt', 'the real shared cell is untouched');
-      GE.job = { kind:'workshop', x:0, y:0, workshopId:'workshop_mining_t0', readyAt: Date.now()+1000 };
-      ok(!!FF.guildProjectedCell(0, 0).workshopId, 'my running job projects too');
-      GE.job = { kind:'assist', x:0, y:0, assistOf:'other', readyAt: Date.now()+1000 };
-      ok(!FF.guildProjectedCell(0, 0).workshopId, 'an assist row projects nothing');
-      eq(FF.guildProjectedCell(5, 5), null, 'off-grid is null');
-    } finally { GE.status = gesv.status; GE.grid = gesv.grid; GE.job = gesv.job; S.guildEstateQueue = gesv.q; }
   });
 
   // ---- Offline gathering honours the gather tool (owner list item 6, 2026-09-17) ----
@@ -1706,18 +1445,16 @@
       eq(FF.totemYieldBonusAt('personal','6,6'), 5, 'a Totem beside the same Field pays its own +5');
       eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'and the Apiary still pays its +1 alongside it');
       g[5][6].totemId = null;
-      // A GUILD Apiary must not pay honey: one shared hive on a shared grid would pay every member.
       s.inventory = {};
-      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
-      try {
+      {
         var gg = [];
         for(var gx=0; gx<3; gx++){ gg[gx] = []; for(var gy=0; gy<3; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gg[1][1].buildingId = 'apiary_t10';
         gg[1][1].apiaryAt = Date.now() - (5*per + 1000);
-        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
+        // A grid that is NOT the player's estate pays nothing: processProducers reads state.estate only.
         FF.processProducers();
-        eq(s.inventory.beekeeping_t10 || 0, 0, 'a guild Apiary pays no honey (a shared hive would pay every member)');
-      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
+        eq(s.inventory.beekeeping_t10 || 0, 0, 'a hive on a grid that is not your estate pays no honey');
+      }
       // The per-KIND standing count, which is what an Estate quest has to read: every building shares one
       // cell field, so estStanding('buildingId') cannot tell an Apiary from an Aqueduct.
       eq(FF.estStandingBuilding('apiary'), 2, 'estStandingBuilding counts only Apiaries');
@@ -2163,17 +1900,14 @@
       // lower than a reachable cap, a player's sixth-to-tenth tasks would be deleted on reload.
       ok(FF.PEON_SLOT_CEILING >= FF.peonSlotCap('personal'), 'the ceiling is never below a reachable cap');
       ok(FF.buildingCapBlocked('bunkhouse').indexOf('5 Bunkhouses') !== -1, 'a sixth Bunkhouse is refused');
-      // A GUILD Bunkhouse must not widen the personal cap: the caps are read per scope.
-      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
-      try {
+      // A Bunkhouse on a grid that is NOT the player's estate must not widen the cap.
+      {
         var gg = [];
         for(var gx=0; gx<4; gx++){ gg[gx] = []; for(var gy=0; gy<4; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gg[0][0].buildingId = 'bunkhouse_t' + TOP;
-        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
         for(var c=0; c<12; c++){ for(var d=0; d<12; d++) g[c][d].buildingId = null; }
-        eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'a guild Bunkhouse does not widen the personal estate');
-        eq(FF.peonSlotCap('guild'), FF.PEON_MAX_SLOTS + 1, 'it widens the guild estate');
-      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
+        eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'a Bunkhouse standing elsewhere does not widen the estate cap');
+      }
 
       // THE FOREMAN'S OFFICE. Without one, a Cottage beside more than one Workshop is unlinked entirely,
       // which quietly punishes dense layouts; with one it links to ALL of them and its ONE Peon can be
@@ -2213,82 +1947,18 @@
       eq((FF.estateAdjacentWorkshop(g, 5, 5)||{}).workshopId, 'workshop_mining_t5', 'a single neighbour links as it always did');
       g[4][5].workshopId = null;
       ok(!FF.estateAdjacentWorkshop(g, 5, 5), 'and no neighbour links to nothing, Foreman or not');
-      // SCOPE: the Office affects the grid it stands on. A personal Foreman must not link a guild Cottage.
-      var savedGE2 = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
-      try {
+      // SCOPE: the Office affects the grid it stands on. A Foreman on the estate grid must not link a Cottage on another grid.
+      {
         var gh = [];
         for(var hx=0; hx<4; hx++){ gh[hx] = []; for(var hy=0; hy<4; hy++) gh[hx][hy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gh[1][1].cottageId = 'cottage_t5';
         gh[0][1].workshopId = 'workshop_mining_t5';
         gh[2][1].workshopId = 'workshop_forestry_t5';
-        FF.guildEstate.grid = gh; FF.guildEstate.status = 'ready';
-        ok(!FF.estateAdjacentWorkshop(gh, 1, 1), 'a PERSONAL Foreman does not reach the guild grid');
+        ok(!FF.estateAdjacentWorkshop(gh, 1, 1), 'the estate Foreman does not reach another grid');
         gh[3][3].buildingId = 'foreman_t' + TOP;
-        ok(!!FF.estateAdjacentWorkshop(gh, 1, 1), 'the guild estate needs its own');
-      } finally { FF.guildEstate.grid = savedGE2.grid; FF.guildEstate.status = savedGE2.status; }
+        ok(!!FF.estateAdjacentWorkshop(gh, 1, 1), 'that grid needs its own');
+      }
     } finally { s.estate.grid = savedGrid; s.inventory = savedInv; FF.estUse(false); FF.recomputeAqueducts(); }
-  });
-
-  // ---- BATCH E: the Guild Longhouse (the guild estate's first queue) ------------------------------
-  // Guild members have always run strictly one job at a time. The Longhouse opens a queue, stored in the
-  // MEMBER's own save rather than the shared guild blob (which is overwritten wholesale by whoever persists
-  // last, so a queue in there would be two members fighting over one array).
-  suite('estate buildings: the Guild Longhouse opens a guild queue', function(){
-    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedQ = s.guildEstateQueue;
-    var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status, job:FF.guildEstate.job };
-    var TOP = FF.TIER_COUNT - 1;
-    var g = [];
-    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
-    var gg = [];
-    for(var gx=0; gx<6; gx++){ gg[gx] = []; for(var gy=0; gy<6; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
-    s.estate.grid = g; s.inventory = {}; s.guildEstateQueue = [];
-    try {
-      ok(FF.buildingIsGuildOnly('longhouse'), 'the Longhouse is guild-only');
-      ok(!FF.buildingIsGuildOnly('bunkhouse'), 'the Bunkhouse is not');
-      eq(FF.buildingTiersFor('longhouse').length, 1, 'and it is a single grand build');
-      // It is never OFFERED on a personal tile, so no button exists whose only outcome is a refusal.
-      s.inventory = {}; s.inventory['longhouse_t'+TOP] = 1; s.inventory['bunkhouse_t'+TOP] = 1;
-      FF.estUse(false);
-      var onPersonal = FF.placeableBuildingsFor(g[3][3]).map(function(i){ return i.id; });
-      ok(onPersonal.indexOf('longhouse_t'+TOP) === -1, 'a Longhouse is not offered on a personal tile');
-      ok(onPersonal.indexOf('bunkhouse_t'+TOP) !== -1, 'while a Bunkhouse is');
-      // ...and the placement path refuses it outright even if the button were reached.
-      s.estate.job = null; s.estate.queue = [];
-      FF.estatePlaceBuilding(3, 3, 'longhouse_t'+TOP);
-      ok(!s.estate.job, 'estatePlaceBuilding refuses a Longhouse on a personal estate');
-      eq(s.inventory['longhouse_t'+TOP], 1, 'and spends nothing');
-      // On the guild estate it IS offered.
-      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.job = null;
-      FF.estUse(true);
-      var onGuild = FF.placeableBuildingsFor(gg[3][3]).map(function(i){ return i.id; });
-      ok(onGuild.indexOf('longhouse_t'+TOP) !== -1, 'a Longhouse is offered on a guild tile');
-      // THE QUEUE only exists once one stands.
-      ok(!FF.guildQueueUnlocked(), 'with no Longhouse the guild estate has no queue');
-      gg[0][0].buildingId = 'longhouse_t' + TOP;
-      ok(FF.guildQueueUnlocked(), 'and gains one the moment a Longhouse stands');
-      ok(Array.isArray(FF.guildQueueArr()) && FF.guildQueueArr().length === 0, 'the queue starts empty');
-      // The queue lives in the MEMBER's own save, not the shared guild blob.
-      ok(s.guildEstateQueue === FF.guildQueueArr(), "the queue is the member's own state.guildEstateQueue");
-      ok(!FF.guildEstate.queue, 'and is NOT stored on the shared guild object');
-      // Cancelling a queued entry refunds its materials, exactly as the personal queue does.
-      s.inventory = {};
-      FF.guildQueueArr().push({ kind:'build', x:2, y:2, localMs:600000, payload:{ buildingId:'apiary_t3' }, buildingId:'apiary_t3' });
-      eq(FF.guildQueueArr().length, 1, 'an entry is queued');
-      FF.guildCancelQueued(0);
-      eq(FF.guildQueueArr().length, 0, 'cancelling removes it');
-      eq(s.inventory.apiary_t3 || 0, 1, 'and returns the building it had reserved');
-      // A bad index is a no-op rather than a crash or a mint.
-      s.inventory = {};
-      FF.guildCancelQueued(7);
-      eq(Object.keys(s.inventory).length, 0, 'cancelling a nonexistent entry refunds nothing');
-      // The queue shares the personal validator, so a job whose payload its kind needs is dropped on load.
-      ok(!FF.estateJobShapeOk({ kind:'build' }), 'the shared shape check still rejects a payload-less build');
-      ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'and accepts a real one');
-    } finally {
-      s.estate.grid = savedGrid; s.inventory = savedInv; s.guildEstateQueue = savedQ;
-      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.job = savedGE.job;
-      FF.estUse(false); FF.recomputeAqueducts();
-    }
   });
 
 
@@ -2535,59 +2205,6 @@
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
   });
 
-  // ---- ticket-0230 (SteakHouse): the Longhouse queue drains through an offline gap like the personal one ----
-  // Same rules as the personal drain below; the guild-specific rules are the occupancy check (a tile another
-  // member is working on is refunded and skipped) and ignoring my own just-finished row.
-  suite('guild estate: offline queue drain (ticket-0230)', function(){
-    var s = FF._state, G = FF.guildEstate;
-    var saved = { status:G.status, grid:G.grid, jobs:G.jobs, job:G.job, log:G.log, q:s.guildEstateQueue };
-    var g = s.estate.grid;   // a ready guild grid with the personal grid's shape
-    var cells = { c10:Object.assign({}, g[1][0]), c11:Object.assign({}, g[1][1]), c20:Object.assign({}, g[2][0]) };
-    var MIN = 60*1000;
-    try {
-      G.status = 'ready'; G.grid = g; G.jobs = []; G.job = null; G.log = [];
-      FF.estUse(true);
-      g[1][0] = { type:'dirt', height:1, owned:true };
-      g[1][1] = { type:'dirt', height:1, owned:true };
-      g[2][0] = { type:'dirt', height:1, owned:true };
-      s.guildEstateQueue = [
-        { kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } },
-        { kind:'field', x:1, y:1, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }
-      ];
-      eq(FF.guildDrainQueueOffline(5*MIN), 1, 'a 5-min gap drains exactly one 5-min field');
-      eq(s.guildEstateQueue.length, 1, 'the second field stays queued');
-      eq(g[1][0].fieldTier, 0, 'the drained field was applied to the guild grid');
-      ok(g[1][1].fieldTier == null, 'the still-queued field was not applied');
-      eq(FF.guildDrainQueueOffline(60*MIN), 1, 'the remaining field drains once the gap covers it');
-      eq(s.guildEstateQueue.length, 0, 'the queue is empty after a full drain');
-      eq(g[1][1].fieldTier, 0, 'the last field was applied');
-      // Live case: completion lands right at readyAt, no overhang, nothing drains.
-      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
-      eq(FF.guildDrainQueueOffline(0), 0, 'no overhang -> nothing drains (live behaviour unchanged)');
-      eq(s.guildEstateQueue.length, 1, 'the queued action is left for a live start');
-      // Guild-specific: a tile another member is working on right now is refunded and skipped, never built over.
-      G.jobs = [{ owner:'someone-else', kind:'field', x:2, y:0, readyAt:Date.now()+MIN }];
-      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'a tile held by another member drains nothing');
-      eq(s.guildEstateQueue.length, 0, 'and the voided head is dropped from the queue (refunded)');
-      ok(g[2][0].fieldTier == null, 'nothing was built on the contested tile');
-      // My OWN finished row (still listed until the refresh runs) must not block the drain.
-      G.jobs = [{ owner:'me-id', kind:'pave', x:2, y:0, readyAt:0 }];
-      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
-      eq(FF.guildDrainQueueOffline(60*MIN, { owner:'me-id' }), 1, 'my own finished row does not block the drain');
-      eq(g[2][0].fieldTier, 0, 'the field went up on the tile my own job just vacated');
-      // Guild grid not loaded -> nothing happens and the queue is untouched (it drains on a later completion).
-      G.jobs = [];
-      s.guildEstateQueue = [{ kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
-      G.status = 'loading';
-      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'no drain while the guild estate is not loaded');
-      eq(s.guildEstateQueue.length, 1, 'the queue is untouched');
-    } finally {
-      g[1][0] = cells.c10; g[1][1] = cells.c11; g[2][0] = cells.c20;
-      G.status = saved.status; G.grid = saved.grid; G.jobs = saved.jobs; G.job = saved.job; G.log = saved.log; s.guildEstateQueue = saved.q;
-      FF.estUse(false);
-    }
-  });
-
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target
@@ -2745,70 +2362,6 @@
     s.physique.composter = saved.comp; s.inventory['farming_t0'] = saved.crop0;
   });
 
-  // ---- Farming nav flash: guild-plot readiness only draws attention while you're IN a guild ----
-  // Reported: a Mortal cast out of their guild on death (or anyone who left) kept a ready crop standing in
-  // the guild fields, so the Farming tab flashed forever with no reachable way to harvest and clear it.
-  // The flash now ignores guild plots when you belong to no guild (and mortalDeath drops them outright).
-  suite('farming nav flash: guild plots gated on guild membership', function(){
-    var s = FF._state;
-    var saved = { fp:s.farmingPlots, gfp:s.guildFarmingPlots, guild:FF.guildState.guild, grid:s.estate.grid };
-    var readyCrop = function(){ return { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 }; };
-    try {
-      // A one-tile personal estate with a real Field at 0,0 (a crop there is genuinely harvestable).
-      s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
-      s.farmingPlots = {};
-      s.guildFarmingPlots = { '0,0': readyCrop() };
-      // In a guild: a ready guild crop flashes the Farming tab (guild grid not loaded in-test -> fallback path).
-      FF.guildState.guild = { id:'g1', tag:'TST', name:'Testers' };
-      eq(FF.railSubFlash('farming'), true, 'a ready guild crop flashes Farming while you are in a guild');
-      // Out of a guild (a Mortal cast out on death, or a normal leave): the unreachable crop must NOT flash.
-      FF.guildState.guild = null;
-      eq(FF.railSubFlash('farming'), false, 'a ready guild crop no longer flashes once you have no guild');
-      // A personal crop on a REAL Field tile flashes regardless of guild membership.
-      s.farmingPlots = { '0,0': readyCrop() };
-      eq(FF.railSubFlash('farming'), true, 'a ready personal crop on a real Field flashes Farming');
-      // ...but an ORPHANED plot (a ready crop whose tile is NOT a Field -- e.g. the "21/20" over-cap/desynced
-      // grid, or a removed Field) must NOT flash, since no harvestable card exists to clear it.
-      s.farmingPlots = { '9,9': readyCrop() };
-      eq(FF.railSubFlash('farming'), false, 'a ready crop with no backing Field does not flash (self-heals a stuck flash)');
-      // pruneOrphanFarmingPlots drops that orphan outright.
-      var removed = FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid);
-      ok(removed && !s.farmingPlots['9,9'], 'pruneOrphanFarmingPlots removes a plot with no backing Field');
-      // A plot on a real Field is kept.
-      s.farmingPlots = { '0,0': readyCrop() };
-      ok(!FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid) && s.farmingPlots['0,0'], 'pruneOrphanFarmingPlots keeps a plot on a real Field');
-    } finally {
-      s.farmingPlots = saved.fp; s.guildFarmingPlots = saved.gfp; FF.guildState.guild = saved.guild; s.estate.grid = saved.grid;
-    }
-  });
-
-  // ---- Guild plots: switching guilds drops crops left in the OLD guild's fields ----
-  // Reported: after leaving guild A (with a ready crop) and joining guild B, the Farming tab still flashed
-  // -- the guild-plot crops were keyed to guild A's estate grid but never cleared, so they were unreachable
-  // on guild B yet kept demanding attention. Any change of guild identity now drops them.
-  suite('guild plots: switching guilds clears the old fields', function(){
-    var s = FF._state;
-    var saved = { gfp:s.guildFarmingPlots };
-    try {
-      // Prime the session tracker to guild A (side effects of this priming call don't matter).
-      FF.syncGuildPlotsForGuild('guildA');
-      s.guildFarmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
-      // Reloading while STILL in guild A leaves the standing crop untouched.
-      var clearedSame = FF.syncGuildPlotsForGuild('guildA');
-      ok(!clearedSame && Object.keys(s.guildFarmingPlots).length === 1, 'staying in the same guild keeps your standing crops');
-      // Switching to a DIFFERENT guild drops the now-unreachable old-field crops.
-      var clearedSwitch = FF.syncGuildPlotsForGuild('guildB');
-      ok(clearedSwitch && Object.keys(s.guildFarmingPlots).length === 0, 'switching guilds clears crops left in the old guild fields');
-      // Leaving entirely (no guild) also clears.
-      s.guildFarmingPlots = { '1,1': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
-      FF.syncGuildPlotsForGuild('guildB');   // re-prime to B
-      var clearedLeave = FF.syncGuildPlotsForGuild(null);
-      ok(clearedLeave && Object.keys(s.guildFarmingPlots).length === 0, 'leaving a guild clears its standing crops');
-    } finally {
-      s.guildFarmingPlots = saved.gfp;
-    }
-  });
-
   // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
   suite('farming: auto-plant seed filter', function(){
     var s = FF._state;
@@ -2850,37 +2403,6 @@
     // restore
     s.settings = orig;
     s.inventory['seed_t0']=oInv.s0; s.inventory['seed_t1']=oInv.s1; s.inventory['grainseed_t0']=oInv.g0; s.inventory['herbseed_t0']=oInv.h0;
-  });
-
-  // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
-  suite('guild: activity & bank logs', function(){
-    var ge = FF.guildEstate, gs = FF.guildState;
-    var savedStatus = ge.status, savedLog = ge.log, savedGuild = gs.guild, savedRank = gs.myRank;
-    ge.status = 'ready'; ge.log = []; gs.guild = { id:'g1' };
-    // guildLogPush records only while a guild estate is loaded; newest first, with who + timestamp.
-    FF.guildLogPush('estate', 'cleared the Boulder at (3, 4)');
-    FF.guildLogPush('bank', '+500g (donated to treasury)');
-    eq(ge.log.length, 2, 'two entries recorded');
-    eq(ge.log[0].kind, 'bank', 'newest entry is first');
-    ok(ge.log[0].who && typeof ge.log[0].at === 'number', 'entries carry who + a timestamp');
-    // The render is officer+ only, and each surface filters by kind.
-    gs.myRank = 'member';
-    eq(FF.renderGuildActivityLog('estate', 'Estate Activity Log'), '', 'a plain member sees no log');
-    gs.myRank = 'officer';
-    var est = FF.renderGuildActivityLog('estate', 'Estate Activity Log');
-    ok(/Boulder/.test(est) && !/donated/.test(est), 'the estate log shows estate events only');
-    var bank = FF.renderGuildActivityLog('bank', 'Bank Ledger');
-    ok(/donated/.test(bank) && !/Boulder/.test(bank), 'the bank ledger shows bank events only');
-    // The log is capped.
-    ge.log.length = 0;
-    for(var i=0;i<FF.GUILD_LOG_MAX+25;i++) FF.guildLogPush('estate', 'e'+i);
-    eq(ge.log.length, FF.GUILD_LOG_MAX, 'the log is capped at GUILD_LOG_MAX');
-    // Not appended without a loaded guild estate.
-    ge.status = 'idle'; ge.log = [];
-    FF.guildLogPush('estate', 'ignored');
-    eq(ge.log.length, 0, 'nothing is logged when no guild estate is loaded');
-    // restore
-    ge.status = savedStatus; ge.log = savedLog; gs.guild = savedGuild; gs.myRank = savedRank;
   });
 
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
@@ -3965,48 +3487,8 @@
       S.estate.job = { kind:'clear', x:0, y:0, startAt:0, readyAt:1 };
       ok(FF.estateScopeHasJob('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
       S.estate.job = null;
-      // Guild estate: busy only when a job in the shared array is owned by THIS player.
-      var ge = FF.guildEstate, gs = FF.guildState;
-      var gsnap = { gjobs:ge.jobs, gstatus:ge.status, gid:ge.guildId, ggrid:ge.grid, guild:gs.guild };
-      try {
-        ge.jobs = [];
-        ok(!FF.estateScopeHasJob('guild'), 'no guild job for me -> not running a guild action');
-        ge.jobs = [{ owner:'_local', kind:'clear', x:0, y:0 }]; // signed-out player's id is '_local'
-        ok(FF.estateScopeHasJob('guild'), 'a guild job I own -> running a guild action');
-        ge.jobs = [{ owner:'someone-else', kind:'clear', x:1, y:1 }];
-        ok(!FF.estateScopeHasJob('guild'), "another member's guild job doesn't count as mine");
-        // guildEstateReachable needs an in-guild player with a loaded shared estate.
-        gs.guild = null; ok(!FF.guildEstateReachable(), 'not reachable when not in a guild');
-        gs.guild = { id:'g1' }; ge.status='ready'; ge.guildId='g1'; ge.grid=[[{}]];
-        ok(FF.guildEstateReachable(), 'reachable once in a guild with a ready, loaded estate');
-      } finally {
-        ge.jobs=gsnap.gjobs; ge.status=gsnap.gstatus; ge.guildId=gsnap.gid; ge.grid=gsnap.ggrid; gs.guild=gsnap.guild;
-      }
     } finally {
       S.estate.job = snap.job;
-    }
-  });
-
-  // ---- The no-arg estateJobActive() must reflect the ACTIVE estate, not always the personal one -----
-  // Regression: a scoped estateScopeHasJob(scope) helper once shadowed this via a duplicate function name,
-  // making every estate action's "one job at a time" guard read the personal job even on the guild estate,
-  // which broke Clear/Pave/Build there while a personal job was running.
-  suite('estateJobActive() keys off the active estate (no name-collision)', function(){
-    var S = FF._state, ge = FF.guildEstate;
-    var snap = { job:S.estate.job, gjobs:ge.jobs };
-    try {
-      // Personal estate active, personal job running -> active.
-      FF.estUse(false); S.estate.job = { kind:'clear', x:0, y:0 }; ge.jobs = [];
-      ok(FF.estActiveIsGuild()===false && FF.estateJobActive(), 'personal estate + personal job -> job active');
-      // Switch to the GUILD estate: a lingering PERSONAL job must NOT count as the guild estate being busy.
-      FF.estUse(true);
-      ok(FF.estActiveIsGuild()===true, 'estUse(true) makes the guild estate the active one');
-      ok(!FF.estateJobActive(), 'guild estate with no guild job of mine -> NOT busy, even while a personal job runs (the collision bug)');
-      // A guild job I own -> the guild estate reads busy.
-      ge.jobs = [{ owner:'_local', kind:'clear', x:1, y:1 }];
-      ok(FF.estateJobActive(), 'guild estate + my guild job -> busy');
-    } finally {
-      FF.estUse(false); S.estate.job = snap.job; ge.jobs = snap.gjobs;
     }
   });
 
@@ -4864,23 +4346,6 @@
     }
   });
 
-  // ---- Guild estate: leader-set demolition permission (who may remove buildings / pavement) ----------
-  suite('guild demolition permission', function(){
-    eq(FF.GUILD_RANK_ORDER.leader, 3, 'rank order leader(3) > officer(2) > member(1)');
-    var GS = FF.guildState, GE = FF.guildEstate;
-    var savedRank = GS.myRank, savedRole = GE.destroyRole;
-    GE.destroyRole = 'officer';
-    GS.myRank = 'member';  ok(!FF.canDestroyGuildEstate(), 'member blocked when set to Officers+');
-    GS.myRank = 'officer'; ok(FF.canDestroyGuildEstate(), 'officer allowed when set to Officers+');
-    GS.myRank = 'leader';  ok(FF.canDestroyGuildEstate(), 'leader is always allowed');
-    GE.destroyRole = 'leader';
-    GS.myRank = 'officer'; ok(!FF.canDestroyGuildEstate(), 'officer blocked when set to Leader only');
-    GE.destroyRole = 'member';
-    GS.myRank = 'member';  ok(FF.canDestroyGuildEstate(), 'any member allowed when set to Any member');
-    GE.destroyRole = undefined; eq(FF.guildDestroyMinRole(), 'officer', 'defaults to Officers+');
-    GS.myRank = savedRank; GE.destroyRole = savedRole;
-  });
-
   // ---- Persisted supreme/fantastic craft blasts reload into global chat as system messages ----------
   suite('persistent craft blasts', function(){
     var sup = FF.chronicleCraftToSystemMsg({ id:7, username:'Nyx', body:'Supreme Iron Sword', created_at:'2026-07-10T00:00:00Z' });
@@ -4986,7 +4451,6 @@
     ok(/^https:\/\/ko-fi\.com\//.test(FF.KOFI_URL), 'the Ko-fi URL is a real ko-fi.com link');
 
     // A sample of the other new claims, so a future rework of these systems trips here.
-    ok(T.some(function(t){ return /Mortal guild/.test(t) && /no shared treasury/.test(t); }), 'the Mortal-guild treasury tip is present');
     ok(T.some(function(t){ return /Enchant before you Enhance/.test(t); }), 'the enchant-before-enhance ordering tip is present');
     ok(T.some(function(t){ return /Barrier Shards/.test(t) && /star/.test(t); }), 'the Barrier Shard source tip is present');
     ok(T.some(function(t){ return /Toxin/.test(t) && /own clock/.test(t); }), 'the clocked-Toxin tip is present');
@@ -5032,45 +4496,6 @@
     ['milk','cheese','churn','block','bottle','hide','spool','mug'].forEach(function(sh){
       ok(document.getElementById('shape-'+sh), 'shape-'+sh+' symbol is defined (icon renders, not blank)');
     });
-  });
-
-  // ---- Guild estate: assist a teammate's task ------------------------------------------
-  // Guild estate jobs are SERVER-authoritative now (guild_estate_jobs table + RPCs). The lifecycle
-  // (start/assist/complete/cancel) round-trips through Supabase, so it isn't unit-testable without a
-  // backend; what stays client-side and testable is the read model -- guildJobFromServer's mapping,
-  // guildJobByOwner's filtering, and that a blob (grid) hydrate no longer touches the job list.
-  suite('guild estate jobs (server model): read model', function(){
-    var ge = FF.guildEstate;
-    var saved = { status:ge.status, jobs:ge.jobs, version:ge.version };
-    ge.status = 'ready'; ge.version = 0;
-    var NOW = Date.now();
-
-    // guildJobFromServer flattens a server row into the flat client job shape, carrying owner + assist info.
-    var row = { kind:'pave', x:3, y:4, owner:'alice', ownerName:'Alice',
-      payload:{ paveTileId:'paving_t2' }, startAt:NOW-1000, readyAt:NOW+60000 };
-    var mapped = FF.guildJobFromServer(row);
-    eq(mapped.owner, 'alice', 'server row -> client job keeps the owner');
-    eq(mapped.ownerName, 'Alice', 'server row -> client job keeps the owner name');
-    eq(mapped.paveTileId, 'paving_t2', 'server payload is flattened onto the job (paveTileId)');
-    eq(mapped.readyAt, NOW+60000, 'readyAt carries through as epoch ms');
-    var arow = { kind:'assist', x:3, y:4, owner:'bob', ownerName:'Bob', payload:{}, assistOf:'alice', assistOfName:'Alice', startAt:NOW, readyAt:NOW+30000 };
-    var amap = FF.guildJobFromServer(arow);
-    eq(amap.assistOf, 'alice', 'an assist job maps assistOf');
-    eq(amap.assistOfName, 'Alice', 'an assist job maps assistOfName');
-
-    // guildJobByOwner returns a member's non-assist job (the assist row is excluded).
-    ge.jobs = [ FF.guildJobFromServer(row), amap ];
-    var byOwner = FF.guildJobByOwner('alice');
-    ok(byOwner && byOwner.kind==='pave', "guildJobByOwner finds a member's non-assist job");
-    ok(!FF.guildJobByOwner('bob'), 'guildJobByOwner excludes assist jobs');
-
-    // A blob (grid) hydrate no longer carries jobs -- the server list is left intact across a grid sync.
-    var before = ge.jobs.slice();
-    FF.guildEstateHydrate({ grid:ge.grid, jobs:[{ owner:'zzz', kind:'clear', x:9, y:9, startAt:NOW, readyAt:NOW+1 }], expansionsPurchased:0, edgesX:ge.edgesX, edgesY:ge.edgesY }, 9);
-    eq(ge.jobs.length, before.length, 'a grid hydrate does not replace the (server-owned) job list');
-    ok(!ge.jobs.some(function(j){ return j.owner==='zzz'; }), "a blob's jobs field is ignored on hydrate");
-
-    ge.status = saved.status; ge.jobs = saved.jobs; ge.version = saved.version;
   });
 
   // ---- Leaderboard covers every skill / proficiency / class / physique ------------------
@@ -5371,54 +4796,6 @@
     ok(FF.maskProfanity('shit').charAt(0) === 's' && FF.maskProfanity('shit').slice(1) === '***', 'maskProfanity masks unconditionally');
     ok(FF.censorChat('you fuck').indexOf('*') !== -1 && FF.censorChat('go to www.x.io').indexOf('[link removed]') !== -1, 'censorChat still does links + profanity');
     s.settings.chatFilter = prev;
-  });
-
-  // ---- Chat: guild tags before names, Mortal-path names in red -------------------------------------
-  // Owner request: chat names carry the poster's [GUILD] tag, and Mortal-path players wear the same red
-  // the leaderboard gives them. Both ride the per-poster meta fetch (leaderboard view for mortal, the
-  // world-readable guild_members -> guilds embed for the tag); an unfetched poster renders plain.
-  suite('chat: guild tags + mortal red names', function(){
-    var now = Date.now(), iso = new Date(now).toISOString();
-    try {
-      FF._setChatMod({
-        roles:{}, mutes:{}, myRole:null,
-        authUser:{ username:'Me', id:'u-me2' },
-        titles:{ 'u-mort':'', 'u-tagged':'', 'u-plain':'' },
-        mortals:{ 'u-mort':true, 'u-tagged':false, 'u-plain':false },
-        gtags:{ 'u-mort':'', 'u-tagged':'IVY', 'u-plain':'' },
-        messages:[
-          { id:11, user_id:'u-mort',    username:'Doomed',  body:'hi',  created_at:iso },
-          { id:12, user_id:'u-tagged',  username:'Clanner', body:'yo',  created_at:iso },
-          { id:13, user_id:'u-plain',   username:'Nobody',  body:'sup', created_at:iso },
-          { id:14, user_id:'u-unknown', username:'Ghost',   body:'??',  created_at:iso }
-        ]
-      });
-      var html = FF.chatMessagesHtml();
-      ok(/class="chat-user mortal"[^>]*>Doomed/.test(html), 'a Mortal-path poster wears the red name class');
-      ok(html.indexOf('title="Mortal path"') !== -1, 'the red name explains itself on hover');
-      ok(/chat-guild-tag/.test(html) && html.indexOf('[IVY]') !== -1, 'a guilded poster shows a [TAG] chip');
-      ok(html.indexOf('[IVY]') < html.indexOf('Clanner'), 'the tag sits BEFORE the name');
-      ok(/class="chat-user"[^m]*>Clanner/.test(html) || /class="chat-user">Clanner/.test(html), 'a non-mortal name stays the normal colour');
-      ok(/class="chat-user">Ghost/.test(html), 'an unfetched poster renders plain — no undefined leakage');
-      ok(!/undefined/.test(html), 'no undefined anywhere in the rendered chat');
-      // The tag is escaped like every other user-influenced string.
-      FF._setChatMod({ gtags:{ 'u-tagged':'<b>' } });
-      ok(FF.chatMessagesHtml().indexOf('[&lt;b&gt;]') !== -1, 'a hostile tag renders escaped, never as markup');
-      // Guild channel: mortal red applies, the (redundant, same-guild) tag does not.
-      FF._setChatMod({ guildMessages:[ { id:1, user_id:'u-mort', username:'Doomed', body:'x', created_at:iso } ] });
-      var gh = FF.guildChatMessagesHtml();
-      ok(/class="chat-user mortal"/.test(gh), 'guild chat colours Mortal-path posters too');
-      ok(!/chat-guild-tag/.test(gh), 'guild chat shows no tag — everyone in it shares one');
-      // The palette is real CSS, not just a class name: the mortal name computes a different colour.
-      var probe = document.createElement('div');
-      probe.innerHTML = '<span class="chat-user">a</span><span class="chat-user mortal">b</span>';
-      document.body.appendChild(probe);
-      var cPlain = getComputedStyle(probe.children[0]).color, cMort = getComputedStyle(probe.children[1]).color;
-      probe.remove();
-      ok(cPlain !== cMort, 'the .mortal class actually changes the name colour (' + cMort + ')');
-    } finally {
-      FF._setChatMod({ messages:[], guildMessages:[], titles:{}, mortals:{}, gtags:{}, authUser:null, myRole:null });
-    }
   });
 
   // ---- Chat moderation: role badges, muted state, mod-button gating, modal protection --------------
@@ -5822,49 +5199,6 @@
     s.settings.chatFlash = true;
   });
 
-  // ---- Guild membership cap --------------------------------------------------------------------
-  suite('guild: 10-member cap', function(){
-    eq(FF.GUILD_MAX_MEMBERS, 10, 'cap is 10');
-    ok(FF.guildIsFull(10), '10 members is full');
-    ok(FF.guildIsFull(11), 'over cap is full');
-    ok(!FF.guildIsFull(9), '9 members is not full');
-    ok(!FF.guildIsFull(0), 'empty is not full');
-    ok(!FF.guildIsFull(undefined), 'undefined count treated as not full');
-  });
-
-  // ---- Guild roster: presence dot + last-seen lines (ticket: "online status like the leaderboard",
-  // v0.0.78.0). The dot reuses the leaderboard's .lb-online[data-uid] markup verbatim, so
-  // updateLeaderboardPresence() repaints roster dots for free; the "last seen" line reads the
-  // server-witnessed save clock (guild_action get_state ships members[].last_active as epoch ms) --
-  // the same clock the server's leadership-succession check judges by.
-  suite('guild roster: online dots and last-seen lines', function(){
-    var A = FF.rosterAgoText, now = Date.now();
-    eq(A(30*1000), 'moments ago', 'under a minute reads as moments');
-    eq(A(5*60*1000), '5m ago', 'minutes band');
-    eq(A(3*3600*1000), '3h ago', 'hours band');
-    eq(A(47*3600*1000), '47h ago', 'stays in hours through 48h -- the succession ELIGIBILITY window reads in hours');
-    eq(A(72*3600*1000), '3d ago', 'the 72h dethrone threshold reads as days');
-    eq(A(90*24*3600*1000), '3mo ago', 'long absences read in months');
-    eq(FF.rosterLastSeenText(now - 5*60*1000, true), 'Online now', 'presence wins over the save clock');
-    eq(FF.rosterLastSeenText(now - 5*60*1000, false), 'Last seen 5m ago', 'offline members show the save-clock absence');
-    eq(FF.rosterLastSeenText(null, false), '', 'no server clock -> no line, never a NaN');
-    var G = FF.guildState, saved = { guild:G.guild, members:G.members, myRank:G.myRank, applications:G.applications };
-    try {
-      G.guild = { id:'g-test', tag:'TST', name:'Testers', open:true };
-      G.myRank = 'member'; G.applications = [];
-      G.members = [
-        { user_id:'u-lead', username:'AbsentLeader', rank:'leader',  last_active: now - 4*24*3600*1000 },
-        { user_id:'u-off',  username:'ActiveBob',   rank:'officer', last_active: now - 60*1000 }
-      ];
-      var html = FF.renderGuildRoster();
-      ok(html.indexOf('lb-online') !== -1, 'roster rows carry the leaderboard presence dot');
-      ok(html.indexOf('data-uid="u-lead"') !== -1 && html.indexOf('data-uid="u-off"') !== -1,
-        'dots carry data-uid, so updateLeaderboardPresence() live-repaints them with the leaderboard');
-      ok(html.indexOf('Last seen 4d ago') !== -1, 'the absent leader shows a days-scale absence');
-      ok(html.indexOf('Last seen 1m ago') !== -1, 'the active officer shows a minutes-scale one');
-    } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
-  });
-
   // ---- Outfitting craft pages carry no equipping UI (owner order, v0.0.79.12) ----------------------
   // Equipping lives in the Inventory (getEquipActionForItem) and Battle -> Equipment & Stats; the
   // wand/staff/scepter/ward craft pages used to duplicate it and now point there instead.
@@ -6190,11 +5524,6 @@
     ok(/Raising \(/.test(H({ kind:'raise', x:1, y:1 }).head.replace(/&bull; /,'')), 'raise still reads as raising');
     ok(/Tilling/.test(H({ kind:'field', fieldTier:3, x:1, y:1 }).head), 'field reads as tilling');
     ok(/Paving/.test(H({ kind:'pave', paveTileId:'paving_t3', x:1, y:1 }).head), 'pave reads as paving');
-    // The kinds both estates accept all have a named arm or a named guild-activity label.
-    ['clear','raise','lower','pave','workshop','cottage','field','totem'].forEach(function(k){
-      ok(!!FF.GUILD_JOB_KIND_LABEL[k], "the guild activity list names '" + k + "' (unnamed kinds read as just \"working\")");
-    });
-    eq(FF.GUILD_JOB_KIND_LABEL.totem, 'raising a totem', 'guildmates see "raising a totem", not "working"');
   });
 
   // ---- Craft filter: "Highest tier" respects chained ladders (belt ticket, v0.0.79.4) ---------------
@@ -12209,36 +11538,6 @@
     ok(FF.FORGE_LIVE_CATEGORIES.indexOf('inventory') === -1, 'forge live-update never runs on Inventory');
   });
 
-  // ---- Guild Bosses: 5 tower-style bosses, rising difficulty & reward ----
-  // Reworked from an async damage pool to 5 solo-entry bosses at Tower-floor difficulty 1/10/20/30/40,
-  // each rewarding index+1 Barrier Shards (1..5) to every guild member on a clear.
-  suite('guild bosses: roster, difficulty & reward', function(){
-    eq(FF.GUILD_BOSSES.length, 5, 'five guild bosses');
-    eq(FF.GUILD_BOSSES.map(function(b){ return b.floor; }).join(','), '1,10,20,30,40', 'difficulty floors are 1/10/20/30/40');
-    FF.GUILD_BOSSES.forEach(function(b, i){
-      eq(b.idx, i, 'boss ' + i + ' carries idx ' + i);
-      eq(FF.guildBossReward(i), i + 1, 'boss ' + i + ' rewards ' + (i + 1) + ' Barrier Shard(s)');
-      // v0.0.96.5: bosses stay on the FROZEN pre-recurve curve (GBOSS_*), NOT towerFloorStats -- the
-      // tower recurve would have shrunk boss 5 from ~186M HP to ~313 by accident.
-      var mon = FF.buildGuildBossMonster(i), st = FF.towerScaledStats(b.floor, FF.GBOSS_HP_RATIO, FF.GBOSS_ATK_RATIO);
-      ok(mon && mon.id === 'gboss_' + i, 'boss ' + i + ' builds monster gboss_' + i);
-      eq(mon.hp, st.hp, 'boss ' + i + ' HP matches the frozen boss curve at floor ' + b.floor);
-      var rb = FF.monsterById('gboss_' + i);   // reload path
-      ok(rb && rb.hp === st.hp, 'gboss_' + i + ' resolves via monsterById after a reload');
-    });
-    for(var i = 1; i < FF.GUILD_BOSSES.length; i++){
-      ok(FF.buildGuildBossMonster(i).hp > FF.buildGuildBossMonster(i - 1).hp, 'boss ' + i + ' is tougher than boss ' + (i - 1));
-    }
-    // Absolute pins so a curve swap cannot silently move the bosses: these are the LIVE pre-recurve stats.
-    eq(FF.buildGuildBossMonster(0).hp, 124, 'boss 1 keeps its frozen 124 HP');
-    eq(FF.buildGuildBossMonster(4).hp, 185771740, 'boss 5 keeps its frozen ~186M HP');
-    eq(FF.buildGuildBossMonster(4).atkMax, 13173, 'boss 5 keeps its frozen max attack');
-    // The combat activity carries the guildBoss marker so the kill dispatch reports the clear (not a re-engage).
-    var act = FF.makeGuildBossActivity(2);
-    ok(act && act.type === 'combat' && act.guildBoss && act.guildBoss.idx === 2 && act.guildBoss.floor === 20, 'makeGuildBossActivity marks a guildBoss combat at Floor 20');
-    eq(act.monsterId, 'gboss_2', 'the activity targets the boss monster');
-  });
-
   // ---- Masterwork Supreme/Fantastic blast to the global feed + Discord ----
   // Reported: mastercrafting a Supreme/Fantastic didn't blast (only Fantastic hit Discord, and neither hit
   // the global chronicle/chat). The blast now fires for Supreme AND Fantastic, and the chronicle row leads
@@ -13679,12 +12978,7 @@
       s.stats[row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes');
       invGrantCheck(row[0], row[3], row[4]);
     });
-    // 49 Kindred Spirits: visit the guild
-    var q49 = FF.questById('kindred_spirits');
-    ok(!!q49 && q49.target===1 && q49.reward.gold===2000, 'Kindred Spirits: visit guild -> 2000 gold');
-    s.quests={claimed:{}}; s.stats={}; eq(FF.questComplete(q49), false, 'not visited -> not complete');
-    s.stats['guild_visited']=1; ok(FF.questComplete(q49), 'visiting the guild completes');
-    // 50 Master of the Frontier: any skill to Lv 25
+    // 49 Master of the Frontier: any skill to Lv 25 (Kindred Spirits, the guild visit, left with the guilds)
     var q50 = FF.questById('master_of_the_frontier');
     ok(!!q50 && q50.target===25, 'Master of the Frontier: to Lv 25');
     s.quests={claimed:{}}; s.xp={ mining: FF.xpFloorForLevel(24) };
@@ -14897,32 +14191,6 @@
     }
   });
 
-  // ---- Guild bank: legendary / set uniques keep their real name + effect through the vault ----
-  suite('guild bank: legendary uniques survive the vault round-trip', function(){
-    var def = FF.D1_LEG_GEAR_DEFS.filter(function(d){ return d.slot==='mainhand'; })[0];
-    ok(def, 'a D1 mainhand legendary exists to test with');
-    var top = FF.legGearBaseTopTier(def.base);
-    var base = 'stweapon_'+def.base+'_t'+top+'_rare';
-    var legName = FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId(def.key,'rare')].name;
-    var u = { base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[{mod:'critDamage',roll:20}], leg:def.key };
-    // The bug: without carrying leg, the item names by its plain base, not its legendary.
-    ok(FF.uniqueBaseName(u) === legName && legName !== (FF.ALL_SELLABLE[base]||{}).name, 'a legendary unique names by its legendary, not its base');
-    var blob = FF.bankUniqueBlob(u);
-    eq(blob.leg, def.key, 'the deposit blob carries the legendary key');
-    eq(blob.enchants.length, 1, '...and its enchants');
-    var revived = FF.bankUniqueRevive({ base:blob.base, kind:blob.kind, tier:blob.tier, rarity:blob.rarity, enhance:blob.enhance, enchants:blob.enchants, leg:blob.leg });
-    eq(revived.leg, def.key, 'a withdrawn legendary re-mints with its leg (effect restored, not just the name)');
-    eq(FF.uniqueBaseName(revived), legName, '...and reads back as its legendary name');
-    eq(revived.enchants[0].roll, 20, 'enchants survive the round-trip');
-    // A plain unique carries a null leg -> unaffected.
-    eq(FF.bankUniqueBlob({ base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[] }).leg, null, 'a plain unique carries a null leg');
-    // Armor-set piece: set/setLayer round-trip too.
-    var sblob = FF.bankUniqueBlob({ base:'bodyarmor_plate_chest_t9_rare', kind:'bodyarmor', tier:9, rarity:'rare', enhance:0, enchants:[], set:'knight', setLayer:'d2' });
-    ok(sblob.set==='knight' && sblob.setLayer==='d2', 'a set piece carries its set key + layer');
-    var sr = FF.bankUniqueRevive({ base:sblob.base, kind:sblob.kind, tier:sblob.tier, rarity:sblob.rarity, enhance:0, enchants:[], set:sblob.set, setLayer:sblob.setLayer });
-    ok(sr.set==='knight' && sr.setLayer==='d2', 'a withdrawn set piece keeps its set + layer');
-  });
-
   suite('equip picker: best-first, grouped, filterable candidate list', function(){
     ok(typeof FF.sortEquipCandidates==='function' && typeof FF.renderEquipCandidatePicker==='function', 'equip picker helpers exported');
     // Sort: equipped pinned to the top, usable by score desc, locked sunk to the bottom.
@@ -15476,11 +14744,9 @@
   });
 
   // ---- ticket-0109: blocked entry must show ON the UI, not only in the Chronicle ------------------
-  suite('combat: blocked Tower / Guild Boss entry is visible', function(){
+  suite('combat: blocked Tower entry is visible', function(){
     var S = FF._state;
     var snap = { act:S.activity };
-    var gs = FF._guildBossState(), gst = FF._guildState();
-    var gsnap = { err:gs.error, guild:gst.guild };
     try {
       var EN = 'all'; // the All-Classes Tower entrance (no class requirement to trip first)
       // --- Tower: entering while in an ordinary fight ---
@@ -15501,20 +14767,8 @@
       // Reopening the preview starts clean again.
       FF._setTowerPreview(EN);
       eq(FF._towerEntryError(), '', 'reopening the preview clears the stale notice');
-      // --- Guild Boss: the reported case ---
-      gst.guild = { id:'g1', name:'Test Guild' };
-      gs.error = '';
-      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
-      FF.guildBossEnter(0);
-      ok(/Finish your current fight/.test(gs.error), 'a blocked Guild Boss entry sets the panel error (ticket-0109)');
-      ok(!(S.activity && S.activity.guildBoss), '...and does NOT pull the boss');
-      // Already on a boss reads differently.
-      gs.error = '';
-      S.activity = { type:'combat', playerSwungOnce:true, guildBoss:{ idx:1 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
-      FF.guildBossEnter(0);
-      ok(/already fighting a Guild Boss/.test(gs.error), 'already on a boss reports a distinct message');
     } finally {
-      S.activity = snap.act; gs.error = gsnap.err; gst.guild = gsnap.guild;
+      S.activity = snap.act;
     }
   });
 
@@ -19399,13 +18653,12 @@
     try {
       var tab = FF.renderChatTab();
       ok(tab.indexOf('chat-status') === -1, 'the status row above the well is retired (it lives in the headers now)');
-      ok(/chan-global/.test(tab) && /chan-guild/.test(tab) && /chan-chronicle/.test(tab) && /chan-combat/.test(tab),
+      ok(/chan-global/.test(tab) && /chan-chronicle/.test(tab) && /chan-combat/.test(tab),
         'every channel tab carries its accent class');
-      eq((tab.match(/chat-tab-pip/g) || []).length, 2, 'Global and Guild carry pip spans (always rendered, filled in place)');
+      eq((tab.match(/chat-tab-pip/g) || []).length, 1, 'Global carries a pip span (always rendered, filled in place)');
       // System blasts: a starburst on EACH side of the body now.
       var sys = tab.slice(tab.indexOf('chat-system'), tab.indexOf('chat-time', tab.indexOf('chat-system')));
       eq((sys.match(/chat-sys-ico/g) || []).length, 2, 'a system blast wears a starburst on each side');
-      ok(/chat-guild-tag" title="Guild" style="color:#/.test(tab), 'guild tags ink with their hashed colour');
       // Pip mechanics: note off-channel -> counts; clear -> zero. (Harness chat is off-screen, so both count.)
       FF.chatChanClear('global'); FF.chatChanClear('guild');
       FF.chatChanNote('guild'); FF.chatChanNote('guild'); FF.chatChanNote('global');
@@ -19902,13 +19155,6 @@
     var _f2 = FF.estateJobFieldsFrom({ paveTileId:'paving_t3', workshopId:'w', cottageId:'c', fieldTier:4, upgrade:true });
     ok(_f2.paveTileId==='paving_t3' && _f2.workshopId==='w' && _f2.cottageId==='c' && _f2.fieldTier===4 && _f2.upgrade===true,
       'every other payload field rides the same helper');
-    // A failed queue claim: adopt a reported job, DROP a hard refusal (retrying one every 4s was the
-    // reported "queued totem freezes forever"), retry only transport blips / jobless-busy responses.
-    eq(FF.estateQueueClaimOutcome({ ok:false, error:'kind' }), 'drop', "a hard 'kind' refusal drops the head (the frozen queue)");
-    eq(FF.estateQueueClaimOutcome({ ok:false, error:'coords' }), 'drop', 'any hard refusal drops');
-    eq(FF.estateQueueClaimOutcome({ ok:false, error:'inprogress', job:{ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{} } }), 'adopt', 'a busy response with a job is adopted');
-    eq(FF.estateQueueClaimOutcome(null), 'retry', 'a transport error keeps the head queued');
-    eq(FF.estateQueueClaimOutcome({ ok:false, error:'pending' }), 'retry', 'a jobless pending stays queued for the next tick');
     ok(FF.estateJobShapeOk({kind:'workshop', workshopId:'workshop_jewelrycrafting_t1'}), 'a workshop job is valid');
     ok(FF.estateJobShapeOk({kind:'cottage', cottageId:'cottage_t2'}), 'a cottage job is valid');
     ok(FF.estateJobShapeOk({kind:'pave', paveTileId:'paving_t4'}), 'a pave job is valid');
@@ -20949,14 +20195,8 @@
     FF.openMortalRestart();
     eq(FF.mortalRestartStepNow(), 1, 'reopening always starts over at confirmation 1 (no resuming half a flow)');
     FF.closeMortalRestart();
-    // The wipe's server reach (v0.0.97.4): the marketplace presence goes and IMMORTAL guilds are left.
-    // The guild decision is a pure helper (the execute path routes through it): Immortal guilds are
-    // left, Mortal guilds are kept (the restarted character is a Mortal again), no guild is a no-op.
-    eq(FF.mortalRestartLeavesGuild({ mortal:false }), true, 'a restart leaves an Immortal guild');
-    eq(FF.mortalRestartLeavesGuild({ mortal:true }), false, 'a restart keeps a Mortal guild (membership stays consistent)');
-    eq(FF.mortalRestartLeavesGuild(null), false, 'no guild -> nothing to leave');
     // The first confirmation must actually WARN about both server-side removals.
-    ok(/marketplace/i.test(FF.MORTAL_RESTART_STEPS[0].body) && /guild/i.test(FF.MORTAL_RESTART_STEPS[0].body), 'modal 1 warns about the marketplace wipe and the guild exit');
+    ok(/marketplace/i.test(FF.MORTAL_RESTART_STEPS[0].body), 'modal 1 warns about the marketplace wipe');
   });
 
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
@@ -21181,25 +20421,24 @@
       ok(advertised > 0, 'a lit task advertises a non-zero rate');
       eq(FF.peonCandlesPerHour({ kind:'craft', itemId:'chandlery_t0' }), 0, 'a task with no candle advertises no burn');
 
-      // Both estates draw on ONE inventory. A per-estate summary would tell each side it had the whole
-      // stack, so the aggregate has to span scopes and peons sharing a candle type must share a group.
+      // Every peon draws on ONE inventory, so peons sharing a candle type must share a group.
       var mk = function(x){ return { x:x, y:0, skillId:'chandlery', kind:'craft', itemId:'chandlery_t0', candleId:'chandlery_t0', candleMs:5000 }; };
       s.inventory = { 'chandlery_t0': 100 };
-      s.peons = [mk(0)]; s.guildPeons = [mk(1)];
+      s.peons = [mk(0), mk(1)];
       var sum = FF.candleStoreSummary();
-      eq(sum.litCount, 2, 'the summary counts lit cottages on BOTH estates');
+      eq(sum.litCount, 2, 'the summary counts every lit cottage');
       eq(Object.keys(sum.groups).length, 1, 'peons burning the same candle type share one pool');
-      ok(Math.abs(sum.totalPerHour - 2*FF.peonCandlesPerHour(mk(0))) < 1e-9, 'drain rates add across scopes');
+      ok(Math.abs(sum.totalPerHour - 2*FF.peonCandlesPerHour(mk(0))) < 1e-9, 'drain rates add across peons');
       ok(Math.abs(sum.totalStoredMs - 100*FF.candleBurnMs(0)) < 1e-9, 'stored burn is the whole bag, not just what is alight');
       ok(sum.runwayMs > 0 && sum.soonest && sum.soonest.id === 'chandlery_t0', 'runway names the type that empties first');
 
       // Two peons on one stack drain it in half the time one would.
-      s.guildPeons = [];
+      s.peons = [mk(0)];
       var solo = FF.candleStoreSummary();
       ok(Math.abs(solo.runwayMs - sum.runwayMs*2) < 1e-6, 'dropping one of two peons doubles the runway on a shared stack');
 
       // A candle type nobody burns must not claim a runway, but still counts toward stored burn.
-      s.peons = []; s.guildPeons = [];
+      s.peons = [];
       var idle = FF.candleStoreSummary();
       eq(idle.totalPerHour, 0, 'no lit peons -> no drain');
       eq(idle.soonest, null, 'no drain -> nothing is "first to run dry"');
@@ -23486,7 +22725,7 @@
     var svStats = S.stats, svSets = S.estSets, svEstate = S.estate;
     try {
       var esq = FF.QUESTS.filter(function(q){ return q.cat === 'estatequests'; });
-      eq(esq.length, 51, 'the Estate line is 50 quests plus a capstone');
+      eq(esq.length, 44, 'the Estate line is 43 quests plus a capstone (the seven guild-estate quests left in the local-only build)');
       eq(esq.filter(function(q){ return q.capstone; }).length, 1, 'exactly one capstone');
       // The pre-existing quest leads it, unchanged, and keeps number 1.
       var one = FF.questById('clearing_the_land');
@@ -23496,10 +22735,10 @@
       // Numbering and acts.
       var nums = esq.filter(function(q){ return !q.capstone; }).map(function(q){ return FF.QUEST_ORDINAL[q.id]; });
       eq(Math.min.apply(null, nums), 1, 'Estate numbering starts at 1');
-      eq(Math.max.apply(null, nums), 50, 'and runs to 50');
-      eq(new Set(nums).size, 50, 'with no duplicate numbers');
+      eq(Math.max.apply(null, nums), 43, 'and runs to 43');
+      eq(new Set(nums).size, 43, 'with no duplicate numbers');
       eq(FF.EST_ACTS.length, 5, 'five Estate acts');
-      eq(FF.EST_ACTS[FF.EST_ACTS.length - 1].to, 50, 'covering through 50');
+      eq(FF.EST_ACTS[FF.EST_ACTS.length - 1].to, 43, 'covering through 43');
       for(var _i = 1; _i < FF.EST_ACTS.length; _i++){
         eq(FF.EST_ACTS[_i].from, FF.EST_ACTS[_i - 1].to + 1, 'Estate act ' + (_i + 1) + ' is contiguous');
       }
@@ -23540,10 +22779,10 @@
       // ---- the capstone ------------------------------------------------------------------------
       var cap = FF.questById('lord_of_the_manor');
       ok(!!cap && cap.reward.titleId === 'title_lord_of_the_manor', 'the capstone grants the Lord of the Manor title');
-      eq(cap.target, 50, 'and requires the other fifty');
+      eq(cap.target, 43, 'and requires the other forty-three');
       S.quests = { claimed:{} };
       esq.forEach(function(q){ if(!q.capstone) S.quests.claimed[q.id] = true; });
-      eq(cap.progress(S), 50, 'claiming all fifty completes it');
+      eq(cap.progress(S), 43, 'claiming all forty-three completes it');
     } finally {
       S.stats = svStats; S.estSets = svSets; S.estate = svEstate; S.quests = { claimed:{} };
     }
@@ -23842,8 +23081,6 @@
       var scoped = FF.peonActionTime(10, 20, 'mining', false, 'personal');
       ok(scoped < plain, 'a scoped action time is faster than an unscoped one');
       eq(Math.round((1 - scoped / plain) * 1e6) / 1e6, Math.round(FF.ESTATE_APPRAISAL_MAX_CUT * 0.5 * 1e6) / 1e6, 'and faster by exactly the appraised share of the cap');
-      // A guild scope with no guild estate loaded must read zero rather than throw.
-      eq(FF.estateAppraisal('guild').share, 0, 'an unloaded guild estate appraises at zero');
     } finally {
       for(var rx=0; rx<20; rx++) for(var ry=0; ry<20; ry++) g[rx][ry].owned = svOwned[rx][ry];
       for(var qx=0; qx<=20; qx++) for(var qy=0; qy<20; qy++){ S.estate.edgesX[qx][qy].type = svEdges[qx][qy].t; S.estate.edgesX[qx][qy].masonryTileId = svEdges[qx][qy].m; }
@@ -24717,32 +23954,10 @@
     } finally { s.uniqueItems = sv.uq; s.inventory = sv.inv; }
   });
 
-  // ---- Guild directory: the roster cap follows the Hall (Meri, 2026-10-08) ------------------------
-  // The All Guilds list was fetched once per session, so a Hall raised from Level 1 to 3 kept reading
-  // "11/11 members" against a roster of 13. The cached row is patched on upgrade and the list goes stale.
-  suite('guild directory: Hall upgrades reach the cached list', function(){
-    var D = FF.guildDir, sv = { list:D.list, status:D.status, at:D.loadedAt, view:D.viewGuild };
-    try {
-      D.list = [ { id:'g1', name:'Masons of Marble', tag:'MM', member_count:11, hall_level:1 }, { id:'g2', name:'Other', tag:'OT', member_count:3, hall_level:0 } ];
-      D.viewGuild = D.list[0];
-      eq(FF.guildMaxMembers(D.list[0]), 11, 'before: Hall 1 reads a cap of 11');
-      eq(FF.guildDirPatchHall('g1', 3), 1, 'the upgrade patches exactly the one cached row');
-      eq(FF.guildMaxMembers(D.list[0]), 13, 'after: the same row reads 13');
-      eq(D.viewGuild.hall_level, 3, 'and the open roster view follows');
-      eq(D.list[1].hall_level, 0, 'other guilds are untouched');
-      eq(FF.guildDirPatchHall('nope', 5), 0, 'an unknown id patches nothing');
-      D.status = 'ready'; D.loadedAt = Date.now();
-      ok(!FF.guildDirStale(), 'a fresh list is reused');
-      ok(FF.guildDirStale(Date.now() + FF.GUILD_DIR_TTL_MS), 'past the TTL it is refetched on the next open');
-      D.status = 'idle';
-      ok(!FF.guildDirStale(), 'staleness only applies to a loaded list');
-    } finally { D.list = sv.list; D.status = sv.status; D.loadedAt = sv.at; D.viewGuild = sv.view; }
-  });
-
-  // ---- Ticket-0239: Full Crew / Guild Crew count working peons by the fields a task carries ----
+  // ---- Ticket-0239: Full Crew counts working peons by the fields a task carries ----
   suite('quests: Full Crew counts real peon tasks (ticket-0239)', function(){
-    var fc = FF.questById('full_crew'), gc = FF.questById('guild_crew');
-    ok(!!fc && !!gc, 'both crew quests exist');
+    var fc = FF.questById('full_crew');
+    ok(!!fc, 'the crew quest exists');
     var gatherTask = { x:1, y:2, skillId:'mining', kind:'gather', itemId:'mining_t7', progress:0 };
     var craftTask  = { x:3, y:4, skillId:'stonecutting', kind:'craft', itemId:'stonecutting_t14', progress:0 };
     var specialTask= { x:5, y:6, skillId:'blacksmithing', kind:'special', craftKind:'tool', params:{}, tierIndex:3, progress:0 };
@@ -24751,8 +23966,6 @@
     eq(fc.progress({ peons:[gatherTask, null, craftTask] }), 2, 'holes in the array are skipped');
     eq(fc.progress({ peons:[] }), 0, 'no peons reads 0');
     eq(fc.progress({}), 0, 'a save without the array reads 0, not a throw');
-    eq(gc.progress({ guildPeons:five }), 5, 'Guild Crew reads the guild array the same way');
-    eq(gc.progress({ peons:five }), 0, 'and never the personal one');
   });
 
   // ---- Ticket-0243: one Shafts run per log tier across every slot ------------------------------
