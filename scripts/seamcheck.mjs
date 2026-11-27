@@ -134,26 +134,27 @@ console.log(`seamcheck: ${assigned.size} act.* fields assigned, ${cleared.size} 
 // today only by an `await` that reads like a formality, and the failure is invisible in play (a slow drip,
 // not an error). The browser suite cannot cover it either: boot is async, and suite() is synchronous and
 // discards its return value, so an assertion inside a .then() runs after the report is written. Hence here.
-// LOCAL-ONLY BUILD: there is no item sync any more. What survives of the check is the boot's one ordering
-// rule: startGameLocal must `await initGame()` (the save load + offline catch-up) before the loop starts.
 {
-  const at = script.indexOf("async function startGameLocal()");
+  const at = script.indexOf("async function startGameOnline()");
   if (at === -1) {
-    fail("startGameLocal() not found -- the boot-order check cannot run.");
+    fail("startGameOnline() not found -- the boot-order check cannot run.");
   } else {
     const fn = script.slice(at);
     const body = fn.slice(0, fn.indexOf("\n  }") + 4);
     const awaitInit = body.indexOf("await initGame()");
-    const loopStart = body.indexOf("scheduleLoop()");
+    const sync = body.search(/\bitemSync\s*\(/);
     if (awaitInit === -1) {
-      fail("startGameLocal no longer awaits initGame().\n"
-         + "       initGame loads the save and runs applyOfflineProgress; the loop must not start on an empty state.");
-    } else if (loopStart !== -1 && loopStart < awaitInit) {
-      fail("startGameLocal starts the loop BEFORE `await initGame()`: the first frames would simulate an empty state.");
+      fail("startGameOnline no longer awaits initGame().\n"
+         + "       initGame runs applyOfflineProgress. Without the await, the item sync can land first and\n"
+         + "       throttle every returning player's allowance against a freshly reset synced_at clock.");
+    } else if (sync !== -1 && sync < awaitInit) {
+      fail("startGameOnline calls itemSync() BEFORE `await initGame()`.\n"
+         + "       initGame runs applyOfflineProgress. The ledger's rate clock reads synced_at, so syncing\n"
+         + "       first throttles every returning player's item allowance. Move the sync after the await.");
     }
   }
 }
-console.log("seamcheck: boot order (save load + offline catch-up before the loop) intact.");
+console.log("seamcheck: boot order (offline catch-up before item sync) intact.");
 
 // ---- CHECK 4: no damage source may be invisible in the combat log ----------------------------------
 // The standing rule is that every damage source shows in the Combat log. It was broken in eight places at
@@ -236,8 +237,8 @@ console.log("seamcheck: every damage source reaches the combat log.");
 // driving the whole estate job pipeline, and calling bumpStat directly in a test proves only that bumpStat
 // works -- which is exactly how the first version of these guards passed with the hooks commented out.
 //
-// estNote(key, isGuild) writes est_<key>; the local-only build has one estate, so the guild half (est_g_*)
-// and the Act V quests that read it are gone.
+// estNote(key, isGuild) writes BOTH est_<key> and est_g_<key>, so the guild-scoped keys are covered by the
+// same rule: drop the guild half and every Act V counter loses its writer.
 {
   const read = new Set([...script.matchAll(/estStat\('(est_[a-z_]+)'\)/g)].map((m) => m[1]));
   const written = new Set();
@@ -246,7 +247,13 @@ console.log("seamcheck: every damage source reaches the combat log.");
     for (const m of line.matchAll(/bumpStat\('(est_[a-z_]+)'/g)) written.add(m[1]);
     // cbBest is the high-water helper (est_height is a maximum reached, not a running total).
     for (const m of line.matchAll(/cbBest\('(est_[a-z_]+)'/g)) written.add(m[1]);
-    for (const m of line.matchAll(/estNote\('([a-z_]+)'/g)) written.add('est_' + m[1]);
+    for (const m of line.matchAll(/estNote\('([a-z_]+)'/g)) { written.add('est_' + m[1]); written.add('est_g_' + m[1]); }
+    // The helper itself declares the guild half; if that line goes, so does every est_g_ key.
+    if (/function estNote\(/.test(line) && !/est_g_/.test(line)) written.add('__NO_GUILD_HALF__');
+  }
+  if (written.has('__NO_GUILD_HALF__')) {
+    fail("estNote no longer writes the est_g_ guild-scoped half.\n"
+       + "       Every Act V Estate quest reads est_g_*, so all of them would stall at zero.");
   }
   const orphans = [...read].filter((k) => !written.has(k)).sort();
   if (orphans.length) {
@@ -266,10 +273,10 @@ console.log("seamcheck: every damage source reaches the combat log.");
 {
   const clampLines = L
     .map((line, i) => ({ line, n: i + 1 }))
-    .filter(({ line }) => /state\.peons\s*=\s*state\.peons\.slice\(/.test(line));
-  if (clampLines.length !== 1) {
-    fail(`expected exactly 1 peon load clamp, found ${clampLines.length}.\n`
-       + "       state.peons is truncated once at load. If that changed, re-check\n"
+    .filter(({ line }) => /state\.(peons|guildPeons)\s*=\s*state\.(peons|guildPeons)\.slice\(/.test(line));
+  if (clampLines.length !== 2) {
+    fail(`expected exactly 2 peon load clamps, found ${clampLines.length}.\n`
+       + "       state.peons and state.guildPeons are each truncated once at load. If that changed, re-check\n"
        + "       that the new shape still cannot delete tasks a Bunkhouse legitimately allows.");
   }
   const bad = clampLines.filter(({ line }) => !/PEON_SLOT_CEILING/.test(line));
@@ -277,8 +284,8 @@ console.log("seamcheck: every damage source reaches the combat log.");
     fail(`${bad.length} peon load clamp(s) do not use PEON_SLOT_CEILING (line(s) ${bad.map((b) => b.n).join(", ")}).\n`
        + "       The clamp runs before the estate grid is validated, so a live cap reads as the base 5 and\n"
        + "       deletes the extra Peon tasks of anyone who built Bunkhouses. Clamp to the ceiling.");
-  } else if (clampLines.length === 1) {
-    console.log("seamcheck: the peon load clamp uses the slot ceiling.");
+  } else if (clampLines.length === 2) {
+    console.log("seamcheck: both peon load clamps use the slot ceiling.");
   }
 }
 

@@ -1,15 +1,20 @@
 # Tests
 
-One layer: **unit tests** (`selftest.js`), pure game logic run in the browser (below). The local-only
-build has no backend, so there is no integration suite.
+Two layers:
+- **Unit tests** (`selftest.js`) — pure game logic, run in the browser (below).
+- **Integration tests** (`integration.sh`) — the live Supabase backend end-to-end (bottom).
 
 ## CI (GitHub Actions)
 
-`.github/workflows/tests.yml` runs on GitHub:
-- **`unit`** on every push and PR. Uses `tests/run-unit.mjs` to serve the repo and drive
+`.github/workflows/tests.yml` runs both on GitHub:
+- **`unit`** — on every push and PR. Uses `tests/run-unit.mjs` to serve the repo and drive
   `index.html?selftest` in headless Chrome (Puppeteer's bundled Chromium), failing the job on any
   failed assertion.
-- **`typecheck`** on every push and PR: the high-signal checkJs pass over the inline script.
+- **`integration`** — **nightly** (`schedule`, ~08:00 UTC) + manual `workflow_dispatch` only; it
+  never runs on push/PR because it creates live accounts. Reads `SUPABASE_URL` /
+  `SUPABASE_PUBLISHABLE_KEY` repo secrets. There is NO production fallback: with either unset the
+  script prints a skip and exits 0, so it can never churn accounts on the live project. Point them
+  at a STAGING project to actually run.
 
 Run the unit harness locally with `cd tests && npm install && node run-unit.mjs`.
 
@@ -45,8 +50,37 @@ Green chip / `0 failed` = pass. Failures are listed on the chip, in the console,
 
 ## What's covered
 Pure logic and data invariants: the XP→level curve, tier scaling (`tierXp/tierSell/tierTime`),
-estate expansion cost,
+guild bank slot cost (kept in lock-step with the server RPC formula), estate expansion cost,
 workshop bonus % + the tier-N-consumes-tier-N-1 upgrade chain, paving recipes (all Slabs, 2/3/4
 by finish), the combat damage-type advantage triangle + weighting, estate obstacle yields,
 duration formatting, and that `monster.xp` is fully sunset.
 
+## Integration tests (backend)
+
+`integration.sh` drives the **real Supabase backend** (Edge Functions + SECURITY DEFINER RPCs +
+RLS) with `curl` and asserts the actual JSON responses. Coverage:
+
+- **Registration & auth** — register, duplicate/short-username/short-password rejection, sign-in token.
+- **Guild lifecycle** — create, already-in-a-guild + duplicate-name rejection; open/close;
+  apply → accept; roster promote/demote and leader-only enforcement.
+- **Guild bank (items)** — slot count, deposit fills a slot, withdraw remainder, over-withdraw rejected.
+- **Guild treasury** — donate, `buy_slot` and `spend_gold` deduct the coffers, leader `withdraw_gold`,
+  over-spend → `code:"poor"`, withdraw-rank enforcement, members can donate but not buy slots.
+- **Guild estate** — RLS (member reads the shared blob, non-member can't) + the optimistic
+  version guard (guarded update succeeds once, a stale re-update matches no rows).
+- **Marketplace** — sell rests, a crossing buy fills instantly, both sides collect (buyer gets the
+  item, seller gets `price*qty*0.95` after the 5% tax is burned); partial fill leaves a resting
+  remainder; best-bid book read; cancel refunds the remainder; no self-trade; invalid side / over-max
+  price rejected.
+- **submit_profile** — valid accepted; `total_level != sum(skills)` and out-of-range skill rejected.
+
+Run:
+
+```
+bash tests/integration.sh
+```
+
+Override the target with `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` env vars. Exits non-zero on
+any failure. **Note:** it hits the live project and creates throwaway `it_<runid>_*` accounts; it
+disbands the test guild (cascade cleanup) but Auth users can't be deleted with the publishable key,
+so it prints the accounts it created for manual removal under Authentication → Users.

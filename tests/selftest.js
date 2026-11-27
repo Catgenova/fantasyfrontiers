@@ -491,6 +491,41 @@
     FF._setCraftOnlyAffordable(false); S.inventory = sv.inv;
   });
 
+  // ---- Guild bank slot cost must match the server RPC formula ---------------------------
+  suite('bankSlotCost matches server', function(){
+    eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');
+    eq(FF.bankSlotCost(5), 10000, 'bankSlotCost(5) base');
+    eq(FF.bankSlotCost(6), 12500, 'bankSlotCost(6)');
+    for(var s = 5; s <= 20; s++){ eq(FF.bankSlotCost(s), Math.round(10000 * Math.pow(1.25, s - 5)), 'bankSlotCost matches 10000*1.25^(s-5) @' + s); }
+  });
+
+  // ---- THE GUILD HALL (v0.0.97.0): the roster ladder and its treasury cost table ---------
+  // The cost ladder is DUPLICATED in the migration's guild_hall_cost (20260809120000_guild_hall.sql):
+  // change both sides or neither (the estate_job_duration_ms rule). Owner-pinned endpoints: Level 1
+  // costs 1M, Level 15 costs 15B, ~x1.99 per step between.
+  suite('guild hall: 15 levels, +1 roster slot each, 1M to 15B', function(){
+    eq(FF.GUILD_HALL_MAX_LEVEL, 15, 'the Hall tops out at Level 15');
+    eq(FF.GUILD_HALL_COSTS.length, 15, 'one cost per level');
+    eq(FF.guildHallCost(1), 1000000, 'Level 1 costs 1M (owner pin)');
+    eq(FF.guildHallCost(15), 15000000000, 'Level 15 costs 15B (owner pin)');
+    eq(FF.guildHallCost(0), null, 'no Level 0 cost');
+    eq(FF.guildHallCost(16), null, 'nothing past 15');
+    for(var n = 2; n <= 15; n++){
+      var r = FF.guildHallCost(n) / FF.guildHallCost(n - 1);
+      ok(r > 1.85 && r < 2.15, 'the ladder climbs ~x1.99 per step (got x' + (Math.round(r * 100) / 100) + ' at ' + n + ')');
+    }
+    // Roster math: base 10, one seat per level, clamped at 25 however large the column claims.
+    eq(FF.guildMaxMembers(null), 10, 'no guild row -> the base 10');
+    eq(FF.guildMaxMembers({}), 10, 'no hall_level -> the base 10');
+    eq(FF.guildMaxMembers({ hall_level: 1 }), 11, 'each level is one seat');
+    eq(FF.guildMaxMembers({ hall_level: 15 }), 25, 'a finished Hall holds 25');
+    eq(FF.guildMaxMembers({ hall_level: 99 }), 25, 'an over-range column clamps at 25');
+    eq(FF.guildMaxMembers({ hall_level: -3 }), 10, 'a negative column clamps at the base');
+    ok(FF.guildIsFull(10, {}), '10/10 is full with no Hall');
+    ok(!FF.guildIsFull(10, { hall_level: 1 }), 'one Hall level opens the 11th seat');
+    ok(FF.guildIsFull(25, { hall_level: 15 }), 'and 25/25 is full under a finished Hall');
+  });
+
   // ---- Estate expansion cost ------------------------------------------------------------
   // THE MULTIPLIER COMPOUNDS PER TILE, and a full estate is 300 tiles (5 rings of 44/52/60/68/76 around
   // the 10x10 core), so the exponent runs 0..299. Since v0.0.97.8 the curve is defined by its two
@@ -607,6 +642,137 @@
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work;
     s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.paving = savedPaveXp;
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
+  });
+
+  // ---- Estate: a certified completion survives its mirror being nulled mid-flight -----------------
+  // Ticket (Mr Cookie, round 2: "I paved a tile and it completed, but didn't register"). The
+  // estate_job_complete DELETE removes the server row while the response is in flight; estateJobSync
+  // (fired by opening My Estate) then reads "no row" and nulled the local mirror, and the response
+  // handler's `if(!cur) return` discarded the ONLY copy of the completion -- no grid write, no XP, no
+  // refund. v0.0.73 fixed the 'none' branch; this discard sat in front of every branch.
+  suite('estate: completion survives the sync race', function(){
+    var s = FF._state;
+    FF.estUse(false);
+    var cell = s.estate.grid[1][1];
+    var saved = { type:cell.type, pave:cell.paveTileId };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
+    var savedXp = s.xp.paving, savedStat = s.stats && s.stats.paved_estate;
+    try {
+      s.estate.queue = [];
+      var past = Date.now() - 5000;
+      var job = { kind:'pave', x:1, y:1, paveTileId:'paving_t2', startAt: past - 60000, readyAt: past };
+      // The sync predicate: only a still-RUNNING mirror may be silently dropped.
+      ok(FF.estateSyncDropsMirror({ readyAt: Date.now() + 60000 }, null, Date.now()), 'a running mirror with no server row was cancelled elsewhere -> drop');
+      ok(!FF.estateSyncDropsMirror(job, null, Date.now()), 'a FINISHED mirror with no row is a completion in flight -> keep (the ticket)');
+      ok(!FF.estateSyncDropsMirror(null, null, Date.now()), 'no mirror -> nothing to drop');
+      ok(!FF.estateSyncDropsMirror(job, { kind:'pave' }, Date.now()), 'a server row present never reaches the drop branch');
+      // 1. THE TICKET: mirror already nulled by the race, server certifies ok -> the CAPTURED job must
+      //    still be applied, with rewards (we won the delete, so they are ours exactly once).
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = null;
+      var xpBefore = s.xp.paving || 0;
+      FF.estateJobCompleteHandle({ ok:true, job:{} }, job);
+      eq(cell.type, 'paved', 'ok + nulled mirror: the tile is still paved');
+      eq(cell.paveTileId, 'paving_t2', 'ok + nulled mirror: with the right tile');
+      ok((s.xp.paving || 0) > xpBefore, 'ok + nulled mirror: the paving XP is granted');
+      // 2. 'none' with the mirror intact (another window collected): idempotent grid write, no rewards.
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = job;
+      xpBefore = s.xp.paving || 0;
+      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
+      eq(cell.type, 'paved', "'none' + intact mirror: the grid write still lands");
+      eq(s.xp.paving || 0, xpBefore, "'none' + intact mirror: rewards stay suppressed (the winner granted them)");
+      ok(!s.estate.job, "'none': the mirror is released");
+      // 3. 'none' with the mirror nulled = OUR OWN cancel won the delete and already refunded the
+      //    materials -> placing the build on top would mint it.
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = null;
+      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
+      eq(cell.type, 'dirt', "'none' + nulled mirror (a cancel won): nothing is placed on top of the refund");
+      // 4. 'early' adopts the server clock onto the matching mirror only.
+      s.estate.job = job;
+      FF.estateJobCompleteHandle({ ok:false, error:'early', job:{ readyAt: past + 99000 } }, job);
+      eq(Number(s.estate.job.readyAt), past + 99000, "'early': the mirror adopts the server's remaining time");
+    } finally {
+      cell.type = saved.type; cell.paveTileId = saved.pave;
+      s.estate.job = savedJob; s.estate.queue = savedQueue;
+      if(savedXp !== undefined) s.xp.paving = savedXp;
+      if(s.stats && savedStat !== undefined) s.stats.paved_estate = savedStat;
+    }
+  });
+
+  // ---- Estate: a server-mirrored totem job keeps its payload (SteakHouse ticket) --------------------
+  // estateJobFromServer mapped every payload field EXCEPT totemId, so a totem job re-read from the
+  // server (estate_job_get on opening My Estate, or the start response) lost its totem -- and the
+  // save-load shape check then dropped it as malformed. Paired with migration 20260803200000, which
+  // teaches estate_job_start the 'totem' kind at all (totems shipped 8 days after the server took
+  // ownership of estate jobs, and the whitelist was never extended -- every start was refused 'kind',
+  // which is why direct clicks did nothing and a queued totem froze on dispatch).
+  suite('estate: totem jobs round-trip the server mirror', function(){
+    var sj = { kind:'totem', x:8, y:11, startAt:1000, readyAt:2000, payload:{ totemId:'totem_t1' } };
+    var job = FF.estateJobFromServer(sj);
+    eq(job.kind, 'totem', 'the kind survives');
+    eq(job.totemId, 'totem_t1', 'the totem payload survives the mirror (it used to be dropped)');
+    ok(FF.estateJobShapeOk(job), 'the mirrored job passes the save-load shape check');
+    // Every other buildable payload still maps (regression sweep over the same function).
+    eq(FF.estateJobFromServer({ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{ paveTileId:'paving_t3' } }).paveTileId, 'paving_t3', 'pave payload still maps');
+    eq(FF.estateJobFromServer({ kind:'workshop', x:0, y:0, startAt:1, readyAt:2, payload:{ workshopId:'workshop_mining_t0' } }).workshopId, 'workshop_mining_t0', 'workshop payload still maps');
+    eq(FF.estateJobFromServer({ kind:'field', x:0, y:0, startAt:1, readyAt:2, payload:{ fieldTier:4 } }).fieldTier, 4, 'field payload still maps');
+  });
+
+  // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
+  suite('estate: upgrade guild pavement', function(){
+    var s = FF._state, ge = FF.guildEstate;
+    var savedGrid = ge.grid, savedStatus = ge.status, savedJob = ge.job, savedInv = s.inventory['paving_t2'];
+    var savedPJob = s.estate.job, savedPQueue = s.estate.queue, savedPaveXp = s.xp.paving;
+    s.estate.job = null; s.estate.queue = [];
+    s.xp.paving = FF.SKILL_XP_FLOOR[100];              // the paving gate applies on the guild estate too
+    ge.grid = [[{ type:'paved', paveTileId:'paving_t1', workshopId:'workshop_mining_t0' }]]; // a paved guild tile with a building
+    ge.status = 'ready'; ge.job = null;
+    FF.estUse(true);                                   // point the shared engine at the guild estate
+    s.inventory['paving_t2'] = 20;
+    FF.estateUpgradePavement(0, 0);
+    var job = ge.job;
+    ok(job && job.kind === 'pave' && job.upgrade === true, 'the guild upgrade starts a timed job through the shared engine');
+    eq(job.readyAt - job.startAt, 3 * FF.ESTATE_PAVE_MS_PER_TIER, 'a t3 (index 2) upgrade takes the fresh-pave 30 min');
+    eq(ge.grid[0][0].paveTileId, 'paving_t1', 'the guild pavement waits for the job to finish');
+    eq(s.inventory['paving_t2'], 0, 'the upgrade spent 20 next-tier tiles from personal inventory');
+    FF.applyEstateJobCompletion(ge, job, false, true);
+    ge.job = null;
+    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'completion upgrades the guild pavement');
+    eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
+    // The gate holds on the guild estate too -- the reported repro was a guildmate with gifted tiles.
+    s.xp.paving = 0; s.inventory['paving_t3'] = 20;
+    var savedT3 = s.inventory['paving_t3'];
+    FF.estUse(true);
+    FF.estateUpgradePavement(0, 0);
+    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'a low-Paving guildmate cannot upgrade a guild tile');
+    eq(s.inventory['paving_t3'], savedT3, 'the refused guild upgrade spends nothing');
+    delete s.inventory['paving_t3'];
+    // restore
+    FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; ge.job = savedJob;
+    s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv; s.xp.paving = savedPaveXp;
+  });
+
+  // ---- The Longhouse queue is VISIBLE under a running guild job (ticket-0165) ----
+  // The guild arm of the job-status panel appended only the other-members list, never the queue --
+  // and entries can only be ADDED while a job runs, so a member's queue could fill to QUEUE FULL
+  // without ever being seen (the reported "can't see the queue log / apparently queue full").
+  suite('guild estate: the Longhouse queue shows under a running job (ticket-0165)', function(){
+    var s = FF._state, ge = FF.guildEstate;
+    var saved = { grid:ge.grid, status:ge.status, job:ge.job, jobs:ge.jobs, q:s.guildEstateQueue };
+    try {
+      ge.grid = [[{ type:'paved', paveTileId:'paving_t1' }]]; ge.status = 'ready'; ge.jobs = [];
+      ge.job = { kind:'raise', x:0, y:0, startAt:Date.now()-1000, readyAt:Date.now()+60000 };
+      s.guildEstateQueue = [{ kind:'raise', x:0, y:0, localMs:60000, payload:{} }];
+      FF.estUse(true);
+      var html = FF.renderEstateJobStatus();
+      ok(html.indexOf('Action Queue') !== -1, 'the Longhouse queue renders under a RUNNING guild job (the only state where one exists)');
+      ok(html.indexOf('guildCancelQueued') !== -1, 'its Remove button routes to the guild cancel handler, never the personal one');
+    } finally {
+      FF.estUse(false);
+      ge.grid = saved.grid; ge.status = saved.status; ge.job = saved.job; ge.jobs = saved.jobs; s.guildEstateQueue = saved.q;
+    }
   });
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
@@ -800,6 +966,28 @@
     FF.estRecomputeWorkshops();
   });
 
+  // ---- Estate snapshot: the compact, render-only blob published for "Visit Estate" viewing ----
+  suite('estate: public snapshot', function(){
+    var s = FF._state;
+    var snap = FF.computeEstateSnapshot();
+    ok(snap && snap.grid && snap.grid.length, 'a snapshot has a grid');
+    eq(snap.grid.length, s.estate.grid.length, 'snapshot grid matches the estate width');
+    eq(snap.edgesX, s.estate.edgesX, 'snapshot carries edgesX');
+    eq(snap.edgesY, s.estate.edgesY, 'snapshot carries edgesY');
+    // Placements + geometry are preserved so the read-only canvas can draw them.
+    var cell = s.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, h:cell.height, owned:cell.owned };
+    cell.owned = true; cell.type = 'paved'; cell.paveTileId = 'paving_t2'; cell.workshopId = 'workshop_mining_t1'; cell.height = 3;
+    var c2 = FF.computeEstateSnapshot().grid[0][0];
+    eq(c2.paveTileId, 'paving_t2', 'snapshot keeps the pavement tier');
+    eq(c2.workshopId, 'workshop_mining_t1', 'snapshot keeps the workshop');
+    eq(c2.height, 3, 'snapshot keeps the tile height');
+    eq(c2.owned, true, 'snapshot keeps ownership');
+    // No internal timers/jobs leak into the public blob.
+    ok(!('job' in c2) && !('jobs' in c2), 'snapshot cells carry no job/timer state');
+    cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.height = saved.h; cell.owned = saved.owned;
+  });
+
   // ---- Estate: offline queue drain finishes every action the away-gap covers, not just the head ----
   // ---- Totems: the Construction craft, estate placement plumbing, and the +tier crop-yield aura ------
   suite('totems: Construction craft + estate crop-yield aura', function(){
@@ -846,6 +1034,7 @@
     ok(/ Totem$/.test(r5.name), 'totems are named after their wood ("' + r5.name + '")');
     var cat = FF.buildItemCatalog();
     ok(cat.totem_t1 === 1 && cat.totem_t21 === 1, 'totems are tradeable in the server item catalog, the Eternal Idol Totem included');
+    eq(FF.marketItemCategory('totem_t3'), 'other', 'totems browse under Other (estate placeables) on the market');
     // Placement plumbing: job kind 'totem' behaves like the other buildings.
     eq(FF.estateJobMaterials({ kind:'totem', totemId:'totem_t5' })[0][0], 'totem_t5', 'a totem job reserves the totem item');
     ok(/Raise .*Totem/.test(FF.estateJobLabel({ kind:'totem', totemId:'totem_t5' })), 'the queue labels a totem job "Raise <name>"');
@@ -893,6 +1082,30 @@
     g[0][0].fieldTier = 5;
     eq(FF.totemYieldBonusAt('personal','0,0'), 20, 'the t20 at (1,1) still reaches its diagonal neighbour at (0,0)');
     g[0][0].fieldTier = null;
+    // Guild estates take totems too since v0.0.79.0 (SteakHouse ticket, owner order -- reverses the
+    // personal-only design). Each estate's aura reads ITS OWN grid, so the two never leak.
+    var savedGE = { grid: FF.guildEstate.grid, status: FF.guildEstate.status, log: FF.guildEstate.log };
+    var savedGuild = FF.guildState.guild;
+    try {
+      var gg = []; for(var hx=0; hx<5; hx++){ var hcol=[]; for(var hy=0; hy<5; hy++){ hcol.push(mkCell()); } gg.push(hcol); }
+      gg[1][1].totemId = 'totem_t7';
+      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.log = [];
+      FF.guildState.guild = FF.guildState.guild || { id:'g-totem-test', tag:'TT', name:'Totem Testers' };
+      eq(FF.totemYieldBonusAt('guild','2,2'), 7, 'a guild field beside a guild totem gets its bonus (was hard 0)');
+      ok(FF.totemYieldBonusAt('guild','2,2') !== FF.totemYieldBonusAt('personal','2,2'), "and it reads the GUILD grid, not the personal one's stronger totem");
+      eq(FF.totemYieldBonusAt('guild','0,4'), 0, 'range still applies on the guild grid');
+      eq(FF.totemYieldBonusAt('personal','2,2'), 20, "the guild totem never leaks onto personal plots");
+      // Completion raises the totem on the GUILD grid and records it in the guild activity log.
+      var savedXpG = s.xp.totems;
+      gg[0][0].type = 'paved'; gg[0][0].paveTileId = 'paving_t9';
+      FF.applyEstateJobCompletion(FF.guildEstate, { kind:'totem', x:0, y:0, totemId:'totem_t5' }, true, true);
+      eq(gg[0][0].totemId, 'totem_t5', 'completion raises a totem on the guild grid');
+      ok(JSON.stringify(FF.guildEstate.log).indexOf('raised the') !== -1, 'and the guild activity log records the raising');
+      s.xp.totems = savedXpG;
+    } finally {
+      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.log = savedGE.log;
+      FF.guildState.guild = savedGuild;
+    }
     // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +20 (the
     // best totem in range, not the sum of the two).
     var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
@@ -920,8 +1133,8 @@
   // suite walks all eight for the generic kind, so the next building inherits the coverage.
   suite('estate buildings: the generic build job kind is wired everywhere', function(){
     var defs = FF.ESTATE_BUILDING_DEFS, keys = FF.ESTATE_BUILDING_KEYS;
-    ok(defs && keys && keys.length === 10, 'ten buildings ship across batches A to E (' + (keys||[]).join(', ') + ')');
-    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium','bunkhouse','foreman'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
+    ok(defs && keys && keys.length === 11, 'eleven buildings ship across batches A to E (' + (keys||[]).join(', ') + ')');
+    ['aqueduct','sunterrace','apiary','weir','salvageyard','leyfont','bellows','scriptorium','bunkhouse','foreman','longhouse'].forEach(function(k){ ok(keys.indexOf(k) !== -1, k + ' is registered'); });
 
     // 1) estateJobShapeOk -- the save-load validator. A shape it rejects is DROPPED on reload.
     ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'a build job survives the save-load shape check');
@@ -948,10 +1161,13 @@
     ok(!FF.estateQueuedJobValid({ kind:'build', buildingId:'apiary_t1', upgrade:true }, { type:'paved', paveTileId:'paving_t5', buildingId:'apiary_t3' }).ok, 'nor as a downgrade');
     // 5) estateJobFieldsFrom -- queue entry to live job.
     eq(FF.estateJobFieldsFrom({ buildingId:'apiary_t4' }).buildingId, 'apiary_t4', 'the queue dispatcher copies buildingId onto the claimed job');
+    // 6) estateJobFromServer -- the resync mapper (this is the arm 'totem' lost, twice).
+    eq(FF.estateJobFromServer({ kind:'build', x:1, y:2, payload:{ buildingId:'apiary_t4' } }).buildingId, 'apiary_t4', 'a server-mirrored build job carries buildingId back');
     // 7 + 8) the labels.
     ok(/Build .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4' })), 'the queue labels a build job "Build <name>"');
     ok(/Upgrade to .+/.test(FF.estateJobLabel({ kind:'build', buildingId:'apiary_t4', upgrade:true })), 'and an upgrade "Upgrade to <name>"');
     ok(FF.estateActiveJobHead({ kind:'build', buildingId:'apiary_t4' }, null).head.indexOf('Apiary') !== -1, 'the active-job card names the building (not the terraforming default)');
+    ok(!!FF.GUILD_JOB_KIND_LABEL.build, 'the guild activity list labels the build kind');
 
     // The tile-occupancy rule is SINGLE-SOURCED now. The pre-fix bug: two of the four checks read
     // workshopId || totemId, so a Workshop validated against a tile holding a Cottage.
@@ -984,7 +1200,7 @@
     // A t0 building must NOT ask for a previous tier that cannot exist.
     ok(FF.getBuildingTierData('apiary', 0).inputs.apiary_t0 === undefined, 'a t0 building never bills a t-1 of itself');
     // The single-tier defs exist at exactly the top tier, and NOT below it.
-    ['bunkhouse','foreman'].forEach(function(k){
+    ['bunkhouse','foreman','longhouse'].forEach(function(k){
       var def = defs[k];
       ok(!FF.ALL_SELLABLE[def.prefix+'0'], k + ' has no t0 item at all');
       ok(!!FF.ALL_SELLABLE[def.prefix+(FF.TIER_COUNT-1)], k + ' exists only at the top tier');
@@ -1004,11 +1220,13 @@
     try {
       s.xp.architecture = 0; // Architecture Lv 1, far below the t20 gate
       var low = FF.renderWorkshopForge();
+      ok(low.indexOf('Guild Longhouse') !== -1, 'the Guild Longhouse card shows even at Architecture Lv 1 (it was hidden before)');
       ok(low.indexOf('Bunkhouse') !== -1, 'the Bunkhouse card shows too');
       ok(low.indexOf('Foreman') !== -1, "the Foreman's Office card shows too");
       ok(low.indexOf('Locked until Architecture Lv 100') !== -1, 'and they read as locked with the Lv 100 requirement');
       s.xp.architecture = 1e12; // Lv 100 (well past): the level lock is gone, only the material bill remains
       var hi = FF.renderWorkshopForge();
+      ok(hi.indexOf('Guild Longhouse') !== -1, 'the Longhouse is still present at max Architecture');
       ok(hi.indexOf('Locked until Architecture Lv 100') === -1, 'and no longer carries the level lock');
     } finally { s.xp.architecture = saved; }
   });
@@ -1057,6 +1275,41 @@
     } finally { s.settings.darkMode = sv; document.documentElement.classList.toggle('ff-dark', had); }
   });
 
+  // ---- ticket-0228: a one-swing Guild Boss kill announces itself on the Bosses tab ----
+  // The Hollow King has ~126k HP, so an endgame player kills it on the first swing; the kill jumps the
+  // player out of the arena by design, and with nothing on screen to say so it read as "instantly kicked
+  // me out and used my entry". The kill now leaves a gold result note (with the fight's duration) that
+  // the server's verdict updates, and a transport failure on the clear report is retried, never a refusal.
+  suite('guild boss: a kill leaves a result note and the clear report retries only on transport failures', function(){
+    var s = FF._state, G = FF.guildBossState;
+    eq(FF.guildBossFightDurText(Date.now() - 1000), '1 second', 'a one-second fight reads "1 second"');
+    eq(FF.guildBossFightDurText(Date.now() - 125000), '2 minutes 5 seconds', 'minutes and seconds spell out');
+    eq(FF.guildBossFightDurText(Date.now() - 60000), '1 minute', 'a whole minute drops the seconds');
+    ok(FF.guildBossClearIsTransport({ ok:false, error:'Network error.' }), 'a network error is a transport failure (retried)');
+    ok(FF.guildBossClearIsTransport(null), 'a missing response is a transport failure');
+    ok(!FF.guildBossClearIsTransport({ ok:false, alreadycleared:true, error:'Another member cleared it first.' }), 'a guildmate winning the race is a verdict, never retried');
+    ok(!FF.guildBossClearIsTransport({ ok:false, error:"You didn't enter that boss today." }), 'a server refusal is a verdict, never retried');
+    ok(!FF.guildBossClearIsTransport({ ok:true }), 'success is not retried');
+    var saved = { act:s.activity, log:s.log, notice:G.notice, error:G.error };
+    try {
+      s.log = [];
+      s.activity = FF.makeGuildBossActivity(2);
+      s.activity.duelStartedAt = Date.now() - 3000;
+      var mon = FF.buildGuildBossMonster(2);
+      ok(mon.hp < 200000, 'The Hollow King really is a one-swing foe at endgame (hp ' + mon.hp + ')');
+      G.notice = ''; G.error = '';
+      FF.guildBossOnKill(mon);
+      eq(s.activity.type, null, 'the kill ends the fight');
+      ok(/You defeated The Hollow King in 3 seconds/.test(G.notice), 'the Bosses tab carries a result note naming the boss and the duration: ' + G.notice);
+      ok(/Reporting the clear/.test(G.notice), 'the note says the clear is being reported');
+      var last = s.log[s.log.length - 1];
+      ok(!!last && /defeated The Hollow King in 3 seconds/.test(last.msg), 'the Chronicle line carries the duration too');
+      ok(/You defeated The Hollow King/.test(FF.renderGuildBoss()), 'the Bosses tab renders the result note');
+    } finally {
+      s.activity = saved.act; s.log = saved.log; G.notice = saved.notice; G.error = saved.error;
+    }
+  });
+
   // ---- Owner list item 18 (2026-09-17): Goldgorge buys a charge at most every second swing ----
   // One bought charge per swing was +50% Strike rate on top of the crit's own two charges; the scimitar
   // read +26% to +49% over its pack mean since the rarity retune against a designed +24%. Every second
@@ -1081,6 +1334,7 @@
     var hy = FF.estateActiveJobHead({ kind:'border', orient:'y', x:5, y:5, masonryTileId:tile }, null);
     ok(/Between Tile \(5, 4\) and Tile \(5, 5\)/.test(hy.head), 'a y-oriented border names the tiles above and below');
     ok(/Outer boundary/.test(FF.estateActiveJobHead({ kind:'border', orient:'x', x:0, y:5, masonryTileId:tile }, null).head), 'an outer-boundary border says so instead of naming a tile that does not exist');
+    eq(FF.GUILD_JOB_KIND_LABEL.border, 'building a border', 'the guild activity list has a label for border jobs too');
     ok(/Digging down/.test(FF.estateActiveJobHead({ kind:'lower', x:1, y:1 }, null).head), 'a real dig still reads as digging down');
   });
 
@@ -1124,6 +1378,20 @@
   // ---- Owner list batch B (2026-09-17): items 5, 12, 13, 15 ----
   suite('owner list B: re-enter button, per-flag eaten count, eat rows + auto-eat on the death report, guild projection', function(){
     var S = FF._state;
+    // 5: the Bosses tab offers "Fight it again" for the boss my entry is on while it is uncleared.
+    var G = FF.guildBossState, gsv = { status:G.status, bosses:G.bosses, entry:G.myEntryBoss, busy:G.busy };
+    var svAct = S.activity;
+    try {
+      S.activity = { type:null };
+      G.status = 'ready'; G.busy = false; G.myEntryBoss = 2;
+      G.bosses = [0,1,2,3,4].map(function(i){ return { idx:i, cleared:false, cleared_by:null }; });
+      var html = FF.renderGuildBoss();
+      ok(/data-action="guildBossEnter" data-idx="2"/.test(html), 'the boss my entry is on can be fought again');
+      ok(/Fight it again/.test(html), 'and the button says so');
+      ok(!/data-action="guildBossEnter" data-idx="3"/.test(html), 'a different boss stays locked behind the used entry');
+      G.bosses[2].cleared = true; G.bosses[2].cleared_by = 'Someone';
+      ok(!/data-action="guildBossEnter" data-idx="2"/.test(FF.renderGuildBoss()), 'once cleared there is nothing to re-enter');
+    } finally { G.status = gsv.status; G.bosses = gsv.bosses; G.myEntryBoss = gsv.entry; G.busy = gsv.busy; S.activity = svAct; }
     // 12: each flag counts what it ate this session.
     var flags = S.autoSacrifice, inv = S.inventory, faith = S.faith, phys = S.physique, log = S.log, locked = S.lockedItems;
     try {
@@ -1145,6 +1413,22 @@
       eq(S.deathReport.autoEat.threshold, 0.6, 'the report records the auto-eat threshold');
       eq(S.deathReport.autoEat.foodLeft, 0, 'and how much usable food was left');
     } finally { S.autoEatThreshold = svThr; S.inventory = svInv; S.deathReport = svRep; S.activity = svAct2; }
+    // 15: my own queued pave projects onto the guild cell, so a workshop can be queued behind it.
+    var GE = FF.guildEstate, gesv = { status:GE.status, grid:GE.grid, job:GE.job, q:S.guildEstateQueue };
+    try {
+      var g = [[{ type:'dirt', height:1, owned:true }]];
+      GE.status = 'ready'; GE.grid = g; GE.job = null;
+      S.guildEstateQueue = [{ kind:'pave', x:0, y:0, paveTileId:'paving_t5', localMs:1000, payload:{} }];
+      var p = FF.guildProjectedCell(0, 0);
+      eq(p.type, 'paved', 'my queued pave is projected onto the guild cell');
+      eq(p.paveTileId, 'paving_t5', 'with its tile');
+      eq(g[0][0].type, 'dirt', 'the real shared cell is untouched');
+      GE.job = { kind:'workshop', x:0, y:0, workshopId:'workshop_mining_t0', readyAt: Date.now()+1000 };
+      ok(!!FF.guildProjectedCell(0, 0).workshopId, 'my running job projects too');
+      GE.job = { kind:'assist', x:0, y:0, assistOf:'other', readyAt: Date.now()+1000 };
+      ok(!FF.guildProjectedCell(0, 0).workshopId, 'an assist row projects nothing');
+      eq(FF.guildProjectedCell(5, 5), null, 'off-grid is null');
+    } finally { GE.status = gesv.status; GE.grid = gesv.grid; GE.job = gesv.job; S.guildEstateQueue = gesv.q; }
   });
 
   // ---- Offline gathering honours the gather tool (owner list item 6, 2026-09-17) ----
@@ -1168,6 +1452,50 @@
     } finally {
       S.activity = sv.act; S.extraCraftSlots = sv.extra; S.inventory = sv.inv; S.gatherTools = sv.tools; S.gatherToolRarities = sv.rar; S.playerHp = sv.hp; S.log = sv.log; S.settings = sv.settings;
     }
+  });
+
+  // ---- Firsts: the milestone race boards (v0.1.4.0, owner order 2026-09-17) ----
+  // The client's threshold tables MIRROR milestone_keys_for in migration 20260917120000; the key shapes
+  // pinned here are the ones the server stamps. A board lists every mark, claimed or not.
+  suite('firsts: the milestone boards list every mark and render holders in order', function(){
+    var s = FF._state;
+    // Thresholds mirror the migration (change both sides or neither).
+    eq(FF.FIRSTS_TOTAL_MARKS.join(','), '500,1000,2000,3000,5000,7500,10000,12500,15000', 'total-level marks mirror the migration');
+    eq(FF.FIRSTS_SKILL_MARKS.join(','), '100,120,150,200', 'skill marks mirror the migration (100 and 120 are the owner\'s ask)');
+    eq(FF.FIRSTS_TOWER_MARKS.join(','), '25,50,75,100,120,150,200,250,300,400,500', 'tower marks mirror the migration');
+    eq(FF.FIRSTS_CLASS_MARKS.join(','), '50,100', 'class marks mirror the migration');
+    var boards = FF.firstsBoards();
+    ok(boards.length === 4, 'four sections: Total Level, Tower, Skills, Classes (got ' + boards.length + ')');
+    var keys = []; boards.forEach(function(b){ b.rows.forEach(function(r){ keys.push(r.key); }); });
+    ok(keys.indexOf('total_1000') !== -1, 'lists Total Level 1000');
+    ok(keys.indexOf('tower_all_100') !== -1 && keys.indexOf('tower_all_120') !== -1, 'lists the All-Classes Tower floors 100 and 120');
+    ok(keys.indexOf('skill_mining_100') !== -1, 'lists Mining Level 100 by default');
+    ok(keys.indexOf('class_knight_100') !== -1 && keys.indexOf('class_knight_50') !== -1, 'lists Knight Level 50 and 100');
+    ok(keys.every(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }), 'every key is charset-safe (the server rejects anything else)');
+    ok(keys.length === keys.filter(function(k, i){ return keys.indexOf(k) === i; }).length, 'no duplicate keys');
+    // Holders render in rank order, a held row says so, an unclaimed mark says so.
+    var rows = [
+      { key:'total_1000', rank:2, user_id:'u2', username:'Bob', reached_at:'2026-09-15T10:00:00Z', backfilled:false },
+      { key:'total_1000', rank:1, user_id:'u1', username:'Alice', reached_at:'2026-09-12T10:00:00Z', backfilled:true },
+      { key:'skill_mining_100', rank:1, user_id:'u3', username:'Carol<b>', reached_at:'2026-09-16T10:00:00Z', backfilled:false }
+    ];
+    var by = FF.firstsByKey(rows);
+    eq(by.total_1000.map(function(r){ return r.username; }).join(','), 'Alice,Bob', 'holders sort by rank');
+    var html = FF.renderFirstsBoard(rows);
+    ok(html.indexOf('1. <b data-action="viewProfile" data-id="u1" role="button">Alice</b> <i>(held)</i>') !== -1, 'a backfilled holder reads as held, with a profile link');
+    ok(/2\. <b[^>]*>Bob<\/b>/.test(html), 'the second holder is numbered 2');
+    ok(html.indexOf('Carol&lt;b&gt;') !== -1, 'usernames are escaped');
+    ok(/Unclaimed\. Be the first\./.test(html), 'an unreached mark is the goal');
+    ok(html.indexOf('Total Level 15,000') !== -1 || html.indexOf('Total Level 15000') !== -1, 'the top mark is listed even with nobody on it');
+    // Class levels ride along in the profile as their own compact map, never in the ranked skills sum.
+    var savedXp = s.xp; s.xp = Object.assign({}, s.xp, { knight: FF.xpFloorForLevel(50) });
+    try {
+      var cl = FF.classLevelsForProfile();
+      eq(cl.knight, 50, 'a trained class reports its level');
+      var prof = FF.computeProfileStats();
+      eq(prof.classes.knight, 50, 'the profile carries the classes map');
+      eq(prof.total_level, Object.keys(prof.skills).reduce(function(a,k){ return a + prof.skills[k]; }, 0), 'the classes map never disturbs total_level == sum(skills), the server invariant');
+    } finally { s.xp = savedXp; }
   });
 
   // ---- Frontier quests count "Tier T or better" (owner, 2026-09-17) ----
@@ -1378,16 +1706,18 @@
       eq(FF.totemYieldBonusAt('personal','6,6'), 5, 'a Totem beside the same Field pays its own +5');
       eq(FF.apiaryYieldBonusAt('personal','6,6'), 1, 'and the Apiary still pays its +1 alongside it');
       g[5][6].totemId = null;
+      // A GUILD Apiary must not pay honey: one shared hive on a shared grid would pay every member.
       s.inventory = {};
-      {
+      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
         var gg = [];
         for(var gx=0; gx<3; gx++){ gg[gx] = []; for(var gy=0; gy<3; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gg[1][1].buildingId = 'apiary_t10';
         gg[1][1].apiaryAt = Date.now() - (5*per + 1000);
-        // A grid that is NOT the player's estate pays nothing: processProducers reads state.estate only.
+        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
         FF.processProducers();
-        eq(s.inventory.beekeeping_t10 || 0, 0, 'a hive on a grid that is not your estate pays no honey');
-      }
+        eq(s.inventory.beekeeping_t10 || 0, 0, 'a guild Apiary pays no honey (a shared hive would pay every member)');
+      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
       // The per-KIND standing count, which is what an Estate quest has to read: every building shares one
       // cell field, so estStanding('buildingId') cannot tell an Apiary from an Aqueduct.
       eq(FF.estStandingBuilding('apiary'), 2, 'estStandingBuilding counts only Apiaries');
@@ -1452,6 +1782,13 @@
       g[3][3].type = 'paved'; g[3][3].paveTileId = 'paving_t20'; g[3][3].totemId = 'totem_t3';
       FF.estateBreakPavement(3, 3);
       eq(s.inventory.totem_t3 || 0, 1, 'a Totem is ejected too (it used to be destroyed)');
+
+      // OMISSION 2: the public snapshot must carry both, or half the estate is invisible to visitors.
+      var snap = FF.computeEstateSnapshot();
+      ok(!!snap, 'the estate snapshot builds');
+      eq(snap.grid[1][1].buildingId, 'apiary_t7', 'the snapshot carries buildingId to visitors');
+      g[4][4].totemId = 'totem_t2';
+      eq(FF.computeEstateSnapshot().grid[4][4].totemId, 'totem_t2', 'and totemId, which it never used to');
 
       // Removal refunds and clears the hive clock, so a later Apiary cannot resume an old one.
       s.inventory = {};
@@ -1826,14 +2163,17 @@
       // lower than a reachable cap, a player's sixth-to-tenth tasks would be deleted on reload.
       ok(FF.PEON_SLOT_CEILING >= FF.peonSlotCap('personal'), 'the ceiling is never below a reachable cap');
       ok(FF.buildingCapBlocked('bunkhouse').indexOf('5 Bunkhouses') !== -1, 'a sixth Bunkhouse is refused');
-      // A Bunkhouse on a grid that is NOT the player's estate must not widen the cap.
-      {
+      // A GUILD Bunkhouse must not widen the personal cap: the caps are read per scope.
+      var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
         var gg = [];
         for(var gx=0; gx<4; gx++){ gg[gx] = []; for(var gy=0; gy<4; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gg[0][0].buildingId = 'bunkhouse_t' + TOP;
+        FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready';
         for(var c=0; c<12; c++){ for(var d=0; d<12; d++) g[c][d].buildingId = null; }
-        eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'a Bunkhouse standing elsewhere does not widen the estate cap');
-      }
+        eq(FF.peonSlotCap('personal'), FF.PEON_MAX_SLOTS, 'a guild Bunkhouse does not widen the personal estate');
+        eq(FF.peonSlotCap('guild'), FF.PEON_MAX_SLOTS + 1, 'it widens the guild estate');
+      } finally { FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; }
 
       // THE FOREMAN'S OFFICE. Without one, a Cottage beside more than one Workshop is unlinked entirely,
       // which quietly punishes dense layouts; with one it links to ALL of them and its ONE Peon can be
@@ -1873,18 +2213,82 @@
       eq((FF.estateAdjacentWorkshop(g, 5, 5)||{}).workshopId, 'workshop_mining_t5', 'a single neighbour links as it always did');
       g[4][5].workshopId = null;
       ok(!FF.estateAdjacentWorkshop(g, 5, 5), 'and no neighbour links to nothing, Foreman or not');
-      // SCOPE: the Office affects the grid it stands on. A Foreman on the estate grid must not link a Cottage on another grid.
-      {
+      // SCOPE: the Office affects the grid it stands on. A personal Foreman must not link a guild Cottage.
+      var savedGE2 = { grid:FF.guildEstate.grid, status:FF.guildEstate.status };
+      try {
         var gh = [];
         for(var hx=0; hx<4; hx++){ gh[hx] = []; for(var hy=0; hy<4; hy++) gh[hx][hy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
         gh[1][1].cottageId = 'cottage_t5';
         gh[0][1].workshopId = 'workshop_mining_t5';
         gh[2][1].workshopId = 'workshop_forestry_t5';
-        ok(!FF.estateAdjacentWorkshop(gh, 1, 1), 'the estate Foreman does not reach another grid');
+        FF.guildEstate.grid = gh; FF.guildEstate.status = 'ready';
+        ok(!FF.estateAdjacentWorkshop(gh, 1, 1), 'a PERSONAL Foreman does not reach the guild grid');
         gh[3][3].buildingId = 'foreman_t' + TOP;
-        ok(!!FF.estateAdjacentWorkshop(gh, 1, 1), 'that grid needs its own');
-      }
+        ok(!!FF.estateAdjacentWorkshop(gh, 1, 1), 'the guild estate needs its own');
+      } finally { FF.guildEstate.grid = savedGE2.grid; FF.guildEstate.status = savedGE2.status; }
     } finally { s.estate.grid = savedGrid; s.inventory = savedInv; FF.estUse(false); FF.recomputeAqueducts(); }
+  });
+
+  // ---- BATCH E: the Guild Longhouse (the guild estate's first queue) ------------------------------
+  // Guild members have always run strictly one job at a time. The Longhouse opens a queue, stored in the
+  // MEMBER's own save rather than the shared guild blob (which is overwritten wholesale by whoever persists
+  // last, so a queue in there would be two members fighting over one array).
+  suite('estate buildings: the Guild Longhouse opens a guild queue', function(){
+    var s = FF._state, savedGrid = s.estate.grid, savedInv = s.inventory, savedQ = s.guildEstateQueue;
+    var savedGE = { grid:FF.guildEstate.grid, status:FF.guildEstate.status, job:FF.guildEstate.job };
+    var TOP = FF.TIER_COUNT - 1;
+    var g = [];
+    for(var x=0; x<6; x++){ g[x] = []; for(var y=0; y<6; y++) g[x][y] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    var gg = [];
+    for(var gx=0; gx<6; gx++){ gg[gx] = []; for(var gy=0; gy<6; gy++) gg[gx][gy] = { height:8, type:'paved', paveTileId:'paving_t20', owned:true, obstacle:null, workshopId:null, cottageId:null, totemId:null, buildingId:null, apiaryAt:null, fieldTier:null }; }
+    s.estate.grid = g; s.inventory = {}; s.guildEstateQueue = [];
+    try {
+      ok(FF.buildingIsGuildOnly('longhouse'), 'the Longhouse is guild-only');
+      ok(!FF.buildingIsGuildOnly('bunkhouse'), 'the Bunkhouse is not');
+      eq(FF.buildingTiersFor('longhouse').length, 1, 'and it is a single grand build');
+      // It is never OFFERED on a personal tile, so no button exists whose only outcome is a refusal.
+      s.inventory = {}; s.inventory['longhouse_t'+TOP] = 1; s.inventory['bunkhouse_t'+TOP] = 1;
+      FF.estUse(false);
+      var onPersonal = FF.placeableBuildingsFor(g[3][3]).map(function(i){ return i.id; });
+      ok(onPersonal.indexOf('longhouse_t'+TOP) === -1, 'a Longhouse is not offered on a personal tile');
+      ok(onPersonal.indexOf('bunkhouse_t'+TOP) !== -1, 'while a Bunkhouse is');
+      // ...and the placement path refuses it outright even if the button were reached.
+      s.estate.job = null; s.estate.queue = [];
+      FF.estatePlaceBuilding(3, 3, 'longhouse_t'+TOP);
+      ok(!s.estate.job, 'estatePlaceBuilding refuses a Longhouse on a personal estate');
+      eq(s.inventory['longhouse_t'+TOP], 1, 'and spends nothing');
+      // On the guild estate it IS offered.
+      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.job = null;
+      FF.estUse(true);
+      var onGuild = FF.placeableBuildingsFor(gg[3][3]).map(function(i){ return i.id; });
+      ok(onGuild.indexOf('longhouse_t'+TOP) !== -1, 'a Longhouse is offered on a guild tile');
+      // THE QUEUE only exists once one stands.
+      ok(!FF.guildQueueUnlocked(), 'with no Longhouse the guild estate has no queue');
+      gg[0][0].buildingId = 'longhouse_t' + TOP;
+      ok(FF.guildQueueUnlocked(), 'and gains one the moment a Longhouse stands');
+      ok(Array.isArray(FF.guildQueueArr()) && FF.guildQueueArr().length === 0, 'the queue starts empty');
+      // The queue lives in the MEMBER's own save, not the shared guild blob.
+      ok(s.guildEstateQueue === FF.guildQueueArr(), "the queue is the member's own state.guildEstateQueue");
+      ok(!FF.guildEstate.queue, 'and is NOT stored on the shared guild object');
+      // Cancelling a queued entry refunds its materials, exactly as the personal queue does.
+      s.inventory = {};
+      FF.guildQueueArr().push({ kind:'build', x:2, y:2, localMs:600000, payload:{ buildingId:'apiary_t3' }, buildingId:'apiary_t3' });
+      eq(FF.guildQueueArr().length, 1, 'an entry is queued');
+      FF.guildCancelQueued(0);
+      eq(FF.guildQueueArr().length, 0, 'cancelling removes it');
+      eq(s.inventory.apiary_t3 || 0, 1, 'and returns the building it had reserved');
+      // A bad index is a no-op rather than a crash or a mint.
+      s.inventory = {};
+      FF.guildCancelQueued(7);
+      eq(Object.keys(s.inventory).length, 0, 'cancelling a nonexistent entry refunds nothing');
+      // The queue shares the personal validator, so a job whose payload its kind needs is dropped on load.
+      ok(!FF.estateJobShapeOk({ kind:'build' }), 'the shared shape check still rejects a payload-less build');
+      ok(FF.estateJobShapeOk({ kind:'build', buildingId:'apiary_t3' }), 'and accepts a real one');
+    } finally {
+      s.estate.grid = savedGrid; s.inventory = savedInv; s.guildEstateQueue = savedQ;
+      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.job = savedGE.job;
+      FF.estUse(false); FF.recomputeAqueducts();
+    }
   });
 
 
@@ -2131,6 +2535,59 @@
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
   });
 
+  // ---- ticket-0230 (SteakHouse): the Longhouse queue drains through an offline gap like the personal one ----
+  // Same rules as the personal drain below; the guild-specific rules are the occupancy check (a tile another
+  // member is working on is refunded and skipped) and ignoring my own just-finished row.
+  suite('guild estate: offline queue drain (ticket-0230)', function(){
+    var s = FF._state, G = FF.guildEstate;
+    var saved = { status:G.status, grid:G.grid, jobs:G.jobs, job:G.job, log:G.log, q:s.guildEstateQueue };
+    var g = s.estate.grid;   // a ready guild grid with the personal grid's shape
+    var cells = { c10:Object.assign({}, g[1][0]), c11:Object.assign({}, g[1][1]), c20:Object.assign({}, g[2][0]) };
+    var MIN = 60*1000;
+    try {
+      G.status = 'ready'; G.grid = g; G.jobs = []; G.job = null; G.log = [];
+      FF.estUse(true);
+      g[1][0] = { type:'dirt', height:1, owned:true };
+      g[1][1] = { type:'dirt', height:1, owned:true };
+      g[2][0] = { type:'dirt', height:1, owned:true };
+      s.guildEstateQueue = [
+        { kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } },
+        { kind:'field', x:1, y:1, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }
+      ];
+      eq(FF.guildDrainQueueOffline(5*MIN), 1, 'a 5-min gap drains exactly one 5-min field');
+      eq(s.guildEstateQueue.length, 1, 'the second field stays queued');
+      eq(g[1][0].fieldTier, 0, 'the drained field was applied to the guild grid');
+      ok(g[1][1].fieldTier == null, 'the still-queued field was not applied');
+      eq(FF.guildDrainQueueOffline(60*MIN), 1, 'the remaining field drains once the gap covers it');
+      eq(s.guildEstateQueue.length, 0, 'the queue is empty after a full drain');
+      eq(g[1][1].fieldTier, 0, 'the last field was applied');
+      // Live case: completion lands right at readyAt, no overhang, nothing drains.
+      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      eq(FF.guildDrainQueueOffline(0), 0, 'no overhang -> nothing drains (live behaviour unchanged)');
+      eq(s.guildEstateQueue.length, 1, 'the queued action is left for a live start');
+      // Guild-specific: a tile another member is working on right now is refunded and skipped, never built over.
+      G.jobs = [{ owner:'someone-else', kind:'field', x:2, y:0, readyAt:Date.now()+MIN }];
+      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'a tile held by another member drains nothing');
+      eq(s.guildEstateQueue.length, 0, 'and the voided head is dropped from the queue (refunded)');
+      ok(g[2][0].fieldTier == null, 'nothing was built on the contested tile');
+      // My OWN finished row (still listed until the refresh runs) must not block the drain.
+      G.jobs = [{ owner:'me-id', kind:'pave', x:2, y:0, readyAt:0 }];
+      s.guildEstateQueue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      eq(FF.guildDrainQueueOffline(60*MIN, { owner:'me-id' }), 1, 'my own finished row does not block the drain');
+      eq(g[2][0].fieldTier, 0, 'the field went up on the tile my own job just vacated');
+      // Guild grid not loaded -> nothing happens and the queue is untouched (it drains on a later completion).
+      G.jobs = [];
+      s.guildEstateQueue = [{ kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+      G.status = 'loading';
+      eq(FF.guildDrainQueueOffline(60*MIN), 0, 'no drain while the guild estate is not loaded');
+      eq(s.guildEstateQueue.length, 1, 'the queue is untouched');
+    } finally {
+      g[1][0] = cells.c10; g[1][1] = cells.c11; g[2][0] = cells.c20;
+      G.status = saved.status; G.grid = saved.grid; G.jobs = saved.jobs; G.job = saved.job; G.log = saved.log; s.guildEstateQueue = saved.q;
+      FF.estUse(false);
+    }
+  });
+
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target
@@ -2288,6 +2745,70 @@
     s.physique.composter = saved.comp; s.inventory['farming_t0'] = saved.crop0;
   });
 
+  // ---- Farming nav flash: guild-plot readiness only draws attention while you're IN a guild ----
+  // Reported: a Mortal cast out of their guild on death (or anyone who left) kept a ready crop standing in
+  // the guild fields, so the Farming tab flashed forever with no reachable way to harvest and clear it.
+  // The flash now ignores guild plots when you belong to no guild (and mortalDeath drops them outright).
+  suite('farming nav flash: guild plots gated on guild membership', function(){
+    var s = FF._state;
+    var saved = { fp:s.farmingPlots, gfp:s.guildFarmingPlots, guild:FF.guildState.guild, grid:s.estate.grid };
+    var readyCrop = function(){ return { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 }; };
+    try {
+      // A one-tile personal estate with a real Field at 0,0 (a crop there is genuinely harvestable).
+      s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
+      s.farmingPlots = {};
+      s.guildFarmingPlots = { '0,0': readyCrop() };
+      // In a guild: a ready guild crop flashes the Farming tab (guild grid not loaded in-test -> fallback path).
+      FF.guildState.guild = { id:'g1', tag:'TST', name:'Testers' };
+      eq(FF.railSubFlash('farming'), true, 'a ready guild crop flashes Farming while you are in a guild');
+      // Out of a guild (a Mortal cast out on death, or a normal leave): the unreachable crop must NOT flash.
+      FF.guildState.guild = null;
+      eq(FF.railSubFlash('farming'), false, 'a ready guild crop no longer flashes once you have no guild');
+      // A personal crop on a REAL Field tile flashes regardless of guild membership.
+      s.farmingPlots = { '0,0': readyCrop() };
+      eq(FF.railSubFlash('farming'), true, 'a ready personal crop on a real Field flashes Farming');
+      // ...but an ORPHANED plot (a ready crop whose tile is NOT a Field -- e.g. the "21/20" over-cap/desynced
+      // grid, or a removed Field) must NOT flash, since no harvestable card exists to clear it.
+      s.farmingPlots = { '9,9': readyCrop() };
+      eq(FF.railSubFlash('farming'), false, 'a ready crop with no backing Field does not flash (self-heals a stuck flash)');
+      // pruneOrphanFarmingPlots drops that orphan outright.
+      var removed = FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid);
+      ok(removed && !s.farmingPlots['9,9'], 'pruneOrphanFarmingPlots removes a plot with no backing Field');
+      // A plot on a real Field is kept.
+      s.farmingPlots = { '0,0': readyCrop() };
+      ok(!FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid) && s.farmingPlots['0,0'], 'pruneOrphanFarmingPlots keeps a plot on a real Field');
+    } finally {
+      s.farmingPlots = saved.fp; s.guildFarmingPlots = saved.gfp; FF.guildState.guild = saved.guild; s.estate.grid = saved.grid;
+    }
+  });
+
+  // ---- Guild plots: switching guilds drops crops left in the OLD guild's fields ----
+  // Reported: after leaving guild A (with a ready crop) and joining guild B, the Farming tab still flashed
+  // -- the guild-plot crops were keyed to guild A's estate grid but never cleared, so they were unreachable
+  // on guild B yet kept demanding attention. Any change of guild identity now drops them.
+  suite('guild plots: switching guilds clears the old fields', function(){
+    var s = FF._state;
+    var saved = { gfp:s.guildFarmingPlots };
+    try {
+      // Prime the session tracker to guild A (side effects of this priming call don't matter).
+      FF.syncGuildPlotsForGuild('guildA');
+      s.guildFarmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      // Reloading while STILL in guild A leaves the standing crop untouched.
+      var clearedSame = FF.syncGuildPlotsForGuild('guildA');
+      ok(!clearedSame && Object.keys(s.guildFarmingPlots).length === 1, 'staying in the same guild keeps your standing crops');
+      // Switching to a DIFFERENT guild drops the now-unreachable old-field crops.
+      var clearedSwitch = FF.syncGuildPlotsForGuild('guildB');
+      ok(clearedSwitch && Object.keys(s.guildFarmingPlots).length === 0, 'switching guilds clears crops left in the old guild fields');
+      // Leaving entirely (no guild) also clears.
+      s.guildFarmingPlots = { '1,1': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      FF.syncGuildPlotsForGuild('guildB');   // re-prime to B
+      var clearedLeave = FF.syncGuildPlotsForGuild(null);
+      ok(clearedLeave && Object.keys(s.guildFarmingPlots).length === 0, 'leaving a guild clears its standing crops');
+    } finally {
+      s.guildFarmingPlots = saved.gfp;
+    }
+  });
+
   // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
   suite('farming: auto-plant seed filter', function(){
     var s = FF._state;
@@ -2329,6 +2850,37 @@
     // restore
     s.settings = orig;
     s.inventory['seed_t0']=oInv.s0; s.inventory['seed_t1']=oInv.s1; s.inventory['grainseed_t0']=oInv.g0; s.inventory['herbseed_t0']=oInv.h0;
+  });
+
+  // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
+  suite('guild: activity & bank logs', function(){
+    var ge = FF.guildEstate, gs = FF.guildState;
+    var savedStatus = ge.status, savedLog = ge.log, savedGuild = gs.guild, savedRank = gs.myRank;
+    ge.status = 'ready'; ge.log = []; gs.guild = { id:'g1' };
+    // guildLogPush records only while a guild estate is loaded; newest first, with who + timestamp.
+    FF.guildLogPush('estate', 'cleared the Boulder at (3, 4)');
+    FF.guildLogPush('bank', '+500g (donated to treasury)');
+    eq(ge.log.length, 2, 'two entries recorded');
+    eq(ge.log[0].kind, 'bank', 'newest entry is first');
+    ok(ge.log[0].who && typeof ge.log[0].at === 'number', 'entries carry who + a timestamp');
+    // The render is officer+ only, and each surface filters by kind.
+    gs.myRank = 'member';
+    eq(FF.renderGuildActivityLog('estate', 'Estate Activity Log'), '', 'a plain member sees no log');
+    gs.myRank = 'officer';
+    var est = FF.renderGuildActivityLog('estate', 'Estate Activity Log');
+    ok(/Boulder/.test(est) && !/donated/.test(est), 'the estate log shows estate events only');
+    var bank = FF.renderGuildActivityLog('bank', 'Bank Ledger');
+    ok(/donated/.test(bank) && !/Boulder/.test(bank), 'the bank ledger shows bank events only');
+    // The log is capped.
+    ge.log.length = 0;
+    for(var i=0;i<FF.GUILD_LOG_MAX+25;i++) FF.guildLogPush('estate', 'e'+i);
+    eq(ge.log.length, FF.GUILD_LOG_MAX, 'the log is capped at GUILD_LOG_MAX');
+    // Not appended without a loaded guild estate.
+    ge.status = 'idle'; ge.log = [];
+    FF.guildLogPush('estate', 'ignored');
+    eq(ge.log.length, 0, 'nothing is logged when no guild estate is loaded');
+    // restore
+    ge.status = savedStatus; ge.log = savedLog; gs.guild = savedGuild; gs.myRank = savedRank;
   });
 
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
@@ -2548,6 +3100,37 @@
     } finally {
       S.activity = savedAct; S.extraCraftSlots = savedExtra;
     }
+  });
+
+  // ---- Discord feed: the stats tail appended to fantastic-craft / enhance blasts ----------
+  suite('discord feed: item stats tail', function(){
+    // A fantastic relic reads its computed %dmg/armour bonus.
+    var relic = FF.discordItemStatsText('relic_t0_fantastic');
+    // The tail is UNWRAPPED as of v0.0.72.7: the relay adds the " ( ... )" so the message shape stays
+    // server-owned. (Inner parentheses are still fine -- a base stat line reads "Damage 100-200 (+12)".)
+    ok(!/^ \(/.test(relic) && !/\)$/.test(relic), 'stats tail is NOT wrapped -- the relay wraps it: ' + JSON.stringify(relic));
+    ok(relic.indexOf('% Damage & Armour') !== -1, 'relic tail carries the dmg/armour bonus');
+
+    // A fantastic tool reads its tier speed bonus scaled by the rarity multiplier.
+    var toolId = Object.keys(FF.TOOL_ITEMS).filter(function(id){ return /_fantastic$/.test(id); })[0];
+    ok(!!toolId, 'a fantastic tool item exists');
+    ok(FF.discordItemStatsText(toolId).indexOf('speed') !== -1, 'tool tail states its speed bonus');
+
+    // A fantastic belt leads with the EXTRA task slots it grants (+3 over the base 1); a stackable weapon
+    // leads with damage. (Was "4 task slots", the total -- see the belt slot-counter fix.)
+    ok(FF.discordItemStatsText('belt_t0_fantastic').indexOf('+3 task slots') !== -1, 'belt tail states its +3 task slots');
+    var wid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('stweapon_')===0 && /_fantastic$/.test(id); })[0];
+    ok(!!wid, 'a fantastic stackable weapon exists');
+    ok(FF.discordItemStatsText(wid).indexOf('Damage ') !== -1, 'weapon tail states its damage range');
+
+    // An enhance blast passes the unique: enhance-scaled base stats + its enchant list.
+    var u = { base:wid, kind:'weapon', tier:0, rarity:'fantastic', enhance:12, enchants:[{mod:'critDamage', roll:10}] };
+    var tail = FF.discordItemStatsText(null, u);
+    ok(tail.indexOf('Damage ') !== -1 && tail.indexOf('(+12)') !== -1, 'enhanced weapon tail shows the +12-scaled damage');
+    ok(/Critical/i.test(tail), 'enhanced tail lists the enchant');
+
+    // Unknown ids stay silent rather than posting junk.
+    eq(FF.discordItemStatsText('no_such_item'), '', 'an unknown id yields an empty tail');
   });
 
   // ---- Combat placement: a fight claims the primary slot without killing a queued task ----
@@ -3382,8 +3965,48 @@
       S.estate.job = { kind:'clear', x:0, y:0, startAt:0, readyAt:1 };
       ok(FF.estateScopeHasJob('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
       S.estate.job = null;
+      // Guild estate: busy only when a job in the shared array is owned by THIS player.
+      var ge = FF.guildEstate, gs = FF.guildState;
+      var gsnap = { gjobs:ge.jobs, gstatus:ge.status, gid:ge.guildId, ggrid:ge.grid, guild:gs.guild };
+      try {
+        ge.jobs = [];
+        ok(!FF.estateScopeHasJob('guild'), 'no guild job for me -> not running a guild action');
+        ge.jobs = [{ owner:'_local', kind:'clear', x:0, y:0 }]; // signed-out player's id is '_local'
+        ok(FF.estateScopeHasJob('guild'), 'a guild job I own -> running a guild action');
+        ge.jobs = [{ owner:'someone-else', kind:'clear', x:1, y:1 }];
+        ok(!FF.estateScopeHasJob('guild'), "another member's guild job doesn't count as mine");
+        // guildEstateReachable needs an in-guild player with a loaded shared estate.
+        gs.guild = null; ok(!FF.guildEstateReachable(), 'not reachable when not in a guild');
+        gs.guild = { id:'g1' }; ge.status='ready'; ge.guildId='g1'; ge.grid=[[{}]];
+        ok(FF.guildEstateReachable(), 'reachable once in a guild with a ready, loaded estate');
+      } finally {
+        ge.jobs=gsnap.gjobs; ge.status=gsnap.gstatus; ge.guildId=gsnap.gid; ge.grid=gsnap.ggrid; gs.guild=gsnap.guild;
+      }
     } finally {
       S.estate.job = snap.job;
+    }
+  });
+
+  // ---- The no-arg estateJobActive() must reflect the ACTIVE estate, not always the personal one -----
+  // Regression: a scoped estateScopeHasJob(scope) helper once shadowed this via a duplicate function name,
+  // making every estate action's "one job at a time" guard read the personal job even on the guild estate,
+  // which broke Clear/Pave/Build there while a personal job was running.
+  suite('estateJobActive() keys off the active estate (no name-collision)', function(){
+    var S = FF._state, ge = FF.guildEstate;
+    var snap = { job:S.estate.job, gjobs:ge.jobs };
+    try {
+      // Personal estate active, personal job running -> active.
+      FF.estUse(false); S.estate.job = { kind:'clear', x:0, y:0 }; ge.jobs = [];
+      ok(FF.estActiveIsGuild()===false && FF.estateJobActive(), 'personal estate + personal job -> job active');
+      // Switch to the GUILD estate: a lingering PERSONAL job must NOT count as the guild estate being busy.
+      FF.estUse(true);
+      ok(FF.estActiveIsGuild()===true, 'estUse(true) makes the guild estate the active one');
+      ok(!FF.estateJobActive(), 'guild estate with no guild job of mine -> NOT busy, even while a personal job runs (the collision bug)');
+      // A guild job I own -> the guild estate reads busy.
+      ge.jobs = [{ owner:'_local', kind:'clear', x:1, y:1 }];
+      ok(FF.estateJobActive(), 'guild estate + my guild job -> busy');
+    } finally {
+      FF.estUse(false); S.estate.job = snap.job; ge.jobs = snap.gjobs;
     }
   });
 
@@ -4101,6 +4724,7 @@
     NEW.forEach(function(id){ saved[id] = S.physique[id]; S.physique[id] = FF.xpFloorForLevel(100); });
     ok(Math.abs(FF.anglersEyeTreasureBonus() - 0.15) < 1e-6, 'Angler\'s Eye +15% treasure at Lv100');
     ok(Math.abs(FF.merchantSellMult() - 1.15) < 1e-6, 'Merchant\'s Savvy +15% sell at Lv100');
+    ok(Math.abs(FF.merchantTaxMult() - 0.50) < 1e-6, 'Merchant\'s Savvy halves Market tax at Lv100');
     ok(Math.abs(FF.weaponsmithEdgeMult() - 1.15) < 1e-6, 'Weaponsmith\'s Edge +15% damage at Lv100');
     ok(Math.abs(FF.armorerTemperMult() - 1.15) < 1e-6, 'Armorer\'s Temper +15% armour at Lv100');
     ok(Math.abs(FF.runicAttunementMult() - 1.20) < 1e-6, 'Runic Attunement +20% wand/scepter at Lv100');
@@ -4132,9 +4756,9 @@
   // +5x-base each from a max-tier Faith activity, the Lv100 Masterwork physique, and the server Rarity Bonus.
   suite('rarity chance: unified bases + 5x-base caps', function(){
     var S = FF._state;
-    var sv = { fa:S.faithActivity, mw:S.physique.masterwork, faith:S.faith };
+    var sv = { rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, mw:S.physique.masterwork, faith:S.faith };
     try {
-      S.faithActivity = { type:null, tier:0 }; S.physique.masterwork = 0; S.faith = 0;
+      S.faithActivity = { type:null, tier:0 }; FF._serverBuff.rarityUntil = 0; S.physique.masterwork = 0; S.faith = 0;
       // Static bases.
       near(FF.rareCraftChance(), 0.01, 'base Rare is 1%', 1e-9);
       near(FF.supremeCraftChance(), 0.001, 'base Supreme is 0.1%', 1e-9);
@@ -4145,6 +4769,12 @@
       near(FF.supremeCraftChance(), 0.001 + 0.005, 'Lv100 Mastery adds +0.5% supreme', 1e-9);
       near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'Lv100 Mastery adds +0.005% fantastic', 1e-12);
       S.physique.masterwork = 0;
+      // Server Rarity Bonus adds 5x base to each.
+      FF._serverBuff.rarityUntil = Date.now() + 60000;
+      near(FF.rareCraftChance(), 0.01 + 0.05, 'server buff adds +5% rare', 1e-9);
+      near(FF.supremeCraftChance(), 0.001 + 0.005, 'server buff adds +0.5% supreme', 1e-9);
+      near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'server buff adds +0.005% fantastic', 1e-12);
+      FF._serverBuff.rarityUntil = 0;
       // Max-tier Faith activity adds 5x base to its rarity.
       S.faith = 1e9;
       S.faithActivity = { type:'devotion', tier:20 }; near(FF.faithRarityBonus('devotion'), 0.05, 'max Devotion caps Rare bonus at +5%', 1e-9);
@@ -4156,21 +4786,21 @@
       near(rc.rare, FF.rareCraftChance(), 'relics share the Rare chance', 1e-12);
       near(rc.supreme, FF.supremeCraftChance(), 'relics share the Supreme chance', 1e-12);
       near(rc.fantastic, FF.fantasticCraftChance(), 'relics share the Fantastic chance', 1e-12);
-    } finally { S.faithActivity = sv.fa; S.physique.masterwork = sv.mw; S.faith = sv.faith; }
+    } finally { FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.physique.masterwork = sv.mw; S.faith = sv.faith; }
   });
 
   // ---- Masterwork forge rarity: now the SAME unified odds as any craft (1% / 0.1% / 0.01% base) ----
   suite('masterwork forge rarity odds', function(){
     var S = FF._state;
-    var sv = { mw:S.physique.masterwork, rand:Math.random, fa:S.faithActivity, faith:S.faith };
+    var sv = { mw:S.physique.masterwork, rand:Math.random, rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, faith:S.faith };
     try {
-      S.faithActivity = { type:null, tier:0 }; S.faith = 0; S.physique.masterwork = 0; // isolate: base only
+      FF._serverBuff.rarityUntil = 0; S.faithActivity = { type:null, tier:0 }; S.faith = 0; S.physique.masterwork = 0; // isolate: base only
       // Bands (base): Fantastic [0,0.00001), Supreme [0.00001,0.00101), Rare [0.00101,0.01101), Normal [0.01101,1).
       Math.random = function(){ return 0.000005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll < 0.00001 -> Fantastic (unified 0.001% base)');
       Math.random = function(){ return 0.0005; };  eq(FF.rollMastercraftRarity(), 'supreme',   'roll in [0.00001,0.00101) -> Supreme (0.1% base)');
       Math.random = function(){ return 0.005; };   eq(FF.rollMastercraftRarity(), 'rare',      'roll in [0.00101,0.01101) -> Rare (1% base)');
       Math.random = function(){ return 0.5; };     eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.5 -> Normal');
-    } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; S.faithActivity = sv.fa; S.faith = sv.faith; }
+    } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.faith = sv.faith; }
   });
 
   // ---- Resources reorg: Gathering / Refining / Cooking / Construction split + 70% gather success -----
@@ -4234,6 +4864,78 @@
     }
   });
 
+  // ---- Guild estate: leader-set demolition permission (who may remove buildings / pavement) ----------
+  suite('guild demolition permission', function(){
+    eq(FF.GUILD_RANK_ORDER.leader, 3, 'rank order leader(3) > officer(2) > member(1)');
+    var GS = FF.guildState, GE = FF.guildEstate;
+    var savedRank = GS.myRank, savedRole = GE.destroyRole;
+    GE.destroyRole = 'officer';
+    GS.myRank = 'member';  ok(!FF.canDestroyGuildEstate(), 'member blocked when set to Officers+');
+    GS.myRank = 'officer'; ok(FF.canDestroyGuildEstate(), 'officer allowed when set to Officers+');
+    GS.myRank = 'leader';  ok(FF.canDestroyGuildEstate(), 'leader is always allowed');
+    GE.destroyRole = 'leader';
+    GS.myRank = 'officer'; ok(!FF.canDestroyGuildEstate(), 'officer blocked when set to Leader only');
+    GE.destroyRole = 'member';
+    GS.myRank = 'member';  ok(FF.canDestroyGuildEstate(), 'any member allowed when set to Any member');
+    GE.destroyRole = undefined; eq(FF.guildDestroyMinRole(), 'officer', 'defaults to Officers+');
+    GS.myRank = savedRank; GE.destroyRole = savedRole;
+  });
+
+  // ---- Persisted supreme/fantastic craft blasts reload into global chat as system messages ----------
+  suite('persistent craft blasts', function(){
+    var sup = FF.chronicleCraftToSystemMsg({ id:7, username:'Nyx', body:'Supreme Iron Sword', created_at:'2026-07-10T00:00:00Z' });
+    ok(sup && sup.system === true && sup.rarity === 'supreme', 'a Supreme craft row -> a system message');
+    ok(sup.id === 'sys-7' && sup.username === null && /Nyx forged a Supreme Iron Sword!/.test(sup.body), 'system message carries the forger + item');
+    var fan = FF.chronicleCraftToSystemMsg({ id:8, username:'Vex', body:'Fantastic Dragon Bow', created_at:'2026-07-10T00:00:00Z' });
+    ok(fan && fan.rarity === 'fantastic', 'a Fantastic craft row -> a fantastic system message');
+    ok(FF.chronicleCraftToSystemMsg({ id:9, username:'A', body:'Rare Copper Ring', created_at:'x' }) === null, 'Rare/normal crafts are not blasted');
+    ok(FF.chronicleCraftToSystemMsg({ id:10, username:'A', body:'Iron Sword', created_at:'x' }) === null, 'a plain craft is not blasted');
+  });
+
+  // ---- Persisted server-wide IMPROVEMENT (enhance) blasts reload into chat too ----------------------
+  suite('persistent improvement blasts', function(){
+    // Enhance body carries the "+N" level; +15 or higher reads Fantastic, otherwise Supreme.
+    eq(FF.enhanceBodyRarity('Willow Fire Wand to +12'), 'supreme', '+12 improvement -> supreme tint');
+    eq(FF.enhanceBodyRarity('Dragon Bow to +15'), 'fantastic', '+15 improvement -> fantastic tint');
+    eq(FF.enhanceBodyRarity('Sword to +20'), 'fantastic', '+20 improvement -> fantastic tint');
+    var e = FF.chronicleEnhanceToSystemMsg({ id:42, username:'Nyx', body:'Willow Fire Wand to +12', created_at:'2026-07-10T00:00:00Z' });
+    ok(e && e.system === true && e.rarity === 'supreme', 'an enhance row -> a persistent system message');
+    ok(e.id === 'sys-42' && e.username === null && /Nyx enhanced their Willow Fire Wand to \+12!/.test(e.body), 'improvement blast carries the enhancer + item + level');
+    ok(FF.chronicleEnhanceToSystemMsg({ id:43, username:'A', body:'', created_at:'x' }) === null, 'an empty enhance body -> no blast');
+    // The kind-dispatcher routes each chronicle row to the right synthesizer.
+    ok(/enhanced their/.test(FF.chronicleRowToSystemMsg({ kind:'enhance', id:1, username:'A', body:'X to +11', created_at:'x' }).body), 'row dispatcher handles enhance rows');
+    ok(/forged a/.test(FF.chronicleRowToSystemMsg({ kind:'craft', id:2, username:'A', body:'Supreme Y', created_at:'x' }).body), 'row dispatcher handles craft rows');
+    ok(FF.chronicleRowToSystemMsg({ kind:'level', id:3, username:'A', body:'Mining 50', created_at:'x' }) === null, 'non-blast chronicle kinds (level) produce no chat message');
+    // Owner order (2026-08-05): only a MAXED (+15) enhance blasts. +11 to +14 trigger neither the
+    // in-game announcement nor the Discord feed post; the +12 fixtures above stay because HISTORICAL
+    // pre-rule rows still live in the chronicle and must keep rendering. The discord_feed edge
+    // function mirrors the bar server-side (ENHANCE_MIN = 15), so a stale client cannot post below it.
+    eq(FF.ENHANCE_ANNOUNCE_MIN, 15, 'the in-game enhance blast fires only at +15');
+    eq(FF.DISCORD_ENHANCE_MIN, 15, 'the Discord enhance blast fires only at +15');
+  });
+
+  // ---- Mortal-death blasts (v0.0.97.2): chronicle body + persisted reload + chat wiring --------------
+  suite('mortal death blasts', function(){
+    // The shared broadcast body: self-contained after the fallen player's name, carries the slayer
+    // and the Total Level, and stays well inside chronicleBroadcast's 120-char truncation so the
+    // Total Level can never be the part that falls off.
+    var body = FF.mortalDeathBody({ name:'Archdemon' });
+    ok(/^has fallen! Slain by the Archdemon at Total Level [\d,]+\.$/.test(body), 'body names the slayer + Total Level');
+    ok(body.length <= 120, 'body fits the chronicle 120-char limit (' + body.length + ' chars)');
+    // The party-dungeon death path calls mortalDeath(null): no single foe struck the blow.
+    ok(/Slain by the Dungeon Depths/.test(FF.mortalDeathBody(null)), 'a party-run death (null monster) is slain by the Dungeon Depths');
+    // A LONG monster name still leaves the Total Level inside the truncation window.
+    var longBody = FF.mortalDeathBody({ name:'Ancient Broodmother of the Sunken Necropolis Depths' });
+    ok(longBody.length <= 120 && /Total Level [\d,]+\.$/.test(longBody), 'even a long slayer name keeps the Total Level inside 120 chars');
+    // Persisted 'mortal_death' chronicle rows reload into global chat as fantastic system messages,
+    // the same treatment supreme/fantastic crafts and +15 enhances get.
+    var m = FF.chronicleMortalToSystemMsg({ id:9, username:'Nyx', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'2026-08-10T00:00:00Z' });
+    ok(m && m.system === true && m.rarity === 'fantastic', 'a mortal_death row -> a fantastic system message');
+    ok(m.id === 'sys-9' && m.username === null && /Nyx has fallen! Slain by the Rabbit at Total Level 42\./.test(m.body), 'blast carries the fallen player + slayer + Total Level');
+    ok(FF.chronicleMortalToSystemMsg({ id:10, username:'A', body:'', created_at:'x' }) === null, 'an empty mortal_death body -> no blast');
+    ok(/has fallen/.test(FF.chronicleRowToSystemMsg({ kind:'mortal_death', id:3, username:'A', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'x' }).body), 'row dispatcher handles mortal_death rows');
+  });
+
   // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
   suite('tips ticker', function(){
     var T = FF.TICKER_TIPS;
@@ -4284,6 +4986,7 @@
     ok(/^https:\/\/ko-fi\.com\//.test(FF.KOFI_URL), 'the Ko-fi URL is a real ko-fi.com link');
 
     // A sample of the other new claims, so a future rework of these systems trips here.
+    ok(T.some(function(t){ return /Mortal guild/.test(t) && /no shared treasury/.test(t); }), 'the Mortal-guild treasury tip is present');
     ok(T.some(function(t){ return /Enchant before you Enhance/.test(t); }), 'the enchant-before-enhance ordering tip is present');
     ok(T.some(function(t){ return /Barrier Shards/.test(t) && /star/.test(t); }), 'the Barrier Shard source tip is present');
     ok(T.some(function(t){ return /Toxin/.test(t) && /own clock/.test(t); }), 'the clocked-Toxin tip is present');
@@ -4331,6 +5034,194 @@
     });
   });
 
+  // ---- Guild estate: assist a teammate's task ------------------------------------------
+  // Guild estate jobs are SERVER-authoritative now (guild_estate_jobs table + RPCs). The lifecycle
+  // (start/assist/complete/cancel) round-trips through Supabase, so it isn't unit-testable without a
+  // backend; what stays client-side and testable is the read model -- guildJobFromServer's mapping,
+  // guildJobByOwner's filtering, and that a blob (grid) hydrate no longer touches the job list.
+  suite('guild estate jobs (server model): read model', function(){
+    var ge = FF.guildEstate;
+    var saved = { status:ge.status, jobs:ge.jobs, version:ge.version };
+    ge.status = 'ready'; ge.version = 0;
+    var NOW = Date.now();
+
+    // guildJobFromServer flattens a server row into the flat client job shape, carrying owner + assist info.
+    var row = { kind:'pave', x:3, y:4, owner:'alice', ownerName:'Alice',
+      payload:{ paveTileId:'paving_t2' }, startAt:NOW-1000, readyAt:NOW+60000 };
+    var mapped = FF.guildJobFromServer(row);
+    eq(mapped.owner, 'alice', 'server row -> client job keeps the owner');
+    eq(mapped.ownerName, 'Alice', 'server row -> client job keeps the owner name');
+    eq(mapped.paveTileId, 'paving_t2', 'server payload is flattened onto the job (paveTileId)');
+    eq(mapped.readyAt, NOW+60000, 'readyAt carries through as epoch ms');
+    var arow = { kind:'assist', x:3, y:4, owner:'bob', ownerName:'Bob', payload:{}, assistOf:'alice', assistOfName:'Alice', startAt:NOW, readyAt:NOW+30000 };
+    var amap = FF.guildJobFromServer(arow);
+    eq(amap.assistOf, 'alice', 'an assist job maps assistOf');
+    eq(amap.assistOfName, 'Alice', 'an assist job maps assistOfName');
+
+    // guildJobByOwner returns a member's non-assist job (the assist row is excluded).
+    ge.jobs = [ FF.guildJobFromServer(row), amap ];
+    var byOwner = FF.guildJobByOwner('alice');
+    ok(byOwner && byOwner.kind==='pave', "guildJobByOwner finds a member's non-assist job");
+    ok(!FF.guildJobByOwner('bob'), 'guildJobByOwner excludes assist jobs');
+
+    // A blob (grid) hydrate no longer carries jobs -- the server list is left intact across a grid sync.
+    var before = ge.jobs.slice();
+    FF.guildEstateHydrate({ grid:ge.grid, jobs:[{ owner:'zzz', kind:'clear', x:9, y:9, startAt:NOW, readyAt:NOW+1 }], expansionsPurchased:0, edgesX:ge.edgesX, edgesY:ge.edgesY }, 9);
+    eq(ge.jobs.length, before.length, 'a grid hydrate does not replace the (server-owned) job list');
+    ok(!ge.jobs.some(function(j){ return j.owner==='zzz'; }), "a blob's jobs field is ignored on hydrate");
+
+    ge.status = saved.status; ge.jobs = saved.jobs; ge.version = saved.version;
+  });
+
+  // ---- Leaderboard covers every skill / proficiency / class / physique ------------------
+  suite('leaderboard coverage', function(){
+    // Union of every skill id the leaderboard can rank or show (drives both the "Rank by"
+    // dropdown and the profile page).
+    var grouped = {};
+    FF.SKILL_GROUPS.forEach(function(g){ g.skills.forEach(function(sk){ grouped[sk] = true; }); });
+
+    // Every main skill/proficiency/class is grouped, so newly-added content can never silently
+    // drop off the board.
+    // Every Class has a hand-crafted hero portrait (the leaderboard shows it per player, not a small icon).
+    ok(FF.CLASS_PORTRAITS && FF.CLASS_PORTRAITS.none, 'the no-class portrait exists');
+    FF.CLASS_SKILL_IDS.forEach(function(cid){
+      var pt = FF.CLASS_PORTRAITS[cid];
+      ok(typeof pt === 'string' && pt.indexOf('<svg') === 0, 'class ' + cid + ' has a hand-crafted portrait');
+    });
+    FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ ok(grouped[id], 'leaderboard covers main skill: ' + id); });
+    // Every physique too (body physiques + elemental attunements).
+    FF.PHYSIQUE_SKILLS.forEach(function(p){ ok(grouped[p.id], 'leaderboard covers physique: ' + p.id); });
+
+    // Spot-check the recently-added content specifically.
+    ['scimitar','claw','treasureHunter','wands','staves','scepters','warding',
+     'clotharmor','leatherarmor','chainmailarmor','platearmor',
+     'fireAttunement','waterAttunement','earthAttunement','lightAttunement','darkAttunement']
+      .forEach(function(id){ ok(grouped[id], 'newly-added content is on the leaderboard: ' + id); });
+
+    // Everything ranked has a human-readable label (no raw ids leak into the UI).
+    Object.keys(grouped).forEach(function(id){ ok(FF.SKILL_LABELS[id] && FF.SKILL_LABELS[id] !== id, 'labelled: ' + id); });
+
+    // There is a dedicated Physique group.
+    ok(FF.SKILL_GROUPS.some(function(g){ return g.label === 'Physique'; }), 'a Physique group exists');
+
+    // Profile stats fold physiques into the skills map AND count them toward total_level, so the
+    // server's `total_level == sum(skills)` validation passes (submit_profile rejects any mismatch).
+    var s = FF._state;
+    var physId = FF.PHYSIQUE_SKILLS[0].id, mainId = 'mining';
+    var snap = { phys:s.physique[physId], xp:s.xp[mainId] };
+    function sumSkills(st){ return Object.keys(st.skills).reduce(function(a,k){ return a + st.skills[k]; }, 0); }
+    s.physique[physId] = 0; s.xp[mainId] = 0;
+    var base = FF.computeProfileStats();
+    ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
+    eq(base.total_level, sumSkills(base), 'total_level equals the sum of every submitted skill (server invariant)');
+    // Guard the server's MAX_SKILLS cap (submit_profile rejects the WHOLE submission if the skill count
+    // exceeds it -- which silently froze the entire leaderboard once the set outgrew the old cap of 160).
+    // The submitted set is ~172 today; keep it well under the server's 400 so adding classes/skills can't
+    // break profile writes without this failing first as a heads-up to bump the server cap.
+    var submittedSkillCount = Object.keys(base.skills).length;
+    ok(submittedSkillCount < 350, 'submitted leaderboard skill count (' + submittedSkillCount + ') stays well under the server MAX_SKILLS cap (400)');
+    s.physique[physId] = FF.xpFloorForLevel(31); // ~Lv 31
+    var afterPhys = FF.computeProfileStats();
+    ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');
+    ok(afterPhys.total_level > base.total_level, 'physiques now raise total_level');
+    eq(afterPhys.total_level, sumSkills(afterPhys), 'total_level still equals sum(skills) after training a physique');
+    s.xp[mainId] = FF.xpFloorForLevel(31);
+    ok(FF.computeProfileStats().total_level > afterPhys.total_level, 'a main skill also raises total_level');
+    s.physique[physId] = snap.phys; s.xp[mainId] = snap.xp;
+
+    // Ranking by a physique metric reads the skills map.
+    eq(FF.lbMetricValue({ skills:{ fireAttunement: 42 } }, 'skill:fireAttunement'), 42, 'can rank by a physique');
+    eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
+  });
+
+  // ---- Guest accounts: solo play now, social systems walled until upgrade ----
+  suite('guest accounts: the social systems are walled until upgrade', function(){
+    try {
+      // As a guest, the social tabs return the upgrade wall instead of their content.
+      FF._authUserSet({ username:'guest123418349', id:'g-1', isGuest:true });
+      ok(FF.isGuestAccount() === true, 'a guest account reads as a guest');
+      var wall = FF.guestWallHtml('The Marketplace');
+      ok(/Upgrade my account/.test(wall) && /The Marketplace/.test(wall) && /data-action="guestUpgradeOpen"/.test(wall), 'the wall names the feature and offers the upgrade');
+      ok(/Upgrade my account/.test(FF.renderMarketTab()), 'the Marketplace is walled for a guest');
+      ok(/Upgrade my account/.test(FF.renderGuildTab()), 'Guilds are walled for a guest');
+      ok(/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is walled for a guest');
+      // A guest is kept OFF the public leaderboard: profileSync is a no-op for them.
+      // (Verified indirectly: isGuestAccount gates it; the render walls prove the branch.)
+      // Once upgraded (isGuest false), the walls lift.
+      FF._authUserSet({ username:'RealName', id:'g-1', isGuest:false });
+      ok(FF.isGuestAccount() === false, 'an upgraded account is no longer a guest');
+      ok(!/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is no longer walled after upgrade');
+    } finally {
+      FF._authUserSet(null);   // restore signed-out state for the rest of the suite
+    }
+  });
+
+  // ---- In-game bug/feedback ticket (Mr Cookie's onsite ticket button) ----
+  // The "Report a Bug" tab renders a category picker + a details box when signed in, and a Discord
+  // fallback when signed out. The secret NEVER ships in the client: the panel only wires a call to the
+  // bug_report edge function; the webhook lives there.
+  suite('bug report: the onsite ticket panel', function(){
+    ok(typeof FF.renderBugReportPanel === 'function' && Array.isArray(FF.BUG_REPORT_CATS), 'panel + categories exported');
+    var savedCat = FF._bugReportCat();
+    try {
+      // Signed out: a clear sign-in prompt plus the Discord fallback link, and NO details textarea.
+      FF._authUserSet(null);
+      var out = FF.renderBugReportPanel();
+      ok(/Sign in/i.test(out), 'signed out, the panel asks the player to sign in');
+      ok(/discord\.gg/i.test(out), 'and offers the Discord fallback');
+      ok(!/id="bugReportText"/.test(out), 'no report box is shown when signed out');
+
+      // Signed in: the category chips (one per category, the selected one highlighted) and the details box.
+      FF._authUserSet({ username:'Tester', id:'u-bug', isGuest:false });
+      FF._bugReportCat('balance');
+      var inp = FF.renderBugReportPanel();
+      ok(/id="bugReportText"/.test(inp), 'signed in, the details box renders');
+      FF.BUG_REPORT_CATS.forEach(function(c){ ok(inp.indexOf('data-cat="'+c.id+'"') !== -1, 'a chip exists for the '+c.id+' category'); });
+      // The selected category carries the "on" class; exactly the chosen one.
+      ok(/tracker-chip on" data-action="setBugCat" data-cat="balance"/.test(inp), 'the chosen category chip is highlighted');
+      ok(!/tracker-chip on" data-action="setBugCat" data-cat="bug"/.test(inp), 'an unchosen category chip is not highlighted');
+      ok(inp.indexOf('data-action="submitBugReport"') !== -1, 'the send button dispatches to submitBugReport');
+
+      // The diagnostics line is best-effort text (never throws) and mentions the current tab.
+      var ctx = FF.bugReportContext();
+      ok(typeof ctx === 'string', 'bugReportContext returns a string');
+    } finally {
+      FF._authUserSet(null);
+      FF._bugReportCat(savedCat);
+    }
+  });
+
+  // ---- Tower leaderboards: an All-Classes climb board + one per Class tower ----
+  suite('leaderboard: the Tower climb boards', function(){
+    // The profile carries a compact map of the deepest floor per entrance (best > 0 only).
+    var s = FF._state, sv = s.tower;
+    try {
+      s.tower = { all:{ floor:1, best:42 }, reaver:{ floor:1, best:30 }, herald:{ floor:1, best:0 } };
+      var t = FF.towerBestsForProfile();
+      eq(t.all, 42, "the All-Classes best rides along");
+      eq(t.reaver, 30, "a class best rides along");
+      ok(!('herald' in t), 'an entrance never climbed (best 0) is omitted from the compact map');
+      // computeProfileStats surfaces the same map for submit_profile / the local preview.
+      ok(FF.computeProfileStats().tower && FF.computeProfileStats().tower.all === 42, 'computeProfileStats includes the tower map');
+    } finally { s.tower = sv; }
+    // Ranking reads p.tower[entranceId]; a metric with no climb ranks 0.
+    var row = { total_level:100, tower:{ all:55, reaver:33 } };
+    eq(FF.lbMetricValue(row, 'tower:all'), 55, 'ranks by the All-Classes floor');
+    eq(FF.lbMetricValue(row, 'tower:reaver'), 33, 'ranks by a Class tower floor');
+    eq(FF.lbMetricValue(row, 'tower:herald'), 0, 'a tower never entered ranks 0');
+    eq(FF.lbMetricValue({ total_level:100 }, 'tower:all'), 0, 'a row with no tower map ranks 0');
+    ok(FF.lbMetricIsTower('tower:all') && !FF.lbMetricIsTower('skill:fishing') && !FF.lbMetricIsTower('total'), 'lbMetricIsTower detects the tower prefix');
+    // Labels: "The Tower: All Classes" and per-class.
+    eq(FF.lbMetricLabel('tower:all'), 'The Tower: All Classes', 'the All-Classes tower label');
+    ok(/^The Tower: /.test(FF.lbMetricLabel('tower:reaver')) && FF.lbMetricLabel('tower:reaver') !== 'The Tower: reaver', 'a class tower label resolves the class name');
+    // The "Rank by" dropdown offers a Tower optgroup with the all board + one option per entrance.
+    var opts = FF.lbMetricOptions();
+    ok(/optgroup label="The Tower"/.test(opts), 'the dropdown has a "The Tower" group');
+    ok(/value="tower:all"/.test(opts), 'the All-Classes tower is offered');
+    var perClass = (opts.match(/value="tower:/g) || []).length;
+    eq(perClass, FF.TOWER_ENTRANCES.length, 'every Tower entrance (all + each class) is a board');
+  });
+
   // ---- PEON_MAX_SLOTS must be a defined constant (its absence blanked the Peons tab) ---
   suite('peon slot constant', function(){
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');
@@ -4338,6 +5229,62 @@
     eq(FF.ESTATE_COTTAGE_MS_PER_TIER, 10*60*1000, 'cottage build = 10 min per tier');
     eq((0+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 600000, 'tier-0 cottage builds in 10 min');
     eq((3+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 2400000, 'tier-3 cottage builds in 40 min');
+  });
+
+  // ---- Server-wide EXP buff -------------------------------------------------------------
+  suite('server exp buff', function(){
+    eq(FF.SERVER_BUFF_EXP_COST, 100000, 'exp buff costs 100,000 gold');
+    eq(FF.SERVER_BUFF_EXP_MULT, 1.5, 'exp buff is +50% XP');
+    eq(FF.expBuffMultFor(1000, 2000), 1.5, 'buff active (now < until) -> 1.5x');
+    eq(FF.expBuffMultFor(3000, 2000), 1, 'buff expired (now >= until) -> 1x');
+    eq(FF.expBuffMultFor(1000, 0), 1, 'no buff (until 0) -> 1x');
+    ok(FF.LB_STAT_METRICS.some(function(m){ return m.key === 'hoursBuffed'; }), 'hoursBuffed is a leaderboard metric');
+    // Summoning still works; it just no longer pings a (removed) server-wide grant. Force a summon on a
+    // skill with a familiar defined but not yet owned and confirm the familiar is granted.
+    var s = FF._state;
+    var skill = Object.keys(FF.FAMILIAR_DATA).filter(function(k){ return !(s.familiars[k] && s.familiars[k].owned); })[0];
+    ok(skill, 'there is a skill whose familiar is not yet owned to test the summon');
+    if(skill){
+      var savedRandom = Math.random, savedFam = s.familiars[skill];
+      s.familiars[skill] = undefined;
+      Math.random = function(){ return 0; };    // force the summon roll to succeed
+      try { FF.maybeSummonFamiliar(skill); } finally { Math.random = savedRandom; }
+      ok(s.familiars[skill] && s.familiars[skill].owned, 'the brand-new familiar was summoned');
+      s.familiars[skill] = savedFam;
+    }
+    // The buy/registration buff is a full hour; the server extends greatest(now, active_until) by that and
+    // the client just reflects whatever active_until comes back.
+    eq(FF.SERVER_BUFF_EXP_MS, 3600*1000, 'a full (purchase/registration) buff is 1 hour');
+    ok(typeof FF.serverBuffGrant === 'undefined', 'the free client-callable +50% EXP grant is gone (only the paid buy extends it)');
+  });
+
+  // ---- Rarity Bonus: an event-triggered, stacking server-wide buff (sacrifice a rare+ item) ----
+  suite('server buff: Rarity Bonus', function(){
+    // Duration scales linearly t0..t20, per rarity (mirrors the server's raritySeconds).
+    eq(FF.rarityBuffSeconds('rare', 0), 10, 'rare t0 -> 10s');
+    eq(FF.rarityBuffSeconds('rare', 20), 300, 'rare t20 -> 5 min');
+    eq(FF.rarityBuffSeconds('rare', 10), 155, 'rare t10 is the 10..300 midpoint');
+    eq(FF.rarityBuffSeconds('supreme', 0), 30, 'supreme t0 -> 30s');
+    eq(FF.rarityBuffSeconds('supreme', 20), 600, 'supreme t20 -> 10 min');
+    eq(FF.rarityBuffSeconds('fantastic', 0), 30, 'fantastic t0 -> 30s');
+    eq(FF.rarityBuffSeconds('fantastic', 20), 900, 'fantastic t20 -> 15 min');
+    eq(FF.rarityBuffSeconds('normal', 20), 0, 'a normal (non-rare) item grants nothing');
+    eq(FF.rarityBuffSeconds('rare', 99), 300, 'tier is clamped to t20');
+    // Effect: the per-rarity chance bonus applies ONLY while the shared timer is live.
+    eq(FF.SERVER_RARITY_BONUS.rare, 0.05, 'rare bonus is +5% (5x base)');
+    eq(FF.SERVER_RARITY_BONUS.supreme, 0.005, 'supreme bonus is +0.5% (5x base)');
+    eq(FF.SERVER_RARITY_BONUS.fantastic, 0.00005, 'fantastic bonus is +0.005% (5x base)');
+    eq(FF.rarityBonusShortLabel(), '5%R · 0.5%S · 0.005%F', 'the top-bar chip shows the compact per-rarity summary (3dp so the fantastic figure survives)');
+    var sv = FF._serverBuff.rarityUntil;
+    try {
+      FF._serverBuff.rarityUntil = 0;
+      ok(!FF.serverRarityBuffActive() && FF.serverBuffRarityBonus('rare') === 0, 'no bonus while inactive');
+      FF._serverBuff.rarityUntil = Date.now() + 60000;
+      ok(FF.serverRarityBuffActive(), 'active with a future timer');
+      near(FF.serverBuffRarityBonus('rare'), 0.05, 'rare +5% while active', 1e-9);
+      near(FF.serverBuffRarityBonus('supreme'), 0.005, 'supreme +0.5% while active', 1e-9);
+      near(FF.serverBuffRarityBonus('fantastic'), 0.00005, 'fantastic +0.005% while active', 1e-12);
+    } finally { FF._serverBuff.rarityUntil = sv; }
   });
 
   // ---- Physique XP scales with task tier: each associated physique gains tier+1 (1..21) --------
@@ -4382,6 +5329,282 @@
     ok(trainedIds('runesmithing').indexOf('sleightOfHand') !== -1, 'runesmithing now trains Sleight of Hand (speed)');
     // Unchanged where already covered: heavy crafts keep exactly their original set + no phantom adds.
     ok(trainedIds('carpentry').indexOf('grossMotor') !== -1 && trainedIds('carpentry').indexOf('handStrength') === -1, 'carpentry keeps Gross Motor, gains no hand-craft physique');
+  });
+
+  // ---- Chat profanity filter -------------------------------------------------------------------
+  suite('chat: profanity filter', function(){
+    var c = FF.censorChat;
+    function censored(s){ var out = c(s); return out !== s && out.indexOf('*') !== -1; }
+    // Clean text is untouched.
+    eq(c('hello there, nice to meet you'), 'hello there, nice to meet you', 'clean text passes through');
+    eq(c(''), '', 'empty string is safe');
+    // Bad words get masked (first char kept, rest starred).
+    eq(c('you fuck'), 'you f***', 'basic swear masked');
+    ok(censored('what the shit'), 'shit masked');
+    ok(censored('bitch'), 'bitch masked');
+    // Inflections and compounds.
+    ok(censored('stop fucking around'), 'inflection (fucking) masked');
+    ok(censored('you asshole'), 'compound (asshole) masked');
+    ok(censored('motherfucker'), 'motherfucker masked');
+    // Light obfuscation: leetspeak + repeated letters.
+    ok(censored('sh1t'), 'leetspeak (sh1t) masked');
+    ok(censored('fuuuck'), 'stretched (fuuuck) masked');
+    ok(censored('@sshole'), 'leet @ (@sshole) masked');
+    // No Scunthorpe: real words that merely contain a bad substring are untouched.
+    eq(c('the assassin joined our class in the grass'), 'the assassin joined our class in the grass', 'assassin/class/grass untouched');
+    eq(c('check the cockpit and pass'), 'check the cockpit and pass', 'cockpit/pass untouched');
+    eq(c('scunthorpe analysis'), 'scunthorpe analysis', 'scunthorpe untouched');
+    // Punctuation-adjacent still catches.
+    ok(censored('fuck!'), 'trailing punctuation still masked');
+    // First letter of the mask is preserved so length/shape stays readable.
+    ok(c('shit').charAt(0) === 's' && c('shit').slice(1) === '***', 'mask keeps first char + stars');
+    // Website links are stripped (scam/off-site link prevention), on send AND display.
+    eq(c('visit http://evil.com/win now'), 'visit [link removed] now', 'http URL removed');
+    eq(c('go to https://phish.io/x'), 'go to [link removed]', 'https URL removed');
+    eq(c('see www.example.org for more'), 'see [link removed] for more', 'www URL removed');
+    eq(c('join discord.gg/abc123'), 'join [link removed]', 'bare domain.tld/path removed');
+    eq(c('my site is cool-stuff.net today'), 'my site is [link removed] today', 'hyphenated bare domain removed');
+    ok(c('grab it at bit.ly/xyz').indexOf('[link removed]') !== -1, 'short-link domain removed');
+    // False positives are NOT censored: decimals, initialisms, party codes, item tokens.
+    eq(c('it does 3.5x damage'), 'it does 3.5x damage', 'decimals are not links');
+    eq(c('e.g. the tunnel'), 'e.g. the tunnel', 'initialisms (e.g.) are not links');
+    eq(c('join my party d2:3f9a1b2c-4d5e-6f70'), 'join my party d2:3f9a1b2c-4d5e-6f70', 'a party code is not a link');
+    eq(c('look {{i:AbC123deF}}'), 'look {{i:AbC123deF}}', 'an item-link token is not a website link');
+  });
+
+  // ---- Chat profanity filter: per-viewer display toggle ----------------------------------------
+  suite('chat: profanity filter is an opt-out display setting', function(){
+    var s = FF._state;
+    s.settings = s.settings || {};
+    var prev = s.settings.chatFilter;
+    var d = FF.chatDisplayCensor;
+    // Default (filter ON): profanity is masked at display, links always stripped.
+    s.settings.chatFilter = true;
+    ok(d('you fuck').indexOf('*') !== -1, 'filter on -> profanity masked at display');
+    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter on -> links removed');
+    // Opted out (filter OFF): the raw words come through, but links are STILL stripped (scam prevention).
+    s.settings.chatFilter = false;
+    eq(d('you fuck'), 'you fuck', 'filter off -> profanity shown raw');
+    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter off -> links still removed');
+    // Undefined setting is treated as ON (safe default), so it never leaks profanity by accident.
+    delete s.settings.chatFilter;
+    ok(d('you fuck').indexOf('*') !== -1, 'missing setting defaults to masking');
+    // The underlying helpers are independent: maskProfanity always masks, censorChat is the full pass.
+    ok(FF.maskProfanity('shit').charAt(0) === 's' && FF.maskProfanity('shit').slice(1) === '***', 'maskProfanity masks unconditionally');
+    ok(FF.censorChat('you fuck').indexOf('*') !== -1 && FF.censorChat('go to www.x.io').indexOf('[link removed]') !== -1, 'censorChat still does links + profanity');
+    s.settings.chatFilter = prev;
+  });
+
+  // ---- Chat: guild tags before names, Mortal-path names in red -------------------------------------
+  // Owner request: chat names carry the poster's [GUILD] tag, and Mortal-path players wear the same red
+  // the leaderboard gives them. Both ride the per-poster meta fetch (leaderboard view for mortal, the
+  // world-readable guild_members -> guilds embed for the tag); an unfetched poster renders plain.
+  suite('chat: guild tags + mortal red names', function(){
+    var now = Date.now(), iso = new Date(now).toISOString();
+    try {
+      FF._setChatMod({
+        roles:{}, mutes:{}, myRole:null,
+        authUser:{ username:'Me', id:'u-me2' },
+        titles:{ 'u-mort':'', 'u-tagged':'', 'u-plain':'' },
+        mortals:{ 'u-mort':true, 'u-tagged':false, 'u-plain':false },
+        gtags:{ 'u-mort':'', 'u-tagged':'IVY', 'u-plain':'' },
+        messages:[
+          { id:11, user_id:'u-mort',    username:'Doomed',  body:'hi',  created_at:iso },
+          { id:12, user_id:'u-tagged',  username:'Clanner', body:'yo',  created_at:iso },
+          { id:13, user_id:'u-plain',   username:'Nobody',  body:'sup', created_at:iso },
+          { id:14, user_id:'u-unknown', username:'Ghost',   body:'??',  created_at:iso }
+        ]
+      });
+      var html = FF.chatMessagesHtml();
+      ok(/class="chat-user mortal"[^>]*>Doomed/.test(html), 'a Mortal-path poster wears the red name class');
+      ok(html.indexOf('title="Mortal path"') !== -1, 'the red name explains itself on hover');
+      ok(/chat-guild-tag/.test(html) && html.indexOf('[IVY]') !== -1, 'a guilded poster shows a [TAG] chip');
+      ok(html.indexOf('[IVY]') < html.indexOf('Clanner'), 'the tag sits BEFORE the name');
+      ok(/class="chat-user"[^m]*>Clanner/.test(html) || /class="chat-user">Clanner/.test(html), 'a non-mortal name stays the normal colour');
+      ok(/class="chat-user">Ghost/.test(html), 'an unfetched poster renders plain — no undefined leakage');
+      ok(!/undefined/.test(html), 'no undefined anywhere in the rendered chat');
+      // The tag is escaped like every other user-influenced string.
+      FF._setChatMod({ gtags:{ 'u-tagged':'<b>' } });
+      ok(FF.chatMessagesHtml().indexOf('[&lt;b&gt;]') !== -1, 'a hostile tag renders escaped, never as markup');
+      // Guild channel: mortal red applies, the (redundant, same-guild) tag does not.
+      FF._setChatMod({ guildMessages:[ { id:1, user_id:'u-mort', username:'Doomed', body:'x', created_at:iso } ] });
+      var gh = FF.guildChatMessagesHtml();
+      ok(/class="chat-user mortal"/.test(gh), 'guild chat colours Mortal-path posters too');
+      ok(!/chat-guild-tag/.test(gh), 'guild chat shows no tag — everyone in it shares one');
+      // The palette is real CSS, not just a class name: the mortal name computes a different colour.
+      var probe = document.createElement('div');
+      probe.innerHTML = '<span class="chat-user">a</span><span class="chat-user mortal">b</span>';
+      document.body.appendChild(probe);
+      var cPlain = getComputedStyle(probe.children[0]).color, cMort = getComputedStyle(probe.children[1]).color;
+      probe.remove();
+      ok(cPlain !== cMort, 'the .mortal class actually changes the name colour (' + cMort + ')');
+    } finally {
+      FF._setChatMod({ messages:[], guildMessages:[], titles:{}, mortals:{}, gtags:{}, authUser:null, myRole:null });
+    }
+  });
+
+  // ---- Chat moderation: role badges, muted state, mod-button gating, modal protection --------------
+  suite('chat: moderation roles + mute + mod controls', function(){
+    var savedAuth = FF.chatAmIMuted; // just to reference the module; real restore below via _setChatMod
+    var OWNER='u-owner', MOD='u-mod', PLAYER='u-player', ME='u-me';
+    var now = Date.now();
+    // Baseline: I'm a regular player. Roles map owner+mod; player u-player is muted.
+    FF._setChatMod({
+      roles: { 'u-owner':'owner', 'u-mod':'moderator' },
+      mutes: { 'u-player': now + 3600*1000 },
+      myRole: null,
+      authUser: { username:'Me', id:ME },
+      messages: [
+        { id:1, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() },
+        { id:2, user_id:MOD,   username:'Mod1', body:'yo', created_at:new Date(now).toISOString() },
+        { id:3, user_id:PLAYER,username:'Spammer', body:'buy gold', created_at:new Date(now).toISOString() },
+        { id:4, user_id:ME,    username:'Me', body:'hello', created_at:new Date(now).toISOString() }
+      ]
+    });
+    // Helpers.
+    eq(FF.chatRoleOf(OWNER), 'owner', 'chatRoleOf reads the owner role');
+    eq(FF.chatRoleOf(MOD), 'moderator', 'chatRoleOf reads the moderator role');
+    eq(FF.chatRoleOf(PLAYER), null, 'a regular player has no role');
+    ok(FF.chatMuteUntil(PLAYER) > now, 'an active mute reports its expiry');
+    eq(FF.chatMuteUntil(OWNER), 0, 'no mute -> 0');
+    ok(!FF.chatIsMod() && !FF.chatIsOwner(), 'a regular player is neither mod nor owner');
+    eq(FF.chatAmIMuted(), 0, 'I am not muted');
+
+    // The "⋯" player menu is open to EVERYONE now (View Profile etc.) -- one per OTHER message, none on
+    // my own. Badges + muted tag still render for all.
+    var htmlPlayer = FF.chatMessagesHtml();
+    ok(/chat-mod-owner/.test(htmlPlayer) && /chat-mod-moderator/.test(htmlPlayer), 'owner + moderator badges render for everyone');
+    ok(/chat-muted-tag/.test(htmlPlayer), 'a muted user shows the muted marker');
+    ok((htmlPlayer.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a regular player sees the ⋯ menu on others (3 of 4 messages)');
+    ok(htmlPlayer.indexOf('data-uid="'+ME+'"') === -1, 'no ⋯ menu on my own message');
+
+    // As a moderator, the ⋯ buttons are the same (moderation lives INSIDE the modal now).
+    FF._setChatMod({ myRole:'moderator' });
+    var htmlMod = FF.chatMessagesHtml();
+    ok((htmlMod.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a moderator sees the same 3 ⋯ menus');
+
+    // Modal for a regular player, viewed by a regular player: View Profile only, NO moderation section.
+    FF._setChatMod({ myRole:null, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovPlain = document.getElementById('chatModOverlay').innerHTML;
+    ok(/data-action="chatViewProfile"/.test(ovPlain), 'everyone gets View Profile');
+    ok(!/Moderation/.test(ovPlain) && !/data-action="chatModMute"/.test(ovPlain), 'a non-moderator sees no moderation controls in the menu');
+    FF._setChatMod({ myRole:'moderator' });
+
+    // Modal gating: a moderator opening a fellow-moderator sees the owner-only lock (no action buttons).
+    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
+    FF.renderChatModModal();
+    var ovModOnMod = (typeof document !== 'undefined' && document.getElementById('chatModOverlay')) ? document.getElementById('chatModOverlay').innerHTML : '';
+    ok(/Only the owner can moderate/.test(ovModOnMod), 'a mod cannot moderate another mod (owner-only lock shown)');
+    ok(!/data-action="chatModMute"/.test(ovModOnMod), '...and no mute button is offered for a protected target');
+
+    // A moderator on a regular player: mute presets + permanent chat-ban + delete, but NO role controls.
+    FF._setChatMod({ target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovModOnPlayer = document.getElementById('chatModOverlay').innerHTML;
+    // u-player is already muted in this fixture, so the modal offers Unmute; clear the mute to see mute presets.
+    ok(/data-action="chatModDelete"/.test(ovModOnPlayer), 'delete-message is offered');
+    ok(/data-action="chatModUnmute"/.test(ovModOnPlayer), 'an already-muted target offers Unmute');
+    ok(!/data-action="chatModSetRole"/.test(ovModOnPlayer), 'a moderator sees NO role controls (owner-only)');
+
+    // As the OWNER on an unmuted regular player: mute presets, chat-ban, AND Make Moderator.
+    FF._setChatMod({ myRole:'owner', mutes:{}, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovOwnerOnPlayer = document.getElementById('chatModOverlay').innerHTML;
+    ok(/data-action="chatModMute"[^>]*data-min="10"/.test(ovOwnerOnPlayer), 'mute presets shown for an unmuted target');
+    ok(/data-min="5256000"/.test(ovOwnerOnPlayer), 'permanent chat-ban offered');
+    ok(/Make Moderator/.test(ovOwnerOnPlayer), 'the owner can appoint a moderator');
+    // Owner on an existing moderator: Remove Moderator, and no owner-lock.
+    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
+    FF.renderChatModModal();
+    var ovOwnerOnMod = document.getElementById('chatModOverlay').innerHTML;
+    ok(/Remove Moderator/.test(ovOwnerOnMod) && !/Only the owner can moderate/.test(ovOwnerOnMod), 'the owner can moderate a moderator (Remove Moderator shown)');
+
+    // Muted-self: chatAmIMuted reflects it; label reads permanent for a ~10y ban.
+    FF._setChatMod({ myRole:null, mutes:{ 'u-me': now + 60*1000 } });
+    ok(FF.chatAmIMuted() > now, 'a muted local player reports their own mute');
+    eq(FF.chatMuteLabel(now + 40*24*3600*1000), 'permanently', 'a >30-day mute reads as a permanent chat-ban');
+    ok(/^until /.test(FF.chatMuteLabel(now + 3600*1000)), 'a short mute reads as an until-timestamp');
+
+    // Owner-only Moderation panel: appoint box + named lists of mods and muted players.
+    FF._setChatMod({
+      myRole:'owner',
+      roles:{ 'u-owner':'owner', 'u-mod':'moderator', 'u-mod2':'moderator' },
+      mutes:{ 'u-player': now + 3600*1000 },
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer' }
+    });
+    var panel = FF.renderChatModerationPanel();
+    ok(/id="modAppointInput"/.test(panel) && /data-action="chatModAppoint"/.test(panel), 'the panel has an appoint-by-username box');
+    ok(/Moderators <span[^>]*>\(2\)/.test(panel), 'it lists the moderator count');
+    ok(/Mod1/.test(panel) && /Mod2/.test(panel), 'moderators are listed by name');
+    ok((panel.match(/data-action="chatModRemove"/g)||[]).length === 2, 'each moderator has a Remove button');
+    ok(/Muted players <span[^>]*>\(1\)/.test(panel) && /Spammer/.test(panel) && /data-action="chatModSettingsUnmute"/.test(panel), 'muted players are listed with an Unmute button');
+
+    // Clamped players: owner sees the quarantine list + one-click Unclamp, plus a manual clamp box.
+    FF._setChatMod({
+      myRole:'owner',
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-cheat':'Duper' },
+      clamps:{ 'u-cheat':{ user_id:'u-cheat', username:'Duper', surfaces:['marketplace','leaderboard','guild','chat'], auto:true, signal:'progress +1.2e13 in 6s' } }
+    });
+    var panel2 = FF.renderChatModerationPanel();
+    ok(/Clamped players <span[^>]*>\(1\)/.test(panel2), 'the panel lists the clamped-player count');
+    ok(/Duper/.test(panel2) && /progress \+1.2e13/.test(panel2), 'a clamped player shows its name + auto-detection signal');
+    ok(/data-action="clampClear"[^>]*data-uid="u-cheat"/.test(panel2), 'each clamped player has a one-click Unclamp button');
+    ok(/id="clampInput"/.test(panel2) && /data-action="clampApply"/.test(panel2) && /id="clampSurf_marketplace"/.test(panel2), 'the panel has a manual clamp box with per-surface toggles');
+
+    // Detection signals (shadow): recorded flags the owner can review + clamp with a click.
+    FF._setChatMod({
+      myRole:'owner',
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-flag':'Suspect', 'u-done':'Handled' },
+      clamps:{},
+      signals:[
+        { id:1, user_id:'u-flag', username:'Suspect', kind:'progress_jump', detail:{ jump:1.2e13, elapsed_ms:8000 }, clamped:false, created_at:now },
+        { id:2, user_id:'u-done', username:'Handled', kind:'progress_jump', detail:{ jump:9e12 }, clamped:true, created_at:now }
+      ]
+    });
+    var panel3 = FF.renderChatModerationPanel();
+    ok(/Detection signals <span[^>]*>\(2, shadow\)/.test(panel3), 'the panel lists recorded detection signals in shadow mode');
+    ok(/Suspect/.test(panel3) && /progress_jump/.test(panel3), 'a signal shows the flagged player + evidence');
+    ok(/data-action="clampFromSignal"[^>]*data-uid="u-flag"/.test(panel3), 'an un-actioned signal has a one-click Clamp button');
+    ok((panel3.match(/data-action="clampFromSignal"/g)||[]).length === 1, 'an already-clamped signal shows no Clamp button');
+    FF._setChatMod({ clamps:{}, signals:[] });
+    // chatNameFor falls back to a uid fragment when the name isn't cached.
+    eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
+    ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');
+
+    // ---- Titles: label resolution + tag next to chat names + on the public profile card ----
+    var titleIds = Object.keys(FF.TITLE_BY_ID || {});
+    if(titleIds.length){
+      var tId = titleIds[0], tName = FF.TITLE_BY_ID[tId].name;
+      eq(FF.titleName(tId), tName, 'titleName resolves a published title id to its display name');
+      eq(FF.titleName('title_not_real_xyz'), '', 'an unknown title id resolves to no label');
+      // Title tag next to the poster's name in chat.
+      FF._setChatMod({ myRole:null, authUser:{ username:'Me', id:ME }, titles:{ 'u-owner':tId },
+        messages:[{ id:9, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() }] });
+      var htmlTitle = FF.chatMessagesHtml();
+      ok(/class="chat-title"/.test(htmlTitle) && htmlTitle.indexOf(tName) !== -1, 'an equipped title renders as a tag next to the chat name');
+      // Same title on the public profile card body.
+      var card = FF.profileCardBodyHtml({ username:'Boss', total_level:120, gold:5, title:tId, skills:{}, stats:{} });
+      ok(/class="profile-title"/.test(card) && card.indexOf(tName) !== -1, 'the profile card shows the equipped title under the name');
+      ok(/Total Level/.test(card), 'the profile card still shows headline stats');
+    }
+
+    // ---- Public profile modal: loading / no-profile / populated states ----
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:true, error:false } });
+    FF.renderPlayerProfileModal();
+    ok(/Loading profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal shows a loading state');
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:false, error:true } });
+    FF.renderPlayerProfileModal();
+    ok(/hasn.t published a profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal handles a player with no published profile');
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', loading:false, error:false, data:{ id:PLAYER, username:'Spammer', total_level:88, gold:12, skills:{}, stats:{} } } });
+    FF.renderPlayerProfileModal();
+    var pm = document.getElementById('playerProfileOverlay').innerHTML;
+    ok(/Spammer/.test(pm) && /Total Level/.test(pm) && /data-action="closePlayerProfile"/.test(pm), 'the profile modal renders a fetched profile with a Close button');
+
+    // Clean up module state so later suites see a pristine chat.
+    FF._setChatMod({ roles:{}, mutes:{}, names:{}, titles:{}, myRole:null, messages:[], authUser:null, target:null, profileTarget:null });
+    FF.renderChatModModal(); FF.renderPlayerProfileModal();
+    void savedAuth;
   });
 
   // ---- Combat log tab + advanced-pipeline toggle ------------------------------------------------
@@ -4588,6 +5811,82 @@
     s.settings.advancedCombatLog = sv.adv;
   });
 
+  // ---- Chat unread counter ---------------------------------------------------------------------
+  suite('chat: unread count + "Chat (N)" suffix', function(){
+    var s = FF._state;
+    s.settings = s.settings || {};
+    s.settings.chatFlash = true;
+    FF.clearChatUnread();
+    eq(FF.getChatUnreadCount(), 0, 'starts at 0');
+    eq(FF.chatUnreadSuffix(), '', 'no suffix when nothing unread');
+    // A message arriving while chat isn't focused/on-screen accrues an unread.
+    FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity();
+    eq(FF.getChatUnreadCount(), 4, 'four notes -> count 4');
+    eq(FF.chatUnreadSuffix(), ' (4)', 'suffix reads " (4)"');
+    // Mobile FAB badge reflects the same count and flashes.
+    var badge = document.getElementById('ffChatFabBadge');
+    ok(badge && badge.textContent === '4', 'FAB badge shows 4');
+    ok(document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB flashes while unread');
+    // Reading chat clears everything.
+    FF.clearChatUnread();
+    eq(FF.getChatUnreadCount(), 0, 'clear resets to 0');
+    eq(FF.chatUnreadSuffix(), '', 'suffix gone after clear');
+    ok(badge.textContent === '', 'FAB badge cleared');
+    ok(!document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB no longer flashes');
+    // Count caps its label at 99+.
+    for(var i=0;i<120;i++) FF.noteChatActivity();
+    eq(FF.chatUnreadSuffix(), ' (99+)', 'label caps at 99+');
+    FF.clearChatUnread();
+    // Respecting the setting: with chatFlash off, no unread accrues.
+    s.settings.chatFlash = false;
+    FF.noteChatActivity();
+    eq(FF.getChatUnreadCount(), 0, 'no unread when chatFlash disabled');
+    s.settings.chatFlash = true;
+  });
+
+  // ---- Guild membership cap --------------------------------------------------------------------
+  suite('guild: 10-member cap', function(){
+    eq(FF.GUILD_MAX_MEMBERS, 10, 'cap is 10');
+    ok(FF.guildIsFull(10), '10 members is full');
+    ok(FF.guildIsFull(11), 'over cap is full');
+    ok(!FF.guildIsFull(9), '9 members is not full');
+    ok(!FF.guildIsFull(0), 'empty is not full');
+    ok(!FF.guildIsFull(undefined), 'undefined count treated as not full');
+  });
+
+  // ---- Guild roster: presence dot + last-seen lines (ticket: "online status like the leaderboard",
+  // v0.0.78.0). The dot reuses the leaderboard's .lb-online[data-uid] markup verbatim, so
+  // updateLeaderboardPresence() repaints roster dots for free; the "last seen" line reads the
+  // server-witnessed save clock (guild_action get_state ships members[].last_active as epoch ms) --
+  // the same clock the server's leadership-succession check judges by.
+  suite('guild roster: online dots and last-seen lines', function(){
+    var A = FF.rosterAgoText, now = Date.now();
+    eq(A(30*1000), 'moments ago', 'under a minute reads as moments');
+    eq(A(5*60*1000), '5m ago', 'minutes band');
+    eq(A(3*3600*1000), '3h ago', 'hours band');
+    eq(A(47*3600*1000), '47h ago', 'stays in hours through 48h -- the succession ELIGIBILITY window reads in hours');
+    eq(A(72*3600*1000), '3d ago', 'the 72h dethrone threshold reads as days');
+    eq(A(90*24*3600*1000), '3mo ago', 'long absences read in months');
+    eq(FF.rosterLastSeenText(now - 5*60*1000, true), 'Online now', 'presence wins over the save clock');
+    eq(FF.rosterLastSeenText(now - 5*60*1000, false), 'Last seen 5m ago', 'offline members show the save-clock absence');
+    eq(FF.rosterLastSeenText(null, false), '', 'no server clock -> no line, never a NaN');
+    var G = FF.guildState, saved = { guild:G.guild, members:G.members, myRank:G.myRank, applications:G.applications };
+    try {
+      G.guild = { id:'g-test', tag:'TST', name:'Testers', open:true };
+      G.myRank = 'member'; G.applications = [];
+      G.members = [
+        { user_id:'u-lead', username:'AbsentLeader', rank:'leader',  last_active: now - 4*24*3600*1000 },
+        { user_id:'u-off',  username:'ActiveBob',   rank:'officer', last_active: now - 60*1000 }
+      ];
+      var html = FF.renderGuildRoster();
+      ok(html.indexOf('lb-online') !== -1, 'roster rows carry the leaderboard presence dot');
+      ok(html.indexOf('data-uid="u-lead"') !== -1 && html.indexOf('data-uid="u-off"') !== -1,
+        'dots carry data-uid, so updateLeaderboardPresence() live-repaints them with the leaderboard');
+      ok(html.indexOf('Last seen 4d ago') !== -1, 'the absent leader shows a days-scale absence');
+      ok(html.indexOf('Last seen 1m ago') !== -1, 'the active officer shows a minutes-scale one');
+    } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
+  });
+
   // ---- Outfitting craft pages carry no equipping UI (owner order, v0.0.79.12) ----------------------
   // Equipping lives in the Inventory (getEquipActionForItem) and Battle -> Equipment & Stats; the
   // wand/staff/scepter/ward craft pages used to duplicate it and now point there instead.
@@ -4759,12 +6058,12 @@
   suite('control sweep: stone chips with accent-filled active states', function(){
     var probe = document.createElement('div');
     probe.innerHTML = '<button class="craft-filter-btn">f</button><button class="craft-filter-btn on">f</button>'
-      + '<button class="inv-chip on">i</button>'
+      + '<button class="market-subtab on">m</button><button class="inv-chip on">i</button>'
       + '<button class="mini-btn">b</button><button class="mini-btn danger">d</button>'
       + '<button class="tracker-chip on">t</button>';
     document.body.appendChild(probe);
     try {
-      ['craft-filter-btn','inv-chip','mini-btn','tracker-chip'].forEach(function(cls){
+      ['craft-filter-btn','market-subtab','inv-chip','mini-btn','tracker-chip'].forEach(function(cls){
         var el = probe.querySelector('.'+cls), cs = getComputedStyle(el);
         ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' is framed in the arena stone');
         eq(cs.borderTopWidth, '6px', '.'+cls+' at the fine 6px cut');
@@ -4913,6 +6212,11 @@
     ok(/Raising \(/.test(H({ kind:'raise', x:1, y:1 }).head.replace(/&bull; /,'')), 'raise still reads as raising');
     ok(/Tilling/.test(H({ kind:'field', fieldTier:3, x:1, y:1 }).head), 'field reads as tilling');
     ok(/Paving/.test(H({ kind:'pave', paveTileId:'paving_t3', x:1, y:1 }).head), 'pave reads as paving');
+    // The kinds both estates accept all have a named arm or a named guild-activity label.
+    ['clear','raise','lower','pave','workshop','cottage','field','totem'].forEach(function(k){
+      ok(!!FF.GUILD_JOB_KIND_LABEL[k], "the guild activity list names '" + k + "' (unnamed kinds read as just \"working\")");
+    });
+    eq(FF.GUILD_JOB_KIND_LABEL.totem, 'raising a totem', 'guildmates see "raising a totem", not "working"');
   });
 
   // ---- Craft filter: "Highest tier" respects chained ladders (belt ticket, v0.0.79.4) ---------------
@@ -5227,6 +6531,19 @@
     if(fifth){ eq(fifth.target, FF.ENHANCE_MAX, 'the Fifth Frontier enhance quest is capped at +' + FF.ENHANCE_MAX); }
   });
 
+  // The in-game Scapelikes vote link must carry the player's account id as the identifier (so the vote
+  // webhook fires and per-account cooldowns apply), url-encoded, and fall back to the public game page
+  // when signed out. The slug is public; the account id is an opaque uid, never a username.
+  suite('scapelikes: vote URL builder', function(){
+    eq(FF.SCAPELIKES_SLUG, 'fantasy-frontiers', 'the public Scapelikes slug');
+    FF._setChatMod({ authUser:{ username:'Me', id:'u-abc 123' } });
+    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/vote/fantasy-frontiers/u-abc%20123',
+      'signed in: the vote URL carries the url-encoded account id as the identifier');
+    FF._setChatMod({ authUser:null });
+    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/game/fantasy-frontiers',
+      'signed out: falls back to the public game page (no identifier, so no webhook)');
+  });
+
   // Running a bow dry must announce the retreat in the COMBAT CHANNEL (combatLog), not just the Chronicle.
   // A player watching the Combat feed saw the fight silently stop with no reason (they were out of arrows).
   suite('combat: out-of-arrows retreat shows in the Combat channel and Chronicle', function(){
@@ -5271,6 +6588,23 @@
     S.gold = 42; FF.refundGold(0); FF.refundGold(-5);
     eq(S.gold, 42, 'refundGold ignores zero/negative amounts');
     S.gold = sv.gold; S.goldEarnedTotal = sv.earned; S.activity = sv.act;
+  });
+
+  // The planned-closure kill-switch. The boot gate only fires on page load, so an already-logged-in player
+  // stays in the game until their tab reloads. version.json now carries a live `closed` flag (stamped by
+  // build.mjs from SERVER_CLOSED); a running client polls it and force-closes on sight, mid-combat included.
+  // This pins the WIRE CONTRACT the poller reads -- only closed===true (a real boolean) trips it, so a
+  // missing/false/truthy-but-not-true field never accidentally shuts the server on live players.
+  suite('server: the live closed-flag kill-switch reads only closed===true', function(){
+    ok(FF.versionClosedSignal({ build:'x', closed:true }) === true, 'closed:true trips the kill-switch');
+    ok(FF.versionClosedSignal({ build:'x', closed:false }) === false, 'closed:false does not');
+    ok(FF.versionClosedSignal({ build:'x' }) === false, 'a version.json with no closed field does not (old deploys)');
+    ok(FF.versionClosedSignal({ closed:1 }) === false, 'a truthy-but-not-true value does not (strict === true)');
+    ok(FF.versionClosedSignal({ closed:'true' }) === false, 'the string "true" does not');
+    ok(FF.versionClosedSignal(null) === false && FF.versionClosedSignal(undefined) === false, 'a null/undefined payload does not');
+    // The reopen instant is Aug 31 2026, 14:00 UTC, and the countdown reads it, so before then it is non-empty.
+    eq(FF.SERVER_REOPEN_UTC, Date.UTC(2026, 7, 31, 14, 0, 0), 'the reopen instant is Aug 31 2026 14:00 UTC');
+    ok(typeof FF.serverCountdownStr() === 'string', 'serverCountdownStr returns a string');
   });
 
   // A stalled/throttled tab resumes as one big frame (dt clamped to 60s) that drains SEVERAL enemy swings
@@ -5379,6 +6713,16 @@
     } finally {
       Object.keys(W).forEach(function(k){ delete W[k]; }); Object.assign(W, saved);
     }
+  });
+
+  // The voting call-to-action is a HIGH-PRIORITY ticker line (woven in like the disclaimer, not one entry
+  // in the shuffled pool), so it shows far more often than any single pooled tip.
+  suite('ticker: high-priority voting call-to-action', function(){
+    ok(/vote/i.test(FF.TICKER_VOTE), 'the vote ticker line is about voting');
+    ok(/EXP/.test(FF.TICKER_VOTE), 'the vote ticker line names the +50% EXP reward');
+    ok(FF.TICKER_VOTE.indexOf('—') === -1, 'no em dash in the vote ticker line (house rule)');
+    ok(FF.TICKER_VOTE_CHANCE >= 0.15, 'the vote line is high priority (>= 15% of marquee cycles)');
+    ok(FF.TICKER_VOTE_CHANCE > 1 / FF.TICKER_TIPS.length, 'the vote line beats a single pooled tip\'s share');
   });
 
   // Menagerie UI batch (v0.0.99.16): role badges + at-a-glance tags, filter chips, sort control, the
@@ -7097,6 +8441,9 @@
       eq(en[_j].atkMax, Math.round(200 * Math.pow(1.04, _j)), 'enemy ' + _j + ' atkMax matches server');
       eq(Math.round(en[_j].attackSpeed * 1000), Math.round((2.2 + (_j % 5) * 0.3) * 1000), 'enemy ' + _j + ' attack interval matches server');
     }
+    // Reported proxies are bounded: DPS positive, mitigation 0..85%.
+    var pw = FF.dungeonPower(); ok(typeof pw === 'number' && isFinite(pw) && pw >= 1, 'dungeonPower() is a positive finite DPS proxy');
+    var mp = FF.dungeonMitPct(); ok(mp >= 0 && mp <= 85, 'dungeonMitPct() is a bounded 0..85% proxy');
   });
 
   // ---- Dungeons: D2 "Tunnel" (25 Orcs, L126->150, ~10x boss, hand-crafted portraits) ------
@@ -7233,6 +8580,8 @@
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] === FF.BLUEPRINT_ITEMS[id]; }), 'every Blueprint is registered in ALL_SELLABLE (market-tradeable)');
     var cat = FF.buildItemCatalog();
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server item catalog marks every Blueprint tradeable');
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.marketItemCategory(id) === 'blueprints'; }), 'Blueprints get their own Marketplace category');
+    ok(FF.MARKET_CATEGORIES.some(function(c){ return c.id === 'blueprints' && c.label === 'Blueprints'; }), 'the Marketplace nav has a Blueprints chip');
     // addBlueprint credits state.inventory AND the per-item earned anchor (so the server item ledger
     // credits legit boss drops and the market can cover a sell).
     var s = FF._state; var svI = s.inventory, svE = s.itemEarnedTotal;
@@ -7242,6 +8591,7 @@
     eq(s.inventory[bid], 2, 'addBlueprint credits the ordinary inventory');
     eq(s.itemEarnedTotal[bid], 2, 'addBlueprint bumps the earned anchor (ledger reconcile keeps the drop)');
     FF.addBlueprint('not_a_blueprint', 1); eq(s.inventory['not_a_blueprint'], undefined, 'addBlueprint rejects unknown ids');
+    ok(FF.marketOwnedIds().indexOf(bid) !== -1, 'an owned Blueprint shows up in the Marketplace Sell picker');
     // The vendor never buys a sell-0 stack -- the Marketplace is the only way to part with a Blueprint.
     var svG = s.gold;
     FF.sellItem(bid); FF.sellOne(bid);
@@ -7279,7 +8629,7 @@
     ok(FF.ALL_SELLABLE[ringId] === FF.LEGENDARY_RING_ITEMS[ringId], 'legendary Signets are registered in ALL_SELLABLE');
     ok(FF.ALL_SELLABLE[cloakId] === FF.LEGENDARY_CLOAK_ITEMS[cloakId], 'legendary Shrouds are registered in ALL_SELLABLE');
     ok(FF.ALL_SELLABLE[amuId] === FF.LEGENDARY_AMULET_ITEMS[amuId], 'legendary Pendants are registered in ALL_SELLABLE');
-    ok([ringId, cloakId, amuId].every(function(id){ return FF.ALL_SELLABLE[id].sell === 0; }), 'legendary accessories stay non-vendorable');
+    ok([ringId, cloakId, amuId].every(function(id){ return FF.ALL_SELLABLE[id].sell === 0; }), 'legendary accessories stay non-vendorable (Marketplace-only)');
     var cat = FF.buildItemCatalog();
     ok(Object.keys(FF.LEGENDARY_RING_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server catalog marks every legendary ring tradeable');
     ok(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary cloak');
@@ -7291,12 +8641,20 @@
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).every(function(id){ return cat[id] === 1; }), '...and D3');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ return cat[id] === 1; }), '...and D4');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] && FF.ALL_SELLABLE[id].sell === 0; }), 'legendary weapons stay non-vendorable (Marketplace/guild-bank only)');
+    // A legendary weapon browses under Weapons; a legendary ward (offhand) under Armor.
+    var _lgMain = Object.keys(FF.LEGENDARY_GEAR_ITEMS).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS[id].slot === 'mainhand'; })[0];
+    ok(_lgMain && FF.marketItemCategory(_lgMain) === 'weapons', 'a legendary weapon browses under the Weapons category');
+    var _allLg = {}; [FF.LEGENDARY_GEAR_ITEMS, FF.LEGENDARY_GEAR_ITEMS_D2, FF.LEGENDARY_GEAR_ITEMS_D3, FF.LEGENDARY_GEAR_ITEMS_D4].forEach(function(m){ Object.keys(m).forEach(function(id){ _allLg[id] = m[id]; }); });
+    var _lgWard = Object.keys(_allLg).filter(function(id){ return _allLg[id].slot !== 'mainhand'; })[0];
+    if(_lgWard) ok(FF.marketItemCategory(_lgWard) === 'armor', 'a legendary ward browses under the Armor category');
+    ok([ringId, cloakId, amuId].every(function(id){ return FF.marketItemCategory(id) === 'accessories'; }), 'legendary accessories browse under the Accessories category');
     // The vendor never buys one, and Sell All never sweeps one.
     var s = FF._state, svI = s.inventory, svG = s.gold;
     s.inventory = {}; s.inventory[ringId] = 1;
     FF.sellItem(ringId); FF.sellOne(ringId); FF.sellAll();
     eq(s.inventory[ringId], 1, 'vendor sale paths all refuse a legendary accessory');
     eq(s.gold, svG, 'no gold changed hands');
+    ok(FF.marketOwnedIds().indexOf(ringId) !== -1, 'an owned Signet appears in the Marketplace Sell picker');
     s.inventory = svI;
   });
 
@@ -7395,6 +8753,37 @@
     near(s.familiarBuffs.enemyWeakenPct, 0.99, 'Weaken clamps to 99% (enemy keeps 1% of its damage)');
     FF.castFamiliarSpell({ type:'slowEnemy', name:'Test Slow', pct:5.0, durationMs:8000 }, 100);
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
+  });
+
+  // ---- ticket-0165: the leaderboard filters must drive the QUERY, not narrow a cached page (Valuren) --
+  // "Pressing the mortal only filter will only show the mortals in the already revealed top50, when there
+  // are alot more players." Exactly right: one fetch took the top LEADERBOARD_LIMIT by total_level and both
+  // filters narrowed THAT list, so a Mortal outside the top 50 could never appear -- and Mortals carry an
+  // XP-rate debuff, which makes them structurally rare near the top. The filter showed the empty set almost
+  // by construction. The two filters are not symmetrical and the fix reflects that: `mortal` is a real
+  // column and becomes a server-side .eq(); presence is a realtime channel with no column, so online-only
+  // can only widen the page it searches.
+  suite('ticket-0165: leaderboard filters change the query, not just the view', function(){
+    ok(typeof FF.leaderboardQueryKey === 'function', 'the filter-aware cache key is exported');
+    ok(typeof FF.leaderboardPageSize === 'function', 'the page sizer is exported');
+    ok(FF.LEADERBOARD_LIMIT_WIDE > FF.LEADERBOARD_LIMIT,
+       'the online-only page is DEEPER than the default (' + FF.LEADERBOARD_LIMIT_WIDE + ' > ' + FF.LEADERBOARD_LIMIT + ')');
+    // The cache key must move with EITHER filter, or a toggle re-renders the same cached rows and the
+    // player sees nothing change -- which is what "does not check more than the top 50" looked like.
+    FF._lbSetFilters(false, false); var k00 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(true, false);  var k10 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(false, true);  var k01 = FF.leaderboardQueryKey();
+    FF._lbSetFilters(true, true);   var k11 = FF.leaderboardQueryKey();
+    ok(k00 !== k10, 'toggling Mortal-only changes the query key');
+    ok(k00 !== k01, 'toggling Online-only changes the query key');
+    ok(k10 !== k11 && k01 !== k11, 'the two filters compose into a distinct key');
+    eq(new Set([k00, k10, k01, k11]).size, 4, 'all four filter combinations are distinct queries');
+    // Page size follows the online filter, because presence cannot be filtered server-side.
+    FF._lbSetFilters(false, false); eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'default page is the normal limit');
+    FF._lbSetFilters(true, false);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'mortal-only is server-filtered, so the page stays normal');
+    FF._lbSetFilters(false, true);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, 'online-only widens the page');
+    FF._lbSetFilters(true, true);   eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, '...and still widens it alongside mortal-only');
+    FF._lbSetFilters(false, false);
   });
 
   // ---- ticket-0164: auto-roll forecasts its cost and confirms an expensive run (Valuren) ------------
@@ -10859,6 +12248,36 @@
     ok(FF.FORGE_LIVE_CATEGORIES.indexOf('inventory') === -1, 'forge live-update never runs on Inventory');
   });
 
+  // ---- Guild Bosses: 5 tower-style bosses, rising difficulty & reward ----
+  // Reworked from an async damage pool to 5 solo-entry bosses at Tower-floor difficulty 1/10/20/30/40,
+  // each rewarding index+1 Barrier Shards (1..5) to every guild member on a clear.
+  suite('guild bosses: roster, difficulty & reward', function(){
+    eq(FF.GUILD_BOSSES.length, 5, 'five guild bosses');
+    eq(FF.GUILD_BOSSES.map(function(b){ return b.floor; }).join(','), '1,10,20,30,40', 'difficulty floors are 1/10/20/30/40');
+    FF.GUILD_BOSSES.forEach(function(b, i){
+      eq(b.idx, i, 'boss ' + i + ' carries idx ' + i);
+      eq(FF.guildBossReward(i), i + 1, 'boss ' + i + ' rewards ' + (i + 1) + ' Barrier Shard(s)');
+      // v0.0.96.5: bosses stay on the FROZEN pre-recurve curve (GBOSS_*), NOT towerFloorStats -- the
+      // tower recurve would have shrunk boss 5 from ~186M HP to ~313 by accident.
+      var mon = FF.buildGuildBossMonster(i), st = FF.towerScaledStats(b.floor, FF.GBOSS_HP_RATIO, FF.GBOSS_ATK_RATIO);
+      ok(mon && mon.id === 'gboss_' + i, 'boss ' + i + ' builds monster gboss_' + i);
+      eq(mon.hp, st.hp, 'boss ' + i + ' HP matches the frozen boss curve at floor ' + b.floor);
+      var rb = FF.monsterById('gboss_' + i);   // reload path
+      ok(rb && rb.hp === st.hp, 'gboss_' + i + ' resolves via monsterById after a reload');
+    });
+    for(var i = 1; i < FF.GUILD_BOSSES.length; i++){
+      ok(FF.buildGuildBossMonster(i).hp > FF.buildGuildBossMonster(i - 1).hp, 'boss ' + i + ' is tougher than boss ' + (i - 1));
+    }
+    // Absolute pins so a curve swap cannot silently move the bosses: these are the LIVE pre-recurve stats.
+    eq(FF.buildGuildBossMonster(0).hp, 124, 'boss 1 keeps its frozen 124 HP');
+    eq(FF.buildGuildBossMonster(4).hp, 185771740, 'boss 5 keeps its frozen ~186M HP');
+    eq(FF.buildGuildBossMonster(4).atkMax, 13173, 'boss 5 keeps its frozen max attack');
+    // The combat activity carries the guildBoss marker so the kill dispatch reports the clear (not a re-engage).
+    var act = FF.makeGuildBossActivity(2);
+    ok(act && act.type === 'combat' && act.guildBoss && act.guildBoss.idx === 2 && act.guildBoss.floor === 20, 'makeGuildBossActivity marks a guildBoss combat at Floor 20');
+    eq(act.monsterId, 'gboss_2', 'the activity targets the boss monster');
+  });
+
   // ---- Masterwork Supreme/Fantastic blast to the global feed + Discord ----
   // Reported: mastercrafting a Supreme/Fantastic didn't blast (only Fantastic hit Discord, and neither hit
   // the global chronicle/chat). The blast now fires for Supreme AND Fantastic, and the chronicle row leads
@@ -10870,8 +12289,27 @@
     // Supreme AND Fantastic blast, labelled so the chronicle row classifies correctly on other clients.
     var sup = FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn');
     ok(sup && sup.indexOf('Supreme ') === 0, 'a Supreme masterwork blasts with a Supreme-labelled name');
+    eq(FF.craftBodyRarity(sup), 'supreme', 'other clients classify the Supreme masterwork blast as supreme');
     var fan = FF.masterworkBlastRarityName('fantastic', 'Aegis of Dawn');
     ok(fan && fan.indexOf('Fantastic ') === 0, 'a Fantastic masterwork blasts with a Fantastic-labelled name');
+    eq(FF.craftBodyRarity(fan), 'fantastic', 'other clients classify the Fantastic masterwork blast as fantastic');
+  });
+
+  // ---- Chat blasts: normal crafts no longer announce Supreme; masterwork still does ----
+  suite('chat blasts: normal Supreme crafts are no longer announced', function(){
+    // Normal crafts: only Fantastic blasts to global chat; Rare/Fantastic reach the chronicle feed; Supreme
+    // is excluded from BOTH (it's the common-roll spam we're removing).
+    eq(FF.normalCraftBlasts('fantastic'), true, 'Fantastic normal craft blasts to chat');
+    eq(FF.normalCraftBlasts('supreme'), false, 'Supreme normal craft does NOT blast to chat');
+    eq(FF.normalCraftBlasts('rare'), false, 'Rare normal craft does not blast');
+    eq(FF.normalCraftFeedRarity('supreme'), false, 'Supreme normal craft is not broadcast at all (no feed/blast source)');
+    eq(FF.normalCraftFeedRarity('fantastic'), true, 'Fantastic normal craft is broadcast');
+    eq(FF.normalCraftFeedRarity('rare'), true, 'Rare normal craft still reaches the chronicle feed');
+    // Masterwork Supreme/Fantastic STILL blast: announceMasterwork emits a rarity-labelled chronicle body,
+    // which the receiver + reload still classify as a blast (unchanged) -- so a Supreme blast now originates
+    // only from a Masterwork.
+    eq(FF.craftBodyRarity(FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn')), 'supreme', 'a masterwork Supreme still classifies as a blast');
+    ok(FF.chronicleCraftToSystemMsg({ id:1, username:'A', body:'Supreme Aegis of Dawn', created_at:'x' }) !== null, 'a Supreme craft chronicle row still blasts (sourced only from masterwork now)');
   });
 
   // ---- Getting Started: gathering quests name the specific lowest-tier material they require ----
@@ -12280,7 +13718,12 @@
       s.stats[row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes');
       invGrantCheck(row[0], row[3], row[4]);
     });
-    // 49 Master of the Frontier: any skill to Lv 25 (Kindred Spirits, the guild visit, left with the guilds)
+    // 49 Kindred Spirits: visit the guild
+    var q49 = FF.questById('kindred_spirits');
+    ok(!!q49 && q49.target===1 && q49.reward.gold===2000, 'Kindred Spirits: visit guild -> 2000 gold');
+    s.quests={claimed:{}}; s.stats={}; eq(FF.questComplete(q49), false, 'not visited -> not complete');
+    s.stats['guild_visited']=1; ok(FF.questComplete(q49), 'visiting the guild completes');
+    // 50 Master of the Frontier: any skill to Lv 25
     var q50 = FF.questById('master_of_the_frontier');
     ok(!!q50 && q50.target===25, 'Master of the Frontier: to Lv 25');
     s.quests={claimed:{}}; s.xp={ mining: FF.xpFloorForLevel(24) };
@@ -12556,6 +13999,56 @@
     } finally {
       s.xp[FF.WANDS_SKILL_ID]=saved.w; s.xp[FF.SCEPTERS_SKILL_ID]=saved.c; s.xp[FF.STAVES_SKILL_ID]=saved.t; s.xp.arcanism=saved.a; s.xp.runesmithing=saved.r;
     }
+  });
+
+  // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
+  suite('auth: identity-mismatch guard', function(){
+    var saved = FF._authBoundUserId();
+    // No binding yet -> nothing is a mismatch (an unbound tab never false-fences).
+    FF.authBindIdentity(null);
+    eq(FF.authIdentityMismatch('user-A'), false, 'an unbound tab never reports a mismatch');
+    // Bound to account A: A's own session matches; a foreign id (shared-storage swap) mismatches.
+    FF.authBindIdentity('user-A');
+    eq(FF.authIdentityMismatch('user-A'), false, 'the bound account is not a mismatch');
+    ok(FF.authIdentityMismatch('user-B') === true, 'a different account on the shared session IS a mismatch');
+    // A missing session id (mid-refresh) is not treated as a swap.
+    eq(FF.authIdentityMismatch(null), false, 'a null session id does not fence');
+    eq(FF.authIdentityMismatch(undefined), false, 'an undefined session id does not fence');
+    // Deliberate in-tab switch: clearing the binding first means the imminent SIGNED_IN isn't misread.
+    FF.authBindIdentity(null);
+    eq(FF.authIdentityMismatch('user-B'), false, 'cleared binding: a fresh login is not a foreign swap');
+    FF.authBindIdentity(saved || null);
+  });
+
+  // ---- Joining a party: Total Level 5000 + the PREVIOUS layer cleared (like starting your own) ----
+  suite('dungeons: join requirements + party code', function(){
+    var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;
+    // Force the profile over the Total Level gate so the join test isolates the progression rule.
+    // (playerTotalLevel sums skill + physique levels; a big fake skill map clears 5000 handily.)
+    var bigXp = {}; if (FF.ALL_MAIN_SKILL_IDS) FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ bigXp[id] = 1e12; });
+    s.xp = bigXp; s.physique = {};
+    ok(FF.playerTotalLevel(s) >= FF.DUNGEON_MIN_TOTAL_LEVEL, 'the boosted profile clears the Total Level gate');
+    s.dungeonsCleared = {};
+    eq(FF.dungeonJoinBlock('d1'), null, 'the Cave has no prerequisite to join');
+    ok(FF.dungeonJoinBlock('d2') !== null, 'joining a Tunnel party requires the Cave cleared first');
+    // Beating D1 (solo OR group -- both call dungeonMarkCleared) unlocks joining D2 parties;
+    // a prior D2 clear must NOT be required (that locked group progression behind solo play).
+    FF.dungeonMarkCleared('d1');
+    eq(FF.dungeonJoinBlock('d2'), null, 'clearing the Cave unlocks joining Tunnel parties -- no Tunnel clear needed');
+    ok(FF.dungeonJoinBlock('d3') !== null, 'D3 parties still need the Tunnel cleared');
+    FF.dungeonMarkCleared('d2');
+    eq(FF.dungeonJoinBlock('d3'), null, 'the chain continues: clearing D2 unlocks joining D3 parties');
+    ok(FF.dungeonJoinBlock('d4') !== null, '...and D4 parties still need D3 cleared');
+    // Below the Total Level gate, even the Cave blocks joining.
+    s.xp = {}; s.physique = {};
+    ok((FF.dungeonJoinBlock('d1') || '').indexOf('Total Level') === 0, 'below the Total Level gate even the Cave blocks joining');
+    s.xp = savedXp; s.physique = savedPhys; s.dungeonsCleared = savedCleared;
+    // Party-code parsing: "<layer>:<id>" splits; a bare id yields a null layer.
+    var c = FF.parseDungeonCode('d2:abc-123');
+    eq(c.layer, 'd2', 'a "d2:<id>" code parses the layer'); eq(c.id, 'abc-123', '...and the session id');
+    eq(FF.parseDungeonCode('D3 9f8e').layer, 'd3', 'space + upper-case layer prefixes also parse');
+    eq(FF.parseDungeonCode('abc-123').layer, null, 'a bare id has no encoded layer');
+    eq(FF.parseDungeonCode('abc-123').id, 'abc-123', 'a bare id passes through as the id');
   });
 
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
@@ -13047,6 +14540,15 @@
     eq(FF.itemRarityId('mining_t7'), 'normal', 'no rarity suffix -> normal');
   });
 
+  // ---- Chat system announcements: only supreme/fantastic crafts echo into global chat ----
+  suite('craft chat announce', function(){
+    eq(FF.craftBodyRarity('Fantastic Steel Axe'), 'fantastic', 'fantastic craft body -> fantastic');
+    eq(FF.craftBodyRarity('Supreme Iron Sword'), 'supreme', 'supreme craft body -> supreme');
+    eq(FF.craftBodyRarity('Rare Bronze Dagger'), null, 'rare craft body -> null (chronicle only)');
+    eq(FF.craftBodyRarity('Oak Plank'), null, 'normal craft body -> null');
+    eq(FF.craftBodyRarity(''), null, 'empty body -> null');
+  });
+
   // ---- Classes: Plaguebearer (the Plague -- poison with a severity) --------------------
   suite('classes: plaguebearer (the Plague)', function(){
     function arm(mat){ return {material:mat,tier:5}; }
@@ -13453,6 +14955,32 @@
     }
   });
 
+  // ---- Guild bank: legendary / set uniques keep their real name + effect through the vault ----
+  suite('guild bank: legendary uniques survive the vault round-trip', function(){
+    var def = FF.D1_LEG_GEAR_DEFS.filter(function(d){ return d.slot==='mainhand'; })[0];
+    ok(def, 'a D1 mainhand legendary exists to test with');
+    var top = FF.legGearBaseTopTier(def.base);
+    var base = 'stweapon_'+def.base+'_t'+top+'_rare';
+    var legName = FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId(def.key,'rare')].name;
+    var u = { base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[{mod:'critDamage',roll:20}], leg:def.key };
+    // The bug: without carrying leg, the item names by its plain base, not its legendary.
+    ok(FF.uniqueBaseName(u) === legName && legName !== (FF.ALL_SELLABLE[base]||{}).name, 'a legendary unique names by its legendary, not its base');
+    var blob = FF.bankUniqueBlob(u);
+    eq(blob.leg, def.key, 'the deposit blob carries the legendary key');
+    eq(blob.enchants.length, 1, '...and its enchants');
+    var revived = FF.bankUniqueRevive({ base:blob.base, kind:blob.kind, tier:blob.tier, rarity:blob.rarity, enhance:blob.enhance, enchants:blob.enchants, leg:blob.leg });
+    eq(revived.leg, def.key, 'a withdrawn legendary re-mints with its leg (effect restored, not just the name)');
+    eq(FF.uniqueBaseName(revived), legName, '...and reads back as its legendary name');
+    eq(revived.enchants[0].roll, 20, 'enchants survive the round-trip');
+    // A plain unique carries a null leg -> unaffected.
+    eq(FF.bankUniqueBlob({ base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[] }).leg, null, 'a plain unique carries a null leg');
+    // Armor-set piece: set/setLayer round-trip too.
+    var sblob = FF.bankUniqueBlob({ base:'bodyarmor_plate_chest_t9_rare', kind:'bodyarmor', tier:9, rarity:'rare', enhance:0, enchants:[], set:'knight', setLayer:'d2' });
+    ok(sblob.set==='knight' && sblob.setLayer==='d2', 'a set piece carries its set key + layer');
+    var sr = FF.bankUniqueRevive({ base:sblob.base, kind:sblob.kind, tier:sblob.tier, rarity:sblob.rarity, enhance:0, enchants:[], set:sblob.set, setLayer:sblob.setLayer });
+    ok(sr.set==='knight' && sr.setLayer==='d2', 'a withdrawn set piece keeps its set + layer');
+  });
+
   suite('equip picker: best-first, grouped, filterable candidate list', function(){
     ok(typeof FF.sortEquipCandidates==='function' && typeof FF.renderEquipCandidatePicker==='function', 'equip picker helpers exported');
     // Sort: equipped pinned to the top, usable by score desc, locked sunk to the bottom.
@@ -13542,6 +15070,49 @@
       var h1 = FF.renderMainhandEquipSection();
       ok(/Melee Weapons/.test(h1) && !/inv-acc-sub/.test(h1), 'a single owned weapon type skips the redundant sub-nest');
     } finally { S.equippedMainhand=mSaved.mh; S.equippedMainhandTier=mSaved.mht; S.equippedMainhandRarity=mSaved.mhr; S.inventory=mSaved.inv; S.xp=mSaved.xp; S.uniqueItems=mSaved.uniq; }
+  });
+
+  // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
+  suite('marketplace pricing', function(){
+    eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
+    eq(FF.marketTax(1000), 50, '5% of 1000 = 50');
+    eq(FF.marketTax(999), 49, 'tax floors (999 -> 49, not 49.95)');
+    eq(FF.marketBuyCost(7, 9), 63, 'buy cost = price*qty');
+    eq(FF.marketSellNet(100, 10), 950, 'sell net = gross - 5% tax (1000 -> 950)');
+    eq(FF.marketSellNet(1, 1), 1, 'tiny sale: floor(0.05)=0 tax, net = 1');
+    ok(FF.marketSellNet(50, 3) === 50*3 - FF.marketTax(50*3), 'sell net stays consistent with marketTax');
+  });
+
+  // ---- Marketplace category filter: quick-nav buckets each map every tradeable item to one category ----
+  suite('marketplace categories', function(){
+    eq(FF.MARKET_CATEGORIES[0].id, 'all', 'the first category is "All"');
+    eq(FF.marketItemCategory('stweapon_scimitar_t0_normal'), 'weapons', 'a stackable weapon -> Weapons');
+    eq(FF.marketItemCategory('tool_mining_t0_normal'), 'tools', 'a gather tool -> Tools');
+    eq(FF.marketItemCategory('relic_t0_normal'), 'relics', 'a relic -> Relics');
+    eq(FF.marketItemCategory('ring_slash_t0_normal'), 'accessories', 'a ring -> Accessories');
+    eq(FF.marketItemCategory('bodyarmor_leather_chest_t0_normal'), 'armor', 'a body-armor piece -> Armor');
+    eq(FF.marketItemCategory('workshop_mining_t0'), 'other', 'a workshop building -> Other');
+    eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
+    eq(FF.marketItemCategory('metallurgy_t0'), 'refined', 'a refined bar (metallurgy) -> Refined');
+    eq(FF.marketItemCategory('tanning_t0'), 'refined', 'refined leather (tanning) -> Refined');
+    eq(FF.marketItemCategory('twine_t0'), 'refined', 'weaving twine (alias prefix) -> Refined');
+    eq(FF.marketItemCategory('mining_t0'), 'materials', 'a raw gathered ore -> Materials');
+    eq(FF.marketItemCategory('cooking_t0'), 'consumables', 'cooked food -> Consumables');
+    eq(FF.marketItemCategory('mixology_t0'), 'consumables', 'a tea (mixology) -> Consumables');
+    eq(FF.marketItemCategory('tome_t0'), 'consumables', 'a tome/book (bookbinding) -> Consumables');
+    eq(FF.marketItemCategory('scroll_t0'), 'consumables', 'a scroll (inscription) -> Consumables');
+    eq(FF.marketItemCategory('draught_t0'), 'consumables', 'an Apothecary draught -> Consumables');
+    // Tier chip: 1-based, tier-less items show nothing.
+    ok(/T6/.test(FF.marketItemTierHtml('metallurgy_t5')), 'the tier chip is 1-based (t5 -> T6)');
+    eq(FF.marketItemTierHtml('meat'), '', 'a tier-less item shows no tier chip');
+    // Subcategory = producing skill (alias prefixes resolve to their skill).
+    eq(FF.marketItemSubcategory('herbalism_t0'), 'herbalism', 'raw material subcategory is its gather skill');
+    eq(FF.marketItemSubcategory('twine_t0'), 'weaving', 'an alias prefix (twine) resolves to its skill (weaving)');
+    eq(FF.marketItemSubcategory('metallurgy_t3'), 'metallurgy', 'a refined subcategory is its refining skill');
+    ok(FF.marketSubLabel('forestry').toLowerCase().indexOf('forest') !== -1, 'subcategory labels are human-readable skill names');
+    // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
+    var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
+    ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');
   });
 
   // ---- Item catalog (server allowlist) -- buildItemCatalog covers the whole inventory-key universe ----
@@ -13867,6 +15438,8 @@
       S.dungeonAutoRequeue = true;
       FF.dungeonBegin(d1);
       eq(FF.dungeonLocksActions(), true, 'a solo descent still locks other actions');
+      // ...but it must NOT be treated as attended for the away fast-forward.
+      eq(FF.dungeonPartyLocksAway(), false, 'a solo descent does NOT freeze the away catch-up (ticket-0117)');
       // An away window fast-forwards the fight AND chains the next descent.
       var idxBefore = S.activity.dungeonIndex;
       FF.applyOfflineProgress(30 * 60 * 1000);
@@ -13961,9 +15534,11 @@
   });
 
   // ---- ticket-0109: blocked entry must show ON the UI, not only in the Chronicle ------------------
-  suite('combat: blocked Tower entry is visible', function(){
+  suite('combat: blocked Tower / Guild Boss entry is visible', function(){
     var S = FF._state;
     var snap = { act:S.activity };
+    var gs = FF._guildBossState(), gst = FF._guildState();
+    var gsnap = { err:gs.error, guild:gst.guild };
     try {
       var EN = 'all'; // the All-Classes Tower entrance (no class requirement to trip first)
       // --- Tower: entering while in an ordinary fight ---
@@ -13984,8 +15559,20 @@
       // Reopening the preview starts clean again.
       FF._setTowerPreview(EN);
       eq(FF._towerEntryError(), '', 'reopening the preview clears the stale notice');
+      // --- Guild Boss: the reported case ---
+      gst.guild = { id:'g1', name:'Test Guild' };
+      gs.error = '';
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      FF.guildBossEnter(0);
+      ok(/Finish your current fight/.test(gs.error), 'a blocked Guild Boss entry sets the panel error (ticket-0109)');
+      ok(!(S.activity && S.activity.guildBoss), '...and does NOT pull the boss');
+      // Already on a boss reads differently.
+      gs.error = '';
+      S.activity = { type:'combat', playerSwungOnce:true, guildBoss:{ idx:1 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
+      FF.guildBossEnter(0);
+      ok(/already fighting a Guild Boss/.test(gs.error), 'already on a boss reports a distinct message');
     } finally {
-      S.activity = snap.act;
+      S.activity = snap.act; gs.error = gsnap.err; gst.guild = gsnap.guild;
     }
   });
 
@@ -15547,6 +17134,11 @@
       }
       ok(FF.FAM_SKIN[id], id+': familiar skin defined');
     });
+    // MAX_SKILLS headroom: the deployed submit_profile rejects submissions with more skills than
+    // its MAX_SKILLS (currently 400) -- and when that trips, the WHOLE leaderboard silently stops
+    // updating (it has happened). Fail here first, with room to react.
+    var skillCount = Object.keys(FF.computeProfileStats().skills).length;
+    ok(skillCount < 380, 'profile skill set ('+skillCount+') stays well under the deployed MAX_SKILLS=400 -- if this fails, RAISE MAX_SKILLS in submit_profile and redeploy BEFORE merging');
   });
 
   // ---- PLAYER_DMG_MODS: the named damage-modifier table behind the damage formula ---------
@@ -17430,6 +19022,91 @@
     eq(FF.formatDuration(3661000), '1:01:01', 'h:mm:ss for long jobs');
   });
 
+  // ---- Estate job "already running" refusal ---------------------------------------------
+  // The server used to answer a refused start with {ok:true, claimed:false}, which the client
+  // read as a generic failure. It now answers {ok:false, error:'inprogress', job, remainingMs}.
+  // The client must recognise BOTH shapes so a new client is correct against either server.
+  // ---- Discord feed: no webhook in the client, structured events only -------------------------
+  // The webhook URL used to be a literal in index.html, so it shipped to every player in clear text.
+  // These tests pin the two properties that keep it that way: nothing in the client resembles a webhook
+  // URL, and discordFeedPost queues a STRUCTURED event (never prose) for the server to render.
+  // ---- Auth CAPTCHA (Cloudflare Turnstile) ----------------------------------------------------------
+  // The rollout is only safe in ONE order: client-with-site-key first, Supabase CAPTCHA switch second.
+  // These pin the property that makes that safe -- with no site key configured, every auth path is byte-for
+  // -byte what it was, so this build can ship before the Dashboard switch is flipped.
+  suite('auth captcha', function(){
+    ok(typeof FF.captchaOn === 'function' && typeof FF.captchaAuthOpts === 'function', 'captcha helpers exported');
+    var saved = FF.CHAT_CONFIG.turnstileSiteKey;
+    try {
+      // ---- OFF (shipped default): nothing added to the sign-in call at all.
+      FF.CHAT_CONFIG.turnstileSiteKey = '';
+      ok(!FF.captchaOn(), 'captcha is off when no site key is configured');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'with no site key the sign-in options are empty');
+      FF._turnstileSetToken('tok_abc');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'even holding a token, an unconfigured captcha sends nothing');
+
+      // ---- ON: the token rides along, and only when we actually have one.
+      FF.CHAT_CONFIG.turnstileSiteKey = '0x_test_site_key';
+      ok(FF.captchaOn(), 'captcha is on once a site key is set');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{"captchaToken":"tok_abc"}', 'the token is passed to signInWithPassword');
+      FF._turnstileSetToken('');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'no token yet -> no captchaToken key (never send an empty one)');
+
+      // ---- Single use: a redeemed token must be cleared, or the NEXT attempt reuses a dead token and a
+      // correct password gets rejected. This is the bug most likely to reach players, so it is pinned.
+      FF._turnstileSetToken('tok_xyz');
+      FF.captchaConsume();
+      eq(FF._turnstileToken(), '', 'captchaConsume clears the spent token');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'a consumed token is not sent again');
+
+      // Registration needs TWO tokens: `register` spends one at siteverify, then GoTrue spends another on
+      // the sign-in that follows. Reusing one created the account and then refused the sign-in. The waiter
+      // queue is what lets the register flow wait for a second token, so its mechanics are pinned here --
+      // synchronously, because suite() discards a returned promise and would report nothing.
+      ok(typeof FF.captchaAwaitToken === 'function', 'captchaAwaitToken exported');
+      eq(FF._turnstileWaiterCount(), 0, 'no waiters at rest');
+      FF._turnstileSetToken('');
+      FF.captchaAwaitToken(50);                     // captcha ON + no token -> must queue a waiter
+      eq(FF._turnstileWaiterCount(), 1, 'awaiting a token with none in hand queues a waiter');
+      FF._turnstileFlushWaiters('tok_fresh');
+      eq(FF._turnstileWaiterCount(), 0, 'flushing on a new token drains the queue');
+      // The fast path must NOT queue: a token already in hand means the register flow proceeds at once.
+      FF._turnstileSetToken('tok_held');
+      FF.captchaAwaitToken(50);
+      eq(FF._turnstileWaiterCount(), 0, 'a token already in hand resolves without queueing');
+      // Captcha off must also not queue, or a build with no site key would hang on registration.
+      FF.CHAT_CONFIG.turnstileSiteKey = '';
+      FF._turnstileSetToken('');
+      FF.captchaAwaitToken(50);
+      eq(FF._turnstileWaiterCount(), 0, 'with captcha off, awaiting never queues');
+    } finally {
+      FF.CHAT_CONFIG.turnstileSiteKey = saved;
+      FF._turnstileSetToken('');
+    }
+  });
+
+  suite('discord feed relay', function(){
+    ok(typeof FF.discordFeedPost === 'function', 'discordFeedPost exported');
+    // The seam sets DISCORD_FEED_ENABLED=false, so posting must be inert -- this is also the guard that
+    // stops a test's fantastic craft roll from reaching the real channel.
+    var q = FF._discordFeedQueue();
+    var before = q.length;
+    FF.discordFeedPost({ kind:'forge', name:'Fantastic Tungsten Claymore', item_key:'claymore_t20_fantastic', rarity:'fantastic', stats:'Damage 671-1677' });
+    eq(FF._discordFeedQueue().length, before, 'the test seam disables the feed, so nothing is queued');
+    // Malformed events are refused on shape alone, before any network concern.
+    FF.discordFeedPost(null);
+    FF.discordFeedPost({ kind:'forge' });          // no name
+    FF.discordFeedPost({ name:'Thing' });          // no kind
+    eq(FF._discordFeedQueue().length, before, 'events without a kind or a name are never queued');
+    // The stats tail is BARE now: the relay owns the " ( ... )" wrapper, so the client must not add it.
+    var tail = FF.discordItemStatsText('amulet_t10_fantastic');
+    eq(typeof tail, 'string', 'discordItemStatsText returns a string');
+    // Not "contains no parentheses" -- inner ones are legitimate ("Damage 100-200 (+12)"). The contract is
+    // that the tail is not WRAPPED, so the server can own the parentheses and the message shape.
+    ok(!/^ \(/.test(tail) && !/\)$/.test(tail), 'the stats tail is unwrapped: ' + JSON.stringify(tail));
+    ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
+  });
+
   // ---- Blacksmithing groups: a forging group must still be closable ------------------------------
   // Ticket: "some tabs won't close in Blacksmithing while there are craft actions running". Not a render
   // bug -- the open state was `anyActive || flag`, so a group with a craft running was FORCED open and the
@@ -17477,6 +19154,30 @@
       Object.keys(open).forEach(function(k){ delete open[k]; });
       Object.keys(saved).forEach(function(k){ open[k] = saved[k]; });
     }
+  });
+
+  // ---- Two browsers on one account: a fenced tab must not act ------------------------------------
+  // Ticket (ITxToxic): two browsers each rendered an estate job start, and the displaced tab kept running.
+  // The server only ever runs one job per account (estate_jobs is keyed on user_id), but a fenced tab could
+  // still fire actions during the window before it noticed -- and spend materials it can never persist.
+  suite('fenced tab cannot start estate work', function(){
+    ok(typeof FF.estateEnqueueOrStart === 'function' && typeof FF._setCloudFenced === 'function', 'estate start + fence flag exported');
+    var S = FF._state, savedInv = S.inventory, savedEstate = S.estate;
+    try {
+      var g = [];
+      for(var x=0; x<3; x++){ g[x]=[]; for(var y=0; y<3; y++) g[x][y] = { type:'dirt', height:5, obstacle:null, fieldTier:null, owned:true }; }
+      S.estate = { grid:g, job:null, queue:[] };
+      S.inventory = { digging_t3: 500 };
+      FF._setCloudFenced(true);
+      FF.estateEnqueueOrStart('field', 1, 1, {fieldTier:3}, 1000, { jobFields:{fieldTier:3}, startedMsg:'x', queuedMsg:'x' });
+      eq(S.inventory.digging_t3, 500, 'a fenced tab spends no materials');
+      eq(S.estate.job, null, 'a fenced tab starts no job');
+      eq(S.estate.queue.length, 0, 'a fenced tab queues nothing');
+    } finally {
+      FF._setCloudFenced(false);
+      S.inventory = savedInv; S.estate = savedEstate;
+    }
+    ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
   });
 
   // ---- Architecture gates estate UPGRADES, not just fresh builds (ticket-0134, SteakHouse) ----------
@@ -17570,6 +19271,22 @@
     } finally {
       if(saved) de.style.setProperty('--ui-scale', saved); else de.style.removeProperty('--ui-scale');
     }
+  });
+
+  suite('wake staleness: the cloud-newer decision', function(){
+    ok(typeof FF.wakeStalenessCheck === 'function', 'the wake peek is exported');
+    var TOL = FF.WAKE_STALE_TOLERANCE_MS;
+    ok(TOL > 0 && TOL < 60000, 'the skew tolerance is positive and well under a real away window');
+    var t = 1700000000000;
+    ok(FF.wakeCloudIsNewer(t, t + TOL + 1), 'a cloud save newer than tolerance means another writer -> adopt');
+    ok(FF.wakeCloudIsNewer(t, t + 3600000), 'an hour-newer cloud save (the Valuren case) -> adopt');
+    ok(!FF.wakeCloudIsNewer(t, t + TOL - 1), 'inside the tolerance is clock skew, not a writer -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, t), 'an identical timestamp is our own last push -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, t - 5000), 'an older cloud save (our hide-push never landed) -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, 0), 'no cloud row is not evidence of a writer -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, NaN) && !FF.wakeCloudIsNewer(t, undefined), 'garbage from the peek fails open');
+    ok(!FF.wakeCloudIsNewer(0, 0), 'a fresh local state with no cloud row stays put');
+    ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
   });
 
   // ---- Improvement tier labels match the card chips (ticket: "t20 crystals demanded as tier 21+") --
@@ -17762,6 +19479,124 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Chat feed furniture (owner picks 1/4/5 of the chat proposals, v0.0.86.10) -------------------
+  // Day dividers on every calendar-day change, a gold wash on your own lines and a bright accent on
+  // word-bounded mentions, and the unread marker ("new" rule) + jump-to-latest pill. All pinned on the
+  // rendered MARKUP and the marker's synchronous mechanics -- the pill's show/hide follows real scroll
+  // events, which a suite can't drive honestly.
+  suite('chat feed: day dividers, own/mention tint, new-marker and jump pill', function(){
+    var now = new Date(), y = now.getFullYear(), mo = now.getMonth(), da = now.getDate();
+    var oldDay   = new Date(y, mo, da - 5, 12, 0, 0).toISOString();
+    var yestNoon = new Date(y, mo, da - 1, 12, 0, 0).toISOString();
+    var today    = new Date(y, mo, da, 9, 0, 0).toISOString();
+    eq(FF.chatDayLabel(today), 'Today', 'a same-day stamp reads Today');
+    eq(FF.chatDayLabel(yestNoon), 'Yesterday', 'one calendar day back reads Yesterday');
+    var _old = FF.chatDayLabel(oldDay);
+    ok(!!_old && _old !== 'Today' && _old !== 'Yesterday', 'older days read as a short date: ' + JSON.stringify(_old));
+    ok(FF.chatDayKey(today) !== FF.chatDayKey(yestNoon), 'day keys split on the calendar day');
+
+    var savedMarker = FF._chatFirstUnread();
+    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{}, messages:[
+      { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
+      { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
+      { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
+      { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today }
+    ]});
+    try {
+      FF._setChatFirstUnread('m4');
+      var h = FF.chatMessagesHtml();
+      eq((h.match(/<div class="chat-divider">/g) || []).length, 3, 'a date chip opens the feed and marks each day change (3 days -> 3 chips)');
+      ok(h.indexOf('>Today</span>') !== -1 && h.indexOf('>Yesterday</span>') !== -1, 'the chips are labeled Today / Yesterday');
+      var newAt = h.indexOf('chat-divider chat-new');
+      ok(newAt !== -1, 'the gold new rule renders at the unread marker');
+      ok(newAt > h.indexOf('my own line') && newAt < h.indexOf('concatenate'), 'the new rule sits directly above the first unseen message');
+      eq((h.match(/chat-msg chat-mine/g) || []).length, 1, 'your own message wears the gold wash');
+      eq((h.match(/chat-msg chat-mention/g) || []).length, 1, 'a word-bounded name match wears the mention accent');
+      ok(/chat-msg chat-mention"[^]*?hi Cat/.test(h), 'the mention accent is on the line that names you');
+      // 'concatenate ... categories' contains cat three times as a substring; the single-mention count
+      // above is the word-bound proof.
+      ok(/chat-jump/.test(h) && /chatJumpLatest/.test(h), 'the jump-to-latest pill rides inside the scroller markup');
+      FF._setChatFirstUnread(null);
+      ok(FF.chatMessagesHtml().indexOf('chat-new') === -1, 'no marker -> no new rule');
+      // Marker mechanics, synchronously: chat is off-screen in the harness, so an arrival stamps the
+      // marker at the newest message -- and later arrivals must never advance it (it marks the FIRST).
+      FF.chatNoteUnreadMarker();
+      eq(FF._chatFirstUnread(), 'm4', 'an unseen arrival stamps the marker at the newest message');
+      FF._setChatMod({ messages:[
+        { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
+        { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
+        { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
+        { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today },
+        { id:'m5', user_id:'u9', username:'Val', body:'one more', created_at: today }
+      ]});
+      FF.chatNoteUnreadMarker();
+      eq(FF._chatFirstUnread(), 'm4', 'later arrivals never advance the marker');
+    } finally {
+      FF._setChatFirstUnread(savedMarker == null ? null : savedMarker);
+      FF._setChatMod({ messages: [], authUser: null });
+    }
+  });
+
+  // ---- Chat presentation pass (owner picks 1/2/4/5 of round two, v0.0.86.11) -----------------------
+  // Per-channel tab accents + unread pips (filled IN PLACE -- a sig-driven rebuild per message would
+  // wipe live typing), the status dot + online count folded into the panel headers, system blasts as
+  // centered rarity banners, item chips inked by rarity, and stable per-guild tag colours.
+  suite('chat presentation: channel accents/pips, header status, banners, tag colours', function(){
+    // Tag colours: stable, palette-bound, and distinct enough across real tags.
+    eq(FF.chatTagColor('NITE'), FF.chatTagColor('NITE'), 'a tag always hashes to the same colour');
+    ok(FF.CHAT_TAG_PALETTE.indexOf(FF.chatTagColor('Cae')) !== -1, 'colours come from the curated palette');
+    var distinct = {}; ['Cae','NITE','PEEPO','NFA'].forEach(function(t){ distinct[FF.chatTagColor(t)] = 1; });
+    ok(Object.keys(distinct).length >= 2, 'real-world tags spread across the palette');
+    // Header status: carries the connection dot, and when online the SAME .chat-online-count class the
+    // in-place presence updater refreshes.
+    var hs = FF.chatHeadStatusHtml();
+    ok(/chat-head-status/.test(hs) && /class="dot"/.test(hs), 'the header status carries the connection dot');
+    // The old status row is gone from the global tab; the bar carries per-channel classes and pips.
+    var savedMarker2 = FF._chatFirstUnread(); FF._setChatFirstUnread(null);
+    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{'u9':'NITE'}, messages:[
+      { id:'s1', system:true, rarity:'fantastic', body:'Valuren forged a Fantastic Tungsten Sword!', created_at:new Date().toISOString() },
+      { id:'p1', user_id:'u9', username:'Val', body:'hello', created_at:new Date().toISOString() }
+    ]});
+    try {
+      var tab = FF.renderChatTab();
+      ok(tab.indexOf('chat-status') === -1, 'the status row above the well is retired (it lives in the headers now)');
+      ok(/chan-global/.test(tab) && /chan-guild/.test(tab) && /chan-chronicle/.test(tab) && /chan-combat/.test(tab),
+        'every channel tab carries its accent class');
+      eq((tab.match(/chat-tab-pip/g) || []).length, 2, 'Global and Guild carry pip spans (always rendered, filled in place)');
+      // System blasts: a starburst on EACH side of the body now.
+      var sys = tab.slice(tab.indexOf('chat-system'), tab.indexOf('chat-time', tab.indexOf('chat-system')));
+      eq((sys.match(/chat-sys-ico/g) || []).length, 2, 'a system blast wears a starburst on each side');
+      ok(/chat-guild-tag" title="Guild" style="color:#/.test(tab), 'guild tags ink with their hashed colour');
+      // Pip mechanics: note off-channel -> counts; clear -> zero. (Harness chat is off-screen, so both count.)
+      FF.chatChanClear('global'); FF.chatChanClear('guild');
+      FF.chatChanNote('guild'); FF.chatChanNote('guild'); FF.chatChanNote('global');
+      eq(FF._chatChanUnread().guild, 2, 'guild arrivals count while the channel is not watched');
+      eq(FF._chatChanUnread().global, 1, 'global arrivals count independently');
+      FF.chatChanClear('guild');
+      eq(FF._chatChanUnread().guild, 0, 'opening a channel retires its pip count');
+      // In-place fill: empty spans show nothing; a count paints; clearing empties them again.
+      var probe = document.createElement('div');
+      probe.innerHTML = '<button class="chat-channel-btn chan-global">Global<span class="chat-tab-pip" data-ch="global"></span></button>'
+        + '<button class="chat-channel-btn chan-combat active">Combat</button>'
+        + '<span class="chat-item-link rar-rare">x</span>';
+      document.body.appendChild(probe);
+      try {
+        FF.chatChanPipsUpdate();
+        eq(probe.querySelector('.chat-tab-pip').textContent, '1', 'the pip fills in place from the counter');
+        ok(getComputedStyle(probe.querySelector('.chat-tab-pip')).display !== 'none', 'a filled pip shows (absolute positioning computes it to block)');
+        FF.chatChanClear('global');
+        eq(getComputedStyle(probe.querySelector('.chat-tab-pip')).display, 'none', 'an emptied pip hides (the :not(:empty) trick)');
+        var cbt = getComputedStyle(probe.querySelector('.chan-combat.active'));
+        ok(cbt.backgroundImage.indexOf('rgb(176, 80, 63)') !== -1, 'the Combat tab fills with the combat red when active');
+        eq(getComputedStyle(probe.querySelector('.chat-item-link.rar-rare')).color, 'rgb(90, 167, 214)', 'a Rare item chip inks in the rare blue');
+      } finally { probe.remove(); }
+    } finally {
+      FF.chatChanClear('global'); FF.chatChanClear('guild');
+      FF._setChatFirstUnread(savedMarker2 == null ? null : savedMarker2);
+      FF._setChatMod({ messages: [], authUser: null });
+    }
+  });
+
   // ---- The combat tray keeps its light lettering (v0.0.86.13 regression) ---------------------------
   // The dark-marble sweep's --ink is the page's near-black LINE tone; the stage's --ink (.ar2.ivy) is
   // its light LETTERING. Re-scoping the tray (v0.0.86.8) -- and matching its threshold buttons via the
@@ -17930,6 +19765,96 @@
     } finally { S.collapsedCards = sv || {}; }
   });
 
+  // ---- The landing page joins the marble-and-stone layout (owner approval, v0.0.86.18) ------------
+  // The gate was the LAST surface on the tan page + old ivy-vine SVG frame era. Pinned via the injected
+  // landing stylesheet and computed styles on its classes: white marble ground and gate plaque, dark
+  // marble stat chips / feature cards / combat demo in the arena stone, and the ivy-SVG frame retired
+  // file-wide (its data-URI is gone, so a straggler would render NO frame and fail the border checks).
+  suite('landing page: marble ground, stone frames, the ivy-vine frame retired', function(){
+    FF.ensureLandingStyle();
+    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+    ok(css.indexOf('ivy_field.png') !== -1, 'the page ground and gate plaque tile the white marble');
+    ok(css.indexOf('marble_dark.png') !== -1, 'chips/cards/demo sit on the black marble');
+    ok(css.indexOf('ivy_stretch.png') !== -1, 'framed in the arena stone');
+    ok(css.indexOf('ivy-frame') === -1, 'the landing no longer references the old ivy-vine frame');
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="ff-land-chip"><b>170+</b><span>Skills</span></div>'
+      + '<div class="ff-land-card"><div class="ff-land-card-t">t</div><div class="ff-land-card-b">b</div></div>'
+      + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div></div>';
+    document.body.appendChild(probe);
+    try {
+      var chip = getComputedStyle(probe.querySelector('.ff-land-chip'));
+      ok(chip.backgroundImage.indexOf('marble_dark') !== -1 && chip.borderImageSource.indexOf('ivy_stretch') !== -1, 'stat chips are black marble in the stone cut');
+      eq(getComputedStyle(probe.querySelector('.ff-land-chip b')).color, 'rgb(221, 187, 102)', 'chip numbers read in the stage gold');
+      var card = getComputedStyle(probe.querySelector('.ff-land-card'));
+      ok(card.backgroundImage.indexOf('marble_dark') !== -1 && card.borderImageSource.indexOf('ivy_stretch') !== -1, 'feature cards take the item-card treatment');
+      eq(getComputedStyle(probe.querySelector('.ff-land-card-b')).color, 'rgb(192, 179, 148)', 'card bodies read in parchment on the dark ground');
+      var auth = getComputedStyle(probe.querySelector('.ff-land-auth'));
+      ok(auth.backgroundImage.indexOf('ivy_field') !== -1 && auth.borderImageSource.indexOf('ivy_stretch') !== -1, 'the gate is ONE white-marble plaque in stone (the double frame is gone)');
+    } finally { probe.remove(); }
+  });
+
+  // ---- Landing live combat: the REAL stage in miniature (owner request, v0.0.86.19) ----------------
+  // The CSS-only vignette (two bobbing portraits, keyframed damage numbers) is retired: the gate now
+  // mounts renderArena() itself into #ffPrevArena and a demo loop drives it. Pinned here: the demo
+  // activity is FLAGGED (landingPreview) so teardown can recognise it; mounting renders the actual
+  // .ar2 stage markup; the wrap kills all interactivity and hides the two player-only panels; and
+  // landingFightStop restores a clean idle state -- it runs first in startGameOnline precisely so a
+  // brand-new account's first save can never be written from the staged fight.
+  suite('landing live combat: the real arena, mounted small, torn down clean', function(){
+    var S = FF._state;
+    var svAct = S.activity, svHp = S.playerHp;
+    try {
+      // The old vignette is gone from the stylesheet, replaced by the scaled-stage rules.
+      FF.ensureLandingStyle();
+      var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+      ok(css.indexOf('ffPrevArena') !== -1, 'the landing stylesheet targets the arena host');
+      ok(css.indexOf('ffPrevLunge') === -1 && css.indexOf('ff-prev-port') === -1, 'the CSS-only vignette (bobbing portraits) is retired');
+      // Seeding: a flagged, fully-formed combat activity for a real bestiary foe.
+      var m = FF.landingFightSeed(FF.LANDING_FOES[0]);
+      ok(!!m && m.id === FF.LANDING_FOES[0], 'the seed resolves a real bestiary foe');
+      eq(S.activity.type, 'combat', 'the demo fight is a real combat activity');
+      ok(S.activity.landingPreview === true, 'and it is FLAGGED as the landing preview');
+      eq(S.activity.monsterHp, m.hp, 'the foe enters at full health');
+      ok(S.activity.duelStartedAt > 0, 'duelStartedAt is stamped, so the foe orb refills per rotation');
+      ok(FF.landingFightActive(), 'landingFightActive sees the flagged fight');
+      // Every showcase foe is real and carries a NAMED special, so the charge bar always means something.
+      FF.LANDING_FOES.forEach(function(id){
+        var f = FF.monsterById(id);
+        ok(!!(f && f.special && f.special.name), 'showcase foe ' + id + ' exists and has a named special');
+      });
+      // Mounting: the host receives the genuine stage markup, scaled and centered.
+      var wrap = document.createElement('div');
+      wrap.className = 'ff-prev-wrap';
+      wrap.style.width = '600px';
+      wrap.innerHTML = '<div id="ffPrevArena"></div>';
+      document.body.appendChild(wrap);
+      try {
+        FF.landingFightMount();
+        var host = document.getElementById('ffPrevArena');
+        ok(host.innerHTML.indexOf('ar2 ivy') !== -1, 'the host holds the REAL combat stage (.ar2 ivy), not a mockup');
+        ok(host.innerHTML.indexOf('ar2Orb-foe') !== -1 && host.innerHTML.indexOf('arenaMiniLog') !== -1, 'orbs and the mini feed are the live ones');
+        ok(/scale\(/.test(host.style.transform), 'the stage is transform-scaled down to the wrap');
+        ok(parseInt(wrap.style.height, 10) > 0, 'the wrap takes the SCALED height so the page lays out around it');
+        eq(getComputedStyle(wrap).pointerEvents, 'none', 'the whole preview is inert -- no control can be clicked');
+        var btn = host.querySelector('.action-btn');
+        ok(btn && getComputedStyle(btn).display === 'none', 'Retreat (and every stage button) is display-gated in the preview');
+        var tray = host.querySelector('.ar2-tray');
+        ok(tray && getComputedStyle(tray).display === 'none', 'the consumables/Auto-Eat tray is hidden -- meaningless logged out');
+      } finally {
+        FF.landingFightStop();
+        wrap.remove();
+      }
+      // Teardown: the demo leaves NO trace on the guest state.
+      eq(S.activity.type, null, 'stop() restores the idle activity');
+      ok(!FF.landingFightActive(), 'no preview fight remains');
+      // stop() only tears down ITS OWN flagged fight -- a real one is never touched.
+      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.LANDING_FOES[0], monsterHp:5, tickAccum:0, monsterTickAccum:0, duelStartedAt:1 };
+      FF.landingFightStop();
+      eq(S.activity.type, 'combat', 'a REAL fight (no landingPreview flag) survives landingFightStop untouched');
+    } finally { S.activity = svAct; S.playerHp = svHp; }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');
@@ -18076,6 +20001,111 @@
     } finally { S.popupQueue = sv.q; S.popupBatchTotal = sv.bt; S.settings = sv.set; FF._setOfflineCapture(null); }
   });
 
+  // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
+  // A brand-new player was granted the full 12h catch-up off one tab flick: the wall clock (the only
+  // clock the credit used) jumped while the tab was hidden. The bound takes min(wall, server-witnessed
+  // absence + slack) -- witnessed absence is always >= the true absence, so the bound can only strip
+  // inflation, never legitimate credit.
+  suite('offline catch-up: the server-witnessed credit bound', function(){
+    var B = FF.offlineCreditBound, SLACK = FF.OFFLINE_BOUND_SLACK_MS, H = 3600*1000;
+    ok(SLACK >= 15000 && SLACK <= 5*60*1000, 'the slack absorbs push latency without re-opening the hole');
+    eq(B(12*H, 20*60*1000), 20*60*1000 + SLACK, 'a 12h wall claim against 20 witnessed minutes credits ~20 minutes (the ticket)');
+    eq(B(30*60*1000, 12*H), 30*60*1000, 'a witnessed absence LARGER than the wall claim never inflates it');
+    eq(B(5*H, 5*H - 30000), 5*H, 'agreement within the slack credits the full wall figure');
+    eq(B(8*H, null), 8*H, 'no server data (offline wake, pre-migration backend) -> the wall figure stands');
+    eq(B(8*H, NaN), 8*H, 'garbage server data fails open');
+    eq(B(8*H, -5), 8*H, 'a negative witness fails open');
+    // Device transition (v0.0.99.7): loaded.lastSaved is ANOTHER device's clock, so a returning device
+    // whose clock lags reads a zero/negative wall. The server witness is skew-free -> credit IT, not 0
+    // (the old return-0 was the "nothing restored, refresh does not help" bug on device transitions).
+    eq(B(0, 2*H), 2*H, 'zero wall with a server witness credits the witnessed absence (cross-device clock skew)');
+    eq(B(-100, 2*H), 2*H, 'a negative wall (returning device clock behind the last one) credits the server witness');
+    eq(B(0, 0), 0, 'zero wall and zero witness is zero credit (a genuine quick refresh)');
+    eq(B(0, null), 0, 'zero wall with NO server witness stays zero (nothing trustworthy to credit)');
+    eq(B(-100, null), 0, 'a negative wall with no witness credits nothing (unchanged: cannot trust anything)');
+    // The write hold: while a wake reconcile is in flight, cloud pushes must wait -- otherwise the
+    // resumed loop's 4s cadence can push this tab's stale memory before the peek resolves.
+    ok(FF.CLOUD_WAKE_HOLD_MAX_MS >= 10000 && FF.CLOUD_WAKE_HOLD_MAX_MS <= 60000, 'the hold backstop releases well before the watchdog banner would fire');
+    FF.cloudWakeHoldSet(true);
+    ok(FF._cloudWakeHold() === true, 'the hold engages');
+    FF.cloudWakeHoldSet(false);
+    ok(FF._cloudWakeHold() === false, 'the hold releases');
+    ok(Array.isArray(FF.WAKE_PEEK_TRIES) && FF.WAKE_PEEK_TRIES.length >= 2, 'the wake peek retries through the no-network window instead of failing open on one shot');
+  });
+
+  // ---- Save watchdog (v0.0.77.22: "lost 25 minutes on a refresh") ---------------------------------
+  // cloudSave used to read exactly one field of the push response (data.fenced); a 409 stale, expired
+  // token, 413, 429 or network throw was silently swallowed while the player kept playing an
+  // unsaveable session. The watchdog classifies every outcome, surfaces a soft banner once no save has
+  // confirmed for CLOUD_WARN_AFTER_MS, and on a 409 STALE raises a LOUD persistent banner (owner call,
+  // ticket-0208) letting the player reload onto the ahead-on-another-device cloud save themselves.
+  suite('save watchdog: push results are classified, not swallowed', function(){
+    var C = FF.cloudClassifyResult;
+    // supabase-js invoke() resolves {data, error:FunctionsHttpError{context:Response}} on non-2xx.
+    var httpErr = function(status){ return { data:null, error:{ context:{ status:status } } }; };
+    eq(C({ data:{ ok:true, version:9 } }).kind, 'ok', 'a 200 ok body confirms the save');
+    eq(C({ data:{ ok:false, fenced:true } }).kind, 'fenced', 'fenced rides a 200 body and outranks everything');
+    eq(C(httpErr(409)).kind, 'stale', 'a 409 is the forward-only guard rejecting us');
+    eq(C(httpErr(401)).kind, 'auth', 'a 401 is a dead token');
+    eq(C(httpErr(403)).kind, 'auth', 'a 403 counts as auth too');
+    eq(C(httpErr(413)).kind, 'toobig', 'a 413 is the saves_size_chk constraint');
+    eq(C(httpErr(429)).kind, 'ratelimit', 'a 429 is rl_hit');
+    eq(C(httpErr(500)).kind, 'error', 'a 500 is a server fault');
+    eq(C({ data:null, error:{} }).kind, 'error', 'an error with no readable status still classifies');
+    eq(C(null).kind, 'error', 'a null result never throws the hot path');
+  });
+
+  suite('save watchdog: the warn predicate and the stale-adopt threshold', function(){
+    var WARN = FF.CLOUD_WARN_AFTER_MS, t = 1700000000000;
+    ok(WARN >= 30000 && WARN <= 300000, 'the warning window is between 30s and 5min');
+    ok(FF.cloudSaveWarnDue(t, t - WARN, 5, false), 'no confirmed save for the whole window -> warn');
+    ok(FF.cloudSaveWarnDue(t, t - 3600000, 5, false), 'an hour unsaved (the ticket) -> warn');
+    ok(!FF.cloudSaveWarnDue(t, t - WARN + 1, 5, false), 'inside the window -> quiet');
+    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 0, false), 'a zero-progress account has nothing to lose -> quiet');
+    ok(!FF.cloudSaveWarnDue(t, 0, 5, false), 'no boot stamp yet -> quiet (never warn before a save was possible)');
+    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 5, true), 'blocked (fenced / signed out / sync off) -> quiet, other UX owns it');
+  });
+
+  suite('save watchdog: result bookkeeping and the banner element', function(){
+    var saved = FF._cloudWatch();
+    try {
+      // A failure records the reason without touching the confirmed clock...
+      FF._cloudWatchSet({ lastConfirmed: 1234, stale409s: 0, reason: '' });
+      FF.cloudNoteSaveResult({ kind:'network' });
+      var w = FF._cloudWatch();
+      ok(w.reason.length > 0, 'a network failure records a player-facing reason');
+      eq(w.lastConfirmed, 1234, 'a failure never advances the confirmed clock');
+      eq(w.lastPush, 0, 'a transient failure resets the debounce so the next 4s tick retries');
+      // ...a stale strike counts AND raises the loud persistent banner at once (owner call, ticket-0208):
+      // no auto-reload, so the test page is never yanked -- the player adopts the cloud save via the banner.
+      FF.cloudNoteSaveResult({ kind:'stale' });
+      eq(FF._cloudWatch().stale409s, 1, 'a 409 counts one strike');
+      ok(!!document.getElementById('ffStaleWarn'), 'a stale reject raises the loud persistent banner immediately');
+      ok(FF._cloudWatch().reason.indexOf('another device') !== -1, 'the reason names the other device');
+      // ...and a confirmed save clears everything, banner included.
+      FF.cloudNoteSaveResult({ kind:'ok' });
+      w = FF._cloudWatch();
+      ok(w.lastConfirmed > 1234, 'an ok advances the confirmed clock');
+      eq(w.stale409s, 0, 'an ok clears the stale strikes');
+      eq(w.reason, '', 'an ok clears the reason');
+      ok(!document.getElementById('ffStaleWarn'), 'a confirmed save takes the loud stale banner down');
+      // The banner is a body-level element (render() rebuilds #content 10x/sec and would strobe it there).
+      FF.ffSaveWarnUpdate(true, 'watchdog test banner');
+      var el = document.getElementById('ffSaveWarn');
+      ok(!!el, 'the banner mounts');
+      eq(el.textContent, 'watchdog test banner', 'the banner carries the message');
+      ok(el.parentElement === document.body, 'the banner lives on document.body, outside #content');
+      FF.ffSaveWarnUpdate(true, 'updated');
+      eq(document.getElementById('ffSaveWarn').textContent, 'updated', 'a second call updates in place');
+      FF.ffSaveWarnUpdate(false);
+      ok(!document.getElementById('ffSaveWarn'), 'hiding removes the element');
+    } finally {
+      FF._cloudWatchSet(saved);
+      FF.ffSaveWarnUpdate(false);
+      FF.cloudStaleBannerShow(false);
+    }
+  });
+
   // ---- Combat log: class/effect damage must be visible --------------------------------------------
   // Ticket (Valuren): "The damage of the skill Gloria of the Templar is missing". Every rework routed its
   // damage through applyChipDamage, which logs nothing, so Gloria/Bolts/Decrees/Rot/Harvest/Shatter and
@@ -18156,6 +20186,61 @@
     } finally { S.estate = savedEstate; }
   });
 
+  // ---- Dungeon clears: the grandfather report must go out IN CHAIN ORDER --------------------------
+  // The progression gate is server-side now (pentest: it was browser-only). The server refuses to record a
+  // layer whose predecessor is not already on its ledger, so reporting out of order silently loses the
+  // later layers -- and existing players, whose clears live only in their save, would stay locked out.
+  suite('dungeon clear sync ordering', function(){
+    ok(typeof FF.dungeonOwedClears === 'function', 'dungeonOwedClears exported');
+    eq(FF.dungeonOwedClears({}).length, 0, 'no clears -> nothing to report');
+    eq(FF.dungeonOwedClears({dungeonsCleared:null}).length, 0, 'a null map is handled');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{}}).length, 0, 'an empty map reports nothing');
+    // Insertion order of the save object must NOT leak through -- the chain order is what matters.
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d3:true, d1:true, d2:true}}).join(','), 'd1,d2,d3',
+       'clears are reported in DUNGEON_ORDER, whatever order the save lists them');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true}}).join(','), 'd1', 'a single clear reports itself');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true,d2:true,d3:true,d4:true}}).join(','), 'd1,d2,d3,d4',
+       'a fully cleared account reports every layer in order');
+    // Falsy / junk values must not be reported as clears.
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:false, d2:true}}).join(','), 'd2', 'a false entry is not a clear');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d9:true, nonsense:true}}).length, 0, 'unknown layers are never reported');
+    // The gate constant the server mirrors (dungeon_gate_check hardcodes 5000).
+    eq(FF.DUNGEON_MIN_TOTAL_LEVEL, 5000, 'the Total Level gate matches what the server enforces');
+  });
+
+  // ---- Chat: a party code renders as a "Click to Join" button ------------------------------------
+  // Ticket: copying a uuid out of a chat line is miserable, worse on mobile. The button is injected into
+  // ALREADY-ESCAPED text, so the security property under test is that a chat body cannot smuggle markup
+  // through the pattern.
+  suite('chat party code join button', function(){
+    ok(typeof FF.chatPartyCodeHtml === 'function', 'chatPartyCodeHtml exported');
+    var uuid = '3f9a1b2c-4d5e-6f70-8a9b-0c1d2e3f4a5b';
+    var out = FF.chatPartyCodeHtml('Forming a party! Join: d2:' + uuid);
+    ok(/data-action="chatJoinParty"/.test(out), 'a party code becomes a join button');
+    ok(out.indexOf('data-session="' + uuid + '"') !== -1, 'the button carries the session id');
+    ok(out.indexOf('data-layer="d2"') !== -1, 'the button carries the layer');
+    ok(out.indexOf('Forming a party! Join:') === 0, 'surrounding text is preserved');
+    // The layer LABEL comes from DUNGEON_DEFS, never from the message.
+    ok(out.indexOf(FF.DUNGEON_DEFS.d2.category) !== -1, 'the button names the dungeon from DUNGEON_DEFS');
+    // A layer this build does not know stays plain text -- still copyable, never a broken button.
+    var unknown = FF.chatPartyCodeHtml('join d97:' + uuid);
+    ok(unknown.indexOf('chatJoinParty') === -1 && unknown.indexOf('d97:' + uuid) !== -1,
+       'an unknown layer stays plain text: ' + unknown);
+    // Near-misses must not match, or a button would carry a session id the server will reject.
+    ok(FF.chatPartyCodeHtml('d2:not-a-uuid').indexOf('chatJoinParty') === -1, 'a malformed id is not linkified');
+    ok(FF.chatPartyCodeHtml('d2:' + uuid.slice(0, 20)).indexOf('chatJoinParty') === -1, 'a truncated uuid is not linkified');
+    ok(FF.chatPartyCodeHtml('x2:' + uuid).indexOf('chatJoinParty') === -1, 'a non-dungeon prefix is not linkified');
+    ok(FF.chatPartyCodeHtml('d0:' + uuid).indexOf('chatJoinParty') === -1, 'layer 0 is not a dungeon');
+    // INJECTION: a chat body is escaped before this runs, so tags arrive inert and must stay inert.
+    var evil = FF.chatBodyHtml('<img src=x onerror=alert(1)> d1:' + uuid);
+    ok(evil.indexOf('<img') === -1, 'an escaped tag in a chat body is never revived: ' + evil.slice(0, 60));
+    ok(/data-action="chatJoinParty"/.test(evil), 'a real code in the same message still becomes a button');
+    // A code with markup-ish characters glued on must not break out of the attribute.
+    var quoted = FF.chatPartyCodeHtml('d1:' + uuid + '" onclick="evil()');
+    ok(quoted.indexOf('onclick="evil()') === -1 || quoted.indexOf('data-session="' + uuid + '"') !== -1,
+       'the button attribute is closed by the pattern, not by message content');
+  });
+
   // ---- Estate jobs: a completed build must never be consumed without being placed ----------------
   // Ticket (Mr Cookie): a Willow Jewelry Workshop finished, the tile stayed empty, the workshop was gone.
   // Materials are spent at ENQUEUE, so every path that drops a job has to either apply it or refund it.
@@ -18173,6 +20258,13 @@
     var _f2 = FF.estateJobFieldsFrom({ paveTileId:'paving_t3', workshopId:'w', cottageId:'c', fieldTier:4, upgrade:true });
     ok(_f2.paveTileId==='paving_t3' && _f2.workshopId==='w' && _f2.cottageId==='c' && _f2.fieldTier===4 && _f2.upgrade===true,
       'every other payload field rides the same helper');
+    // A failed queue claim: adopt a reported job, DROP a hard refusal (retrying one every 4s was the
+    // reported "queued totem freezes forever"), retry only transport blips / jobless-busy responses.
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'kind' }), 'drop', "a hard 'kind' refusal drops the head (the frozen queue)");
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'coords' }), 'drop', 'any hard refusal drops');
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'inprogress', job:{ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{} } }), 'adopt', 'a busy response with a job is adopted');
+    eq(FF.estateQueueClaimOutcome(null), 'retry', 'a transport error keeps the head queued');
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'pending' }), 'retry', 'a jobless pending stays queued for the next tick');
     ok(FF.estateJobShapeOk({kind:'workshop', workshopId:'workshop_jewelrycrafting_t1'}), 'a workshop job is valid');
     ok(FF.estateJobShapeOk({kind:'cottage', cottageId:'cottage_t2'}), 'a cottage job is valid');
     ok(FF.estateJobShapeOk({kind:'pave', paveTileId:'paving_t4'}), 'a pave job is valid');
@@ -18238,6 +20330,8 @@
   // ---- Server-authoritative gold wallet (Stage 2 client wiring) -------------------------
   suite('gold wallet: earnGold feeds the lifetime anchor', function(){
     ok(typeof FF.earnGold === 'function', 'earnGold is exported');
+    ok(typeof FF.walletSync === 'function', 'walletSync is exported');
+    ok(typeof FF.itemSync === 'function', 'itemSync (item-ledger reconcile) is exported');
     var s = FF._state;
     ok(typeof s.goldEarnedTotal === 'number', 'state carries a goldEarnedTotal anchor');
     ok(s.goldEarnedTotal >= Math.floor(s.gold||0), 'the anchor is never below the current balance');
@@ -18248,6 +20342,81 @@
     FF.earnGold(-3); FF.earnGold(0);
     eq(s.gold, g0 + 7, 'earnGold ignores non-positive amounts');
     s.gold = g0; s.goldEarnedTotal = e0; // restore so the test never perturbs the real balance
+  });
+
+  // ---- Gold wallet reconcile: never destroy legit earnings, still collapse spoofed gold ----------
+  suite('wallet: reconcile never loses legit earnings', function(){
+    var R = FF.walletReconcileGold;
+    ok(typeof R === 'function', 'walletReconcileGold exported');
+    // Signature: R(localGold, sentGold, localEarned, sentEarned, serverGold, serverEarned). When nothing
+    // changed mid-request, localGold==sentGold and localEarned==sentEarned.
+    // Normal case: server credited the full earn -> local matches server.
+    eq(R(1500000, 1500000, 1500000, 1500000, 1500000, 1500000), 1500000, 'fully-credited earn: gold preserved');
+    // The BUG this fixes: server throttled/clamped the balance low, but the earn is legit (earned_total
+    // reflects it). The un-credited remainder (pending) is kept, NOT thrown away.
+    eq(R(1500000, 1500000, 1500000, 1500000, /*serverGold*/0, /*serverEarned*/0), 1500000, 'throttled earn is NOT lost (pending restores it)');
+    eq(R(1500000, 1500000, 1500000, 1500000, 666666, 666666), 1500000, 'partially-credited earn keeps the remainder');
+    // Recovery: a previously wiped balance (local 0) comes back once the server can credit the gap.
+    eq(R(0, 0, 1500000, 1500000, 0, 0), 1500000, 'recovers gold the old bug wiped to 0');
+    // Anti-cheat: a tampered-HIGH local gold with NO matching earnings collapses to the server value.
+    eq(R(1000000000, 1000000000, 0, 0, 500, 0), 500, 'spoofed local gold (no earnings) collapses to server');
+    // Legit spend propagates: local dropped below what was sent (a purchase), no matching earnings change.
+    eq(R(400, 400, 1000, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
+    // Mid-request SPEND: gold fell from 1000 (sent) to 700 during the round trip, earnings unchanged.
+    // The spend must propagate on top of the server value.
+    eq(R(700, 1000, 1000, 1000, 1000, 1000), 700, 'a spend that lands mid-request is preserved');
+    // Mid-request EARN: earnGold() bumped BOTH gold (1000->1200) and earned (1000->1200) during the round
+    // trip; the server credited the pre-send state (serverGold 1000, serverEarned 1000). The earn must be
+    // counted ONCE (via pending), landing at 1200 -- not double-counted to 1400. This is the regression
+    // guard for the phantom-gold loop (gold bouncing up ~20M/hr, dragging save + wallet with it).
+    eq(R(1200, 1000, 1200, 1000, 1000, 1000), 1200, 'mid-request earn is counted once, not doubled');
+    // ---- Mortal-reset gold recovery (bug: reset accounts keep resetting to 0) --------------------
+    var isRec = FF.walletIsResetRecovery, recE = FF.walletRecoveredEarned;
+    ok(typeof isRec === 'function' && typeof recE === 'function', 'reset-recovery helpers exported');
+    // A normal player LEADS the server (the server never credits ahead of what the client reported), so the
+    // recovery NEVER fires and the healthy reconcile/anti-cheat path is untouched.
+    ok(!isRec(5000000, 3000000), 'a normal player (local > server) is NOT flagged as reset recovery');
+    ok(!isRec(5000000, 5000000), 'equal anchors are not a recovery');
+    // A Mortal reset restarts goldEarnedTotal near 0 while the server keeps the OLD character's monotonic
+    // earned_total -> the server strictly leads, which is the reset signature.
+    ok(isRec(25, 50000000), 'server earned strictly above local flags a Mortal-reset recovery');
+    // The recovery lifts the floor to the server earned PLUS the held gold, so that held gold is credited
+    // next sync instead of being clamped away -- lossless.
+    eq(recE(50000000, 1000), 50001000, 'recovered floor = server earned + the gold currently held');
+    eq(recE(50000000, 0), 50000000, 'recovered floor with nothing held is just the server earned');
+    // End-to-end via the reconcile: WITHOUT the recovery branch, an earn after reset clamps to 0 forever.
+    // Server keeps earned=50M/gold=0; local earned is only 1025 -> pending = max(0,1025-50M)=0 -> 0.
+    eq(R(1000, 1000, 1025, 1025, 0, 50000000), 0, 'the raw reconcile would clamp post-reset gold to 0 (the bug)');
+    // WITH the recovery, the anchor was lifted to 50M+heldGold; a later sync reports earned above the server
+    // so the delta credits and gold lands normally (here: held 1000 now credited, server caught up).
+    eq(R(1000, 1000, 50001000, 50001000, 1000, 50001000), 1000, 'after recovery, held/earned gold credits normally');
+    // Treasure-chest gold is banked exempt via wallet.earn_chest (server-verified by an item_debit),
+    // credited in full to the server balance outside the token bucket -- so it reconciles like any
+    // already-credited gold and is never throttled/clamped. Its credit does NOT flow through
+    // goldEarnedTotal, so the normal earn/sync path can't double-count it.
+    ok(typeof FF.walletEarnChest === 'function', 'walletEarnChest exported (exempt chest-gold credit)');
+    // Once earn_chest has banked the chest gold into serverGold, the reconcile keeps it (no pending needed).
+    eq(R(50000, 50000, 0, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
+  });
+
+  // ---- Regression: a big quest reward survives on a Mortal-reset account (ticket: Deathless 200k not paid)
+  suite('wallet: a 200k quest reward is preserved on a Mortal-reset account', function(){
+    var isRec = FF.walletIsResetRecovery, recE = FF.walletRecoveredEarned, R = FF.walletReconcileGold;
+    // The account reset to Mortal: local goldEarnedTotal restarted near 0 while the server kept the old
+    // high-level character's monotonic earned_total (say 50M). The first sync recognizes the reset and lifts
+    // the anchor to the server's earned PLUS whatever gold is currently held (here 1,499, matching the ticket).
+    ok(isRec(25, 50000000), 'the reset signature is recognized (server earned above local)');
+    var anchor = recE(50000000, 1499);
+    eq(anchor, 50001499, 'the recovery anchor keeps the 1,499 already held');
+    // Player claims the Deathless capstone: +200,000 gold, and earnGold bumps the (now recovered) anchor too.
+    var heldGold = 1499 + 200000;          // 201,499
+    var localEarned = anchor + 200000;     // 50,201,499
+    // Next sync: the server credits only the low-level daily allowance this tick (say 5,000), but the reconcile
+    // must KEEP the rest via pending -- so local gold stays the full 201,499, NOT the 5,000 the server banked.
+    var serverGold = 5000, serverEarned = 50000000 + 5000;
+    ok(!isRec(localEarned, serverEarned), 'once the anchor leads the server, it is no longer a recovery');
+    eq(R(heldGold, heldGold, localEarned, localEarned, serverGold, serverEarned), 201499,
+       'the full 200k Deathless reward is preserved locally while the server credits it under the daily rate');
   });
 
   // ---- Bows: slower draw hits harder (Short 1x / Medium 1.25x / Long 1.5x base damage) -----
@@ -18264,6 +20433,24 @@
     ok(W.attackSpeed === 6, 'Long bow is the slowest');
     // A melee weapon is unaffected (dmgMult defaults to 1).
     ok(FF.getStackableWeaponTierData('bowShort', T).dmgMax > 0, 'short bow still deals damage');
+  });
+
+  // ---- Leaderboard over-100 Mastery: capped `skills` + separate display-only `mastery` -----
+  suite('leaderboard: over-100 mastery split', function(){
+    var s = FF._state;
+    var gid = FF.GATHER_SKILL_IDS[0];                 // a gathering skill (over-levelable)
+    var lvl105 = FF.SKILL_XP_FLOOR_EXT[105];          // xp for extended level 105
+    var saved = s.xp[gid];
+    s.xp[gid] = lvl105;
+    ok(FF.skillLevel(gid, lvl105) >= 105, 'gathering skill reads extended level past 100');
+    var ps = FF.computeProfileStats();
+    eq(ps.skills[gid], FF.MAX_SKILL_LEVEL, 'submitted `skills` value stays capped at 100 (ranking/gate unchanged)');
+    ok(ps.mastery && ps.mastery[gid] >= 105, 'the true over-100 level rides in the separate `mastery` map');
+    // A non-overlevelable skill (or one at/under 100) never appears in mastery.
+    ok(!(ps.mastery && (gid+'_never') in ps.mastery), 'mastery only holds genuine over-100 entries');
+    s.xp[gid] = saved;
+    // Back at a normal level, mastery drops the key entirely.
+    ok(!FF.computeProfileStats().mastery[gid], 'mastery omits a skill once it is back at/under 100');
   });
 
   // ---- Server-authoritative inventory: recipe manifest (Stage A2) -----------------------
@@ -18293,6 +20480,23 @@
     // Shaft craft (dynamic inputs) is intentionally excluded.
     var shaftId = Object.keys(FF.ALL_CRAFT_RECIPES).filter(function(id){ return FF.ALL_CRAFT_RECIPES[id] && FF.ALL_CRAFT_RECIPES[id].shaftCraft; })[0];
     if(shaftId) ok(!m['std:'+shaftId], 'dynamic shaft craft is excluded from the manifest');
+  });
+
+  // ---- Server-authoritative inventory: itemReconcile (item analog of walletReconcileGold) ----
+  suite('inventory: itemReconcile', function(){
+    var R = FF.itemReconcile;
+    ok(typeof R === 'function', 'itemReconcile exported');
+    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 100, 'fully-credited item preserved');
+    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:40}, {iron:40}).iron, 100, 'throttled legit earn kept via pending');
+    eq(R({sand:100000000}, {sand:100000000}, {sand:0}, {sand:25000}, {sand:0}).sand, 25000, 'spoofed item (no earned anchor) collapses to the ledger');
+    eq(R({iron:40}, {iron:40}, {iron:100}, {iron:40}, {iron:100}).iron, 40, 'a spend sticks (ledger adopted the lower count)');
+    eq(R({iron:120}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 120, 'drift gathered mid-request is not clobbered');
+    eq(R({sand:100000000}, {sand:100000000}, {sand:100000000}, {sand:25000}, undefined).sand, 25000, 'no serverEarned -> clamp to ledger');
+    ok(!('iron' in R({iron:0}, {iron:0}, {}, {}, {})), 'a zero item is omitted');
+    // The min(localInv) safety cap: adoption never CREATES items beyond what the client locally holds,
+    // so an over-counted earned anchor (e.g. a missed equip-return) can't mint -- it just fails to clamp.
+    ok(!('gold_bar' in R({}, {}, {}, {gold_bar:5}, {gold_bar:5})), 'ledger-only item (no local entry) is NOT created');
+    eq(R({iron:1}, {iron:1}, {iron:9}, {iron:1}, {iron:1}).iron, 1, 'inflated earned anchor cannot push adoption above local (cap)');
   });
 
   // ---- addItem maintains the per-item lifetime-earned anchor (default), skips on noEarn -------
@@ -19101,6 +21305,14 @@
     FF.openMortalRestart();
     eq(FF.mortalRestartStepNow(), 1, 'reopening always starts over at confirmation 1 (no resuming half a flow)');
     FF.closeMortalRestart();
+    // The wipe's server reach (v0.0.97.4): the marketplace presence goes and IMMORTAL guilds are left.
+    // The guild decision is a pure helper (the execute path routes through it): Immortal guilds are
+    // left, Mortal guilds are kept (the restarted character is a Mortal again), no guild is a no-op.
+    eq(FF.mortalRestartLeavesGuild({ mortal:false }), true, 'a restart leaves an Immortal guild');
+    eq(FF.mortalRestartLeavesGuild({ mortal:true }), false, 'a restart keeps a Mortal guild (membership stays consistent)');
+    eq(FF.mortalRestartLeavesGuild(null), false, 'no guild -> nothing to leave');
+    // The first confirmation must actually WARN about both server-side removals.
+    ok(/marketplace/i.test(FF.MORTAL_RESTART_STEPS[0].body) && /guild/i.test(FF.MORTAL_RESTART_STEPS[0].body), 'modal 1 warns about the marketplace wipe and the guild exit');
   });
 
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
@@ -19325,24 +21537,25 @@
       ok(advertised > 0, 'a lit task advertises a non-zero rate');
       eq(FF.peonCandlesPerHour({ kind:'craft', itemId:'chandlery_t0' }), 0, 'a task with no candle advertises no burn');
 
-      // Every peon draws on ONE inventory, so peons sharing a candle type must share a group.
+      // Both estates draw on ONE inventory. A per-estate summary would tell each side it had the whole
+      // stack, so the aggregate has to span scopes and peons sharing a candle type must share a group.
       var mk = function(x){ return { x:x, y:0, skillId:'chandlery', kind:'craft', itemId:'chandlery_t0', candleId:'chandlery_t0', candleMs:5000 }; };
       s.inventory = { 'chandlery_t0': 100 };
-      s.peons = [mk(0), mk(1)];
+      s.peons = [mk(0)]; s.guildPeons = [mk(1)];
       var sum = FF.candleStoreSummary();
-      eq(sum.litCount, 2, 'the summary counts every lit cottage');
+      eq(sum.litCount, 2, 'the summary counts lit cottages on BOTH estates');
       eq(Object.keys(sum.groups).length, 1, 'peons burning the same candle type share one pool');
-      ok(Math.abs(sum.totalPerHour - 2*FF.peonCandlesPerHour(mk(0))) < 1e-9, 'drain rates add across peons');
+      ok(Math.abs(sum.totalPerHour - 2*FF.peonCandlesPerHour(mk(0))) < 1e-9, 'drain rates add across scopes');
       ok(Math.abs(sum.totalStoredMs - 100*FF.candleBurnMs(0)) < 1e-9, 'stored burn is the whole bag, not just what is alight');
       ok(sum.runwayMs > 0 && sum.soonest && sum.soonest.id === 'chandlery_t0', 'runway names the type that empties first');
 
       // Two peons on one stack drain it in half the time one would.
-      s.peons = [mk(0)];
+      s.guildPeons = [];
       var solo = FF.candleStoreSummary();
       ok(Math.abs(solo.runwayMs - sum.runwayMs*2) < 1e-6, 'dropping one of two peons doubles the runway on a shared stack');
 
       // A candle type nobody burns must not claim a runway, but still counts toward stored burn.
-      s.peons = [];
+      s.peons = []; s.guildPeons = [];
       var idle = FF.candleStoreSummary();
       eq(idle.totalPerHour, 0, 'no lit peons -> no drain');
       eq(idle.soonest, null, 'no drain -> nothing is "first to run dry"');
@@ -19617,6 +21830,39 @@
     }
   });
 
+  // ---- Party dungeon: the local mirror never kills or rewards locally ----------------------------
+  suite('dungeon: party mirror is inert locally', function(){
+    ok(typeof FF.defeatMonster === 'function', 'defeatMonster exported');
+    var s = FF._state;
+    var snap = { act:s.activity, gold:s.gold, kills:(s.stats && s.stats.kills) || 0 };
+    try {
+      var mon = FF.MONSTERS[0];
+      var goldBefore = s.gold, killsBefore = (s.stats && s.stats.kills) || 0;
+      // A PARTY fight is flagged netDungeon (NOT dungeon). High DPS can zero the mirror between the 2.5s
+      // server syncs -> defeatMonster is called. It must pin the mirror, reward nothing, and -- crucially
+      // -- NOT reset monsterHp to full (that reset is what made the reported damage vanish and the real
+      // counter crawl while the chronicle filled with phantom kills).
+      s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, netDungeon:'sess-test', netIndex:0, tickAccum:0, monsterTickAccum:0 };
+      FF.defeatMonster(mon);
+      eq(s.activity.monsterHp, 1, 'the party mirror is pinned at 1 after a would-be kill');
+      ok(s.activity.monsterHp !== mon.hp, 'the mirror is NOT reset to full HP (full reset lost the reported damage)');
+      eq(s.gold, goldBefore, 'no local gold is paid on a party mirror death (server owns per-kill reward)');
+      eq((s.stats && s.stats.kills) || 0, killsBefore, 'no kill is counted locally on a party mirror death');
+
+      // applyChipDamage (the reflect/DoT path) must also report NO kill in a party, so reflect-kill
+      // follow-ups don't fire on a foe the server still owns.
+      s.activity.monsterHp = 0;
+      eq(FF.applyChipDamage(5), false, 'applyChipDamage reports no kill in a party dungeon');
+      eq(s.activity.monsterHp, 1, 'and re-pins the mirror at 1');
+      // A chip that does NOT empty the foe never reports a kill (party or not).
+      s.activity.monsterHp = 100;
+      eq(FF.applyChipDamage(5), false, 'a non-lethal chip reports no kill');
+      eq(s.activity.monsterHp, 95, 'and moves the mirror health bar normally');
+    } finally {
+      s.activity = snap.act; s.gold = snap.gold; if(s.stats) s.stats.kills = snap.kills;
+    }
+  });
+
   // ---- Dungeon Masterwork formulas drop AND forge for every layer (d1-d4) ------------------------
   suite('dungeon: d2-d4 formulas wired', function(){
     ok(typeof FF.rollMasterworkDrops === 'function' && typeof FF.mastercraftRecipeFor === 'function' && FF.BLUEPRINT_ITEMS && FF.MASTERWORK_SLOTS, 'masterwork helpers exported');
@@ -19714,11 +21960,23 @@
       S.bodyArmor.back = { tier:0, rarity:'normal', material:null, uid:null };
       FF.equipLegRing(id);
       eq(S.inventory[id], 0, 'equipping removes the held copy (the old blind spot)');
+      eq(FF.wornLegendaryAccessoryKeys(S).join(','), id, 'the worn signet is enumerated by its REAL id');
+      eq(FF.itemSyncPayloadInventory(S)[id], 1, 'the sync payload WITNESSES the worn signet -- the probe hole is closed');
       S.jewelrySlots.amulet = { leg:'d4_dragon', rarity:'supreme' };
       S.bodyArmor.back = { leg:'d4_cinders', rarity:'rare', tier:0, material:null, uid:null };
+      var wk = FF.wornLegendaryAccessoryKeys(S);
+      ok(wk.indexOf('legamulet_d4_d4_dragon_supreme') !== -1 && wk.indexOf('legcloak_d4_d4_cinders_rare') !== -1,
+         'worn Pendants and Shrouds are witnessed alongside the Signets');
       FF.unequipLegRing('ring1');
       eq(S.inventory[id], 1, 'unequip returns the REAL item to inventory');
       ok(!Object.keys(S.inventory).some(function(k){ return /^legring_d1_d[234]_/.test(k); }), 'no phantom d1-prefixed id was minted');
+      // Reclamation of stock stranded by the old bug.
+      var inv = { legring_d1_d4_wyrm_fantastic:2, legring_d1_block_rare:3, legring_d1_d4_bogus_rare:1 };
+      FF.reclaimPhantomAccessoryIds(inv);
+      eq(inv['legring_d4_d4_wyrm_fantastic'], 2, 'stranded signets move to their real id on load');
+      ok(!('legring_d1_d4_wyrm_fantastic' in inv), 'the phantom key is removed');
+      eq(inv['legring_d1_block_rare'], 3, 'true D1 ids are untouched');
+      eq(inv['legring_d1_d4_bogus_rare'], 1, 'an unknown target is left alone -- junk is never re-minted');
     } finally {
       S.inventory = svInv; S.jewelrySlots = svJs;
       if(S.bodyArmor) S.bodyArmor.back = svBack;
@@ -20303,6 +22561,32 @@
       S.equippedMainhandRarity = sv.mhR; S.equippedMainhandUid = sv.mhU;
       S.equippedRelicUid = sv.rlU; S.equippedRelicTier = sv.rlT; S.equippedRelicRarity = sv.rlR;
     }
+  });
+
+  // ---- Landing preview containment (owner report: the stage overlaid the landing content) ----------
+  // The preview is a fixed 900px stage scaled down, so its HEIGHT is content- and width-dependent (log
+  // rows arrive, effect rows appear, and under 820px .ar2-low stops being a two-column split). The wrap
+  // carries an explicit height from a point-in-time measurement, and it used to be overflow:visible -- so
+  // any lag between the two painted the stage over the feature cards and the login panel. Reproduced with
+  // a forced-stale slot: 394px of spill covering 13 landing elements. Two independent guards now: the wrap
+  // CLIPS, and a ResizeObserver keeps the slot exact so there is nothing to clip.
+  suite('landing preview: the stage is contained and cannot overlay the page', function(){
+    ok(typeof FF.landingFightScale === 'function' && typeof FF.landingFightMount === 'function', 'preview helpers exported');
+    // The stylesheet is built as a string by ensureLandingStyle; assert the containment is IN it, and that
+    // the badge was moved inside the wrap (at top:-9px it was the one thing clipping would have eaten).
+    var host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;';
+    document.body.appendChild(host);
+    try {
+      FF.ensureLandingStyle();
+      host.innerHTML = '<div class="ff-prev-wrap"><div class="ff-prev-badge">Live combat</div><div id="ffPrevArenaTest"></div></div>';
+      var wrap = host.querySelector('.ff-prev-wrap');
+      var badge = host.querySelector('.ff-prev-badge');
+      eq(getComputedStyle(wrap).overflow, 'hidden', 'the preview wrap clips its stage');
+      // top:0, not the old -9px: the badge must sit INSIDE the clipping box or it disappears.
+      eq(getComputedStyle(badge).top, '0px', 'the badge sits inside the clip, so it survives containment');
+      ok(getComputedStyle(wrap).position === 'relative', 'the wrap is still the badge\'s positioning context');
+    } finally { host.parentNode.removeChild(host); }
   });
 
   // ---- ticket-0159: the first-swing gate must not eat EARNED payouts (Mr Cookie) -------------------
@@ -21001,6 +23285,10 @@
       scan(FF[k], k, 0);
     });
     eq(offenders.join(' | '), '', 'no exported def table carries an em dash (first offenders shown)');
+    // And the rendered landing gate copy (built from string literals, not defs) is clean too.
+    FF.ensureLandingStyle();
+    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+    ok(css.indexOf('—') === -1, 'the landing stylesheet content carries no em dash');
   });
 
   // ---- No emojis in player-facing copy (owner order, v0.0.86.22) -----------------------------------
@@ -21584,7 +23872,7 @@
     var svStats = S.stats, svSets = S.estSets, svEstate = S.estate;
     try {
       var esq = FF.QUESTS.filter(function(q){ return q.cat === 'estatequests'; });
-      eq(esq.length, 44, 'the Estate line is 43 quests plus a capstone (the seven guild-estate quests left in the local-only build)');
+      eq(esq.length, 51, 'the Estate line is 50 quests plus a capstone');
       eq(esq.filter(function(q){ return q.capstone; }).length, 1, 'exactly one capstone');
       // The pre-existing quest leads it, unchanged, and keeps number 1.
       var one = FF.questById('clearing_the_land');
@@ -21594,10 +23882,10 @@
       // Numbering and acts.
       var nums = esq.filter(function(q){ return !q.capstone; }).map(function(q){ return FF.QUEST_ORDINAL[q.id]; });
       eq(Math.min.apply(null, nums), 1, 'Estate numbering starts at 1');
-      eq(Math.max.apply(null, nums), 43, 'and runs to 43');
-      eq(new Set(nums).size, 43, 'with no duplicate numbers');
+      eq(Math.max.apply(null, nums), 50, 'and runs to 50');
+      eq(new Set(nums).size, 50, 'with no duplicate numbers');
       eq(FF.EST_ACTS.length, 5, 'five Estate acts');
-      eq(FF.EST_ACTS[FF.EST_ACTS.length - 1].to, 43, 'covering through 43');
+      eq(FF.EST_ACTS[FF.EST_ACTS.length - 1].to, 50, 'covering through 50');
       for(var _i = 1; _i < FF.EST_ACTS.length; _i++){
         eq(FF.EST_ACTS[_i].from, FF.EST_ACTS[_i - 1].to + 1, 'Estate act ' + (_i + 1) + ' is contiguous');
       }
@@ -21638,10 +23926,10 @@
       // ---- the capstone ------------------------------------------------------------------------
       var cap = FF.questById('lord_of_the_manor');
       ok(!!cap && cap.reward.titleId === 'title_lord_of_the_manor', 'the capstone grants the Lord of the Manor title');
-      eq(cap.target, 43, 'and requires the other forty-three');
+      eq(cap.target, 50, 'and requires the other fifty');
       S.quests = { claimed:{} };
       esq.forEach(function(q){ if(!q.capstone) S.quests.claimed[q.id] = true; });
-      eq(cap.progress(S), 43, 'claiming all forty-three completes it');
+      eq(cap.progress(S), 50, 'claiming all fifty completes it');
     } finally {
       S.stats = svStats; S.estSets = svSets; S.estate = svEstate; S.quests = { claimed:{} };
     }
@@ -21940,6 +24228,8 @@
       var scoped = FF.peonActionTime(10, 20, 'mining', false, 'personal');
       ok(scoped < plain, 'a scoped action time is faster than an unscoped one');
       eq(Math.round((1 - scoped / plain) * 1e6) / 1e6, Math.round(FF.ESTATE_APPRAISAL_MAX_CUT * 0.5 * 1e6) / 1e6, 'and faster by exactly the appraised share of the cap');
+      // A guild scope with no guild estate loaded must read zero rather than throw.
+      eq(FF.estateAppraisal('guild').share, 0, 'an unloaded guild estate appraises at zero');
     } finally {
       for(var rx=0; rx<20; rx++) for(var ry=0; ry<20; ry++) g[rx][ry].owned = svOwned[rx][ry];
       for(var qx=0; qx<=20; qx++) for(var qy=0; qy<20; qy++){ S.estate.edgesX[qx][qy].type = svEdges[qx][qy].t; S.estate.edgesX[qx][qy].masonryTileId = svEdges[qx][qy].m; }
@@ -22432,6 +24722,51 @@
     } finally { if(el.parentNode) el.parentNode.removeChild(el); }
   });
 
+  // ---- Cloud save payload: prune zero-defaults + transient buffers (ticket: "save too large") ----
+  suite('cloudSaveData: trims the save without touching gameplay or the live state', function(){
+    var src = {
+      gold: 12345, mortal: false,
+      xp: { mining: 999, staff: 42 },
+      inventory: { held_a: 7, held_b: 1, spent_c: 0, weird_d: -3 },
+      itemEarnedTotal: { earned_a: 1000, never_b: 0 },
+      stats: { kills: 500, made_x: 10, dead_y: 0, hoursBuffed: -2 },
+      uniqueItems: { u1: { uid:'u1', enhance:15 } },
+      quests: { claimed: { q1:true }, completed: { q1:true } },
+      familiars: { forestry: { owned:true, level:100, stars:3 } },
+      log: [{ msg:'x', cls:'combat', t:1 }],
+      popupQueue: [{ kind:'rare' }],
+      companionCast: { forestry:{ accum:1, index:2 } },
+      deathReport: { by:'a Rabbit' }
+    };
+    var out = FF.cloudSaveData(src);
+    // Zero / negative / never-held keys are dropped from the per-item maps (a missing key reads as 0).
+    eq(out.inventory.held_a, 7, 'a held stack survives');
+    eq(out.inventory.held_b, 1, 'a stack of one survives');
+    ok(!('spent_c' in out.inventory), 'a spent (0-qty) stack is pruned');
+    ok(!('weird_d' in out.inventory), 'a negative inventory entry is pruned');
+    ok(!('never_b' in out.itemEarnedTotal), 'a 0 lifetime-earned entry is pruned');
+    eq(out.itemEarnedTotal.earned_a, 1000, 'a real lifetime total survives');
+    // Stats: exact-0 dropped, non-zero kept, a legitimate negative counter kept.
+    ok(!('dead_y' in out.stats), 'a 0 stat counter is pruned');
+    eq(out.stats.made_x, 10, 'a live stat counter survives');
+    eq(out.stats.hoursBuffed, -2, 'a negative stat (hoursBuffed) is kept');
+    // Transient display / combat buffers are stripped (they backfill from newGame() on load).
+    ok(out.log === undefined && out.popupQueue === undefined, 'transient log + popup queue are stripped');
+    ok(out.companionCast === undefined && out.deathReport === undefined, 'transient combat buffers are stripped');
+    // Gameplay data is carried through untouched.
+    eq(out.gold, 12345, 'gold carries through');
+    eq(out.xp.mining, 999, 'skill xp carries through');
+    ok(out.uniqueItems.u1 && out.uniqueItems.u1.enhance === 15, 'unique items carry through');
+    ok(out.quests.claimed.q1 === true, 'quest claims carry through');
+    ok(out.familiars.forestry && out.familiars.forestry.stars === 3, 'familiars carry through');
+    // The LIVE state object is never mutated (the pruned maps are fresh copies).
+    ok('spent_c' in src.inventory && src.inventory.spent_c === 0, 'the live inventory still holds the 0-qty key');
+    ok(Array.isArray(src.log) && src.log.length === 1, 'the live log is untouched');
+    ok(out.inventory !== src.inventory && out.stats !== src.stats, 'pruned maps are new objects, not the live ones');
+    // The result is smaller than the raw state.
+    ok(JSON.stringify(out).length < JSON.stringify(src).length, 'the pruned payload is smaller than the raw state');
+  });
+
   // ---- Prayer raises max Faith by 100 per level (owner change) ----
   suite('faithMax: +100 max Faith per Prayer level', function(){
     var s = FF._state;
@@ -22447,6 +24782,66 @@
       s.xp.prayer = FF.xpFloorForLevel(100);
       eq(FF.faithMax(s) - atLv1, 99*100, 'Lv100 is 99 levels x 100 above Lv1 (base 100 + 10,000)');
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
+  });
+
+  // ---- Firsts: a fetch always settles, and a stale answer never overwrites a newer one (ticket-0250) ----
+  // ---- ticket-0250 retest (Anferny): only the Classes board filled ----
+  // The reply ran past PostgREST's 1,000-row cap (hundreds of skill_* marks per maxed account), ordered by
+  // key, so class_* survived and the rest was cut off. The client now asks for exactly the keys it lists and
+  // reads the reply in pages.
+  suite('firsts: the fetch asks for the keys it lists and reads the reply in pages', function(){
+    var keys = FF.firstsAllKeys();
+    var seen = {}; keys.forEach(function(k){ seen[k] = (seen[k]||0) + 1; });
+    ok(keys.length > 0 && Object.keys(seen).length === keys.length, 'the key list has no duplicates (' + keys.length + ' keys)');
+    // 376 keys x 3 holders is 1,128 rows: MORE than one page even filtered, which is why the page loop exists.
+    ok(keys.length * FF.FIRSTS_SHOW > FF.FIRSTS_PAGE_ROWS, 'a fully claimed board still needs the page loop (' + (keys.length * FF.FIRSTS_SHOW) + ' rows)');
+    ok(keys.length * FF.FIRSTS_SHOW < FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES, 'and the loop can hold it (' + (FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES) + ' row capacity)');
+    ok(keys.indexOf('total_500') >= 0 && keys.indexOf('total_15000') >= 0, 'every Total Level mark');
+    ok(keys.indexOf('tower_all_25') >= 0 && keys.indexOf('tower_all_500') >= 0, 'every All-Classes tower floor');
+    var c0 = FF.CLASS_DEFS[0].id;
+    ok(keys.indexOf('tower_'+c0+'_100') >= 0 && keys.indexOf('tower_'+c0+'_120') >= 0, 'both headline floors of each Class tower');
+    ok(keys.indexOf('class_'+c0+'_50') >= 0 && keys.indexOf('class_'+c0+'_100') >= 0, 'both Class level marks');
+    ok(keys.indexOf('skill_mining_100') >= 0 && keys.indexOf('skill_mining_200') >= 0, 'every skill mark for every listed skill');
+    ok(keys.indexOf('skill_fiberharvesting_100') >= 0, 'the three harvest skills are listed');
+    ok(keys.indexOf('skill_'+c0+'_100') < 0, 'a class id never appears as a skill key (that junk is what overflowed the reply)');
+    // Every key the boards render (both tower scopes, every skill mark) is in the list, so no board can show
+    // a mark the fetch did not ask for.
+    var boards = FF.firstsBoards(); boards.forEach(function(b){ b.rows.forEach(function(r){ ok(keys.indexOf(r.key) >= 0, 'board row asked for: ' + r.key); }); });
+    var args = FF.firstsRpcArgs(true);
+    eq(args.p_limit, FF.FIRSTS_SHOW, 'the limit rides along');
+    ok(Array.isArray(args.p_keys) && args.p_keys.length === keys.length, 'the keys ride along');
+    ok(FF.firstsRpcArgs(false).p_keys === undefined, 'the unfiltered fallback sends no keys (the old one-argument RPC)');
+    // The page loop's pure pieces.
+    eq(FF.firstsPageSpan(0, 1000)[0], 0, 'page 0 starts at row 0'); eq(FF.firstsPageSpan(0, 1000)[1], 999, 'and ends at 999 (inclusive Range)');
+    eq(FF.firstsPageSpan(2, 1000)[0], 2000, 'page 2 starts at 2000');
+    eq(FF.firstsPageDone(1000, 1000, 0, 10), false, 'a full page means another follows');
+    eq(FF.firstsPageDone(999, 1000, 0, 10), true, 'a short page ends the read');
+    eq(FF.firstsPageDone(1000, 1000, 9, 10), true, 'the page cap ends it too');
+    // The reader issues its first call synchronously with page 0's span (the part suite() can see).
+    var calls = [];
+    FF.firstsReadPages(function(from, to){ calls.push([from, to]); return new Promise(function(){}); }, 1000, 10);
+    eq(calls.length, 1, 'one call issued synchronously'); eq(calls[0][0], 0, 'from row 0'); eq(calls[0][1], 999, 'to row 999');
+    // Which errors earn the unfiltered second read: only a missing overload.
+    ok(FF.firstsErrorWantsFallback({ message:'Could not find the function public.milestone_firsts(p_keys, p_limit) in the schema cache' }), 'PGRST202 for the two-argument RPC falls back');
+    ok(!FF.firstsErrorWantsFallback({ message:'The server took too long to answer.' }), 'a timeout does not');
+    ok(!FF.firstsErrorWantsFallback(null), 'nor a null error');
+  });
+
+  suite('firsts: the fetch settles into ready or error, never stuck on Checking', function(){
+    var F = FF._firstsState(), sv = { status:F.status, rows:F.rows, error:F.error, at:F.at };
+    try {
+      ok(FF.FIRSTS_FETCH_TIMEOUT_MS >= 5000 && FF.FIRSTS_FETCH_TIMEOUT_MS <= 60000, 'a bounded wait before the panel reports a problem');
+      var tok = FF._firstsToken();
+      FF.firstsSettle(tok, 'error', null, 'The server took too long to answer.');
+      eq(F.status, 'error', 'a settle moves the panel out of loading');
+      ok(/Retry/.test(FF.renderFirstsPanel()) && /took too long/.test(FF.renderFirstsPanel()), 'the error shows its reason and a Retry button');
+      ok(!/Checking who got there first/.test(FF.renderFirstsPanel()), 'and the Checking note is gone');
+      FF.firstsSettle(tok - 1, 'ready', [{ key:'total_500', rank:1, username:'late' }], '');
+      eq(F.status, 'error', 'a reply carrying an older token is ignored');
+      FF.firstsSettle(tok, 'ready', [{ key:'total_500', rank:1, user_id:'u', username:'Anferny', reached_at:null, backfilled:true }], '');
+      eq(F.status, 'ready', 'the owning token settles to ready');
+      ok(/Anferny/.test(FF.renderFirstsPanel()), 'and the holder is rendered on the board');
+    } finally { F.status = sv.status; F.rows = sv.rows; F.error = sv.error; F.at = sv.at; }
   });
 
   // ---- Quivers are improvable and carry Arrow Thrift (ticket 2026-10-08, owner decision) ----------
@@ -22575,6 +24970,14 @@
       FF._setWfStageFocus(svF);
       Object.keys(open).forEach(function(k){ delete open[k]; }); var back = JSON.parse(svOpen); Object.keys(back).forEach(function(k){ open[k] = back[k]; });
     }
+  });
+
+  // ---- Guests are told where the upgrade is (guest chat question, 2026-10-08) ----------------------
+  suite('guest upgrade: a starter tip names the two ways in', function(){
+    var tip = FF.TICKER_STARTER_TIPS.filter(function(x){ return /Playing as a guest/.test(x); })[0];
+    ok(!!tip, 'a starter tip addresses guests');
+    ok(/<b>Upgrade<\/b> button beside Settings/.test(tip) && /Settings &rarr; Account/.test(tip), 'it names the top-bar chip and the Settings tab');
+    ok(/pick your own name/.test(tip) && /carries over/.test(tip), 'and says the name is theirs to choose and progress carries over');
   });
 
   // ---- Belt stepper honours "only show items I have mats for" (Anferny, Aug to Oct 2026) ----------
@@ -22735,10 +25138,50 @@
     }
   });
 
-  // ---- Ticket-0239: Full Crew counts working peons by the fields a task carries ----
+  // ---- Uniques are bound: the pickers and the unique's cards say so (Anferny, owner 2026-10-08) ----
+  // A Mastercrafted set piece or legendary weapon is a UNIQUE and never lists on the Marketplace or in the
+  // guild bank (both trade stackable bag items). The owner kept them bound; the note is the fix.
+  suite('uniques: the bound-item note shows where players look', function(){
+    var s = FF._state, sv = { uq:s.uniqueItems, inv:s.inventory };
+    try {
+      ok(typeof FF.UNIQUE_BOUND_NOTE === 'string' && /bound to you/.test(FF.UNIQUE_BOUND_NOTE), 'the note exists and says bound');
+      ok(/Marketplace/.test(FF.UNIQUE_BOUND_NOTE) && /guild bank/.test(FF.UNIQUE_BOUND_NOTE), 'and names both places it does not go');
+      ok(/rings, amulets and cloaks/.test(FF.UNIQUE_BOUND_NOTE), 'and says the forged accessories DO trade');
+      s.uniqueItems = { u_bound1: { uid:'u_bound1', base:'stweapon_rapier_t9_supreme', kind:'weapon', tier:9, rarity:'supreme', enchants:[], enhance:0 } };
+      s.inventory = {};
+      FF.improveSelect('u_bound1');
+      var html = FF.renderImprovementTab();
+      ok(html.indexOf(FF.UNIQUE_BOUND_NOTE) !== -1, 'the Improvement tab shows it under Trade for a unique');
+      ok(/Permanently sell|data-action="improveSell"|Sell/.test(html), 'next to the vendor sale it still offers');
+    } finally { s.uniqueItems = sv.uq; s.inventory = sv.inv; }
+  });
+
+  // ---- Guild directory: the roster cap follows the Hall (Meri, 2026-10-08) ------------------------
+  // The All Guilds list was fetched once per session, so a Hall raised from Level 1 to 3 kept reading
+  // "11/11 members" against a roster of 13. The cached row is patched on upgrade and the list goes stale.
+  suite('guild directory: Hall upgrades reach the cached list', function(){
+    var D = FF.guildDir, sv = { list:D.list, status:D.status, at:D.loadedAt, view:D.viewGuild };
+    try {
+      D.list = [ { id:'g1', name:'Masons of Marble', tag:'MM', member_count:11, hall_level:1 }, { id:'g2', name:'Other', tag:'OT', member_count:3, hall_level:0 } ];
+      D.viewGuild = D.list[0];
+      eq(FF.guildMaxMembers(D.list[0]), 11, 'before: Hall 1 reads a cap of 11');
+      eq(FF.guildDirPatchHall('g1', 3), 1, 'the upgrade patches exactly the one cached row');
+      eq(FF.guildMaxMembers(D.list[0]), 13, 'after: the same row reads 13');
+      eq(D.viewGuild.hall_level, 3, 'and the open roster view follows');
+      eq(D.list[1].hall_level, 0, 'other guilds are untouched');
+      eq(FF.guildDirPatchHall('nope', 5), 0, 'an unknown id patches nothing');
+      D.status = 'ready'; D.loadedAt = Date.now();
+      ok(!FF.guildDirStale(), 'a fresh list is reused');
+      ok(FF.guildDirStale(Date.now() + FF.GUILD_DIR_TTL_MS), 'past the TTL it is refetched on the next open');
+      D.status = 'idle';
+      ok(!FF.guildDirStale(), 'staleness only applies to a loaded list');
+    } finally { D.list = sv.list; D.status = sv.status; D.loadedAt = sv.at; D.viewGuild = sv.view; }
+  });
+
+  // ---- Ticket-0239: Full Crew / Guild Crew count working peons by the fields a task carries ----
   suite('quests: Full Crew counts real peon tasks (ticket-0239)', function(){
-    var fc = FF.questById('full_crew');
-    ok(!!fc, 'the crew quest exists');
+    var fc = FF.questById('full_crew'), gc = FF.questById('guild_crew');
+    ok(!!fc && !!gc, 'both crew quests exist');
     var gatherTask = { x:1, y:2, skillId:'mining', kind:'gather', itemId:'mining_t7', progress:0 };
     var craftTask  = { x:3, y:4, skillId:'stonecutting', kind:'craft', itemId:'stonecutting_t14', progress:0 };
     var specialTask= { x:5, y:6, skillId:'blacksmithing', kind:'special', craftKind:'tool', params:{}, tierIndex:3, progress:0 };
@@ -22747,6 +25190,8 @@
     eq(fc.progress({ peons:[gatherTask, null, craftTask] }), 2, 'holes in the array are skipped');
     eq(fc.progress({ peons:[] }), 0, 'no peons reads 0');
     eq(fc.progress({}), 0, 'a save without the array reads 0, not a throw');
+    eq(gc.progress({ guildPeons:five }), 5, 'Guild Crew reads the guild array the same way');
+    eq(gc.progress({ peons:five }), 0, 'and never the personal one');
   });
 
   // ---- Ticket-0243: one Shafts run per log tier across every slot ------------------------------
@@ -22884,7 +25329,7 @@
       ok(!!sell, 'the card offers Sell for a legendary ward');
       ok(!!sac, 'and Sacrifice');
       ok(/Sell \(\d[\d,]*g\)/.test(sell.textContent), 'Sell quotes the vendor gold: ' + sell.textContent);
-      ok(!!ov.querySelector('[data-action="uniqueManage"]'), 'Manage is still there');
+      ok(!!ov.querySelector('[data-action="uniqueManage"]') && !!ov.querySelector('[data-action="improveLinkChat"]'), 'Manage and Link in chat are still there');
       ok(ov.textContent.indexOf('Click Sell again') < 0, 'no confirm line before the first click');
       // The first click arms the confirm; the card then shows the line and relabels the button.
       FF._setImproveConfirm('sell:'+uid); FF.renderUniqueDetailOverlay();
@@ -22893,10 +25338,44 @@
       FF._setImproveConfirm('sacrifice:'+uid); FF.renderUniqueDetailOverlay();
       ok(ov.textContent.indexOf('Click Sacrifice again to confirm') >= 0, 'an armed Sacrifice shows its line');
       ok(/Confirm sacrifice/.test(ov.querySelector('[data-action="improveSacrificeUnique"]').textContent), 'and the button reads Confirm sacrifice');
+      ok(/own card/.test(FF.UNIQUE_BOUND_NOTE) && /Trade section/.test(FF.UNIQUE_BOUND_NOTE), 'the bound note names both places the buttons live');
+      ok(!/from the Improvement tab\./.test(FF.UNIQUE_BOUND_NOTE), 'and no longer points only at the Improvement tab');
     } finally {
       FF._setImproveConfirm(sv.conf); FF._setUniqueDetailUid(sv.det); s.uniqueItems = sv.uq; FF.renderUniqueDetailOverlay();
       if(made && ov.parentNode) ov.parentNode.removeChild(ov);
     }
+  });
+
+  // ---- The move to pere.games/fantasyfrontiers: the old home hands the session over in the fragment ----
+  // Saves are cloud-only, but a guest exists only as the Supabase session in the old origin's localStorage,
+  // so the forwarding carries the refresh token as #ffho=<token>, consumed once at the new home. These are
+  // the pure pieces; the sender ships INERT (FF_NEW_HOME '') until the new address answers.
+  suite('move: the session handoff between homes', function(){
+    eq(FF.FF_NEW_HOME, '', 'the in-app sender ships inert: FF_NEW_HOME is empty until pere.games/fantasyfrontiers answers');
+    ok(FF.FF_OLD_HOMES.indexOf('fantasyfrontiers.online') >= 0 && FF.FF_OLD_HOMES.indexOf('www.fantasyfrontiers.online') >= 0, 'both spellings of the old home are listed');
+    eq(FF.supabaseStorageKey('https://varyclnmlrgdzgdxhcyd.supabase.co'), 'sb-varyclnmlrgdzgdxhcyd-auth-token', 'the stored-session key follows supabase-js v2 (sb-<ref>-auth-token)');
+    eq(FF.supabaseStorageKey(''), null, 'no URL, no key');
+    var tok = 'v1.AbC-dEf_123.ghi', stored = JSON.stringify({ access_token:'x', refresh_token:tok, user:{ id:'u1' } });
+    eq(FF.handoffRefreshToken(stored), tok, 'the refresh token is read off the stored session');
+    eq(FF.handoffRefreshToken(JSON.stringify({ currentSession:{ refresh_token:tok } })), tok, 'and off the older wrapped shape');
+    eq(FF.handoffRefreshToken('not json'), null, 'garbage yields nothing');
+    eq(FF.handoffRefreshToken(JSON.stringify({ refresh_token:'bad token with spaces' })), null, 'a token that is not URL-safe is refused');
+    eq(FF.handoffRefreshToken(null), null, 'no stored session, no token');
+    var home = 'https://pere.games/fantasyfrontiers/';
+    eq(FF.handoffTarget('', 'fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), null, 'an empty new home never redirects (the inert default)');
+    eq(FF.handoffTarget(home, 'pere.games', FF.FF_OLD_HOMES, stored), null, 'the new home itself never redirects');
+    eq(FF.handoffTarget(home, 'localhost', FF.FF_OLD_HOMES, stored), null, 'nor any other host');
+    eq(FF.handoffTarget(home, 'fantasyfrontiers.online', FF.FF_OLD_HOMES, null), home, 'an old home with no session forwards plain');
+    eq(FF.handoffTarget(home, 'WWW.fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), home + '#ffho=' + encodeURIComponent(tok), 'an old home with a session carries the token in the fragment (host match is case-insensitive)');
+    // The receiver's parsing: the token comes back out, other fragment parts survive, nothing else matches.
+    eq(FF.handoffParse('#ffho=' + encodeURIComponent(tok)), tok, 'the token parses back out of the fragment');
+    eq(FF.handoffParse('#tab=x&ffho=' + encodeURIComponent(tok) + '&y=1'), tok, 'wherever it sits among other parts');
+    eq(FF.handoffParse('#ffhox=abc'), null, 'a near-miss name does not match');
+    eq(FF.handoffParse('#ffho=%E0%A4%A'), null, 'a malformed encoding is refused, not thrown');
+    eq(FF.handoffParse(''), null, 'no fragment, no token');
+    eq(FF.handoffStripHash('#ffho=' + tok), '', 'stripping the only part leaves no fragment at all');
+    eq(FF.handoffStripHash('#tab=x&ffho=' + tok + '&y=1'), '#tab=x&y=1', 'other parts survive the strip');
+    eq(FF.handoffStripHash(''), '', 'an empty fragment stays empty');
   });
 
   // ---- ticket-0253: Merchant's Savvy trains per item sold, by tier ----
@@ -22972,85 +25451,6 @@
       eq(FF.sellQty(bid, 2), 0, 'a sell-0 stack (Blueprint) refuses like sellOne/sellItem');
       eq(s.inventory[bid], 3, 'Blueprints untouched');
     } finally { s.inventory = save.inv; s.gold = save.gold; s.lockedItems = save.locks; s.physique = save.phys; }
-  });
-
-  // ---- Local-only build: the save lives in this browser (the PERSISTENCE block) ---------------------
-  suite('local save: serialize trims the transient buffers and the zero stacks', function(){
-    var s = FF._state;
-    var sv = { inv:s.inventory, log:s.log, stats:s.stats };
-    try {
-      s.inventory = { a:3, b:0, c:-2 }; s.log = [{ t:'x' }]; s.stats = Object.assign({}, s.stats, { zz:0, neg:-1 });
-      var o = JSON.parse(FF.localSaveSerialize(s));
-      eq(o.inventory.a, 3, 'a held stack survives');
-      ok(!('b' in o.inventory) && !('c' in o.inventory), 'zero and negative stacks are dropped');
-      ok(!('log' in o), 'the chronicle buffer is transient');
-      ok(!('zz' in o.stats) && o.stats.neg === -1, 'stats drop zeros but keep a negative counter');
-      ok(o.xp && typeof o.xp === 'object', 'skills ride along');
-    } finally { s.inventory = sv.inv; s.log = sv.log; s.stats = sv.stats; }
-  });
-  suite('local save: write rotates the previous copy into the backup slot', function(){
-    var k = FF.LOCAL_SAVE_KEY, b = FF.LOCAL_SAVE_BACKUP_KEY, usable = false;
-    try{ usable = localStorage.getItem(k) === null && localStorage.getItem(b) === null; }catch(e){ usable = false; }
-    // Only on a browser with NO real save in it (CI, a fresh profile): this writes the real slots, and a
-    // developer's own save must never be touched by the suite.
-    if(!usable){ ok(true, 'a save is present (or storage is unavailable): the rotation is not exercised here'); return; }
-    try {
-      ok(FF.localSaveWrite('{"xp":{"a":1}}'), 'the first write succeeds');
-      eq(FF.localSaveRead(), '{"xp":{"a":1}}', 'and reads back');
-      eq(FF.localSaveReadBackup(), null, 'no backup yet');
-      FF.localSaveWrite('{"xp":{"a":2}}');
-      eq(FF.localSaveReadBackup(), '{"xp":{"a":1}}', 'the second write rotates the first into the backup');
-      FF.localSaveWrite('{"xp":{"a":2}}');
-      eq(FF.localSaveReadBackup(), '{"xp":{"a":1}}', 'an identical write does not overwrite the backup with itself');
-    } finally { try{ localStorage.removeItem(k); localStorage.removeItem(b); }catch(e){} }
-  });
-  suite('local save: import accepts a save and refuses anything else', function(){
-    ok(!FF.localSaveParseImport('not json').ok, 'garbage is refused');
-    ok(!FF.localSaveParseImport('[1,2]').ok, 'an array is refused');
-    ok(!FF.localSaveParseImport('{"gold":5}').ok, 'an object with no skills is refused');
-    var r = FF.localSaveParseImport(FF.localSaveSerialize(FF._state));
-    ok(r.ok && r.data && r.data.xp, 'a real save parses');
-    ok(/^fantasy-frontiers-.*\.json$/.test(FF.saveExportFilename()), 'the export filename is a dated .json: ' + FF.saveExportFilename());
-    ok(FF.LOCAL_SAVE_FLUSH_MS >= 1000 && FF.LOCAL_SAVE_FLUSH_MS <= 10000, 'the periodic write runs every few seconds');
-  });
-  suite('local boot: no login, a hero name and the one-time path choice', function(){
-    eq(FF.playerNameClean('  Sir   Reginald\u0007 '), 'Sir Reginald', 'control characters and runs of spaces are cleaned');
-    eq(FF.playerNameClean(new Array(41).join('x')).length, FF.PLAYER_NAME_MAX, 'names are capped at the maximum');
-    var s = FF._state, sv = { name:s.playerName, mortal:s.mortal };
-    try {
-      s.playerName = ''; eq(FF.playerDisplayName(), 'Adventurer', 'an empty name reads as Adventurer');
-      s.playerName = 'Nyx'; eq(FF.playerDisplayName(), 'Nyx', 'a chosen name shows');
-      s.mortal = null; ok(FF.pathSelectNeeded(), 'a fresh run (mortal === null) opens the path choice');
-      s.mortal = false; ok(!FF.pathSelectNeeded(), 'a chosen path does not');
-    } finally { s.playerName = sv.name; s.mortal = sv.mortal; }
-    ok(typeof FF.chatClient === 'undefined' && typeof FF.CHAT_CONFIG === 'undefined' && typeof FF.walletSync === 'undefined', 'no backend client, config or sync is left on the seam');
-    ok(typeof FF.renderGuildTab === 'undefined' && typeof FF.renderMarketTab === 'undefined' && typeof FF.renderLeaderboardTab === 'undefined', 'the guild, market and leaderboard tabs are gone');
-    ok(!FF.AREAS.some(function(a){ return a.subs.some(function(sub){ return sub[0] === 'guild' || sub[0] === 'market' || sub[0] === 'leaderboard'; }); }), 'and the rail no longer offers them');
-  });
-  suite('estate jobs: local claim, completion, offline drain and queue advance', function(){
-    var s = FF._state;
-    var sv = { estate:s.estate, inv:s.inventory, xp:s.xp.digging, stats:s.stats };
-    try {
-      var t0 = Date.now(), got = null;
-      FF.estateJobClaim('clear', 1, 1, {}, 5000, function(target, startAt, readyAt){ got = { target:target, startAt:startAt, readyAt:readyAt }; });
-      ok(got && got.readyAt - got.startAt === 5000 && got.startAt >= t0, 'the claim starts the clock here, for the starter\'s own duration');
-      var mk = function(){ return { type:'dirt', height:5, owned:true, obstacle:null, buildingId:null, workshopId:null, cottageId:null, totemId:null, fieldTier:null, paveTileId:null }; };
-      var g = []; for(var x=0;x<3;x++){ g[x]=[]; for(var y=0;y<3;y++) g[x][y]=mk(); }
-      var now = Date.now();
-      s.estate = { grid:g, edgesX:[], edgesY:[], expansionsPurchased:0,
-        job:{ kind:'lower', x:1, y:1, startAt:now-20000, readyAt:now-10000 },
-        queue:[ { kind:'lower', x:2, y:2, localMs:3000, payload:{} }, { kind:'lower', x:0, y:0, localMs:60000, payload:{} } ] };
-      s.inventory = {}; s.stats = {};
-      FF.processEstateJob();
-      eq(g[1][1].height, 4, 'a past-due job completes on the tick');
-      eq(g[2][2].height, 4, 'the 10 s overhang drains the 3 s queued action');
-      ok(!!s.estate.job && s.estate.job.kind === 'lower' && s.estate.job.x === 0 && s.estate.job.readyAt - s.estate.job.startAt === 60000, 'the action that did not fit starts live for its own duration');
-      eq(s.estate.queue.length, 0, 'the queue is empty');
-      eq(s.inventory[FF.ESTATE_DIRT_ITEM_ID] || 0, 2 * FF.ESTATE_LOWER_DIRT_REWARD, 'both completed digs paid their Dirt');
-      eq(g[0][0].height, 5, 'the live one has not dug yet');
-      FF.processEstateJob();
-      eq(g[0][0].height, 5, 'and a tick before its time leaves it running');
-    } finally { s.estate = sv.estate; s.inventory = sv.inv; s.xp.digging = sv.xp; s.stats = sv.stats; }
   });
 
   // ---- Report ---------------------------------------------------------------------------
