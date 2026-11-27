@@ -1,10 +1,10 @@
 # Fantasy Frontiers — project notes for Claude
 
-## THIS BRANCH (`claude/local-only`, 2026-11-27): the game runs entirely in the player's browser
+## THE LOCAL-ONLY BUILD (merged to main 2026-11-27, v0.1.5.0): the game runs entirely in the player's browser
 
 Owner order: "We are going to be cutting the supabase database and logins, running everything on player
-local. Branch this process for now." Everything below this section was written for the backed version on
-`main` and is kept as the record of how those systems worked; where a section describes a server, a guild,
+local." (branched, then "Merge it, cutting off the backend.") Everything below this section was written for the backed version on
+the old `main` and is kept as the record of how those systems worked; where a section describes a server, a guild,
 the Auction House, chat, the leaderboard or a party dungeon, it no longer applies here.
 
 - **The save is `localStorage['ff-save-v1']`** (previous copy rotated into `ff-save-v1-prev` on every write),
