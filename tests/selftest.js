@@ -19034,6 +19034,32 @@
   // The rollout is only safe in ONE order: client-with-site-key first, Supabase CAPTCHA switch second.
   // These pin the property that makes that safe -- with no site key configured, every auth path is byte-for
   // -byte what it was, so this build can ship before the Dashboard switch is flipped.
+  suite('auth: a refused registration shows the server\'s reason, not "Something went wrong"', function(){
+    // supabase-js hands a non-2xx back as FunctionsHttpError{message:'Edge Function returned a non-2xx status
+    // code', context:Response}; the function's {ok:false,error} body is on context. The register path used to
+    // throw that into authFriendlyError, so a taken name, a failed human check and the rate limit all read
+    // "Something went wrong. Please try again." (a player with a free, valid name, 2026-11-27).
+    var http = { message: 'Edge Function returned a non-2xx status code', context: { json: function(){ return Promise.resolve({ ok:false, error:'That username is already taken.' }); } } };
+    eq(FF.authFriendlyError(http, 'register'), 'Something went wrong. Please try again.', 'the raw mapping cannot read the wrapper (the old display)');
+    eq(FF.authServerError({ ok:false, error:'That username is already taken.' }, http, 'register'), 'That username is already taken.', 'the body\'s own line is shown verbatim');
+    eq(FF.authServerError({ ok:false, error:'Human verification failed. Please reload and try again.' }, http, 'register'), 'Human verification failed. Please reload and try again.', 'a failed captcha says so');
+    eq(FF.authServerError({ ok:false, error:'Too many sign-ups from here. Try again in a few minutes.' }, http, 'register'), 'Too many sign-ups from here. Try again in a few minutes.', 'the rate limit says so');
+    eq(FF.authServerError({ ok:false, error:'   ' }, http, 'register'), 'Something went wrong. Please try again.', 'a blank body line falls back to the generic mapping');
+    eq(FF.authServerError(null, http, 'register'), 'Something went wrong. Please try again.', 'no body falls back too');
+    eq(FF.authServerError(null, { message:'User already registered' }, 'register'), 'That username is already taken.', 'a GoTrue duplicate still maps to taken');
+    eq(FF.authServerError(null, { message:'Invalid login credentials' }, 'login'), 'Wrong username or password.', 'the login mapping is untouched');
+    // Never got an answer at all: an ad blocker or VPN, which used to read as the same generic line.
+    eq(FF.authFriendlyError({ message:'Failed to send a request to the Edge Function' }, 'register'), 'Could not reach the server. Check your connection, VPN or ad blocker and try again.', 'a FunctionsFetchError names the connection');
+    eq(FF.authFriendlyError({ message:'Failed to fetch' }, 'login'), 'Could not reach the server. Check your connection, VPN or ad blocker and try again.', 'and so does a bare fetch failure');
+    // fnErrorBody's shape test is SYNCHRONOUS: it must hand back a promise for every input, and read the
+    // body only from a FunctionsHttpError (anything else resolves null). Assertions inside a .then would
+    // run after the report is written, so only the mechanics are pinned here.
+    var p1 = FF.fnErrorBody(http), p2 = FF.fnErrorBody({ message:'x' }), p3 = FF.fnErrorBody(null);
+    ok(p1 && typeof p1.then === 'function' && p2 && typeof p2.then === 'function' && p3 && typeof p3.then === 'function', 'fnErrorBody always returns a promise');
+    var thrower = { message:'y', context: { json: function(){ throw new Error('no body'); } } };
+    var p4 = FF.fnErrorBody(thrower);
+    ok(p4 && typeof p4.then === 'function', 'a context whose json() throws still yields a promise (the fallback mapping runs)');
+  });
   suite('auth captcha', function(){
     ok(typeof FF.captchaOn === 'function' && typeof FF.captchaAuthOpts === 'function', 'captcha helpers exported');
     var saved = FF.CHAT_CONFIG.turnstileSiteKey;

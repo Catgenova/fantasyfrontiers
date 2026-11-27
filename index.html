@@ -39073,8 +39073,29 @@
     if(mode==='register' && (m.indexOf('already')!==-1 || m.indexOf('exists')!==-1 || m.indexOf('duplicate')!==-1 || m.indexOf('registered')!==-1)) return 'That username is already taken.';
     if(mode==='login' && (m.indexOf('invalid')!==-1 || m.indexOf('credentials')!==-1)) return 'Wrong username or password.';
     if(m.indexOf('password')!==-1) return 'Password must be at least '+CHAT_CONFIG.minPasswordLen+' characters.';
+    // supabase-js invoke() that never got an answer (FunctionsFetchError) or a plain fetch failure: an ad
+    // blocker, a VPN or a captive portal, not the game. Say so, or the player retries the same thing forever.
+    if(m.indexOf('failed to send a request')!==-1 || m.indexOf('failed to fetch')!==-1 || m.indexOf('networkerror')!==-1 || m.indexOf('load failed')!==-1) return 'Could not reach the server. Check your connection, VPN or ad blocker and try again.';
     if(m) return 'Something went wrong. Please try again.';
     return 'Could not reach the server.';
+  }
+  // supabase-js invoke() on a non-2xx resolves {data:null, error:FunctionsHttpError{context:Response}}: the
+  // function's own {ok:false,error} body sits UNREAD on context and err.message is only "Edge Function returned
+  // a non-2xx status code". The register, guest and guest-upgrade paths threw that error straight into
+  // authFriendlyError, which cannot recognise the sentence, so EVERY server refusal (name taken, human check
+  // failed, rate limit, the password rules) showed as "Something went wrong. Please try again." (2026-11-27:
+  // a player with a free, valid name was refused with no reason shown, and the support chat had to guess).
+  // Same unpacking the guild bank and guild boss paths already do.
+  function fnErrorBody(err){
+    if(!(err && err.context && typeof err.context.json === 'function')) return Promise.resolve(null);
+    try{ return err.context.json().then(function(b){ return (b && typeof b === 'object') ? b : null; }, function(){ return null; }); }
+    catch(e){ return Promise.resolve(null); }
+  }
+  // The function's own error line is already written for the player ("That username is already taken.",
+  // "Human verification failed. Please reload and try again."); prefer it, fall back to the generic mapping.
+  function authServerError(body, err, mode){
+    var e = (body && typeof body.error === 'string') ? body.error.trim() : '';
+    return e || authFriendlyError(err, mode);
   }
   async function authEnsureClient(){
     if(chatClient) return true;
@@ -39150,7 +39171,7 @@
       authError = ''; authUsernameDraft = ''; authPasswordDraft = ''; authBusy = false; // clear the drafts on success (about to leave the gate)
       await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
       return;
-    }catch(err){ authError = authFriendlyError(err, authMode); captchaConsume(); }
+    }catch(err){ authError = authServerError(await fnErrorBody(err), err, authMode); captchaConsume(); }
     authBusy = false; authRender();
   }
   // Play as Guest: mint a throwaway account (server-assigned guest<digits> name + random password), sign in,
@@ -39191,7 +39212,7 @@
       authError = ''; authBusy = false;
       await startGameOnline();
       return;
-    }catch(err){ authError = authFriendlyError(err, 'register'); captchaConsume(); }
+    }catch(err){ authError = authServerError(await fnErrorBody(err), err, 'register'); captchaConsume(); }
     authBusy = false; authRender();
   }
   async function authLogout(){
@@ -40006,7 +40027,7 @@
       try{ profileSync(true); }catch(e){}   // publish the real username to the leaderboard/profile
       renderSettingsModal(); render();
       return;
-    }catch(err){ guestUpgradeMsg = authFriendlyError(err, 'register'); guestUpgradeOk = false; }
+    }catch(err){ guestUpgradeMsg = authServerError(await fnErrorBody(err), err, 'register'); guestUpgradeOk = false; }
     guestUpgradeBusy = false; renderSettingsModal();
   }
   // ======== In-game bug / feedback ticket (Mr Cookie's onsite ticket button, 2026-08-19) ========
@@ -48026,7 +48047,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.43';
+  var GAME_VERSION = '0.1.4.44';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -48266,6 +48287,7 @@
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
+      authFriendlyError:authFriendlyError, authServerError:authServerError, fnErrorBody:fnErrorBody,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
       captchaAwaitToken:captchaAwaitToken, _turnstileWaiterCount:function(){ return turnstileWaiters.length; }, _turnstileFlushWaiters:turnstileFlushWaiters,
       discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; }, ENHANCE_ANNOUNCE_MIN:ENHANCE_ANNOUNCE_MIN, DISCORD_ENHANCE_MIN:DISCORD_ENHANCE_MIN,

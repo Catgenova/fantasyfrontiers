@@ -115,11 +115,20 @@ Deno.serve(async (req) => {
       const form = new FormData();
       form.append("secret", turnstileSecret);
       form.append("response", captchaToken);
-      if (ip !== "unknown") form.append("remoteip", ip);
+      // NO remoteip. It is optional, and when it is sent Cloudflare checks it against the address that solved
+      // the challenge. The address this function sees (the leftmost x-forwarded-for hop) is not reliably
+      // that one: a VPN, Private Relay, carrier NAT or a dual-stack client that reached Cloudflare over IPv6
+      // and Supabase over IPv4 all present a different address here, and the token is then refused for a
+      // player whose widget showed Success (2026-11-27: a free, valid name refused with a 400 while the
+      // owner's own registration from another network passed). The token is still single-use and bound to
+      // this site key, which is the protection that matters.
       const vr = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
       const vj = await vr.json();
       human = vj?.success === true;
-    } catch { human = false; }
+      // Say WHY in the function log when it fails. The reply codes ("timeout-or-duplicate", "invalid-input-
+      // response") are the only way to tell an expired token from a secret/site-key mismatch after the fact.
+      if (!human) console.log("register: turnstile refused", JSON.stringify(vj?.["error-codes"] ?? []));
+    } catch (e) { human = false; console.log("register: turnstile unreachable", String((e as Error)?.message ?? e)); }
     if (!human) return json({ ok: false, error: "Human verification failed. Please reload and try again." }, 400);
   }
 
@@ -139,6 +148,9 @@ Deno.serve(async (req) => {
     if (m.includes("already") || m.includes("exists") || m.includes("registered") || m.includes("duplicate")) {
       return json({ ok: false, error: "That username is already taken." }, 409);
     }
+    // The player gets a neutral line; the log gets GoTrue's own words (a dashboard password policy reads
+    // "Password should contain..." here, and nothing else in this function can tell that from an outage).
+    console.log("register: createUser refused", String(error.message || ""));
     return json({ ok: false, error: "Registration failed." }, 400);
   }
 

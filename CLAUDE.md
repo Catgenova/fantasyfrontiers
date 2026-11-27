@@ -335,6 +335,17 @@ Turnstile rules learned the hard way, both of which caused live outages:
   open) — otherwise breaking the verifier switches the check off.
 - Discord OAuth login is unaffected by CAPTCHA (not a password grant), so it is the fallback
   when a password path is broken.
+- **A refused registration must show the FUNCTION's reason (v0.1.4.44).** supabase-js hands any non-2xx
+  back as `FunctionsHttpError` whose message is only "Edge Function returned a non-2xx status code" and
+  whose `{ok:false,error}` body sits unread on `context`. The register, guest and guest-upgrade catches
+  used to throw that into `authFriendlyError`, so a taken name, a failed human check, the rate limit and
+  the password rules ALL read "Something went wrong. Please try again." A player with a free, valid name
+  was refused with no reason shown and support had to guess. `fnErrorBody` + `authServerError` unpack it
+  (the guild bank's pattern); any new `functions.invoke` caller that shows an error to the player does the
+  same. The same incident dropped `remoteip` from the register function's siteverify call: Cloudflare
+  checks it against the address that solved the widget, and VPNs, Private Relay, carrier NAT and
+  IPv6/IPv4 split paths present a different one here. The function now logs the siteverify error codes
+  and GoTrue's createUser message, so a 400 in the function log says why.
 
 **`npm run typecheck:functions`** (`scripts/typecheck-functions.mjs`) typechecks every
 `supabase/functions/*/index.ts` — added because they had NO checking, which let a `body`

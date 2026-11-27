@@ -99,6 +99,8 @@ Deno.serve(async (req) => {
     if (m.includes("already") || m.includes("exists") || m.includes("registered") || m.includes("duplicate")) {
       return json({ ok: false, error: "That username is already taken." }, 409);
     }
+    // GoTrue's own words go to the log (a dashboard password policy reads "Password should..." here).
+    console.log("guest_upgrade: updateUser refused", String(error.message || ""));
     return json({ ok: false, error: "Upgrade failed." }, 400);
   }
   // The client now re-signs-in with the new credentials (the email change can invalidate the old session),
