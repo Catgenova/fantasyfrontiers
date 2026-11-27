@@ -31080,7 +31080,7 @@
       var res = await chatClient.auth.updateUser({ password: pw });
       if(res.error) throw res.error;
       pwChangeMsg = 'Password updated.'; pwChangeOk = true;
-    }catch(e){ pwChangeMsg = 'Could not update password. Please try again.'; pwChangeOk = false; }
+    }catch(e){ pwChangeMsg = pwChangeErrorText(e); pwChangeOk = false; }
     pwChangeBusy = false; renderSettingsModal();
   }
   // ---- Overlay writes: never rebuild an unchanged popup -------------------------------------------
@@ -39048,6 +39048,17 @@
     if((pw||'').length < CHAT_CONFIG.minPasswordLen) return 'Password must be at least '+CHAT_CONFIG.minPasswordLen+' characters.';
     return '';
   }
+  // GoTrue enforces the project's OWN password policy (dashboard minimum length, required character classes)
+  // on top of the game's 8-character rule, and says exactly what it wants ("Password should be at least 12
+  // characters", "Password should contain at least one character of each..."). Settings > Change password
+  // used to flatten that into "Could not update password", so a player whose password met OUR rule and not
+  // the project's had no way to learn the difference (2026-11-27). Pass GoTrue's sentence through when it
+  // is about the password; anything else (network, session) keeps the generic line.
+  function pwChangeErrorText(e){
+    var m = (e && e.message) ? String(e.message).trim() : '';
+    if(m && /password/i.test(m) && m.length <= 200) return m.replace(/[.\s]*$/, '') + '.';
+    return 'Could not update password. Please try again.';
+  }
   var authUser = null;              // { username } when signed in
   var authMode = 'login';        // 'register' | 'login' -- default to Log In; Register is the off tab
   var authError = '';
@@ -39067,6 +39078,16 @@
   // Upgrade to a real username + password (guestUpgrade), which converts THIS account in place so nothing
   // is lost. isGuest rides on authUser (set from user_metadata.is_guest wherever a session is adopted).
   function isGuestAccount(){ return !!(authUser && authUser.isGuest); }
+  // ONE builder for authUser from a Supabase user, so no adoption path can drop the guest flag. authRestore
+  // (every reload, and the return from a Discord link) used to build {username,id} by hand, so a guest who
+  // reloaded saw the registered Account panel (change password, recovery, Discord) and no Upgrade form; the
+  // top-bar Upgrade chip stayed only because the bar's signature had not changed (2026-11-27, a guest who
+  // "could not find the Upgrade button"). Discord-linked and recovery adoptions are real accounts, but they
+  // go through here too: the metadata is the truth, not the path.
+  function authUserFrom(u, fallbackName){
+    var md = (u && u.user_metadata) || {};
+    return { username: md.username || fallbackName || 'player', id: u && u.id, isGuest: !!md.is_guest };
+  }
   function authEmailFor(name){ return String(name).trim().toLowerCase() + '@' + CHAT_CONFIG.authEmailDomain; }
   function authFriendlyError(err, mode){
     var m = ((err && err.message) || '').toLowerCase();
@@ -39159,7 +39180,7 @@
       if(res.error) throw res.error;
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
-      authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id, isGuest: !!(u && u.user_metadata && u.user_metadata.is_guest) };
+      authUser = authUserFrom(u, username);
       authBindIdentity(u && u.id); authWatchIdentity();   // this tab is now bound to THIS account; fence if the shared session later swaps
       if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
       // (New players still gift the server a 1h +50% EXP buff, but that now fires server-side inside the
@@ -39232,7 +39253,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; authBindIdentity(sess.user.id); authWatchIdentity(); profileSync(true); walletSync(true); itemSync(true); estateJobSync(); cloudClaimSession(); }
+      if(sess && sess.user){ authUser = authUserFrom(sess.user, 'player'); authBindIdentity(sess.user.id); authWatchIdentity(); profileSync(true); walletSync(true); itemSync(true); estateJobSync(); cloudClaimSession(); }
     }catch(e){}
   }
 
@@ -47636,7 +47657,7 @@
       var sess = res.data && res.data.session;
       if(sess && sess.user){
         var _un = sess.user.user_metadata && sess.user.user_metadata.username;
-        if(_un){ authUser = { username: _un, id: sess.user.id, isGuest: !!(sess.user.user_metadata && sess.user.user_metadata.is_guest) }; authBindIdentity(sess.user.id); authWatchIdentity(); if(sess.access_token) cloudAccessToken = sess.access_token; }
+        if(_un){ authUser = authUserFrom(sess.user, _un); authBindIdentity(sess.user.id); authWatchIdentity(); if(sess.access_token) cloudAccessToken = sess.access_token; }
         else { authOrphanSession = true; } // signed in but no game username = an unlinked Discord sign-in
       }
     }catch(e){}
@@ -48287,7 +48308,7 @@
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
-      authFriendlyError:authFriendlyError, authServerError:authServerError, fnErrorBody:fnErrorBody,
+      authFriendlyError:authFriendlyError, authServerError:authServerError, fnErrorBody:fnErrorBody, authUserFrom:authUserFrom, pwChangeErrorText:pwChangeErrorText,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
       captchaAwaitToken:captchaAwaitToken, _turnstileWaiterCount:function(){ return turnstileWaiters.length; }, _turnstileFlushWaiters:turnstileFlushWaiters,
       discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; }, ENHANCE_ANNOUNCE_MIN:ENHANCE_ANNOUNCE_MIN, DISCORD_ENHANCE_MIN:DISCORD_ENHANCE_MIN,

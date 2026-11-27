@@ -346,6 +346,12 @@ Turnstile rules learned the hard way, both of which caused live outages:
   checks it against the address that solved the widget, and VPNs, Private Relay, carrier NAT and
   IPv6/IPv4 split paths present a different one here. The function now logs the siteverify error codes
   and GoTrue's createUser message, so a 400 in the function log says why.
+  Same batch, same player: `authRestore` (every reload) built `authUser` by hand WITHOUT `isGuest`, so a
+  reloaded guest saw the registered Account panel and no Upgrade form. `authUserFrom(u, fallback)` is now
+  the ONE builder for every adoption path; never assemble `authUser` from a Supabase user by hand. And
+  Settings > Change password passes GoTrue's own sentence through (`pwChangeErrorText`): the PROJECT's
+  password policy (dashboard minimum length / character classes) sits on top of the game's 8-character
+  rule and is the one GoTrue enforces, so "Could not update password" with no reason hid the real rule.
 
 **`npm run typecheck:functions`** (`scripts/typecheck-functions.mjs`) typechecks every
 `supabase/functions/*/index.ts` — added because they had NO checking, which let a `body`

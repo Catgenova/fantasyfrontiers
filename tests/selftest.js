@@ -19060,6 +19060,24 @@
     var p4 = FF.fnErrorBody(thrower);
     ok(p4 && typeof p4.then === 'function', 'a context whose json() throws still yields a promise (the fallback mapping runs)');
   });
+  suite('auth: every session adoption keeps the guest flag, and a password refusal says why', function(){
+    // authRestore (every reload, and the return from a Discord link) built authUser by hand without isGuest,
+    // so a reloaded guest saw the registered Account panel and no Upgrade form (2026-11-27).
+    var g = FF.authUserFrom({ id:'u1', user_metadata: { username:'guest991121152', is_guest:true } }, 'x');
+    eq(g.username, 'guest991121152', 'the metadata username wins'); eq(g.id, 'u1', 'the id rides along'); ok(g.isGuest === true, 'a guest stays a guest');
+    var r = FF.authUserFrom({ id:'u2', user_metadata: { username:'EachHit', is_guest:false } }, 'x');
+    ok(r.isGuest === false, 'a registered account is not a guest');
+    var legacy = FF.authUserFrom({ id:'u3', user_metadata: { username:'Old' } }, 'x');
+    ok(legacy.isGuest === false, 'an account minted before the flag existed is registered');
+    var bare = FF.authUserFrom({ id:'u4' }, 'Fallback');
+    eq(bare.username, 'Fallback', 'no metadata name falls back to the name given'); ok(bare.isGuest === false, 'and is not a guest');
+    eq(FF.authUserFrom(null, '').username, 'player', 'no user and no name reads as player');
+    // GoTrue's own password sentence passes through; anything else keeps the generic line.
+    eq(FF.pwChangeErrorText({ message:'Password should be at least 12 characters' }), 'Password should be at least 12 characters.', 'the project minimum is shown');
+    eq(FF.pwChangeErrorText({ message:'Password should contain at least one character of each: abcdefghijklmnopqrstuvwxyz, ABCDEFGHIJKLMNOPQRSTUVWXYZ, 0123456789.' }), 'Password should contain at least one character of each: abcdefghijklmnopqrstuvwxyz, ABCDEFGHIJKLMNOPQRSTUVWXYZ, 0123456789.', 'a character-class rule is shown once, with one full stop');
+    eq(FF.pwChangeErrorText({ message:'Failed to fetch' }), 'Could not update password. Please try again.', 'a network failure keeps the generic line');
+    eq(FF.pwChangeErrorText(null), 'Could not update password. Please try again.', 'and so does no error at all');
+  });
   suite('auth captcha', function(){
     ok(typeof FF.captchaOn === 'function' && typeof FF.captchaAuthOpts === 'function', 'captcha helpers exported');
     var saved = FF.CHAT_CONFIG.turnstileSiteKey;
