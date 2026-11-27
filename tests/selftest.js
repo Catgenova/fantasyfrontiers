@@ -868,7 +868,6 @@
     ok(/ Totem$/.test(r5.name), 'totems are named after their wood ("' + r5.name + '")');
     var cat = FF.buildItemCatalog();
     ok(cat.totem_t1 === 1 && cat.totem_t21 === 1, 'totems are tradeable in the server item catalog, the Eternal Idol Totem included');
-    eq(FF.marketItemCategory('totem_t3'), 'other', 'totems browse under Other (estate placeables) on the market');
     // Placement plumbing: job kind 'totem' behaves like the other buildings.
     eq(FF.estateJobMaterials({ kind:'totem', totemId:'totem_t5' })[0][0], 'totem_t5', 'a totem job reserves the totem item');
     ok(/Raise .*Totem/.test(FF.estateJobLabel({ kind:'totem', totemId:'totem_t5' })), 'the queue labels a totem job "Raise <name>"');
@@ -4206,7 +4205,6 @@
     NEW.forEach(function(id){ saved[id] = S.physique[id]; S.physique[id] = FF.xpFloorForLevel(100); });
     ok(Math.abs(FF.anglersEyeTreasureBonus() - 0.15) < 1e-6, 'Angler\'s Eye +15% treasure at Lv100');
     ok(Math.abs(FF.merchantSellMult() - 1.15) < 1e-6, 'Merchant\'s Savvy +15% sell at Lv100');
-    ok(Math.abs(FF.merchantTaxMult() - 0.50) < 1e-6, 'Merchant\'s Savvy halves Market tax at Lv100');
     ok(Math.abs(FF.weaponsmithEdgeMult() - 1.15) < 1e-6, 'Weaponsmith\'s Edge +15% damage at Lv100');
     ok(Math.abs(FF.armorerTemperMult() - 1.15) < 1e-6, 'Armorer\'s Temper +15% armour at Lv100');
     ok(Math.abs(FF.runicAttunementMult() - 1.20) < 1e-6, 'Runic Attunement +20% wand/scepter at Lv100');
@@ -5370,12 +5368,12 @@
   suite('control sweep: stone chips with accent-filled active states', function(){
     var probe = document.createElement('div');
     probe.innerHTML = '<button class="craft-filter-btn">f</button><button class="craft-filter-btn on">f</button>'
-      + '<button class="market-subtab on">m</button><button class="inv-chip on">i</button>'
+      + '<button class="inv-chip on">i</button>'
       + '<button class="mini-btn">b</button><button class="mini-btn danger">d</button>'
       + '<button class="tracker-chip on">t</button>';
     document.body.appendChild(probe);
     try {
-      ['craft-filter-btn','market-subtab','inv-chip','mini-btn','tracker-chip'].forEach(function(cls){
+      ['craft-filter-btn','inv-chip','mini-btn','tracker-chip'].forEach(function(cls){
         var el = probe.querySelector('.'+cls), cs = getComputedStyle(el);
         ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' is framed in the arena stone');
         eq(cs.borderTopWidth, '6px', '.'+cls+' at the fine 6px cut');
@@ -7870,8 +7868,6 @@
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] === FF.BLUEPRINT_ITEMS[id]; }), 'every Blueprint is registered in ALL_SELLABLE (market-tradeable)');
     var cat = FF.buildItemCatalog();
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server item catalog marks every Blueprint tradeable');
-    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.marketItemCategory(id) === 'blueprints'; }), 'Blueprints get their own Marketplace category');
-    ok(FF.MARKET_CATEGORIES.some(function(c){ return c.id === 'blueprints' && c.label === 'Blueprints'; }), 'the Marketplace nav has a Blueprints chip');
     // addBlueprint credits state.inventory AND the per-item earned anchor (so the server item ledger
     // credits legit boss drops and the market can cover a sell).
     var s = FF._state; var svI = s.inventory, svE = s.itemEarnedTotal;
@@ -7881,7 +7877,6 @@
     eq(s.inventory[bid], 2, 'addBlueprint credits the ordinary inventory');
     eq(s.itemEarnedTotal[bid], 2, 'addBlueprint bumps the earned anchor (ledger reconcile keeps the drop)');
     FF.addBlueprint('not_a_blueprint', 1); eq(s.inventory['not_a_blueprint'], undefined, 'addBlueprint rejects unknown ids');
-    ok(FF.marketOwnedIds().indexOf(bid) !== -1, 'an owned Blueprint shows up in the Marketplace Sell picker');
     // The vendor never buys a sell-0 stack -- the Marketplace is the only way to part with a Blueprint.
     var svG = s.gold;
     FF.sellItem(bid); FF.sellOne(bid);
@@ -7919,7 +7914,7 @@
     ok(FF.ALL_SELLABLE[ringId] === FF.LEGENDARY_RING_ITEMS[ringId], 'legendary Signets are registered in ALL_SELLABLE');
     ok(FF.ALL_SELLABLE[cloakId] === FF.LEGENDARY_CLOAK_ITEMS[cloakId], 'legendary Shrouds are registered in ALL_SELLABLE');
     ok(FF.ALL_SELLABLE[amuId] === FF.LEGENDARY_AMULET_ITEMS[amuId], 'legendary Pendants are registered in ALL_SELLABLE');
-    ok([ringId, cloakId, amuId].every(function(id){ return FF.ALL_SELLABLE[id].sell === 0; }), 'legendary accessories stay non-vendorable (Marketplace-only)');
+    ok([ringId, cloakId, amuId].every(function(id){ return FF.ALL_SELLABLE[id].sell === 0; }), 'legendary accessories stay non-vendorable');
     var cat = FF.buildItemCatalog();
     ok(Object.keys(FF.LEGENDARY_RING_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server catalog marks every legendary ring tradeable');
     ok(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary cloak');
@@ -7931,20 +7926,12 @@
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).every(function(id){ return cat[id] === 1; }), '...and D3');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ return cat[id] === 1; }), '...and D4');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] && FF.ALL_SELLABLE[id].sell === 0; }), 'legendary weapons stay non-vendorable (Marketplace/guild-bank only)');
-    // A legendary weapon browses under Weapons; a legendary ward (offhand) under Armor.
-    var _lgMain = Object.keys(FF.LEGENDARY_GEAR_ITEMS).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS[id].slot === 'mainhand'; })[0];
-    ok(_lgMain && FF.marketItemCategory(_lgMain) === 'weapons', 'a legendary weapon browses under the Weapons category');
-    var _allLg = {}; [FF.LEGENDARY_GEAR_ITEMS, FF.LEGENDARY_GEAR_ITEMS_D2, FF.LEGENDARY_GEAR_ITEMS_D3, FF.LEGENDARY_GEAR_ITEMS_D4].forEach(function(m){ Object.keys(m).forEach(function(id){ _allLg[id] = m[id]; }); });
-    var _lgWard = Object.keys(_allLg).filter(function(id){ return _allLg[id].slot !== 'mainhand'; })[0];
-    if(_lgWard) ok(FF.marketItemCategory(_lgWard) === 'armor', 'a legendary ward browses under the Armor category');
-    ok([ringId, cloakId, amuId].every(function(id){ return FF.marketItemCategory(id) === 'accessories'; }), 'legendary accessories browse under the Accessories category');
     // The vendor never buys one, and Sell All never sweeps one.
     var s = FF._state, svI = s.inventory, svG = s.gold;
     s.inventory = {}; s.inventory[ringId] = 1;
     FF.sellItem(ringId); FF.sellOne(ringId); FF.sellAll();
     eq(s.inventory[ringId], 1, 'vendor sale paths all refuse a legendary accessory');
     eq(s.gold, svG, 'no gold changed hands');
-    ok(FF.marketOwnedIds().indexOf(ringId) !== -1, 'an owned Signet appears in the Marketplace Sell picker');
     s.inventory = svI;
   });
 
@@ -14282,49 +14269,6 @@
     } finally { S.equippedMainhand=mSaved.mh; S.equippedMainhandTier=mSaved.mht; S.equippedMainhandRarity=mSaved.mhr; S.inventory=mSaved.inv; S.xp=mSaved.xp; S.uniqueItems=mSaved.uniq; }
   });
 
-  // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
-  suite('marketplace pricing', function(){
-    eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
-    eq(FF.marketTax(1000), 50, '5% of 1000 = 50');
-    eq(FF.marketTax(999), 49, 'tax floors (999 -> 49, not 49.95)');
-    eq(FF.marketBuyCost(7, 9), 63, 'buy cost = price*qty');
-    eq(FF.marketSellNet(100, 10), 950, 'sell net = gross - 5% tax (1000 -> 950)');
-    eq(FF.marketSellNet(1, 1), 1, 'tiny sale: floor(0.05)=0 tax, net = 1');
-    ok(FF.marketSellNet(50, 3) === 50*3 - FF.marketTax(50*3), 'sell net stays consistent with marketTax');
-  });
-
-  // ---- Marketplace category filter: quick-nav buckets each map every tradeable item to one category ----
-  suite('marketplace categories', function(){
-    eq(FF.MARKET_CATEGORIES[0].id, 'all', 'the first category is "All"');
-    eq(FF.marketItemCategory('stweapon_scimitar_t0_normal'), 'weapons', 'a stackable weapon -> Weapons');
-    eq(FF.marketItemCategory('tool_mining_t0_normal'), 'tools', 'a gather tool -> Tools');
-    eq(FF.marketItemCategory('relic_t0_normal'), 'relics', 'a relic -> Relics');
-    eq(FF.marketItemCategory('ring_slash_t0_normal'), 'accessories', 'a ring -> Accessories');
-    eq(FF.marketItemCategory('bodyarmor_leather_chest_t0_normal'), 'armor', 'a body-armor piece -> Armor');
-    eq(FF.marketItemCategory('workshop_mining_t0'), 'other', 'a workshop building -> Other');
-    eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
-    eq(FF.marketItemCategory('metallurgy_t0'), 'refined', 'a refined bar (metallurgy) -> Refined');
-    eq(FF.marketItemCategory('tanning_t0'), 'refined', 'refined leather (tanning) -> Refined');
-    eq(FF.marketItemCategory('twine_t0'), 'refined', 'weaving twine (alias prefix) -> Refined');
-    eq(FF.marketItemCategory('mining_t0'), 'materials', 'a raw gathered ore -> Materials');
-    eq(FF.marketItemCategory('cooking_t0'), 'consumables', 'cooked food -> Consumables');
-    eq(FF.marketItemCategory('mixology_t0'), 'consumables', 'a tea (mixology) -> Consumables');
-    eq(FF.marketItemCategory('tome_t0'), 'consumables', 'a tome/book (bookbinding) -> Consumables');
-    eq(FF.marketItemCategory('scroll_t0'), 'consumables', 'a scroll (inscription) -> Consumables');
-    eq(FF.marketItemCategory('draught_t0'), 'consumables', 'an Apothecary draught -> Consumables');
-    // Tier chip: 1-based, tier-less items show nothing.
-    ok(/T6/.test(FF.marketItemTierHtml('metallurgy_t5')), 'the tier chip is 1-based (t5 -> T6)');
-    eq(FF.marketItemTierHtml('meat'), '', 'a tier-less item shows no tier chip');
-    // Subcategory = producing skill (alias prefixes resolve to their skill).
-    eq(FF.marketItemSubcategory('herbalism_t0'), 'herbalism', 'raw material subcategory is its gather skill');
-    eq(FF.marketItemSubcategory('twine_t0'), 'weaving', 'an alias prefix (twine) resolves to its skill (weaving)');
-    eq(FF.marketItemSubcategory('metallurgy_t3'), 'metallurgy', 'a refined subcategory is its refining skill');
-    ok(FF.marketSubLabel('forestry').toLowerCase().indexOf('forest') !== -1, 'subcategory labels are human-readable skill names');
-    // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
-    var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
-    ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');
-  });
-
   // ---- Item catalog (server allowlist) -- buildItemCatalog covers the whole inventory-key universe ----
   // This map is dumped to the server (item_catalog) and GATES the item ledger + marketplace. If it ever
   // misses a legit inventory key, that item becomes un-ledgerable/un-sellable, so completeness is load-
@@ -20195,8 +20139,6 @@
     FF.openMortalRestart();
     eq(FF.mortalRestartStepNow(), 1, 'reopening always starts over at confirmation 1 (no resuming half a flow)');
     FF.closeMortalRestart();
-    // The first confirmation must actually WARN about both server-side removals.
-    ok(/marketplace/i.test(FF.MORTAL_RESTART_STEPS[0].body), 'modal 1 warns about the marketplace wipe');
   });
 
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
@@ -23936,24 +23878,6 @@
     }
   });
 
-  // ---- Uniques are bound: the pickers and the unique's cards say so (Anferny, owner 2026-10-08) ----
-  // A Mastercrafted set piece or legendary weapon is a UNIQUE and never lists on the Marketplace or in the
-  // guild bank (both trade stackable bag items). The owner kept them bound; the note is the fix.
-  suite('uniques: the bound-item note shows where players look', function(){
-    var s = FF._state, sv = { uq:s.uniqueItems, inv:s.inventory };
-    try {
-      ok(typeof FF.UNIQUE_BOUND_NOTE === 'string' && /bound to you/.test(FF.UNIQUE_BOUND_NOTE), 'the note exists and says bound');
-      ok(/Marketplace/.test(FF.UNIQUE_BOUND_NOTE) && /guild bank/.test(FF.UNIQUE_BOUND_NOTE), 'and names both places it does not go');
-      ok(/rings, amulets and cloaks/.test(FF.UNIQUE_BOUND_NOTE), 'and says the forged accessories DO trade');
-      s.uniqueItems = { u_bound1: { uid:'u_bound1', base:'stweapon_rapier_t9_supreme', kind:'weapon', tier:9, rarity:'supreme', enchants:[], enhance:0 } };
-      s.inventory = {};
-      FF.improveSelect('u_bound1');
-      var html = FF.renderImprovementTab();
-      ok(html.indexOf(FF.UNIQUE_BOUND_NOTE) !== -1, 'the Improvement tab shows it under Trade for a unique');
-      ok(/Permanently sell|data-action="improveSell"|Sell/.test(html), 'next to the vendor sale it still offers');
-    } finally { s.uniqueItems = sv.uq; s.inventory = sv.inv; }
-  });
-
   // ---- Ticket-0239: Full Crew counts working peons by the fields a task carries ----
   suite('quests: Full Crew counts real peon tasks (ticket-0239)', function(){
     var fc = FF.questById('full_crew');
@@ -24112,8 +24036,6 @@
       FF._setImproveConfirm('sacrifice:'+uid); FF.renderUniqueDetailOverlay();
       ok(ov.textContent.indexOf('Click Sacrifice again to confirm') >= 0, 'an armed Sacrifice shows its line');
       ok(/Confirm sacrifice/.test(ov.querySelector('[data-action="improveSacrificeUnique"]').textContent), 'and the button reads Confirm sacrifice');
-      ok(/own card/.test(FF.UNIQUE_BOUND_NOTE) && /Trade section/.test(FF.UNIQUE_BOUND_NOTE), 'the bound note names both places the buttons live');
-      ok(!/from the Improvement tab\./.test(FF.UNIQUE_BOUND_NOTE), 'and no longer points only at the Improvement tab');
     } finally {
       FF._setImproveConfirm(sv.conf); FF._setUniqueDetailUid(sv.det); s.uniqueItems = sv.uq; FF.renderUniqueDetailOverlay();
       if(made && ov.parentNode) ov.parentNode.removeChild(ov);
