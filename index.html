@@ -21417,8 +21417,11 @@
   // Set once a save has been imported (or the run deliberately erased for a reload): every later flush is
   // refused, so the pagehide write cannot put the running state back over the file the player chose.
   var localSaveLocked = false;
+  // The selftest page drives the live state object through every suite; a flush from there would put test
+  // fixtures over a developer's own save, so the page never writes.
+  var SELFTEST_PAGE = !!(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search));
   function localSaveFlush(force){
-    if(!state || localSaveLocked) return false;
+    if(!state || localSaveLocked || SELFTEST_PAGE) return false;
     if(!localSaveDirty && !force) return false;
     localSaveDirty = false; localSaveLastWrite = Date.now();
     return localSaveWrite(localSaveSerialize(state));
@@ -40572,9 +40575,6 @@
   // bfcache); localStorage writes are synchronous, so the latest state lands before the page goes.
   window.addEventListener('pagehide', function(){ if(gameStarted){ try{ saveGame(); localSaveFlush(true); }catch(e){} } });
 
-  // The local-only build has no backend to probe and no planned-closure lever. SERVER_CLOSED survives as a
-  // constant only because scripts/build.mjs stamps version.json from it.
-  var SERVER_CLOSED = false;
   var gameStarted = false;
   // ---- Path selection: shown once, right after a brand-new account first loads (state.mortal is
   // null until chosen). The player commits to Immortal (standard) or Mortal (permadeath) play. ----
@@ -40649,7 +40649,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.1.4.42';
+  var GAME_VERSION = '0.1.5.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   // ---- Service worker (v0.0.96.0): the PWA install path, and nothing more --------------------------
   // Registered HERE, beside the updater, because the two share a contract: sw.js is NETWORK-FIRST for
@@ -40785,6 +40785,26 @@
       mortalDeath:mortalDeath,
       mortalFeatsWipeOnDeath:mortalFeatsWipeOnDeath,
       pathSelectNeeded:pathSelectNeeded,
+      // The local save (PERSISTENCE block): serialize/parse are pure, the storage helpers take the browser's
+      // localStorage, and the seam exposes the keys so a test can clean up after itself.
+      LOCAL_SAVE_KEY:LOCAL_SAVE_KEY,
+      LOCAL_SAVE_BACKUP_KEY:LOCAL_SAVE_BACKUP_KEY,
+      LOCAL_SAVE_FLUSH_MS:LOCAL_SAVE_FLUSH_MS,
+      localSaveSerialize:localSaveSerialize,
+      localSaveRead:localSaveRead,
+      localSaveReadBackup:localSaveReadBackup,
+      localSaveWrite:localSaveWrite,
+      localSaveParseImport:localSaveParseImport,
+      saveExportFilename:saveExportFilename,
+      playerNameClean:playerNameClean,
+      playerDisplayName:playerDisplayName,
+      PLAYER_NAME_MAX:PLAYER_NAME_MAX,
+      ESTATE_DIRT_ITEM_ID:ESTATE_DIRT_ITEM_ID,
+      ESTATE_LOWER_DIRT_REWARD:ESTATE_LOWER_DIRT_REWARD,
+      estateJobClaim:estateJobClaim,
+      processEstateJob:processEstateJob,
+      estateQueueAdvance:estateQueueAdvance,
+      estateDrainQueueOffline:estateDrainQueueOffline,
       PATH_CHOICES:PATH_CHOICES,
       renderPathSelect:renderPathSelect,
       removePathSelect:removePathSelect,
@@ -40863,7 +40883,6 @@
       estateCancelQueued:estateCancelQueued,
       estateJobLabel:estateJobLabel,
       applyEstateJobCompletion:applyEstateJobCompletion,
-      estateDrainQueueOffline:estateDrainQueueOffline,
       simulateOfflineFarming:simulateOfflineFarming,
       bestOwnedSeedForField:bestOwnedSeedForField,
       seedAllowedForPlanting:seedAllowedForPlanting,

@@ -1,5 +1,45 @@
 # Fantasy Frontiers — project notes for Claude
 
+## THIS BRANCH (`claude/local-only`, 2026-11-27): the game runs entirely in the player's browser
+
+Owner order: "We are going to be cutting the supabase database and logins, running everything on player
+local. Branch this process for now." Everything below this section was written for the backed version on
+`main` and is kept as the record of how those systems worked; where a section describes a server, a guild,
+the Auction House, chat, the leaderboard or a party dungeon, it no longer applies here.
+
+- **The save is `localStorage['ff-save-v1']`** (previous copy rotated into `ff-save-v1-prev` on every write),
+  serialized by `localSaveSerialize()` (the old `cloudSaveData` trim: transient buffers and zero stacks
+  dropped). `saveGame()` only marks it dirty; `localSaveFlush()` writes it on the loop every
+  `LOCAL_SAVE_FLUSH_MS` (4 s), on tab hide and on pagehide. **The selftest page never writes** (`SELFTEST_PAGE`
+  guard): the suites drive the live state object, and a flush would put fixtures over a developer's own save.
+  Settings has a Save data tab: download the JSON, or paste one to import (`localSaveLocked` then refuses every
+  later flush until the reload, so pagehide cannot overwrite the imported file).
+- **No login.** `startGameLocal()` boots straight into the game; a fresh run names the hero and picks the
+  Immortal or Mortal path on the old path screen (`state.playerName`, `pathSelectNeeded()`). `authUser` keeps
+  its shape (`{ username, id:'local' }`) because dozens of sites read `authUser.username`.
+- **Removed wholesale:** guilds (directory, hall, bank, bosses, chat, the shared estate with its per-member
+  jobs, Longhouse queue and assist), the Auction House, global chat and moderation, player profiles, the
+  leaderboard, the Firsts boards, estate visiting, the Discord feed and chronicle broadcasts, the server buffs
+  and the Scapelikes vote, the wallet / item / profile syncs and the item ledger, the dungeon clear ledger and
+  the networked party dungeon, the bug-report edge function (Report a Bug links to the Discord), Turnstile,
+  the privacy/rules modal, the `supabase/` directory and its scripts (`typecheck:functions`, `test:functions`,
+  `sqlcheck`, the seed dumps, `tests/integration.sh`).
+- **What took their place.** The chat dock/drawer/full-screen surfaces are **the Log** (Chronicle + Combat
+  channels, `renderChatTab()`, action `logChannel`). Estate jobs are timed locally: `estateJobClaim` starts
+  the clock for the starter's own duration, `processEstateJob` completes, drains the overhang
+  (`estateDrainQueueOffline`) and advances the queue in one place. Chest gold is plain earnings
+  (`walletEarnChest`). Lumen/Templar heals land on the caster; the Knight's party shield is gone.
+  `estUse(flag)` ignores its flag and there is one estate; `estNote(key, isGuild)` writes only `est_<key>`.
+- **Quest chains.** Kindred Spirits, Guild Killer and The Bane were replaced in place (A Name on the Wind,
+  Deep Delver, The Ironhide) so Getting Started, Combat and Mortal Feats stay at 50 + capstone. The seven
+  guild-estate quests left the Estate chain, which is now **43 + Lord of the Manor** (Act V is 41 to 43); the
+  suite pins those counts.
+- **Pipeline on this branch:** `node scripts/typecheck.mjs`, `npm run seamcheck`, `npm run build`,
+  `npm run artcheck`, `scripts/smoke.mjs`. The smoke's boot probe also asserts the boot wrote `ff-save-v1`
+  and that no request left for a backend. `version.json` carries only the build id (`SERVER_CLOSED` is gone).
+- Open items for the owner: the docs under `docs/` and the historical patch notes still describe the backed
+  game; `redirect/` and `docs/pere-games-move.md` are the old-domain cutover and are unaffected.
+
 ## Game version (MANDATORY on every change)
 
 The player-facing version lives in `index.html` as `var GAME_VERSION = '...'` (next to
@@ -36,7 +76,7 @@ Rules:
   build → smoke test (runs the ?selftest suite, 8k+ assertions) → publish. A failed smoke
   skips the deploy.
 - Local verification before pushing MUST mirror every CI step, in order: `node scripts/typecheck.mjs`,
-  `npm run typecheck:functions`, `npm run test:functions`, **`npm run seamcheck`**, `npm run build`,
+  **`npm run seamcheck`**, `npm run build`,
   `npm run artcheck`, then `scripts/smoke.mjs` (in this remote env, launch Playwright with
   `executablePath: '/opt/pw-browsers/chromium'`). **seamcheck is the one the local habit skipped (2026-10-16):
   the Pages deploy failed on it for EVERY push from 2026-09-20 to 2026-10-16 (23 releases, v0.1.4.10
@@ -44,8 +84,7 @@ Rules:
   noticed because `tests.yml` stayed green and the Pages Source was set to "Deploy from a branch", which
   serves the raw unobfuscated root of main (build id 'dev') regardless of this workflow.** A green local
   smoke is NOT a green deploy; check the Actions tab after every push to main.
-- Supabase edge functions / migrations under `supabase/` are deployed separately by the
-  owner — flag it in your summary whenever a change touches them.
+- There is no `supabase/` directory on this branch (see the local-only section at the top).
 
 ## The combat stage (v0.0.77.0) — the one screen NOT on the tan chrome
 

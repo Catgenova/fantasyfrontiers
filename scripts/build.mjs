@@ -141,13 +141,8 @@ if (count < 1) { console.error("build: no inline <script> blocks matched -- abor
 rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(`${OUT_DIR}/index.html`, out);
-// Live closure signal a running client polls: stamp closed:true whenever the source's SERVER_CLOSED is set,
-// so an in-game session force-closes (mid-combat included) the moment it sees a closed deploy, without a
-// reload or a boot round-trip. Read from the source html (the var survives obfuscation only as a stamp here).
-const closedMatch = /var SERVER_CLOSED = (true|false);/.exec(html);
-if (!closedMatch) { console.error("build: SERVER_CLOSED flag not found in index.html -- aborting."); process.exit(1); }
-const SERVER_CLOSED_FLAG = closedMatch[1] === "true";
-writeFileSync(`${OUT_DIR}/version.json`, JSON.stringify({ build: BUILD_ID, closed: SERVER_CLOSED_FLAG }) + "\n"); // deployed build stamp + live closure flag the client polls
+// The deployed build stamp a running client polls (updateTick): a changed id means a new build shipped.
+writeFileSync(`${OUT_DIR}/version.json`, JSON.stringify({ build: BUILD_ID }) + "\n");
 writeFileSync(`${OUT_DIR}/.nojekyll`, "");                                  // serve files verbatim
 if (existsSync("tests")) cpSync("tests", `${OUT_DIR}/tests`, { recursive: true }); // keep ?selftest working
 if (existsSync("CNAME")) cpSync("CNAME", `${OUT_DIR}/CNAME`);               // preserve a custom domain if set
@@ -167,6 +162,4 @@ if (existsSync("art")) cpSync("art", `${OUT_DIR}/art`, {
   filter: (src) => !/(^|[\\/])(src|README\.md)$/.test(src) && !/[\\/]src[\\/]/.test(src),
 });
 
-// Note: supabase/ (backend source) is intentionally NOT copied, so the edge-function source stops
-// being served from the Pages site.
 console.log(`build: obfuscated ${count} script block(s) -> ${OUT_DIR}/index.html (build ${BUILD_ID})`);

@@ -22974,6 +22974,85 @@
     } finally { s.inventory = save.inv; s.gold = save.gold; s.lockedItems = save.locks; s.physique = save.phys; }
   });
 
+  // ---- Local-only build: the save lives in this browser (the PERSISTENCE block) ---------------------
+  suite('local save: serialize trims the transient buffers and the zero stacks', function(){
+    var s = FF._state;
+    var sv = { inv:s.inventory, log:s.log, stats:s.stats };
+    try {
+      s.inventory = { a:3, b:0, c:-2 }; s.log = [{ t:'x' }]; s.stats = Object.assign({}, s.stats, { zz:0, neg:-1 });
+      var o = JSON.parse(FF.localSaveSerialize(s));
+      eq(o.inventory.a, 3, 'a held stack survives');
+      ok(!('b' in o.inventory) && !('c' in o.inventory), 'zero and negative stacks are dropped');
+      ok(!('log' in o), 'the chronicle buffer is transient');
+      ok(!('zz' in o.stats) && o.stats.neg === -1, 'stats drop zeros but keep a negative counter');
+      ok(o.xp && typeof o.xp === 'object', 'skills ride along');
+    } finally { s.inventory = sv.inv; s.log = sv.log; s.stats = sv.stats; }
+  });
+  suite('local save: write rotates the previous copy into the backup slot', function(){
+    var k = FF.LOCAL_SAVE_KEY, b = FF.LOCAL_SAVE_BACKUP_KEY, usable = false;
+    try{ usable = localStorage.getItem(k) === null && localStorage.getItem(b) === null; }catch(e){ usable = false; }
+    // Only on a browser with NO real save in it (CI, a fresh profile): this writes the real slots, and a
+    // developer's own save must never be touched by the suite.
+    if(!usable){ ok(true, 'a save is present (or storage is unavailable): the rotation is not exercised here'); return; }
+    try {
+      ok(FF.localSaveWrite('{"xp":{"a":1}}'), 'the first write succeeds');
+      eq(FF.localSaveRead(), '{"xp":{"a":1}}', 'and reads back');
+      eq(FF.localSaveReadBackup(), null, 'no backup yet');
+      FF.localSaveWrite('{"xp":{"a":2}}');
+      eq(FF.localSaveReadBackup(), '{"xp":{"a":1}}', 'the second write rotates the first into the backup');
+      FF.localSaveWrite('{"xp":{"a":2}}');
+      eq(FF.localSaveReadBackup(), '{"xp":{"a":1}}', 'an identical write does not overwrite the backup with itself');
+    } finally { try{ localStorage.removeItem(k); localStorage.removeItem(b); }catch(e){} }
+  });
+  suite('local save: import accepts a save and refuses anything else', function(){
+    ok(!FF.localSaveParseImport('not json').ok, 'garbage is refused');
+    ok(!FF.localSaveParseImport('[1,2]').ok, 'an array is refused');
+    ok(!FF.localSaveParseImport('{"gold":5}').ok, 'an object with no skills is refused');
+    var r = FF.localSaveParseImport(FF.localSaveSerialize(FF._state));
+    ok(r.ok && r.data && r.data.xp, 'a real save parses');
+    ok(/^fantasy-frontiers-.*\.json$/.test(FF.saveExportFilename()), 'the export filename is a dated .json: ' + FF.saveExportFilename());
+    ok(FF.LOCAL_SAVE_FLUSH_MS >= 1000 && FF.LOCAL_SAVE_FLUSH_MS <= 10000, 'the periodic write runs every few seconds');
+  });
+  suite('local boot: no login, a hero name and the one-time path choice', function(){
+    eq(FF.playerNameClean('  Sir   Reginald\u0007 '), 'Sir Reginald', 'control characters and runs of spaces are cleaned');
+    eq(FF.playerNameClean(new Array(41).join('x')).length, FF.PLAYER_NAME_MAX, 'names are capped at the maximum');
+    var s = FF._state, sv = { name:s.playerName, mortal:s.mortal };
+    try {
+      s.playerName = ''; eq(FF.playerDisplayName(), 'Adventurer', 'an empty name reads as Adventurer');
+      s.playerName = 'Nyx'; eq(FF.playerDisplayName(), 'Nyx', 'a chosen name shows');
+      s.mortal = null; ok(FF.pathSelectNeeded(), 'a fresh run (mortal === null) opens the path choice');
+      s.mortal = false; ok(!FF.pathSelectNeeded(), 'a chosen path does not');
+    } finally { s.playerName = sv.name; s.mortal = sv.mortal; }
+    ok(typeof FF.chatClient === 'undefined' && typeof FF.CHAT_CONFIG === 'undefined' && typeof FF.walletSync === 'undefined', 'no backend client, config or sync is left on the seam');
+    ok(typeof FF.renderGuildTab === 'undefined' && typeof FF.renderMarketTab === 'undefined' && typeof FF.renderLeaderboardTab === 'undefined', 'the guild, market and leaderboard tabs are gone');
+    ok(!FF.AREAS.some(function(a){ return a.subs.some(function(sub){ return sub[0] === 'guild' || sub[0] === 'market' || sub[0] === 'leaderboard'; }); }), 'and the rail no longer offers them');
+  });
+  suite('estate jobs: local claim, completion, offline drain and queue advance', function(){
+    var s = FF._state;
+    var sv = { estate:s.estate, inv:s.inventory, xp:s.xp.digging, stats:s.stats };
+    try {
+      var t0 = Date.now(), got = null;
+      FF.estateJobClaim('clear', 1, 1, {}, 5000, function(target, startAt, readyAt){ got = { target:target, startAt:startAt, readyAt:readyAt }; });
+      ok(got && got.readyAt - got.startAt === 5000 && got.startAt >= t0, 'the claim starts the clock here, for the starter\'s own duration');
+      var mk = function(){ return { type:'dirt', height:5, owned:true, obstacle:null, buildingId:null, workshopId:null, cottageId:null, totemId:null, fieldTier:null, paveTileId:null }; };
+      var g = []; for(var x=0;x<3;x++){ g[x]=[]; for(var y=0;y<3;y++) g[x][y]=mk(); }
+      var now = Date.now();
+      s.estate = { grid:g, edgesX:[], edgesY:[], expansionsPurchased:0,
+        job:{ kind:'lower', x:1, y:1, startAt:now-20000, readyAt:now-10000 },
+        queue:[ { kind:'lower', x:2, y:2, localMs:3000, payload:{} }, { kind:'lower', x:0, y:0, localMs:60000, payload:{} } ] };
+      s.inventory = {}; s.stats = {};
+      FF.processEstateJob();
+      eq(g[1][1].height, 4, 'a past-due job completes on the tick');
+      eq(g[2][2].height, 4, 'the 10 s overhang drains the 3 s queued action');
+      ok(!!s.estate.job && s.estate.job.kind === 'lower' && s.estate.job.x === 0 && s.estate.job.readyAt - s.estate.job.startAt === 60000, 'the action that did not fit starts live for its own duration');
+      eq(s.estate.queue.length, 0, 'the queue is empty');
+      eq(s.inventory[FF.ESTATE_DIRT_ITEM_ID] || 0, 2 * FF.ESTATE_LOWER_DIRT_REWARD, 'both completed digs paid their Dirt');
+      eq(g[0][0].height, 5, 'the live one has not dug yet');
+      FF.processEstateJob();
+      eq(g[0][0].height, 5, 'and a tick before its time leaves it running');
+    } finally { s.estate = sv.estate; s.inventory = sv.inv; s.xp.digging = sv.xp; s.stats = sv.stats; }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

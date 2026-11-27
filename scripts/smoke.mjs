@@ -46,9 +46,11 @@ try {
   console.log("smoke: selftest =", JSON.stringify(st));
   if (!st || st.error || st.failed > 0 || !(st.passed > 0)) { console.error("smoke: SELFTEST FAILED"); failed = true; }
 
-  // 2) Normal boot (no ?selftest): the shell renders and nothing throws.
+  // 2) Normal boot (no ?selftest): the shell renders, nothing throws, the save is written to this browser,
+  //    and no request leaves for a backend (the local-only build has none).
   const page2 = await browser.newPage();
-  const errs2 = [];
+  const errs2 = [], backend = [];
+  page2.on("request", (r) => { if (/supabase|discord\.com\/api|\/functions\/v1\//i.test(r.url())) backend.push(r.url()); });
   page2.on("pageerror", (e) => errs2.push("pageerror: " + e.message));
   // Console errors count too. They used to be watched on the selftest page and NOT here, so a
   // console.error thrown during a normal boot passed the gate that decides whether we publish.
@@ -66,6 +68,9 @@ try {
   await page2.waitForTimeout(2500);
   const booted = await page2.evaluate(() => !!document.querySelector(".ff-brand, #ffCoinVal, #hdrGold"));
   if (!booted) { console.error("smoke: GAME DID NOT BOOT (no shell element found)"); failed = true; }
+  const saved = await page2.evaluate(() => { try { return !!localStorage.getItem("ff-save-v1"); } catch (e) { return false; } });
+  if (!saved) { console.error("smoke: THE BOOT WROTE NO LOCAL SAVE (ff-save-v1 missing)"); failed = true; }
+  if (backend.length) { console.error("smoke: BACKEND REQUESTS LEFT THE PAGE:\n" + backend.join("\n")); failed = true; }
   if (errs2.length) { console.error("smoke: BOOT ERRORS:\n" + errs2.join("\n")); failed = true; }
   if (errs.length) console.error("smoke: selftest-page errors:\n" + errs.join("\n"));
 } catch (e) {
