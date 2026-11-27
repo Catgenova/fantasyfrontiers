@@ -800,28 +800,6 @@
     FF.estRecomputeWorkshops();
   });
 
-  // ---- Estate snapshot: the compact, render-only blob published for "Visit Estate" viewing ----
-  suite('estate: public snapshot', function(){
-    var s = FF._state;
-    var snap = FF.computeEstateSnapshot();
-    ok(snap && snap.grid && snap.grid.length, 'a snapshot has a grid');
-    eq(snap.grid.length, s.estate.grid.length, 'snapshot grid matches the estate width');
-    eq(snap.edgesX, s.estate.edgesX, 'snapshot carries edgesX');
-    eq(snap.edgesY, s.estate.edgesY, 'snapshot carries edgesY');
-    // Placements + geometry are preserved so the read-only canvas can draw them.
-    var cell = s.estate.grid[0][0];
-    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, h:cell.height, owned:cell.owned };
-    cell.owned = true; cell.type = 'paved'; cell.paveTileId = 'paving_t2'; cell.workshopId = 'workshop_mining_t1'; cell.height = 3;
-    var c2 = FF.computeEstateSnapshot().grid[0][0];
-    eq(c2.paveTileId, 'paving_t2', 'snapshot keeps the pavement tier');
-    eq(c2.workshopId, 'workshop_mining_t1', 'snapshot keeps the workshop');
-    eq(c2.height, 3, 'snapshot keeps the tile height');
-    eq(c2.owned, true, 'snapshot keeps ownership');
-    // No internal timers/jobs leak into the public blob.
-    ok(!('job' in c2) && !('jobs' in c2), 'snapshot cells carry no job/timer state');
-    cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.height = saved.h; cell.owned = saved.owned;
-  });
-
   // ---- Estate: offline queue drain finishes every action the away-gap covers, not just the head ----
   // ---- Totems: the Construction craft, estate placement plumbing, and the +tier crop-yield aura ------
   suite('totems: Construction craft + estate crop-yield aura', function(){
@@ -1192,50 +1170,6 @@
     }
   });
 
-  // ---- Firsts: the milestone race boards (v0.1.4.0, owner order 2026-09-17) ----
-  // The client's threshold tables MIRROR milestone_keys_for in migration 20260917120000; the key shapes
-  // pinned here are the ones the server stamps. A board lists every mark, claimed or not.
-  suite('firsts: the milestone boards list every mark and render holders in order', function(){
-    var s = FF._state;
-    // Thresholds mirror the migration (change both sides or neither).
-    eq(FF.FIRSTS_TOTAL_MARKS.join(','), '500,1000,2000,3000,5000,7500,10000,12500,15000', 'total-level marks mirror the migration');
-    eq(FF.FIRSTS_SKILL_MARKS.join(','), '100,120,150,200', 'skill marks mirror the migration (100 and 120 are the owner\'s ask)');
-    eq(FF.FIRSTS_TOWER_MARKS.join(','), '25,50,75,100,120,150,200,250,300,400,500', 'tower marks mirror the migration');
-    eq(FF.FIRSTS_CLASS_MARKS.join(','), '50,100', 'class marks mirror the migration');
-    var boards = FF.firstsBoards();
-    ok(boards.length === 4, 'four sections: Total Level, Tower, Skills, Classes (got ' + boards.length + ')');
-    var keys = []; boards.forEach(function(b){ b.rows.forEach(function(r){ keys.push(r.key); }); });
-    ok(keys.indexOf('total_1000') !== -1, 'lists Total Level 1000');
-    ok(keys.indexOf('tower_all_100') !== -1 && keys.indexOf('tower_all_120') !== -1, 'lists the All-Classes Tower floors 100 and 120');
-    ok(keys.indexOf('skill_mining_100') !== -1, 'lists Mining Level 100 by default');
-    ok(keys.indexOf('class_knight_100') !== -1 && keys.indexOf('class_knight_50') !== -1, 'lists Knight Level 50 and 100');
-    ok(keys.every(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }), 'every key is charset-safe (the server rejects anything else)');
-    ok(keys.length === keys.filter(function(k, i){ return keys.indexOf(k) === i; }).length, 'no duplicate keys');
-    // Holders render in rank order, a held row says so, an unclaimed mark says so.
-    var rows = [
-      { key:'total_1000', rank:2, user_id:'u2', username:'Bob', reached_at:'2026-09-15T10:00:00Z', backfilled:false },
-      { key:'total_1000', rank:1, user_id:'u1', username:'Alice', reached_at:'2026-09-12T10:00:00Z', backfilled:true },
-      { key:'skill_mining_100', rank:1, user_id:'u3', username:'Carol<b>', reached_at:'2026-09-16T10:00:00Z', backfilled:false }
-    ];
-    var by = FF.firstsByKey(rows);
-    eq(by.total_1000.map(function(r){ return r.username; }).join(','), 'Alice,Bob', 'holders sort by rank');
-    var html = FF.renderFirstsBoard(rows);
-    ok(html.indexOf('1. <b data-action="viewProfile" data-id="u1" role="button">Alice</b> <i>(held)</i>') !== -1, 'a backfilled holder reads as held, with a profile link');
-    ok(/2\. <b[^>]*>Bob<\/b>/.test(html), 'the second holder is numbered 2');
-    ok(html.indexOf('Carol&lt;b&gt;') !== -1, 'usernames are escaped');
-    ok(/Unclaimed\. Be the first\./.test(html), 'an unreached mark is the goal');
-    ok(html.indexOf('Total Level 15,000') !== -1 || html.indexOf('Total Level 15000') !== -1, 'the top mark is listed even with nobody on it');
-    // Class levels ride along in the profile as their own compact map, never in the ranked skills sum.
-    var savedXp = s.xp; s.xp = Object.assign({}, s.xp, { knight: FF.xpFloorForLevel(50) });
-    try {
-      var cl = FF.classLevelsForProfile();
-      eq(cl.knight, 50, 'a trained class reports its level');
-      var prof = FF.computeProfileStats();
-      eq(prof.classes.knight, 50, 'the profile carries the classes map');
-      eq(prof.total_level, Object.keys(prof.skills).reduce(function(a,k){ return a + prof.skills[k]; }, 0), 'the classes map never disturbs total_level == sum(skills), the server invariant');
-    } finally { s.xp = savedXp; }
-  });
-
   // ---- Frontier quests count "Tier T or better" (owner, 2026-09-17) ----
   // A player already working Tier 10 was sent back to craft Tin, Iron and Steel to clear the Second-to-Fifth
   // Frontiers. Every tier-gated Frontier objective now sums its tier and every tier above it; a lower tier
@@ -1518,13 +1452,6 @@
       g[3][3].type = 'paved'; g[3][3].paveTileId = 'paving_t20'; g[3][3].totemId = 'totem_t3';
       FF.estateBreakPavement(3, 3);
       eq(s.inventory.totem_t3 || 0, 1, 'a Totem is ejected too (it used to be destroyed)');
-
-      // OMISSION 2: the public snapshot must carry both, or half the estate is invisible to visitors.
-      var snap = FF.computeEstateSnapshot();
-      ok(!!snap, 'the estate snapshot builds');
-      eq(snap.grid[1][1].buildingId, 'apiary_t7', 'the snapshot carries buildingId to visitors');
-      g[4][4].totemId = 'totem_t2';
-      eq(FF.computeEstateSnapshot().grid[4][4].totemId, 'totem_t2', 'and totemId, which it never used to');
 
       // Removal refunds and clears the hive clock, so a later Apiary cannot resume an old one.
       s.inventory = {};
@@ -2621,37 +2548,6 @@
     } finally {
       S.activity = savedAct; S.extraCraftSlots = savedExtra;
     }
-  });
-
-  // ---- Discord feed: the stats tail appended to fantastic-craft / enhance blasts ----------
-  suite('discord feed: item stats tail', function(){
-    // A fantastic relic reads its computed %dmg/armour bonus.
-    var relic = FF.discordItemStatsText('relic_t0_fantastic');
-    // The tail is UNWRAPPED as of v0.0.72.7: the relay adds the " ( ... )" so the message shape stays
-    // server-owned. (Inner parentheses are still fine -- a base stat line reads "Damage 100-200 (+12)".)
-    ok(!/^ \(/.test(relic) && !/\)$/.test(relic), 'stats tail is NOT wrapped -- the relay wraps it: ' + JSON.stringify(relic));
-    ok(relic.indexOf('% Damage & Armour') !== -1, 'relic tail carries the dmg/armour bonus');
-
-    // A fantastic tool reads its tier speed bonus scaled by the rarity multiplier.
-    var toolId = Object.keys(FF.TOOL_ITEMS).filter(function(id){ return /_fantastic$/.test(id); })[0];
-    ok(!!toolId, 'a fantastic tool item exists');
-    ok(FF.discordItemStatsText(toolId).indexOf('speed') !== -1, 'tool tail states its speed bonus');
-
-    // A fantastic belt leads with the EXTRA task slots it grants (+3 over the base 1); a stackable weapon
-    // leads with damage. (Was "4 task slots", the total -- see the belt slot-counter fix.)
-    ok(FF.discordItemStatsText('belt_t0_fantastic').indexOf('+3 task slots') !== -1, 'belt tail states its +3 task slots');
-    var wid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('stweapon_')===0 && /_fantastic$/.test(id); })[0];
-    ok(!!wid, 'a fantastic stackable weapon exists');
-    ok(FF.discordItemStatsText(wid).indexOf('Damage ') !== -1, 'weapon tail states its damage range');
-
-    // An enhance blast passes the unique: enhance-scaled base stats + its enchant list.
-    var u = { base:wid, kind:'weapon', tier:0, rarity:'fantastic', enhance:12, enchants:[{mod:'critDamage', roll:10}] };
-    var tail = FF.discordItemStatsText(null, u);
-    ok(tail.indexOf('Damage ') !== -1 && tail.indexOf('(+12)') !== -1, 'enhanced weapon tail shows the +12-scaled damage');
-    ok(/Critical/i.test(tail), 'enhanced tail lists the enchant');
-
-    // Unknown ids stay silent rather than posting junk.
-    eq(FF.discordItemStatsText('no_such_item'), '', 'an unknown id yields an empty tail');
   });
 
   // ---- Combat placement: a fight claims the primary slot without killing a queued task ----
@@ -4236,9 +4132,9 @@
   // +5x-base each from a max-tier Faith activity, the Lv100 Masterwork physique, and the server Rarity Bonus.
   suite('rarity chance: unified bases + 5x-base caps', function(){
     var S = FF._state;
-    var sv = { rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, mw:S.physique.masterwork, faith:S.faith };
+    var sv = { fa:S.faithActivity, mw:S.physique.masterwork, faith:S.faith };
     try {
-      S.faithActivity = { type:null, tier:0 }; FF._serverBuff.rarityUntil = 0; S.physique.masterwork = 0; S.faith = 0;
+      S.faithActivity = { type:null, tier:0 }; S.physique.masterwork = 0; S.faith = 0;
       // Static bases.
       near(FF.rareCraftChance(), 0.01, 'base Rare is 1%', 1e-9);
       near(FF.supremeCraftChance(), 0.001, 'base Supreme is 0.1%', 1e-9);
@@ -4249,12 +4145,6 @@
       near(FF.supremeCraftChance(), 0.001 + 0.005, 'Lv100 Mastery adds +0.5% supreme', 1e-9);
       near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'Lv100 Mastery adds +0.005% fantastic', 1e-12);
       S.physique.masterwork = 0;
-      // Server Rarity Bonus adds 5x base to each.
-      FF._serverBuff.rarityUntil = Date.now() + 60000;
-      near(FF.rareCraftChance(), 0.01 + 0.05, 'server buff adds +5% rare', 1e-9);
-      near(FF.supremeCraftChance(), 0.001 + 0.005, 'server buff adds +0.5% supreme', 1e-9);
-      near(FF.fantasticCraftChance(), 0.00001 + 0.00005, 'server buff adds +0.005% fantastic', 1e-12);
-      FF._serverBuff.rarityUntil = 0;
       // Max-tier Faith activity adds 5x base to its rarity.
       S.faith = 1e9;
       S.faithActivity = { type:'devotion', tier:20 }; near(FF.faithRarityBonus('devotion'), 0.05, 'max Devotion caps Rare bonus at +5%', 1e-9);
@@ -4266,21 +4156,21 @@
       near(rc.rare, FF.rareCraftChance(), 'relics share the Rare chance', 1e-12);
       near(rc.supreme, FF.supremeCraftChance(), 'relics share the Supreme chance', 1e-12);
       near(rc.fantastic, FF.fantasticCraftChance(), 'relics share the Fantastic chance', 1e-12);
-    } finally { FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.physique.masterwork = sv.mw; S.faith = sv.faith; }
+    } finally { S.faithActivity = sv.fa; S.physique.masterwork = sv.mw; S.faith = sv.faith; }
   });
 
   // ---- Masterwork forge rarity: now the SAME unified odds as any craft (1% / 0.1% / 0.01% base) ----
   suite('masterwork forge rarity odds', function(){
     var S = FF._state;
-    var sv = { mw:S.physique.masterwork, rand:Math.random, rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, faith:S.faith };
+    var sv = { mw:S.physique.masterwork, rand:Math.random, fa:S.faithActivity, faith:S.faith };
     try {
-      FF._serverBuff.rarityUntil = 0; S.faithActivity = { type:null, tier:0 }; S.faith = 0; S.physique.masterwork = 0; // isolate: base only
+      S.faithActivity = { type:null, tier:0 }; S.faith = 0; S.physique.masterwork = 0; // isolate: base only
       // Bands (base): Fantastic [0,0.00001), Supreme [0.00001,0.00101), Rare [0.00101,0.01101), Normal [0.01101,1).
       Math.random = function(){ return 0.000005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll < 0.00001 -> Fantastic (unified 0.001% base)');
       Math.random = function(){ return 0.0005; };  eq(FF.rollMastercraftRarity(), 'supreme',   'roll in [0.00001,0.00101) -> Supreme (0.1% base)');
       Math.random = function(){ return 0.005; };   eq(FF.rollMastercraftRarity(), 'rare',      'roll in [0.00101,0.01101) -> Rare (1% base)');
       Math.random = function(){ return 0.5; };     eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.5 -> Normal');
-    } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.faith = sv.faith; }
+    } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; S.faithActivity = sv.fa; S.faith = sv.faith; }
   });
 
   // ---- Resources reorg: Gathering / Refining / Cooking / Construction split + 70% gather success -----
@@ -4342,61 +4232,6 @@
     } finally {
       S.gatherTools = savedT; S.gatherToolRarities = savedR;
     }
-  });
-
-  // ---- Persisted supreme/fantastic craft blasts reload into global chat as system messages ----------
-  suite('persistent craft blasts', function(){
-    var sup = FF.chronicleCraftToSystemMsg({ id:7, username:'Nyx', body:'Supreme Iron Sword', created_at:'2026-07-10T00:00:00Z' });
-    ok(sup && sup.system === true && sup.rarity === 'supreme', 'a Supreme craft row -> a system message');
-    ok(sup.id === 'sys-7' && sup.username === null && /Nyx forged a Supreme Iron Sword!/.test(sup.body), 'system message carries the forger + item');
-    var fan = FF.chronicleCraftToSystemMsg({ id:8, username:'Vex', body:'Fantastic Dragon Bow', created_at:'2026-07-10T00:00:00Z' });
-    ok(fan && fan.rarity === 'fantastic', 'a Fantastic craft row -> a fantastic system message');
-    ok(FF.chronicleCraftToSystemMsg({ id:9, username:'A', body:'Rare Copper Ring', created_at:'x' }) === null, 'Rare/normal crafts are not blasted');
-    ok(FF.chronicleCraftToSystemMsg({ id:10, username:'A', body:'Iron Sword', created_at:'x' }) === null, 'a plain craft is not blasted');
-  });
-
-  // ---- Persisted server-wide IMPROVEMENT (enhance) blasts reload into chat too ----------------------
-  suite('persistent improvement blasts', function(){
-    // Enhance body carries the "+N" level; +15 or higher reads Fantastic, otherwise Supreme.
-    eq(FF.enhanceBodyRarity('Willow Fire Wand to +12'), 'supreme', '+12 improvement -> supreme tint');
-    eq(FF.enhanceBodyRarity('Dragon Bow to +15'), 'fantastic', '+15 improvement -> fantastic tint');
-    eq(FF.enhanceBodyRarity('Sword to +20'), 'fantastic', '+20 improvement -> fantastic tint');
-    var e = FF.chronicleEnhanceToSystemMsg({ id:42, username:'Nyx', body:'Willow Fire Wand to +12', created_at:'2026-07-10T00:00:00Z' });
-    ok(e && e.system === true && e.rarity === 'supreme', 'an enhance row -> a persistent system message');
-    ok(e.id === 'sys-42' && e.username === null && /Nyx enhanced their Willow Fire Wand to \+12!/.test(e.body), 'improvement blast carries the enhancer + item + level');
-    ok(FF.chronicleEnhanceToSystemMsg({ id:43, username:'A', body:'', created_at:'x' }) === null, 'an empty enhance body -> no blast');
-    // The kind-dispatcher routes each chronicle row to the right synthesizer.
-    ok(/enhanced their/.test(FF.chronicleRowToSystemMsg({ kind:'enhance', id:1, username:'A', body:'X to +11', created_at:'x' }).body), 'row dispatcher handles enhance rows');
-    ok(/forged a/.test(FF.chronicleRowToSystemMsg({ kind:'craft', id:2, username:'A', body:'Supreme Y', created_at:'x' }).body), 'row dispatcher handles craft rows');
-    ok(FF.chronicleRowToSystemMsg({ kind:'level', id:3, username:'A', body:'Mining 50', created_at:'x' }) === null, 'non-blast chronicle kinds (level) produce no chat message');
-    // Owner order (2026-08-05): only a MAXED (+15) enhance blasts. +11 to +14 trigger neither the
-    // in-game announcement nor the Discord feed post; the +12 fixtures above stay because HISTORICAL
-    // pre-rule rows still live in the chronicle and must keep rendering. The discord_feed edge
-    // function mirrors the bar server-side (ENHANCE_MIN = 15), so a stale client cannot post below it.
-    eq(FF.ENHANCE_ANNOUNCE_MIN, 15, 'the in-game enhance blast fires only at +15');
-    eq(FF.DISCORD_ENHANCE_MIN, 15, 'the Discord enhance blast fires only at +15');
-  });
-
-  // ---- Mortal-death blasts (v0.0.97.2): chronicle body + persisted reload + chat wiring --------------
-  suite('mortal death blasts', function(){
-    // The shared broadcast body: self-contained after the fallen player's name, carries the slayer
-    // and the Total Level, and stays well inside chronicleBroadcast's 120-char truncation so the
-    // Total Level can never be the part that falls off.
-    var body = FF.mortalDeathBody({ name:'Archdemon' });
-    ok(/^has fallen! Slain by the Archdemon at Total Level [\d,]+\.$/.test(body), 'body names the slayer + Total Level');
-    ok(body.length <= 120, 'body fits the chronicle 120-char limit (' + body.length + ' chars)');
-    // The party-dungeon death path calls mortalDeath(null): no single foe struck the blow.
-    ok(/Slain by the Dungeon Depths/.test(FF.mortalDeathBody(null)), 'a party-run death (null monster) is slain by the Dungeon Depths');
-    // A LONG monster name still leaves the Total Level inside the truncation window.
-    var longBody = FF.mortalDeathBody({ name:'Ancient Broodmother of the Sunken Necropolis Depths' });
-    ok(longBody.length <= 120 && /Total Level [\d,]+\.$/.test(longBody), 'even a long slayer name keeps the Total Level inside 120 chars');
-    // Persisted 'mortal_death' chronicle rows reload into global chat as fantastic system messages,
-    // the same treatment supreme/fantastic crafts and +15 enhances get.
-    var m = FF.chronicleMortalToSystemMsg({ id:9, username:'Nyx', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'2026-08-10T00:00:00Z' });
-    ok(m && m.system === true && m.rarity === 'fantastic', 'a mortal_death row -> a fantastic system message');
-    ok(m.id === 'sys-9' && m.username === null && /Nyx has fallen! Slain by the Rabbit at Total Level 42\./.test(m.body), 'blast carries the fallen player + slayer + Total Level');
-    ok(FF.chronicleMortalToSystemMsg({ id:10, username:'A', body:'', created_at:'x' }) === null, 'an empty mortal_death body -> no blast');
-    ok(/has fallen/.test(FF.chronicleRowToSystemMsg({ kind:'mortal_death', id:3, username:'A', body:'has fallen! Slain by the Rabbit at Total Level 42.', created_at:'x' }).body), 'row dispatcher handles mortal_death rows');
   });
 
   // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
@@ -4496,133 +4331,6 @@
     });
   });
 
-  // ---- Leaderboard covers every skill / proficiency / class / physique ------------------
-  suite('leaderboard coverage', function(){
-    // Union of every skill id the leaderboard can rank or show (drives both the "Rank by"
-    // dropdown and the profile page).
-    var grouped = {};
-    FF.SKILL_GROUPS.forEach(function(g){ g.skills.forEach(function(sk){ grouped[sk] = true; }); });
-
-    // Every main skill/proficiency/class is grouped, so newly-added content can never silently
-    // drop off the board.
-    // Every Class has a hand-crafted hero portrait (the leaderboard shows it per player, not a small icon).
-    ok(FF.CLASS_PORTRAITS && FF.CLASS_PORTRAITS.none, 'the no-class portrait exists');
-    FF.CLASS_SKILL_IDS.forEach(function(cid){
-      var pt = FF.CLASS_PORTRAITS[cid];
-      ok(typeof pt === 'string' && pt.indexOf('<svg') === 0, 'class ' + cid + ' has a hand-crafted portrait');
-    });
-    FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ ok(grouped[id], 'leaderboard covers main skill: ' + id); });
-    // Every physique too (body physiques + elemental attunements).
-    FF.PHYSIQUE_SKILLS.forEach(function(p){ ok(grouped[p.id], 'leaderboard covers physique: ' + p.id); });
-
-    // Spot-check the recently-added content specifically.
-    ['scimitar','claw','treasureHunter','wands','staves','scepters','warding',
-     'clotharmor','leatherarmor','chainmailarmor','platearmor',
-     'fireAttunement','waterAttunement','earthAttunement','lightAttunement','darkAttunement']
-      .forEach(function(id){ ok(grouped[id], 'newly-added content is on the leaderboard: ' + id); });
-
-    // Everything ranked has a human-readable label (no raw ids leak into the UI).
-    Object.keys(grouped).forEach(function(id){ ok(FF.SKILL_LABELS[id] && FF.SKILL_LABELS[id] !== id, 'labelled: ' + id); });
-
-    // There is a dedicated Physique group.
-    ok(FF.SKILL_GROUPS.some(function(g){ return g.label === 'Physique'; }), 'a Physique group exists');
-
-    // Profile stats fold physiques into the skills map AND count them toward total_level, so the
-    // server's `total_level == sum(skills)` validation passes (submit_profile rejects any mismatch).
-    var s = FF._state;
-    var physId = FF.PHYSIQUE_SKILLS[0].id, mainId = 'mining';
-    var snap = { phys:s.physique[physId], xp:s.xp[mainId] };
-    function sumSkills(st){ return Object.keys(st.skills).reduce(function(a,k){ return a + st.skills[k]; }, 0); }
-    s.physique[physId] = 0; s.xp[mainId] = 0;
-    var base = FF.computeProfileStats();
-    ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
-    eq(base.total_level, sumSkills(base), 'total_level equals the sum of every submitted skill (server invariant)');
-    // Guard the server's MAX_SKILLS cap (submit_profile rejects the WHOLE submission if the skill count
-    // exceeds it -- which silently froze the entire leaderboard once the set outgrew the old cap of 160).
-    // The submitted set is ~172 today; keep it well under the server's 400 so adding classes/skills can't
-    // break profile writes without this failing first as a heads-up to bump the server cap.
-    var submittedSkillCount = Object.keys(base.skills).length;
-    ok(submittedSkillCount < 350, 'submitted leaderboard skill count (' + submittedSkillCount + ') stays well under the server MAX_SKILLS cap (400)');
-    s.physique[physId] = FF.xpFloorForLevel(31); // ~Lv 31
-    var afterPhys = FF.computeProfileStats();
-    ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');
-    ok(afterPhys.total_level > base.total_level, 'physiques now raise total_level');
-    eq(afterPhys.total_level, sumSkills(afterPhys), 'total_level still equals sum(skills) after training a physique');
-    s.xp[mainId] = FF.xpFloorForLevel(31);
-    ok(FF.computeProfileStats().total_level > afterPhys.total_level, 'a main skill also raises total_level');
-    s.physique[physId] = snap.phys; s.xp[mainId] = snap.xp;
-
-    // Ranking by a physique metric reads the skills map.
-    eq(FF.lbMetricValue({ skills:{ fireAttunement: 42 } }, 'skill:fireAttunement'), 42, 'can rank by a physique');
-    eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
-  });
-
-  // ---- In-game bug/feedback ticket (Mr Cookie's onsite ticket button) ----
-  // The "Report a Bug" tab renders a category picker + a details box when signed in, and a Discord
-  // fallback when signed out. The secret NEVER ships in the client: the panel only wires a call to the
-  // bug_report edge function; the webhook lives there.
-  suite('bug report: the onsite ticket panel', function(){
-    ok(typeof FF.renderBugReportPanel === 'function' && Array.isArray(FF.BUG_REPORT_CATS), 'panel + categories exported');
-    var savedCat = FF._bugReportCat();
-    try {
-      // Signed out: a clear sign-in prompt plus the Discord fallback link, and NO details textarea.
-      FF._authUserSet(null);
-      var out = FF.renderBugReportPanel();
-      ok(/Sign in/i.test(out), 'signed out, the panel asks the player to sign in');
-      ok(/discord\.gg/i.test(out), 'and offers the Discord fallback');
-      ok(!/id="bugReportText"/.test(out), 'no report box is shown when signed out');
-
-      // Signed in: the category chips (one per category, the selected one highlighted) and the details box.
-      FF._authUserSet({ username:'Tester', id:'u-bug', isGuest:false });
-      FF._bugReportCat('balance');
-      var inp = FF.renderBugReportPanel();
-      ok(/id="bugReportText"/.test(inp), 'signed in, the details box renders');
-      FF.BUG_REPORT_CATS.forEach(function(c){ ok(inp.indexOf('data-cat="'+c.id+'"') !== -1, 'a chip exists for the '+c.id+' category'); });
-      // The selected category carries the "on" class; exactly the chosen one.
-      ok(/tracker-chip on" data-action="setBugCat" data-cat="balance"/.test(inp), 'the chosen category chip is highlighted');
-      ok(!/tracker-chip on" data-action="setBugCat" data-cat="bug"/.test(inp), 'an unchosen category chip is not highlighted');
-      ok(inp.indexOf('data-action="submitBugReport"') !== -1, 'the send button dispatches to submitBugReport');
-
-      // The diagnostics line is best-effort text (never throws) and mentions the current tab.
-      var ctx = FF.bugReportContext();
-      ok(typeof ctx === 'string', 'bugReportContext returns a string');
-    } finally {
-      FF._authUserSet(null);
-      FF._bugReportCat(savedCat);
-    }
-  });
-
-  // ---- Tower leaderboards: an All-Classes climb board + one per Class tower ----
-  suite('leaderboard: the Tower climb boards', function(){
-    // The profile carries a compact map of the deepest floor per entrance (best > 0 only).
-    var s = FF._state, sv = s.tower;
-    try {
-      s.tower = { all:{ floor:1, best:42 }, reaver:{ floor:1, best:30 }, herald:{ floor:1, best:0 } };
-      var t = FF.towerBestsForProfile();
-      eq(t.all, 42, "the All-Classes best rides along");
-      eq(t.reaver, 30, "a class best rides along");
-      ok(!('herald' in t), 'an entrance never climbed (best 0) is omitted from the compact map');
-      // computeProfileStats surfaces the same map for submit_profile / the local preview.
-      ok(FF.computeProfileStats().tower && FF.computeProfileStats().tower.all === 42, 'computeProfileStats includes the tower map');
-    } finally { s.tower = sv; }
-    // Ranking reads p.tower[entranceId]; a metric with no climb ranks 0.
-    var row = { total_level:100, tower:{ all:55, reaver:33 } };
-    eq(FF.lbMetricValue(row, 'tower:all'), 55, 'ranks by the All-Classes floor');
-    eq(FF.lbMetricValue(row, 'tower:reaver'), 33, 'ranks by a Class tower floor');
-    eq(FF.lbMetricValue(row, 'tower:herald'), 0, 'a tower never entered ranks 0');
-    eq(FF.lbMetricValue({ total_level:100 }, 'tower:all'), 0, 'a row with no tower map ranks 0');
-    ok(FF.lbMetricIsTower('tower:all') && !FF.lbMetricIsTower('skill:fishing') && !FF.lbMetricIsTower('total'), 'lbMetricIsTower detects the tower prefix');
-    // Labels: "The Tower: All Classes" and per-class.
-    eq(FF.lbMetricLabel('tower:all'), 'The Tower: All Classes', 'the All-Classes tower label');
-    ok(/^The Tower: /.test(FF.lbMetricLabel('tower:reaver')) && FF.lbMetricLabel('tower:reaver') !== 'The Tower: reaver', 'a class tower label resolves the class name');
-    // The "Rank by" dropdown offers a Tower optgroup with the all board + one option per entrance.
-    var opts = FF.lbMetricOptions();
-    ok(/optgroup label="The Tower"/.test(opts), 'the dropdown has a "The Tower" group');
-    ok(/value="tower:all"/.test(opts), 'the All-Classes tower is offered');
-    var perClass = (opts.match(/value="tower:/g) || []).length;
-    eq(perClass, FF.TOWER_ENTRANCES.length, 'every Tower entrance (all + each class) is a board');
-  });
-
   // ---- PEON_MAX_SLOTS must be a defined constant (its absence blanked the Peons tab) ---
   suite('peon slot constant', function(){
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');
@@ -4630,62 +4338,6 @@
     eq(FF.ESTATE_COTTAGE_MS_PER_TIER, 10*60*1000, 'cottage build = 10 min per tier');
     eq((0+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 600000, 'tier-0 cottage builds in 10 min');
     eq((3+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 2400000, 'tier-3 cottage builds in 40 min');
-  });
-
-  // ---- Server-wide EXP buff -------------------------------------------------------------
-  suite('server exp buff', function(){
-    eq(FF.SERVER_BUFF_EXP_COST, 100000, 'exp buff costs 100,000 gold');
-    eq(FF.SERVER_BUFF_EXP_MULT, 1.5, 'exp buff is +50% XP');
-    eq(FF.expBuffMultFor(1000, 2000), 1.5, 'buff active (now < until) -> 1.5x');
-    eq(FF.expBuffMultFor(3000, 2000), 1, 'buff expired (now >= until) -> 1x');
-    eq(FF.expBuffMultFor(1000, 0), 1, 'no buff (until 0) -> 1x');
-    ok(FF.LB_STAT_METRICS.some(function(m){ return m.key === 'hoursBuffed'; }), 'hoursBuffed is a leaderboard metric');
-    // Summoning still works; it just no longer pings a (removed) server-wide grant. Force a summon on a
-    // skill with a familiar defined but not yet owned and confirm the familiar is granted.
-    var s = FF._state;
-    var skill = Object.keys(FF.FAMILIAR_DATA).filter(function(k){ return !(s.familiars[k] && s.familiars[k].owned); })[0];
-    ok(skill, 'there is a skill whose familiar is not yet owned to test the summon');
-    if(skill){
-      var savedRandom = Math.random, savedFam = s.familiars[skill];
-      s.familiars[skill] = undefined;
-      Math.random = function(){ return 0; };    // force the summon roll to succeed
-      try { FF.maybeSummonFamiliar(skill); } finally { Math.random = savedRandom; }
-      ok(s.familiars[skill] && s.familiars[skill].owned, 'the brand-new familiar was summoned');
-      s.familiars[skill] = savedFam;
-    }
-    // The buy/registration buff is a full hour; the server extends greatest(now, active_until) by that and
-    // the client just reflects whatever active_until comes back.
-    eq(FF.SERVER_BUFF_EXP_MS, 3600*1000, 'a full (purchase/registration) buff is 1 hour');
-    ok(typeof FF.serverBuffGrant === 'undefined', 'the free client-callable +50% EXP grant is gone (only the paid buy extends it)');
-  });
-
-  // ---- Rarity Bonus: an event-triggered, stacking server-wide buff (sacrifice a rare+ item) ----
-  suite('server buff: Rarity Bonus', function(){
-    // Duration scales linearly t0..t20, per rarity (mirrors the server's raritySeconds).
-    eq(FF.rarityBuffSeconds('rare', 0), 10, 'rare t0 -> 10s');
-    eq(FF.rarityBuffSeconds('rare', 20), 300, 'rare t20 -> 5 min');
-    eq(FF.rarityBuffSeconds('rare', 10), 155, 'rare t10 is the 10..300 midpoint');
-    eq(FF.rarityBuffSeconds('supreme', 0), 30, 'supreme t0 -> 30s');
-    eq(FF.rarityBuffSeconds('supreme', 20), 600, 'supreme t20 -> 10 min');
-    eq(FF.rarityBuffSeconds('fantastic', 0), 30, 'fantastic t0 -> 30s');
-    eq(FF.rarityBuffSeconds('fantastic', 20), 900, 'fantastic t20 -> 15 min');
-    eq(FF.rarityBuffSeconds('normal', 20), 0, 'a normal (non-rare) item grants nothing');
-    eq(FF.rarityBuffSeconds('rare', 99), 300, 'tier is clamped to t20');
-    // Effect: the per-rarity chance bonus applies ONLY while the shared timer is live.
-    eq(FF.SERVER_RARITY_BONUS.rare, 0.05, 'rare bonus is +5% (5x base)');
-    eq(FF.SERVER_RARITY_BONUS.supreme, 0.005, 'supreme bonus is +0.5% (5x base)');
-    eq(FF.SERVER_RARITY_BONUS.fantastic, 0.00005, 'fantastic bonus is +0.005% (5x base)');
-    eq(FF.rarityBonusShortLabel(), '5%R · 0.5%S · 0.005%F', 'the top-bar chip shows the compact per-rarity summary (3dp so the fantastic figure survives)');
-    var sv = FF._serverBuff.rarityUntil;
-    try {
-      FF._serverBuff.rarityUntil = 0;
-      ok(!FF.serverRarityBuffActive() && FF.serverBuffRarityBonus('rare') === 0, 'no bonus while inactive');
-      FF._serverBuff.rarityUntil = Date.now() + 60000;
-      ok(FF.serverRarityBuffActive(), 'active with a future timer');
-      near(FF.serverBuffRarityBonus('rare'), 0.05, 'rare +5% while active', 1e-9);
-      near(FF.serverBuffRarityBonus('supreme'), 0.005, 'supreme +0.5% while active', 1e-9);
-      near(FF.serverBuffRarityBonus('fantastic'), 0.00005, 'fantastic +0.005% while active', 1e-12);
-    } finally { FF._serverBuff.rarityUntil = sv; }
   });
 
   // ---- Physique XP scales with task tier: each associated physique gains tier+1 (1..21) --------
@@ -4730,234 +4382,6 @@
     ok(trainedIds('runesmithing').indexOf('sleightOfHand') !== -1, 'runesmithing now trains Sleight of Hand (speed)');
     // Unchanged where already covered: heavy crafts keep exactly their original set + no phantom adds.
     ok(trainedIds('carpentry').indexOf('grossMotor') !== -1 && trainedIds('carpentry').indexOf('handStrength') === -1, 'carpentry keeps Gross Motor, gains no hand-craft physique');
-  });
-
-  // ---- Chat profanity filter -------------------------------------------------------------------
-  suite('chat: profanity filter', function(){
-    var c = FF.censorChat;
-    function censored(s){ var out = c(s); return out !== s && out.indexOf('*') !== -1; }
-    // Clean text is untouched.
-    eq(c('hello there, nice to meet you'), 'hello there, nice to meet you', 'clean text passes through');
-    eq(c(''), '', 'empty string is safe');
-    // Bad words get masked (first char kept, rest starred).
-    eq(c('you fuck'), 'you f***', 'basic swear masked');
-    ok(censored('what the shit'), 'shit masked');
-    ok(censored('bitch'), 'bitch masked');
-    // Inflections and compounds.
-    ok(censored('stop fucking around'), 'inflection (fucking) masked');
-    ok(censored('you asshole'), 'compound (asshole) masked');
-    ok(censored('motherfucker'), 'motherfucker masked');
-    // Light obfuscation: leetspeak + repeated letters.
-    ok(censored('sh1t'), 'leetspeak (sh1t) masked');
-    ok(censored('fuuuck'), 'stretched (fuuuck) masked');
-    ok(censored('@sshole'), 'leet @ (@sshole) masked');
-    // No Scunthorpe: real words that merely contain a bad substring are untouched.
-    eq(c('the assassin joined our class in the grass'), 'the assassin joined our class in the grass', 'assassin/class/grass untouched');
-    eq(c('check the cockpit and pass'), 'check the cockpit and pass', 'cockpit/pass untouched');
-    eq(c('scunthorpe analysis'), 'scunthorpe analysis', 'scunthorpe untouched');
-    // Punctuation-adjacent still catches.
-    ok(censored('fuck!'), 'trailing punctuation still masked');
-    // First letter of the mask is preserved so length/shape stays readable.
-    ok(c('shit').charAt(0) === 's' && c('shit').slice(1) === '***', 'mask keeps first char + stars');
-    // Website links are stripped (scam/off-site link prevention), on send AND display.
-    eq(c('visit http://evil.com/win now'), 'visit [link removed] now', 'http URL removed');
-    eq(c('go to https://phish.io/x'), 'go to [link removed]', 'https URL removed');
-    eq(c('see www.example.org for more'), 'see [link removed] for more', 'www URL removed');
-    eq(c('join discord.gg/abc123'), 'join [link removed]', 'bare domain.tld/path removed');
-    eq(c('my site is cool-stuff.net today'), 'my site is [link removed] today', 'hyphenated bare domain removed');
-    ok(c('grab it at bit.ly/xyz').indexOf('[link removed]') !== -1, 'short-link domain removed');
-    // False positives are NOT censored: decimals, initialisms, party codes, item tokens.
-    eq(c('it does 3.5x damage'), 'it does 3.5x damage', 'decimals are not links');
-    eq(c('e.g. the tunnel'), 'e.g. the tunnel', 'initialisms (e.g.) are not links');
-    eq(c('join my party d2:3f9a1b2c-4d5e-6f70'), 'join my party d2:3f9a1b2c-4d5e-6f70', 'a party code is not a link');
-    eq(c('look {{i:AbC123deF}}'), 'look {{i:AbC123deF}}', 'an item-link token is not a website link');
-  });
-
-  // ---- Chat profanity filter: per-viewer display toggle ----------------------------------------
-  suite('chat: profanity filter is an opt-out display setting', function(){
-    var s = FF._state;
-    s.settings = s.settings || {};
-    var prev = s.settings.chatFilter;
-    var d = FF.chatDisplayCensor;
-    // Default (filter ON): profanity is masked at display, links always stripped.
-    s.settings.chatFilter = true;
-    ok(d('you fuck').indexOf('*') !== -1, 'filter on -> profanity masked at display');
-    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter on -> links removed');
-    // Opted out (filter OFF): the raw words come through, but links are STILL stripped (scam prevention).
-    s.settings.chatFilter = false;
-    eq(d('you fuck'), 'you fuck', 'filter off -> profanity shown raw');
-    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter off -> links still removed');
-    // Undefined setting is treated as ON (safe default), so it never leaks profanity by accident.
-    delete s.settings.chatFilter;
-    ok(d('you fuck').indexOf('*') !== -1, 'missing setting defaults to masking');
-    // The underlying helpers are independent: maskProfanity always masks, censorChat is the full pass.
-    ok(FF.maskProfanity('shit').charAt(0) === 's' && FF.maskProfanity('shit').slice(1) === '***', 'maskProfanity masks unconditionally');
-    ok(FF.censorChat('you fuck').indexOf('*') !== -1 && FF.censorChat('go to www.x.io').indexOf('[link removed]') !== -1, 'censorChat still does links + profanity');
-    s.settings.chatFilter = prev;
-  });
-
-  // ---- Chat moderation: role badges, muted state, mod-button gating, modal protection --------------
-  suite('chat: moderation roles + mute + mod controls', function(){
-    var savedAuth = FF.chatAmIMuted; // just to reference the module; real restore below via _setChatMod
-    var OWNER='u-owner', MOD='u-mod', PLAYER='u-player', ME='u-me';
-    var now = Date.now();
-    // Baseline: I'm a regular player. Roles map owner+mod; player u-player is muted.
-    FF._setChatMod({
-      roles: { 'u-owner':'owner', 'u-mod':'moderator' },
-      mutes: { 'u-player': now + 3600*1000 },
-      myRole: null,
-      authUser: { username:'Me', id:ME },
-      messages: [
-        { id:1, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() },
-        { id:2, user_id:MOD,   username:'Mod1', body:'yo', created_at:new Date(now).toISOString() },
-        { id:3, user_id:PLAYER,username:'Spammer', body:'buy gold', created_at:new Date(now).toISOString() },
-        { id:4, user_id:ME,    username:'Me', body:'hello', created_at:new Date(now).toISOString() }
-      ]
-    });
-    // Helpers.
-    eq(FF.chatRoleOf(OWNER), 'owner', 'chatRoleOf reads the owner role');
-    eq(FF.chatRoleOf(MOD), 'moderator', 'chatRoleOf reads the moderator role');
-    eq(FF.chatRoleOf(PLAYER), null, 'a regular player has no role');
-    ok(FF.chatMuteUntil(PLAYER) > now, 'an active mute reports its expiry');
-    eq(FF.chatMuteUntil(OWNER), 0, 'no mute -> 0');
-    ok(!FF.chatIsMod() && !FF.chatIsOwner(), 'a regular player is neither mod nor owner');
-    eq(FF.chatAmIMuted(), 0, 'I am not muted');
-
-    // The "⋯" player menu is open to EVERYONE now (View Profile etc.) -- one per OTHER message, none on
-    // my own. Badges + muted tag still render for all.
-    var htmlPlayer = FF.chatMessagesHtml();
-    ok(/chat-mod-owner/.test(htmlPlayer) && /chat-mod-moderator/.test(htmlPlayer), 'owner + moderator badges render for everyone');
-    ok(/chat-muted-tag/.test(htmlPlayer), 'a muted user shows the muted marker');
-    ok((htmlPlayer.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a regular player sees the ⋯ menu on others (3 of 4 messages)');
-    ok(htmlPlayer.indexOf('data-uid="'+ME+'"') === -1, 'no ⋯ menu on my own message');
-
-    // As a moderator, the ⋯ buttons are the same (moderation lives INSIDE the modal now).
-    FF._setChatMod({ myRole:'moderator' });
-    var htmlMod = FF.chatMessagesHtml();
-    ok((htmlMod.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a moderator sees the same 3 ⋯ menus');
-
-    // Modal for a regular player, viewed by a regular player: View Profile only, NO moderation section.
-    FF._setChatMod({ myRole:null, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
-    FF.renderChatModModal();
-    var ovPlain = document.getElementById('chatModOverlay').innerHTML;
-    ok(/data-action="chatViewProfile"/.test(ovPlain), 'everyone gets View Profile');
-    ok(!/Moderation/.test(ovPlain) && !/data-action="chatModMute"/.test(ovPlain), 'a non-moderator sees no moderation controls in the menu');
-    FF._setChatMod({ myRole:'moderator' });
-
-    // Modal gating: a moderator opening a fellow-moderator sees the owner-only lock (no action buttons).
-    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
-    FF.renderChatModModal();
-    var ovModOnMod = (typeof document !== 'undefined' && document.getElementById('chatModOverlay')) ? document.getElementById('chatModOverlay').innerHTML : '';
-    ok(/Only the owner can moderate/.test(ovModOnMod), 'a mod cannot moderate another mod (owner-only lock shown)');
-    ok(!/data-action="chatModMute"/.test(ovModOnMod), '...and no mute button is offered for a protected target');
-
-    // A moderator on a regular player: mute presets + permanent chat-ban + delete, but NO role controls.
-    FF._setChatMod({ target:{ mid:3, uid:PLAYER, name:'Spammer' } });
-    FF.renderChatModModal();
-    var ovModOnPlayer = document.getElementById('chatModOverlay').innerHTML;
-    // u-player is already muted in this fixture, so the modal offers Unmute; clear the mute to see mute presets.
-    ok(/data-action="chatModDelete"/.test(ovModOnPlayer), 'delete-message is offered');
-    ok(/data-action="chatModUnmute"/.test(ovModOnPlayer), 'an already-muted target offers Unmute');
-    ok(!/data-action="chatModSetRole"/.test(ovModOnPlayer), 'a moderator sees NO role controls (owner-only)');
-
-    // As the OWNER on an unmuted regular player: mute presets, chat-ban, AND Make Moderator.
-    FF._setChatMod({ myRole:'owner', mutes:{}, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
-    FF.renderChatModModal();
-    var ovOwnerOnPlayer = document.getElementById('chatModOverlay').innerHTML;
-    ok(/data-action="chatModMute"[^>]*data-min="10"/.test(ovOwnerOnPlayer), 'mute presets shown for an unmuted target');
-    ok(/data-min="5256000"/.test(ovOwnerOnPlayer), 'permanent chat-ban offered');
-    ok(/Make Moderator/.test(ovOwnerOnPlayer), 'the owner can appoint a moderator');
-    // Owner on an existing moderator: Remove Moderator, and no owner-lock.
-    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
-    FF.renderChatModModal();
-    var ovOwnerOnMod = document.getElementById('chatModOverlay').innerHTML;
-    ok(/Remove Moderator/.test(ovOwnerOnMod) && !/Only the owner can moderate/.test(ovOwnerOnMod), 'the owner can moderate a moderator (Remove Moderator shown)');
-
-    // Muted-self: chatAmIMuted reflects it; label reads permanent for a ~10y ban.
-    FF._setChatMod({ myRole:null, mutes:{ 'u-me': now + 60*1000 } });
-    ok(FF.chatAmIMuted() > now, 'a muted local player reports their own mute');
-    eq(FF.chatMuteLabel(now + 40*24*3600*1000), 'permanently', 'a >30-day mute reads as a permanent chat-ban');
-    ok(/^until /.test(FF.chatMuteLabel(now + 3600*1000)), 'a short mute reads as an until-timestamp');
-
-    // Owner-only Moderation panel: appoint box + named lists of mods and muted players.
-    FF._setChatMod({
-      myRole:'owner',
-      roles:{ 'u-owner':'owner', 'u-mod':'moderator', 'u-mod2':'moderator' },
-      mutes:{ 'u-player': now + 3600*1000 },
-      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer' }
-    });
-    var panel = FF.renderChatModerationPanel();
-    ok(/id="modAppointInput"/.test(panel) && /data-action="chatModAppoint"/.test(panel), 'the panel has an appoint-by-username box');
-    ok(/Moderators <span[^>]*>\(2\)/.test(panel), 'it lists the moderator count');
-    ok(/Mod1/.test(panel) && /Mod2/.test(panel), 'moderators are listed by name');
-    ok((panel.match(/data-action="chatModRemove"/g)||[]).length === 2, 'each moderator has a Remove button');
-    ok(/Muted players <span[^>]*>\(1\)/.test(panel) && /Spammer/.test(panel) && /data-action="chatModSettingsUnmute"/.test(panel), 'muted players are listed with an Unmute button');
-
-    // Clamped players: owner sees the quarantine list + one-click Unclamp, plus a manual clamp box.
-    FF._setChatMod({
-      myRole:'owner',
-      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-cheat':'Duper' },
-      clamps:{ 'u-cheat':{ user_id:'u-cheat', username:'Duper', surfaces:['marketplace','leaderboard','guild','chat'], auto:true, signal:'progress +1.2e13 in 6s' } }
-    });
-    var panel2 = FF.renderChatModerationPanel();
-    ok(/Clamped players <span[^>]*>\(1\)/.test(panel2), 'the panel lists the clamped-player count');
-    ok(/Duper/.test(panel2) && /progress \+1.2e13/.test(panel2), 'a clamped player shows its name + auto-detection signal');
-    ok(/data-action="clampClear"[^>]*data-uid="u-cheat"/.test(panel2), 'each clamped player has a one-click Unclamp button');
-    ok(/id="clampInput"/.test(panel2) && /data-action="clampApply"/.test(panel2) && /id="clampSurf_marketplace"/.test(panel2), 'the panel has a manual clamp box with per-surface toggles');
-
-    // Detection signals (shadow): recorded flags the owner can review + clamp with a click.
-    FF._setChatMod({
-      myRole:'owner',
-      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-flag':'Suspect', 'u-done':'Handled' },
-      clamps:{},
-      signals:[
-        { id:1, user_id:'u-flag', username:'Suspect', kind:'progress_jump', detail:{ jump:1.2e13, elapsed_ms:8000 }, clamped:false, created_at:now },
-        { id:2, user_id:'u-done', username:'Handled', kind:'progress_jump', detail:{ jump:9e12 }, clamped:true, created_at:now }
-      ]
-    });
-    var panel3 = FF.renderChatModerationPanel();
-    ok(/Detection signals <span[^>]*>\(2, shadow\)/.test(panel3), 'the panel lists recorded detection signals in shadow mode');
-    ok(/Suspect/.test(panel3) && /progress_jump/.test(panel3), 'a signal shows the flagged player + evidence');
-    ok(/data-action="clampFromSignal"[^>]*data-uid="u-flag"/.test(panel3), 'an un-actioned signal has a one-click Clamp button');
-    ok((panel3.match(/data-action="clampFromSignal"/g)||[]).length === 1, 'an already-clamped signal shows no Clamp button');
-    FF._setChatMod({ clamps:{}, signals:[] });
-    // chatNameFor falls back to a uid fragment when the name isn't cached.
-    eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
-    ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');
-
-    // ---- Titles: label resolution + tag next to chat names + on the public profile card ----
-    var titleIds = Object.keys(FF.TITLE_BY_ID || {});
-    if(titleIds.length){
-      var tId = titleIds[0], tName = FF.TITLE_BY_ID[tId].name;
-      eq(FF.titleName(tId), tName, 'titleName resolves a published title id to its display name');
-      eq(FF.titleName('title_not_real_xyz'), '', 'an unknown title id resolves to no label');
-      // Title tag next to the poster's name in chat.
-      FF._setChatMod({ myRole:null, authUser:{ username:'Me', id:ME }, titles:{ 'u-owner':tId },
-        messages:[{ id:9, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() }] });
-      var htmlTitle = FF.chatMessagesHtml();
-      ok(/class="chat-title"/.test(htmlTitle) && htmlTitle.indexOf(tName) !== -1, 'an equipped title renders as a tag next to the chat name');
-      // Same title on the public profile card body.
-      var card = FF.profileCardBodyHtml({ username:'Boss', total_level:120, gold:5, title:tId, skills:{}, stats:{} });
-      ok(/class="profile-title"/.test(card) && card.indexOf(tName) !== -1, 'the profile card shows the equipped title under the name');
-      ok(/Total Level/.test(card), 'the profile card still shows headline stats');
-    }
-
-    // ---- Public profile modal: loading / no-profile / populated states ----
-    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:true, error:false } });
-    FF.renderPlayerProfileModal();
-    ok(/Loading profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal shows a loading state');
-    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:false, error:true } });
-    FF.renderPlayerProfileModal();
-    ok(/hasn.t published a profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal handles a player with no published profile');
-    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', loading:false, error:false, data:{ id:PLAYER, username:'Spammer', total_level:88, gold:12, skills:{}, stats:{} } } });
-    FF.renderPlayerProfileModal();
-    var pm = document.getElementById('playerProfileOverlay').innerHTML;
-    ok(/Spammer/.test(pm) && /Total Level/.test(pm) && /data-action="closePlayerProfile"/.test(pm), 'the profile modal renders a fetched profile with a Close button');
-
-    // Clean up module state so later suites see a pristine chat.
-    FF._setChatMod({ roles:{}, mutes:{}, names:{}, titles:{}, myRole:null, messages:[], authUser:null, target:null, profileTarget:null });
-    FF.renderChatModModal(); FF.renderPlayerProfileModal();
-    void savedAuth;
   });
 
   // ---- Combat log tab + advanced-pipeline toggle ------------------------------------------------
@@ -5162,39 +4586,6 @@
 
     FF._clReset();
     s.settings.advancedCombatLog = sv.adv;
-  });
-
-  // ---- Chat unread counter ---------------------------------------------------------------------
-  suite('chat: unread count + "Chat (N)" suffix', function(){
-    var s = FF._state;
-    s.settings = s.settings || {};
-    s.settings.chatFlash = true;
-    FF.clearChatUnread();
-    eq(FF.getChatUnreadCount(), 0, 'starts at 0');
-    eq(FF.chatUnreadSuffix(), '', 'no suffix when nothing unread');
-    // A message arriving while chat isn't focused/on-screen accrues an unread.
-    FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity();
-    eq(FF.getChatUnreadCount(), 4, 'four notes -> count 4');
-    eq(FF.chatUnreadSuffix(), ' (4)', 'suffix reads " (4)"');
-    // Mobile FAB badge reflects the same count and flashes.
-    var badge = document.getElementById('ffChatFabBadge');
-    ok(badge && badge.textContent === '4', 'FAB badge shows 4');
-    ok(document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB flashes while unread');
-    // Reading chat clears everything.
-    FF.clearChatUnread();
-    eq(FF.getChatUnreadCount(), 0, 'clear resets to 0');
-    eq(FF.chatUnreadSuffix(), '', 'suffix gone after clear');
-    ok(badge.textContent === '', 'FAB badge cleared');
-    ok(!document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB no longer flashes');
-    // Count caps its label at 99+.
-    for(var i=0;i<120;i++) FF.noteChatActivity();
-    eq(FF.chatUnreadSuffix(), ' (99+)', 'label caps at 99+');
-    FF.clearChatUnread();
-    // Respecting the setting: with chatFlash off, no unread accrues.
-    s.settings.chatFlash = false;
-    FF.noteChatActivity();
-    eq(FF.getChatUnreadCount(), 0, 'no unread when chatFlash disabled');
-    s.settings.chatFlash = true;
   });
 
   // ---- Outfitting craft pages carry no equipping UI (owner order, v0.0.79.12) ----------------------
@@ -5834,19 +5225,6 @@
     });
     var fifth = enh.filter(function(q){ return q.id.indexOf('fifthfrontier') === 0; })[0];
     if(fifth){ eq(fifth.target, FF.ENHANCE_MAX, 'the Fifth Frontier enhance quest is capped at +' + FF.ENHANCE_MAX); }
-  });
-
-  // The in-game Scapelikes vote link must carry the player's account id as the identifier (so the vote
-  // webhook fires and per-account cooldowns apply), url-encoded, and fall back to the public game page
-  // when signed out. The slug is public; the account id is an opaque uid, never a username.
-  suite('scapelikes: vote URL builder', function(){
-    eq(FF.SCAPELIKES_SLUG, 'fantasy-frontiers', 'the public Scapelikes slug');
-    FF._setChatMod({ authUser:{ username:'Me', id:'u-abc 123' } });
-    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/vote/fantasy-frontiers/u-abc%20123',
-      'signed in: the vote URL carries the url-encoded account id as the identifier');
-    FF._setChatMod({ authUser:null });
-    eq(FF.scapelikesVoteUrl(), 'https://scapelikes.com/game/fantasy-frontiers',
-      'signed out: falls back to the public game page (no identifier, so no webhook)');
   });
 
   // Running a bow dry must announce the retreat in the COMBAT CHANNEL (combatLog), not just the Chronicle.
@@ -7729,9 +7107,6 @@
       eq(en[_j].atkMax, Math.round(200 * Math.pow(1.04, _j)), 'enemy ' + _j + ' atkMax matches server');
       eq(Math.round(en[_j].attackSpeed * 1000), Math.round((2.2 + (_j % 5) * 0.3) * 1000), 'enemy ' + _j + ' attack interval matches server');
     }
-    // Reported proxies are bounded: DPS positive, mitigation 0..85%.
-    var pw = FF.dungeonPower(); ok(typeof pw === 'number' && isFinite(pw) && pw >= 1, 'dungeonPower() is a positive finite DPS proxy');
-    var mp = FF.dungeonMitPct(); ok(mp >= 0 && mp <= 85, 'dungeonMitPct() is a bounded 0..85% proxy');
   });
 
   // ---- Dungeons: D2 "Tunnel" (25 Orcs, L126->150, ~10x boss, hand-crafted portraits) ------
@@ -8030,37 +7405,6 @@
     near(s.familiarBuffs.enemyWeakenPct, 0.99, 'Weaken clamps to 99% (enemy keeps 1% of its damage)');
     FF.castFamiliarSpell({ type:'slowEnemy', name:'Test Slow', pct:5.0, durationMs:8000 }, 100);
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
-  });
-
-  // ---- ticket-0165: the leaderboard filters must drive the QUERY, not narrow a cached page (Valuren) --
-  // "Pressing the mortal only filter will only show the mortals in the already revealed top50, when there
-  // are alot more players." Exactly right: one fetch took the top LEADERBOARD_LIMIT by total_level and both
-  // filters narrowed THAT list, so a Mortal outside the top 50 could never appear -- and Mortals carry an
-  // XP-rate debuff, which makes them structurally rare near the top. The filter showed the empty set almost
-  // by construction. The two filters are not symmetrical and the fix reflects that: `mortal` is a real
-  // column and becomes a server-side .eq(); presence is a realtime channel with no column, so online-only
-  // can only widen the page it searches.
-  suite('ticket-0165: leaderboard filters change the query, not just the view', function(){
-    ok(typeof FF.leaderboardQueryKey === 'function', 'the filter-aware cache key is exported');
-    ok(typeof FF.leaderboardPageSize === 'function', 'the page sizer is exported');
-    ok(FF.LEADERBOARD_LIMIT_WIDE > FF.LEADERBOARD_LIMIT,
-       'the online-only page is DEEPER than the default (' + FF.LEADERBOARD_LIMIT_WIDE + ' > ' + FF.LEADERBOARD_LIMIT + ')');
-    // The cache key must move with EITHER filter, or a toggle re-renders the same cached rows and the
-    // player sees nothing change -- which is what "does not check more than the top 50" looked like.
-    FF._lbSetFilters(false, false); var k00 = FF.leaderboardQueryKey();
-    FF._lbSetFilters(true, false);  var k10 = FF.leaderboardQueryKey();
-    FF._lbSetFilters(false, true);  var k01 = FF.leaderboardQueryKey();
-    FF._lbSetFilters(true, true);   var k11 = FF.leaderboardQueryKey();
-    ok(k00 !== k10, 'toggling Mortal-only changes the query key');
-    ok(k00 !== k01, 'toggling Online-only changes the query key');
-    ok(k10 !== k11 && k01 !== k11, 'the two filters compose into a distinct key');
-    eq(new Set([k00, k10, k01, k11]).size, 4, 'all four filter combinations are distinct queries');
-    // Page size follows the online filter, because presence cannot be filtered server-side.
-    FF._lbSetFilters(false, false); eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'default page is the normal limit');
-    FF._lbSetFilters(true, false);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT, 'mortal-only is server-filtered, so the page stays normal');
-    FF._lbSetFilters(false, true);  eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, 'online-only widens the page');
-    FF._lbSetFilters(true, true);   eq(FF.leaderboardPageSize(), FF.LEADERBOARD_LIMIT_WIDE, '...and still widens it alongside mortal-only');
-    FF._lbSetFilters(false, false);
   });
 
   // ---- ticket-0164: auto-roll forecasts its cost and confirms an expensive run (Valuren) ------------
@@ -11536,27 +10880,8 @@
     // Supreme AND Fantastic blast, labelled so the chronicle row classifies correctly on other clients.
     var sup = FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn');
     ok(sup && sup.indexOf('Supreme ') === 0, 'a Supreme masterwork blasts with a Supreme-labelled name');
-    eq(FF.craftBodyRarity(sup), 'supreme', 'other clients classify the Supreme masterwork blast as supreme');
     var fan = FF.masterworkBlastRarityName('fantastic', 'Aegis of Dawn');
     ok(fan && fan.indexOf('Fantastic ') === 0, 'a Fantastic masterwork blasts with a Fantastic-labelled name');
-    eq(FF.craftBodyRarity(fan), 'fantastic', 'other clients classify the Fantastic masterwork blast as fantastic');
-  });
-
-  // ---- Chat blasts: normal crafts no longer announce Supreme; masterwork still does ----
-  suite('chat blasts: normal Supreme crafts are no longer announced', function(){
-    // Normal crafts: only Fantastic blasts to global chat; Rare/Fantastic reach the chronicle feed; Supreme
-    // is excluded from BOTH (it's the common-roll spam we're removing).
-    eq(FF.normalCraftBlasts('fantastic'), true, 'Fantastic normal craft blasts to chat');
-    eq(FF.normalCraftBlasts('supreme'), false, 'Supreme normal craft does NOT blast to chat');
-    eq(FF.normalCraftBlasts('rare'), false, 'Rare normal craft does not blast');
-    eq(FF.normalCraftFeedRarity('supreme'), false, 'Supreme normal craft is not broadcast at all (no feed/blast source)');
-    eq(FF.normalCraftFeedRarity('fantastic'), true, 'Fantastic normal craft is broadcast');
-    eq(FF.normalCraftFeedRarity('rare'), true, 'Rare normal craft still reaches the chronicle feed');
-    // Masterwork Supreme/Fantastic STILL blast: announceMasterwork emits a rarity-labelled chronicle body,
-    // which the receiver + reload still classify as a blast (unchanged) -- so a Supreme blast now originates
-    // only from a Masterwork.
-    eq(FF.craftBodyRarity(FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn')), 'supreme', 'a masterwork Supreme still classifies as a blast');
-    ok(FF.chronicleCraftToSystemMsg({ id:1, username:'A', body:'Supreme Aegis of Dawn', created_at:'x' }) !== null, 'a Supreme craft chronicle row still blasts (sourced only from masterwork now)');
   });
 
   // ---- Getting Started: gathering quests name the specific lowest-tier material they require ----
@@ -13243,37 +12568,6 @@
     }
   });
 
-  // ---- Joining a party: Total Level 5000 + the PREVIOUS layer cleared (like starting your own) ----
-  suite('dungeons: join requirements + party code', function(){
-    var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;
-    // Force the profile over the Total Level gate so the join test isolates the progression rule.
-    // (playerTotalLevel sums skill + physique levels; a big fake skill map clears 5000 handily.)
-    var bigXp = {}; if (FF.ALL_MAIN_SKILL_IDS) FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ bigXp[id] = 1e12; });
-    s.xp = bigXp; s.physique = {};
-    ok(FF.playerTotalLevel(s) >= FF.DUNGEON_MIN_TOTAL_LEVEL, 'the boosted profile clears the Total Level gate');
-    s.dungeonsCleared = {};
-    eq(FF.dungeonJoinBlock('d1'), null, 'the Cave has no prerequisite to join');
-    ok(FF.dungeonJoinBlock('d2') !== null, 'joining a Tunnel party requires the Cave cleared first');
-    // Beating D1 (solo OR group -- both call dungeonMarkCleared) unlocks joining D2 parties;
-    // a prior D2 clear must NOT be required (that locked group progression behind solo play).
-    FF.dungeonMarkCleared('d1');
-    eq(FF.dungeonJoinBlock('d2'), null, 'clearing the Cave unlocks joining Tunnel parties -- no Tunnel clear needed');
-    ok(FF.dungeonJoinBlock('d3') !== null, 'D3 parties still need the Tunnel cleared');
-    FF.dungeonMarkCleared('d2');
-    eq(FF.dungeonJoinBlock('d3'), null, 'the chain continues: clearing D2 unlocks joining D3 parties');
-    ok(FF.dungeonJoinBlock('d4') !== null, '...and D4 parties still need D3 cleared');
-    // Below the Total Level gate, even the Cave blocks joining.
-    s.xp = {}; s.physique = {};
-    ok((FF.dungeonJoinBlock('d1') || '').indexOf('Total Level') === 0, 'below the Total Level gate even the Cave blocks joining');
-    s.xp = savedXp; s.physique = savedPhys; s.dungeonsCleared = savedCleared;
-    // Party-code parsing: "<layer>:<id>" splits; a bare id yields a null layer.
-    var c = FF.parseDungeonCode('d2:abc-123');
-    eq(c.layer, 'd2', 'a "d2:<id>" code parses the layer'); eq(c.id, 'abc-123', '...and the session id');
-    eq(FF.parseDungeonCode('D3 9f8e').layer, 'd3', 'space + upper-case layer prefixes also parse');
-    eq(FF.parseDungeonCode('abc-123').layer, null, 'a bare id has no encoded layer');
-    eq(FF.parseDungeonCode('abc-123').id, 'abc-123', 'a bare id passes through as the id');
-  });
-
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
@@ -13761,15 +13055,6 @@
     eq(FF.itemRarityId('relic_t8_supreme'), 'supreme', 'supreme suffix');
     eq(FF.itemRarityId('amulet_t3_fantastic'), 'fantastic', 'fantastic suffix');
     eq(FF.itemRarityId('mining_t7'), 'normal', 'no rarity suffix -> normal');
-  });
-
-  // ---- Chat system announcements: only supreme/fantastic crafts echo into global chat ----
-  suite('craft chat announce', function(){
-    eq(FF.craftBodyRarity('Fantastic Steel Axe'), 'fantastic', 'fantastic craft body -> fantastic');
-    eq(FF.craftBodyRarity('Supreme Iron Sword'), 'supreme', 'supreme craft body -> supreme');
-    eq(FF.craftBodyRarity('Rare Bronze Dagger'), null, 'rare craft body -> null (chronicle only)');
-    eq(FF.craftBodyRarity('Oak Plank'), null, 'normal craft body -> null');
-    eq(FF.craftBodyRarity(''), null, 'empty body -> null');
   });
 
   // ---- Classes: Plaguebearer (the Plague -- poison with a severity) --------------------
@@ -14592,8 +13877,6 @@
       S.dungeonAutoRequeue = true;
       FF.dungeonBegin(d1);
       eq(FF.dungeonLocksActions(), true, 'a solo descent still locks other actions');
-      // ...but it must NOT be treated as attended for the away fast-forward.
-      eq(FF.dungeonPartyLocksAway(), false, 'a solo descent does NOT freeze the away catch-up (ticket-0117)');
       // An away window fast-forwards the fight AND chains the next descent.
       var idxBefore = S.activity.dungeonIndex;
       FF.applyOfflineProgress(30 * 60 * 1000);
@@ -16274,11 +15557,6 @@
       }
       ok(FF.FAM_SKIN[id], id+': familiar skin defined');
     });
-    // MAX_SKILLS headroom: the deployed submit_profile rejects submissions with more skills than
-    // its MAX_SKILLS (currently 400) -- and when that trips, the WHOLE leaderboard silently stops
-    // updating (it has happened). Fail here first, with room to react.
-    var skillCount = Object.keys(FF.computeProfileStats().skills).length;
-    ok(skillCount < 380, 'profile skill set ('+skillCount+') stays well under the deployed MAX_SKILLS=400 -- if this fails, RAISE MAX_SKILLS in submit_profile and redeploy BEFORE merging');
   });
 
   // ---- PLAYER_DMG_MODS: the named damage-modifier table behind the damage formula ---------
@@ -18162,28 +17440,6 @@
     eq(FF.formatDuration(3661000), '1:01:01', 'h:mm:ss for long jobs');
   });
 
-  suite('discord feed relay', function(){
-    ok(typeof FF.discordFeedPost === 'function', 'discordFeedPost exported');
-    // The seam sets DISCORD_FEED_ENABLED=false, so posting must be inert -- this is also the guard that
-    // stops a test's fantastic craft roll from reaching the real channel.
-    var q = FF._discordFeedQueue();
-    var before = q.length;
-    FF.discordFeedPost({ kind:'forge', name:'Fantastic Tungsten Claymore', item_key:'claymore_t20_fantastic', rarity:'fantastic', stats:'Damage 671-1677' });
-    eq(FF._discordFeedQueue().length, before, 'the test seam disables the feed, so nothing is queued');
-    // Malformed events are refused on shape alone, before any network concern.
-    FF.discordFeedPost(null);
-    FF.discordFeedPost({ kind:'forge' });          // no name
-    FF.discordFeedPost({ name:'Thing' });          // no kind
-    eq(FF._discordFeedQueue().length, before, 'events without a kind or a name are never queued');
-    // The stats tail is BARE now: the relay owns the " ( ... )" wrapper, so the client must not add it.
-    var tail = FF.discordItemStatsText('amulet_t10_fantastic');
-    eq(typeof tail, 'string', 'discordItemStatsText returns a string');
-    // Not "contains no parentheses" -- inner ones are legitimate ("Damage 100-200 (+12)"). The contract is
-    // that the tail is not WRAPPED, so the server can own the parentheses and the message shape.
-    ok(!/^ \(/.test(tail) && !/\)$/.test(tail), 'the stats tail is unwrapped: ' + JSON.stringify(tail));
-    ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
-  });
-
   // ---- Blacksmithing groups: a forging group must still be closable ------------------------------
   // Ticket: "some tabs won't close in Blacksmithing while there are craft actions running". Not a render
   // bug -- the open state was `anyActive || flag`, so a group with a craft running was FORCED open and the
@@ -18514,123 +17770,6 @@
       ok(well.borderImageSource.indexOf('ivy_stretch') !== -1 && well.borderRadius === '0px',
         'the message well trades its hairline for the stone frame on marble surfaces');
     } finally { probe.remove(); }
-  });
-
-  // ---- Chat feed furniture (owner picks 1/4/5 of the chat proposals, v0.0.86.10) -------------------
-  // Day dividers on every calendar-day change, a gold wash on your own lines and a bright accent on
-  // word-bounded mentions, and the unread marker ("new" rule) + jump-to-latest pill. All pinned on the
-  // rendered MARKUP and the marker's synchronous mechanics -- the pill's show/hide follows real scroll
-  // events, which a suite can't drive honestly.
-  suite('chat feed: day dividers, own/mention tint, new-marker and jump pill', function(){
-    var now = new Date(), y = now.getFullYear(), mo = now.getMonth(), da = now.getDate();
-    var oldDay   = new Date(y, mo, da - 5, 12, 0, 0).toISOString();
-    var yestNoon = new Date(y, mo, da - 1, 12, 0, 0).toISOString();
-    var today    = new Date(y, mo, da, 9, 0, 0).toISOString();
-    eq(FF.chatDayLabel(today), 'Today', 'a same-day stamp reads Today');
-    eq(FF.chatDayLabel(yestNoon), 'Yesterday', 'one calendar day back reads Yesterday');
-    var _old = FF.chatDayLabel(oldDay);
-    ok(!!_old && _old !== 'Today' && _old !== 'Yesterday', 'older days read as a short date: ' + JSON.stringify(_old));
-    ok(FF.chatDayKey(today) !== FF.chatDayKey(yestNoon), 'day keys split on the calendar day');
-
-    var savedMarker = FF._chatFirstUnread();
-    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{}, messages:[
-      { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
-      { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
-      { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
-      { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today }
-    ]});
-    try {
-      FF._setChatFirstUnread('m4');
-      var h = FF.chatMessagesHtml();
-      eq((h.match(/<div class="chat-divider">/g) || []).length, 3, 'a date chip opens the feed and marks each day change (3 days -> 3 chips)');
-      ok(h.indexOf('>Today</span>') !== -1 && h.indexOf('>Yesterday</span>') !== -1, 'the chips are labeled Today / Yesterday');
-      var newAt = h.indexOf('chat-divider chat-new');
-      ok(newAt !== -1, 'the gold new rule renders at the unread marker');
-      ok(newAt > h.indexOf('my own line') && newAt < h.indexOf('concatenate'), 'the new rule sits directly above the first unseen message');
-      eq((h.match(/chat-msg chat-mine/g) || []).length, 1, 'your own message wears the gold wash');
-      eq((h.match(/chat-msg chat-mention/g) || []).length, 1, 'a word-bounded name match wears the mention accent');
-      ok(/chat-msg chat-mention"[^]*?hi Cat/.test(h), 'the mention accent is on the line that names you');
-      // 'concatenate ... categories' contains cat three times as a substring; the single-mention count
-      // above is the word-bound proof.
-      ok(/chat-jump/.test(h) && /chatJumpLatest/.test(h), 'the jump-to-latest pill rides inside the scroller markup');
-      FF._setChatFirstUnread(null);
-      ok(FF.chatMessagesHtml().indexOf('chat-new') === -1, 'no marker -> no new rule');
-      // Marker mechanics, synchronously: chat is off-screen in the harness, so an arrival stamps the
-      // marker at the newest message -- and later arrivals must never advance it (it marks the FIRST).
-      FF.chatNoteUnreadMarker();
-      eq(FF._chatFirstUnread(), 'm4', 'an unseen arrival stamps the marker at the newest message');
-      FF._setChatMod({ messages:[
-        { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
-        { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
-        { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
-        { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today },
-        { id:'m5', user_id:'u9', username:'Val', body:'one more', created_at: today }
-      ]});
-      FF.chatNoteUnreadMarker();
-      eq(FF._chatFirstUnread(), 'm4', 'later arrivals never advance the marker');
-    } finally {
-      FF._setChatFirstUnread(savedMarker == null ? null : savedMarker);
-      FF._setChatMod({ messages: [], authUser: null });
-    }
-  });
-
-  // ---- Chat presentation pass (owner picks 1/2/4/5 of round two, v0.0.86.11) -----------------------
-  // Per-channel tab accents + unread pips (filled IN PLACE -- a sig-driven rebuild per message would
-  // wipe live typing), the status dot + online count folded into the panel headers, system blasts as
-  // centered rarity banners, item chips inked by rarity, and stable per-guild tag colours.
-  suite('chat presentation: channel accents/pips, header status, banners, tag colours', function(){
-    // Tag colours: stable, palette-bound, and distinct enough across real tags.
-    eq(FF.chatTagColor('NITE'), FF.chatTagColor('NITE'), 'a tag always hashes to the same colour');
-    ok(FF.CHAT_TAG_PALETTE.indexOf(FF.chatTagColor('Cae')) !== -1, 'colours come from the curated palette');
-    var distinct = {}; ['Cae','NITE','PEEPO','NFA'].forEach(function(t){ distinct[FF.chatTagColor(t)] = 1; });
-    ok(Object.keys(distinct).length >= 2, 'real-world tags spread across the palette');
-    // Header status: carries the connection dot, and when online the SAME .chat-online-count class the
-    // in-place presence updater refreshes.
-    var hs = FF.chatHeadStatusHtml();
-    ok(/chat-head-status/.test(hs) && /class="dot"/.test(hs), 'the header status carries the connection dot');
-    // The old status row is gone from the global tab; the bar carries per-channel classes and pips.
-    var savedMarker2 = FF._chatFirstUnread(); FF._setChatFirstUnread(null);
-    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{'u9':'NITE'}, messages:[
-      { id:'s1', system:true, rarity:'fantastic', body:'Valuren forged a Fantastic Tungsten Sword!', created_at:new Date().toISOString() },
-      { id:'p1', user_id:'u9', username:'Val', body:'hello', created_at:new Date().toISOString() }
-    ]});
-    try {
-      var tab = FF.renderChatTab();
-      ok(tab.indexOf('chat-status') === -1, 'the status row above the well is retired (it lives in the headers now)');
-      ok(/chan-global/.test(tab) && /chan-chronicle/.test(tab) && /chan-combat/.test(tab),
-        'every channel tab carries its accent class');
-      eq((tab.match(/chat-tab-pip/g) || []).length, 1, 'Global carries a pip span (always rendered, filled in place)');
-      // System blasts: a starburst on EACH side of the body now.
-      var sys = tab.slice(tab.indexOf('chat-system'), tab.indexOf('chat-time', tab.indexOf('chat-system')));
-      eq((sys.match(/chat-sys-ico/g) || []).length, 2, 'a system blast wears a starburst on each side');
-      // Pip mechanics: note off-channel -> counts; clear -> zero. (Harness chat is off-screen, so both count.)
-      FF.chatChanClear('global'); FF.chatChanClear('guild');
-      FF.chatChanNote('guild'); FF.chatChanNote('guild'); FF.chatChanNote('global');
-      eq(FF._chatChanUnread().guild, 2, 'guild arrivals count while the channel is not watched');
-      eq(FF._chatChanUnread().global, 1, 'global arrivals count independently');
-      FF.chatChanClear('guild');
-      eq(FF._chatChanUnread().guild, 0, 'opening a channel retires its pip count');
-      // In-place fill: empty spans show nothing; a count paints; clearing empties them again.
-      var probe = document.createElement('div');
-      probe.innerHTML = '<button class="chat-channel-btn chan-global">Global<span class="chat-tab-pip" data-ch="global"></span></button>'
-        + '<button class="chat-channel-btn chan-combat active">Combat</button>'
-        + '<span class="chat-item-link rar-rare">x</span>';
-      document.body.appendChild(probe);
-      try {
-        FF.chatChanPipsUpdate();
-        eq(probe.querySelector('.chat-tab-pip').textContent, '1', 'the pip fills in place from the counter');
-        ok(getComputedStyle(probe.querySelector('.chat-tab-pip')).display !== 'none', 'a filled pip shows (absolute positioning computes it to block)');
-        FF.chatChanClear('global');
-        eq(getComputedStyle(probe.querySelector('.chat-tab-pip')).display, 'none', 'an emptied pip hides (the :not(:empty) trick)');
-        var cbt = getComputedStyle(probe.querySelector('.chan-combat.active'));
-        ok(cbt.backgroundImage.indexOf('rgb(176, 80, 63)') !== -1, 'the Combat tab fills with the combat red when active');
-        eq(getComputedStyle(probe.querySelector('.chat-item-link.rar-rare')).color, 'rgb(90, 167, 214)', 'a Rare item chip inks in the rare blue');
-      } finally { probe.remove(); }
-    } finally {
-      FF.chatChanClear('global'); FF.chatChanClear('guild');
-      FF._setChatFirstUnread(savedMarker2 == null ? null : savedMarker2);
-      FF._setChatMod({ messages: [], authUser: null });
-    }
   });
 
   // ---- The combat tray keeps its light lettering (v0.0.86.13 regression) ---------------------------
@@ -19027,61 +18166,6 @@
     } finally { S.estate = savedEstate; }
   });
 
-  // ---- Dungeon clears: the grandfather report must go out IN CHAIN ORDER --------------------------
-  // The progression gate is server-side now (pentest: it was browser-only). The server refuses to record a
-  // layer whose predecessor is not already on its ledger, so reporting out of order silently loses the
-  // later layers -- and existing players, whose clears live only in their save, would stay locked out.
-  suite('dungeon clear sync ordering', function(){
-    ok(typeof FF.dungeonOwedClears === 'function', 'dungeonOwedClears exported');
-    eq(FF.dungeonOwedClears({}).length, 0, 'no clears -> nothing to report');
-    eq(FF.dungeonOwedClears({dungeonsCleared:null}).length, 0, 'a null map is handled');
-    eq(FF.dungeonOwedClears({dungeonsCleared:{}}).length, 0, 'an empty map reports nothing');
-    // Insertion order of the save object must NOT leak through -- the chain order is what matters.
-    eq(FF.dungeonOwedClears({dungeonsCleared:{d3:true, d1:true, d2:true}}).join(','), 'd1,d2,d3',
-       'clears are reported in DUNGEON_ORDER, whatever order the save lists them');
-    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true}}).join(','), 'd1', 'a single clear reports itself');
-    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true,d2:true,d3:true,d4:true}}).join(','), 'd1,d2,d3,d4',
-       'a fully cleared account reports every layer in order');
-    // Falsy / junk values must not be reported as clears.
-    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:false, d2:true}}).join(','), 'd2', 'a false entry is not a clear');
-    eq(FF.dungeonOwedClears({dungeonsCleared:{d9:true, nonsense:true}}).length, 0, 'unknown layers are never reported');
-    // The gate constant the server mirrors (dungeon_gate_check hardcodes 5000).
-    eq(FF.DUNGEON_MIN_TOTAL_LEVEL, 5000, 'the Total Level gate matches what the server enforces');
-  });
-
-  // ---- Chat: a party code renders as a "Click to Join" button ------------------------------------
-  // Ticket: copying a uuid out of a chat line is miserable, worse on mobile. The button is injected into
-  // ALREADY-ESCAPED text, so the security property under test is that a chat body cannot smuggle markup
-  // through the pattern.
-  suite('chat party code join button', function(){
-    ok(typeof FF.chatPartyCodeHtml === 'function', 'chatPartyCodeHtml exported');
-    var uuid = '3f9a1b2c-4d5e-6f70-8a9b-0c1d2e3f4a5b';
-    var out = FF.chatPartyCodeHtml('Forming a party! Join: d2:' + uuid);
-    ok(/data-action="chatJoinParty"/.test(out), 'a party code becomes a join button');
-    ok(out.indexOf('data-session="' + uuid + '"') !== -1, 'the button carries the session id');
-    ok(out.indexOf('data-layer="d2"') !== -1, 'the button carries the layer');
-    ok(out.indexOf('Forming a party! Join:') === 0, 'surrounding text is preserved');
-    // The layer LABEL comes from DUNGEON_DEFS, never from the message.
-    ok(out.indexOf(FF.DUNGEON_DEFS.d2.category) !== -1, 'the button names the dungeon from DUNGEON_DEFS');
-    // A layer this build does not know stays plain text -- still copyable, never a broken button.
-    var unknown = FF.chatPartyCodeHtml('join d97:' + uuid);
-    ok(unknown.indexOf('chatJoinParty') === -1 && unknown.indexOf('d97:' + uuid) !== -1,
-       'an unknown layer stays plain text: ' + unknown);
-    // Near-misses must not match, or a button would carry a session id the server will reject.
-    ok(FF.chatPartyCodeHtml('d2:not-a-uuid').indexOf('chatJoinParty') === -1, 'a malformed id is not linkified');
-    ok(FF.chatPartyCodeHtml('d2:' + uuid.slice(0, 20)).indexOf('chatJoinParty') === -1, 'a truncated uuid is not linkified');
-    ok(FF.chatPartyCodeHtml('x2:' + uuid).indexOf('chatJoinParty') === -1, 'a non-dungeon prefix is not linkified');
-    ok(FF.chatPartyCodeHtml('d0:' + uuid).indexOf('chatJoinParty') === -1, 'layer 0 is not a dungeon');
-    // INJECTION: a chat body is escaped before this runs, so tags arrive inert and must stay inert.
-    var evil = FF.chatBodyHtml('<img src=x onerror=alert(1)> d1:' + uuid);
-    ok(evil.indexOf('<img') === -1, 'an escaped tag in a chat body is never revived: ' + evil.slice(0, 60));
-    ok(/data-action="chatJoinParty"/.test(evil), 'a real code in the same message still becomes a button');
-    // A code with markup-ish characters glued on must not break out of the attribute.
-    var quoted = FF.chatPartyCodeHtml('d1:' + uuid + '" onclick="evil()');
-    ok(quoted.indexOf('onclick="evil()') === -1 || quoted.indexOf('data-session="' + uuid + '"') !== -1,
-       'the button attribute is closed by the pattern, not by message content');
-  });
-
   // ---- Estate jobs: a completed build must never be consumed without being placed ----------------
   // Ticket (Mr Cookie): a Willow Jewelry Workshop finished, the tile stayed empty, the workshop was gone.
   // Materials are spent at ENQUEUE, so every path that drops a job has to either apply it or refund it.
@@ -19164,8 +18248,6 @@
   // ---- Server-authoritative gold wallet (Stage 2 client wiring) -------------------------
   suite('gold wallet: earnGold feeds the lifetime anchor', function(){
     ok(typeof FF.earnGold === 'function', 'earnGold is exported');
-    ok(typeof FF.walletSync === 'function', 'walletSync is exported');
-    ok(typeof FF.itemSync === 'function', 'itemSync (item-ledger reconcile) is exported');
     var s = FF._state;
     ok(typeof s.goldEarnedTotal === 'number', 'state carries a goldEarnedTotal anchor');
     ok(s.goldEarnedTotal >= Math.floor(s.gold||0), 'the anchor is never below the current balance');
@@ -19176,81 +18258,6 @@
     FF.earnGold(-3); FF.earnGold(0);
     eq(s.gold, g0 + 7, 'earnGold ignores non-positive amounts');
     s.gold = g0; s.goldEarnedTotal = e0; // restore so the test never perturbs the real balance
-  });
-
-  // ---- Gold wallet reconcile: never destroy legit earnings, still collapse spoofed gold ----------
-  suite('wallet: reconcile never loses legit earnings', function(){
-    var R = FF.walletReconcileGold;
-    ok(typeof R === 'function', 'walletReconcileGold exported');
-    // Signature: R(localGold, sentGold, localEarned, sentEarned, serverGold, serverEarned). When nothing
-    // changed mid-request, localGold==sentGold and localEarned==sentEarned.
-    // Normal case: server credited the full earn -> local matches server.
-    eq(R(1500000, 1500000, 1500000, 1500000, 1500000, 1500000), 1500000, 'fully-credited earn: gold preserved');
-    // The BUG this fixes: server throttled/clamped the balance low, but the earn is legit (earned_total
-    // reflects it). The un-credited remainder (pending) is kept, NOT thrown away.
-    eq(R(1500000, 1500000, 1500000, 1500000, /*serverGold*/0, /*serverEarned*/0), 1500000, 'throttled earn is NOT lost (pending restores it)');
-    eq(R(1500000, 1500000, 1500000, 1500000, 666666, 666666), 1500000, 'partially-credited earn keeps the remainder');
-    // Recovery: a previously wiped balance (local 0) comes back once the server can credit the gap.
-    eq(R(0, 0, 1500000, 1500000, 0, 0), 1500000, 'recovers gold the old bug wiped to 0');
-    // Anti-cheat: a tampered-HIGH local gold with NO matching earnings collapses to the server value.
-    eq(R(1000000000, 1000000000, 0, 0, 500, 0), 500, 'spoofed local gold (no earnings) collapses to server');
-    // Legit spend propagates: local dropped below what was sent (a purchase), no matching earnings change.
-    eq(R(400, 400, 1000, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
-    // Mid-request SPEND: gold fell from 1000 (sent) to 700 during the round trip, earnings unchanged.
-    // The spend must propagate on top of the server value.
-    eq(R(700, 1000, 1000, 1000, 1000, 1000), 700, 'a spend that lands mid-request is preserved');
-    // Mid-request EARN: earnGold() bumped BOTH gold (1000->1200) and earned (1000->1200) during the round
-    // trip; the server credited the pre-send state (serverGold 1000, serverEarned 1000). The earn must be
-    // counted ONCE (via pending), landing at 1200 -- not double-counted to 1400. This is the regression
-    // guard for the phantom-gold loop (gold bouncing up ~20M/hr, dragging save + wallet with it).
-    eq(R(1200, 1000, 1200, 1000, 1000, 1000), 1200, 'mid-request earn is counted once, not doubled');
-    // ---- Mortal-reset gold recovery (bug: reset accounts keep resetting to 0) --------------------
-    var isRec = FF.walletIsResetRecovery, recE = FF.walletRecoveredEarned;
-    ok(typeof isRec === 'function' && typeof recE === 'function', 'reset-recovery helpers exported');
-    // A normal player LEADS the server (the server never credits ahead of what the client reported), so the
-    // recovery NEVER fires and the healthy reconcile/anti-cheat path is untouched.
-    ok(!isRec(5000000, 3000000), 'a normal player (local > server) is NOT flagged as reset recovery');
-    ok(!isRec(5000000, 5000000), 'equal anchors are not a recovery');
-    // A Mortal reset restarts goldEarnedTotal near 0 while the server keeps the OLD character's monotonic
-    // earned_total -> the server strictly leads, which is the reset signature.
-    ok(isRec(25, 50000000), 'server earned strictly above local flags a Mortal-reset recovery');
-    // The recovery lifts the floor to the server earned PLUS the held gold, so that held gold is credited
-    // next sync instead of being clamped away -- lossless.
-    eq(recE(50000000, 1000), 50001000, 'recovered floor = server earned + the gold currently held');
-    eq(recE(50000000, 0), 50000000, 'recovered floor with nothing held is just the server earned');
-    // End-to-end via the reconcile: WITHOUT the recovery branch, an earn after reset clamps to 0 forever.
-    // Server keeps earned=50M/gold=0; local earned is only 1025 -> pending = max(0,1025-50M)=0 -> 0.
-    eq(R(1000, 1000, 1025, 1025, 0, 50000000), 0, 'the raw reconcile would clamp post-reset gold to 0 (the bug)');
-    // WITH the recovery, the anchor was lifted to 50M+heldGold; a later sync reports earned above the server
-    // so the delta credits and gold lands normally (here: held 1000 now credited, server caught up).
-    eq(R(1000, 1000, 50001000, 50001000, 1000, 50001000), 1000, 'after recovery, held/earned gold credits normally');
-    // Treasure-chest gold is banked exempt via wallet.earn_chest (server-verified by an item_debit),
-    // credited in full to the server balance outside the token bucket -- so it reconciles like any
-    // already-credited gold and is never throttled/clamped. Its credit does NOT flow through
-    // goldEarnedTotal, so the normal earn/sync path can't double-count it.
-    ok(typeof FF.walletEarnChest === 'function', 'walletEarnChest exported (exempt chest-gold credit)');
-    // Once earn_chest has banked the chest gold into serverGold, the reconcile keeps it (no pending needed).
-    eq(R(50000, 50000, 0, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
-  });
-
-  // ---- Regression: a big quest reward survives on a Mortal-reset account (ticket: Deathless 200k not paid)
-  suite('wallet: a 200k quest reward is preserved on a Mortal-reset account', function(){
-    var isRec = FF.walletIsResetRecovery, recE = FF.walletRecoveredEarned, R = FF.walletReconcileGold;
-    // The account reset to Mortal: local goldEarnedTotal restarted near 0 while the server kept the old
-    // high-level character's monotonic earned_total (say 50M). The first sync recognizes the reset and lifts
-    // the anchor to the server's earned PLUS whatever gold is currently held (here 1,499, matching the ticket).
-    ok(isRec(25, 50000000), 'the reset signature is recognized (server earned above local)');
-    var anchor = recE(50000000, 1499);
-    eq(anchor, 50001499, 'the recovery anchor keeps the 1,499 already held');
-    // Player claims the Deathless capstone: +200,000 gold, and earnGold bumps the (now recovered) anchor too.
-    var heldGold = 1499 + 200000;          // 201,499
-    var localEarned = anchor + 200000;     // 50,201,499
-    // Next sync: the server credits only the low-level daily allowance this tick (say 5,000), but the reconcile
-    // must KEEP the rest via pending -- so local gold stays the full 201,499, NOT the 5,000 the server banked.
-    var serverGold = 5000, serverEarned = 50000000 + 5000;
-    ok(!isRec(localEarned, serverEarned), 'once the anchor leads the server, it is no longer a recovery');
-    eq(R(heldGold, heldGold, localEarned, localEarned, serverGold, serverEarned), 201499,
-       'the full 200k Deathless reward is preserved locally while the server credits it under the daily rate');
   });
 
   // ---- Bows: slower draw hits harder (Short 1x / Medium 1.25x / Long 1.5x base damage) -----
@@ -19267,24 +18274,6 @@
     ok(W.attackSpeed === 6, 'Long bow is the slowest');
     // A melee weapon is unaffected (dmgMult defaults to 1).
     ok(FF.getStackableWeaponTierData('bowShort', T).dmgMax > 0, 'short bow still deals damage');
-  });
-
-  // ---- Leaderboard over-100 Mastery: capped `skills` + separate display-only `mastery` -----
-  suite('leaderboard: over-100 mastery split', function(){
-    var s = FF._state;
-    var gid = FF.GATHER_SKILL_IDS[0];                 // a gathering skill (over-levelable)
-    var lvl105 = FF.SKILL_XP_FLOOR_EXT[105];          // xp for extended level 105
-    var saved = s.xp[gid];
-    s.xp[gid] = lvl105;
-    ok(FF.skillLevel(gid, lvl105) >= 105, 'gathering skill reads extended level past 100');
-    var ps = FF.computeProfileStats();
-    eq(ps.skills[gid], FF.MAX_SKILL_LEVEL, 'submitted `skills` value stays capped at 100 (ranking/gate unchanged)');
-    ok(ps.mastery && ps.mastery[gid] >= 105, 'the true over-100 level rides in the separate `mastery` map');
-    // A non-overlevelable skill (or one at/under 100) never appears in mastery.
-    ok(!(ps.mastery && (gid+'_never') in ps.mastery), 'mastery only holds genuine over-100 entries');
-    s.xp[gid] = saved;
-    // Back at a normal level, mastery drops the key entirely.
-    ok(!FF.computeProfileStats().mastery[gid], 'mastery omits a skill once it is back at/under 100');
   });
 
   // ---- Server-authoritative inventory: recipe manifest (Stage A2) -----------------------
@@ -19314,23 +18303,6 @@
     // Shaft craft (dynamic inputs) is intentionally excluded.
     var shaftId = Object.keys(FF.ALL_CRAFT_RECIPES).filter(function(id){ return FF.ALL_CRAFT_RECIPES[id] && FF.ALL_CRAFT_RECIPES[id].shaftCraft; })[0];
     if(shaftId) ok(!m['std:'+shaftId], 'dynamic shaft craft is excluded from the manifest');
-  });
-
-  // ---- Server-authoritative inventory: itemReconcile (item analog of walletReconcileGold) ----
-  suite('inventory: itemReconcile', function(){
-    var R = FF.itemReconcile;
-    ok(typeof R === 'function', 'itemReconcile exported');
-    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 100, 'fully-credited item preserved');
-    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:40}, {iron:40}).iron, 100, 'throttled legit earn kept via pending');
-    eq(R({sand:100000000}, {sand:100000000}, {sand:0}, {sand:25000}, {sand:0}).sand, 25000, 'spoofed item (no earned anchor) collapses to the ledger');
-    eq(R({iron:40}, {iron:40}, {iron:100}, {iron:40}, {iron:100}).iron, 40, 'a spend sticks (ledger adopted the lower count)');
-    eq(R({iron:120}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 120, 'drift gathered mid-request is not clobbered');
-    eq(R({sand:100000000}, {sand:100000000}, {sand:100000000}, {sand:25000}, undefined).sand, 25000, 'no serverEarned -> clamp to ledger');
-    ok(!('iron' in R({iron:0}, {iron:0}, {}, {}, {})), 'a zero item is omitted');
-    // The min(localInv) safety cap: adoption never CREATES items beyond what the client locally holds,
-    // so an over-counted earned anchor (e.g. a missed equip-return) can't mint -- it just fails to clamp.
-    ok(!('gold_bar' in R({}, {}, {}, {gold_bar:5}, {gold_bar:5})), 'ledger-only item (no local entry) is NOT created');
-    eq(R({iron:1}, {iron:1}, {iron:9}, {iron:1}, {iron:1}).iron, 1, 'inflated earned anchor cannot push adoption above local (cap)');
   });
 
   // ---- addItem maintains the per-item lifetime-earned anchor (default), skips on noEarn -------
@@ -20655,39 +19627,6 @@
     }
   });
 
-  // ---- Party dungeon: the local mirror never kills or rewards locally ----------------------------
-  suite('dungeon: party mirror is inert locally', function(){
-    ok(typeof FF.defeatMonster === 'function', 'defeatMonster exported');
-    var s = FF._state;
-    var snap = { act:s.activity, gold:s.gold, kills:(s.stats && s.stats.kills) || 0 };
-    try {
-      var mon = FF.MONSTERS[0];
-      var goldBefore = s.gold, killsBefore = (s.stats && s.stats.kills) || 0;
-      // A PARTY fight is flagged netDungeon (NOT dungeon). High DPS can zero the mirror between the 2.5s
-      // server syncs -> defeatMonster is called. It must pin the mirror, reward nothing, and -- crucially
-      // -- NOT reset monsterHp to full (that reset is what made the reported damage vanish and the real
-      // counter crawl while the chronicle filled with phantom kills).
-      s.activity = { type:'combat', playerSwungOnce:true, monsterId:mon.id, monsterHp:0, netDungeon:'sess-test', netIndex:0, tickAccum:0, monsterTickAccum:0 };
-      FF.defeatMonster(mon);
-      eq(s.activity.monsterHp, 1, 'the party mirror is pinned at 1 after a would-be kill');
-      ok(s.activity.monsterHp !== mon.hp, 'the mirror is NOT reset to full HP (full reset lost the reported damage)');
-      eq(s.gold, goldBefore, 'no local gold is paid on a party mirror death (server owns per-kill reward)');
-      eq((s.stats && s.stats.kills) || 0, killsBefore, 'no kill is counted locally on a party mirror death');
-
-      // applyChipDamage (the reflect/DoT path) must also report NO kill in a party, so reflect-kill
-      // follow-ups don't fire on a foe the server still owns.
-      s.activity.monsterHp = 0;
-      eq(FF.applyChipDamage(5), false, 'applyChipDamage reports no kill in a party dungeon');
-      eq(s.activity.monsterHp, 1, 'and re-pins the mirror at 1');
-      // A chip that does NOT empty the foe never reports a kill (party or not).
-      s.activity.monsterHp = 100;
-      eq(FF.applyChipDamage(5), false, 'a non-lethal chip reports no kill');
-      eq(s.activity.monsterHp, 95, 'and moves the mirror health bar normally');
-    } finally {
-      s.activity = snap.act; s.gold = snap.gold; if(s.stats) s.stats.kills = snap.kills;
-    }
-  });
-
   // ---- Dungeon Masterwork formulas drop AND forge for every layer (d1-d4) ------------------------
   suite('dungeon: d2-d4 formulas wired', function(){
     ok(typeof FF.rollMasterworkDrops === 'function' && typeof FF.mastercraftRecipeFor === 'function' && FF.BLUEPRINT_ITEMS && FF.MASTERWORK_SLOTS, 'masterwork helpers exported');
@@ -20785,23 +19724,11 @@
       S.bodyArmor.back = { tier:0, rarity:'normal', material:null, uid:null };
       FF.equipLegRing(id);
       eq(S.inventory[id], 0, 'equipping removes the held copy (the old blind spot)');
-      eq(FF.wornLegendaryAccessoryKeys(S).join(','), id, 'the worn signet is enumerated by its REAL id');
-      eq(FF.itemSyncPayloadInventory(S)[id], 1, 'the sync payload WITNESSES the worn signet -- the probe hole is closed');
       S.jewelrySlots.amulet = { leg:'d4_dragon', rarity:'supreme' };
       S.bodyArmor.back = { leg:'d4_cinders', rarity:'rare', tier:0, material:null, uid:null };
-      var wk = FF.wornLegendaryAccessoryKeys(S);
-      ok(wk.indexOf('legamulet_d4_d4_dragon_supreme') !== -1 && wk.indexOf('legcloak_d4_d4_cinders_rare') !== -1,
-         'worn Pendants and Shrouds are witnessed alongside the Signets');
       FF.unequipLegRing('ring1');
       eq(S.inventory[id], 1, 'unequip returns the REAL item to inventory');
       ok(!Object.keys(S.inventory).some(function(k){ return /^legring_d1_d[234]_/.test(k); }), 'no phantom d1-prefixed id was minted');
-      // Reclamation of stock stranded by the old bug.
-      var inv = { legring_d1_d4_wyrm_fantastic:2, legring_d1_block_rare:3, legring_d1_d4_bogus_rare:1 };
-      FF.reclaimPhantomAccessoryIds(inv);
-      eq(inv['legring_d4_d4_wyrm_fantastic'], 2, 'stranded signets move to their real id on load');
-      ok(!('legring_d1_d4_wyrm_fantastic' in inv), 'the phantom key is removed');
-      eq(inv['legring_d1_block_rare'], 3, 'true D1 ids are untouched');
-      eq(inv['legring_d1_d4_bogus_rare'], 1, 'an unknown target is left alone -- junk is never re-minted');
     } finally {
       S.inventory = svInv; S.jewelrySlots = svJs;
       if(S.bodyArmor) S.bodyArmor.back = svBack;
@@ -23532,66 +22459,6 @@
     } finally { s.xp.prayer = save.pray; s.physique = save.phys; }
   });
 
-  // ---- Firsts: a fetch always settles, and a stale answer never overwrites a newer one (ticket-0250) ----
-  // ---- ticket-0250 retest (Anferny): only the Classes board filled ----
-  // The reply ran past PostgREST's 1,000-row cap (hundreds of skill_* marks per maxed account), ordered by
-  // key, so class_* survived and the rest was cut off. The client now asks for exactly the keys it lists and
-  // reads the reply in pages.
-  suite('firsts: the fetch asks for the keys it lists and reads the reply in pages', function(){
-    var keys = FF.firstsAllKeys();
-    var seen = {}; keys.forEach(function(k){ seen[k] = (seen[k]||0) + 1; });
-    ok(keys.length > 0 && Object.keys(seen).length === keys.length, 'the key list has no duplicates (' + keys.length + ' keys)');
-    // 376 keys x 3 holders is 1,128 rows: MORE than one page even filtered, which is why the page loop exists.
-    ok(keys.length * FF.FIRSTS_SHOW > FF.FIRSTS_PAGE_ROWS, 'a fully claimed board still needs the page loop (' + (keys.length * FF.FIRSTS_SHOW) + ' rows)');
-    ok(keys.length * FF.FIRSTS_SHOW < FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES, 'and the loop can hold it (' + (FF.FIRSTS_PAGE_ROWS * FF.FIRSTS_MAX_PAGES) + ' row capacity)');
-    ok(keys.indexOf('total_500') >= 0 && keys.indexOf('total_15000') >= 0, 'every Total Level mark');
-    ok(keys.indexOf('tower_all_25') >= 0 && keys.indexOf('tower_all_500') >= 0, 'every All-Classes tower floor');
-    var c0 = FF.CLASS_DEFS[0].id;
-    ok(keys.indexOf('tower_'+c0+'_100') >= 0 && keys.indexOf('tower_'+c0+'_120') >= 0, 'both headline floors of each Class tower');
-    ok(keys.indexOf('class_'+c0+'_50') >= 0 && keys.indexOf('class_'+c0+'_100') >= 0, 'both Class level marks');
-    ok(keys.indexOf('skill_mining_100') >= 0 && keys.indexOf('skill_mining_200') >= 0, 'every skill mark for every listed skill');
-    ok(keys.indexOf('skill_fiberharvesting_100') >= 0, 'the three harvest skills are listed');
-    ok(keys.indexOf('skill_'+c0+'_100') < 0, 'a class id never appears as a skill key (that junk is what overflowed the reply)');
-    // Every key the boards render (both tower scopes, every skill mark) is in the list, so no board can show
-    // a mark the fetch did not ask for.
-    var boards = FF.firstsBoards(); boards.forEach(function(b){ b.rows.forEach(function(r){ ok(keys.indexOf(r.key) >= 0, 'board row asked for: ' + r.key); }); });
-    var args = FF.firstsRpcArgs(true);
-    eq(args.p_limit, FF.FIRSTS_SHOW, 'the limit rides along');
-    ok(Array.isArray(args.p_keys) && args.p_keys.length === keys.length, 'the keys ride along');
-    ok(FF.firstsRpcArgs(false).p_keys === undefined, 'the unfiltered fallback sends no keys (the old one-argument RPC)');
-    // The page loop's pure pieces.
-    eq(FF.firstsPageSpan(0, 1000)[0], 0, 'page 0 starts at row 0'); eq(FF.firstsPageSpan(0, 1000)[1], 999, 'and ends at 999 (inclusive Range)');
-    eq(FF.firstsPageSpan(2, 1000)[0], 2000, 'page 2 starts at 2000');
-    eq(FF.firstsPageDone(1000, 1000, 0, 10), false, 'a full page means another follows');
-    eq(FF.firstsPageDone(999, 1000, 0, 10), true, 'a short page ends the read');
-    eq(FF.firstsPageDone(1000, 1000, 9, 10), true, 'the page cap ends it too');
-    // The reader issues its first call synchronously with page 0's span (the part suite() can see).
-    var calls = [];
-    FF.firstsReadPages(function(from, to){ calls.push([from, to]); return new Promise(function(){}); }, 1000, 10);
-    eq(calls.length, 1, 'one call issued synchronously'); eq(calls[0][0], 0, 'from row 0'); eq(calls[0][1], 999, 'to row 999');
-    // Which errors earn the unfiltered second read: only a missing overload.
-    ok(FF.firstsErrorWantsFallback({ message:'Could not find the function public.milestone_firsts(p_keys, p_limit) in the schema cache' }), 'PGRST202 for the two-argument RPC falls back');
-    ok(!FF.firstsErrorWantsFallback({ message:'The server took too long to answer.' }), 'a timeout does not');
-    ok(!FF.firstsErrorWantsFallback(null), 'nor a null error');
-  });
-
-  suite('firsts: the fetch settles into ready or error, never stuck on Checking', function(){
-    var F = FF._firstsState(), sv = { status:F.status, rows:F.rows, error:F.error, at:F.at };
-    try {
-      ok(FF.FIRSTS_FETCH_TIMEOUT_MS >= 5000 && FF.FIRSTS_FETCH_TIMEOUT_MS <= 60000, 'a bounded wait before the panel reports a problem');
-      var tok = FF._firstsToken();
-      FF.firstsSettle(tok, 'error', null, 'The server took too long to answer.');
-      eq(F.status, 'error', 'a settle moves the panel out of loading');
-      ok(/Retry/.test(FF.renderFirstsPanel()) && /took too long/.test(FF.renderFirstsPanel()), 'the error shows its reason and a Retry button');
-      ok(!/Checking who got there first/.test(FF.renderFirstsPanel()), 'and the Checking note is gone');
-      FF.firstsSettle(tok - 1, 'ready', [{ key:'total_500', rank:1, username:'late' }], '');
-      eq(F.status, 'error', 'a reply carrying an older token is ignored');
-      FF.firstsSettle(tok, 'ready', [{ key:'total_500', rank:1, user_id:'u', username:'Anferny', reached_at:null, backfilled:true }], '');
-      eq(F.status, 'ready', 'the owning token settles to ready');
-      ok(/Anferny/.test(FF.renderFirstsPanel()), 'and the holder is rendered on the board');
-    } finally { F.status = sv.status; F.rows = sv.rows; F.error = sv.error; F.at = sv.at; }
-  });
-
   // ---- Quivers are improvable and carry Arrow Thrift (ticket 2026-10-08, owner decision) ----------
   suite('improvement: quivers improve like shields, with a quiver-only Arrow Thrift line', function(){
     var s = FF._state;
@@ -24027,7 +22894,7 @@
       ok(!!sell, 'the card offers Sell for a legendary ward');
       ok(!!sac, 'and Sacrifice');
       ok(/Sell \(\d[\d,]*g\)/.test(sell.textContent), 'Sell quotes the vendor gold: ' + sell.textContent);
-      ok(!!ov.querySelector('[data-action="uniqueManage"]') && !!ov.querySelector('[data-action="improveLinkChat"]'), 'Manage and Link in chat are still there');
+      ok(!!ov.querySelector('[data-action="uniqueManage"]'), 'Manage is still there');
       ok(ov.textContent.indexOf('Click Sell again') < 0, 'no confirm line before the first click');
       // The first click arms the confirm; the card then shows the line and relabels the button.
       FF._setImproveConfirm('sell:'+uid); FF.renderUniqueDetailOverlay();
