@@ -5134,28 +5134,6 @@
     eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
   });
 
-  // ---- Guest accounts: solo play now, social systems walled until upgrade ----
-  suite('guest accounts: the social systems are walled until upgrade', function(){
-    try {
-      // As a guest, the social tabs return the upgrade wall instead of their content.
-      FF._authUserSet({ username:'guest123418349', id:'g-1', isGuest:true });
-      ok(FF.isGuestAccount() === true, 'a guest account reads as a guest');
-      var wall = FF.guestWallHtml('The Marketplace');
-      ok(/Upgrade my account/.test(wall) && /The Marketplace/.test(wall) && /data-action="guestUpgradeOpen"/.test(wall), 'the wall names the feature and offers the upgrade');
-      ok(/Upgrade my account/.test(FF.renderMarketTab()), 'the Marketplace is walled for a guest');
-      ok(/Upgrade my account/.test(FF.renderGuildTab()), 'Guilds are walled for a guest');
-      ok(/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is walled for a guest');
-      // A guest is kept OFF the public leaderboard: profileSync is a no-op for them.
-      // (Verified indirectly: isGuestAccount gates it; the render walls prove the branch.)
-      // Once upgraded (isGuest false), the walls lift.
-      FF._authUserSet({ username:'RealName', id:'g-1', isGuest:false });
-      ok(FF.isGuestAccount() === false, 'an upgraded account is no longer a guest');
-      ok(!/Upgrade my account/.test(FF.renderLeaderboardTab()), 'the Leaderboard is no longer walled after upgrade');
-    } finally {
-      FF._authUserSet(null);   // restore signed-out state for the rest of the suite
-    }
-  });
-
   // ---- In-game bug/feedback ticket (Mr Cookie's onsite ticket button) ----
   // The "Report a Bug" tab renders a category picker + a details box when signed in, and a Discord
   // fallback when signed out. The secret NEVER ships in the client: the panel only wires a call to the
@@ -6588,23 +6566,6 @@
     S.gold = 42; FF.refundGold(0); FF.refundGold(-5);
     eq(S.gold, 42, 'refundGold ignores zero/negative amounts');
     S.gold = sv.gold; S.goldEarnedTotal = sv.earned; S.activity = sv.act;
-  });
-
-  // The planned-closure kill-switch. The boot gate only fires on page load, so an already-logged-in player
-  // stays in the game until their tab reloads. version.json now carries a live `closed` flag (stamped by
-  // build.mjs from SERVER_CLOSED); a running client polls it and force-closes on sight, mid-combat included.
-  // This pins the WIRE CONTRACT the poller reads -- only closed===true (a real boolean) trips it, so a
-  // missing/false/truthy-but-not-true field never accidentally shuts the server on live players.
-  suite('server: the live closed-flag kill-switch reads only closed===true', function(){
-    ok(FF.versionClosedSignal({ build:'x', closed:true }) === true, 'closed:true trips the kill-switch');
-    ok(FF.versionClosedSignal({ build:'x', closed:false }) === false, 'closed:false does not');
-    ok(FF.versionClosedSignal({ build:'x' }) === false, 'a version.json with no closed field does not (old deploys)');
-    ok(FF.versionClosedSignal({ closed:1 }) === false, 'a truthy-but-not-true value does not (strict === true)');
-    ok(FF.versionClosedSignal({ closed:'true' }) === false, 'the string "true" does not');
-    ok(FF.versionClosedSignal(null) === false && FF.versionClosedSignal(undefined) === false, 'a null/undefined payload does not');
-    // The reopen instant is Aug 31 2026, 14:00 UTC, and the countdown reads it, so before then it is non-empty.
-    eq(FF.SERVER_REOPEN_UTC, Date.UTC(2026, 7, 31, 14, 0, 0), 'the reopen instant is Aug 31 2026 14:00 UTC');
-    ok(typeof FF.serverCountdownStr() === 'string', 'serverCountdownStr returns a string');
   });
 
   // A stalled/throttled tab resumes as one big frame (dt clamped to 60s) that drains SEVERAL enemy swings
@@ -14001,25 +13962,6 @@
     }
   });
 
-  // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
-  suite('auth: identity-mismatch guard', function(){
-    var saved = FF._authBoundUserId();
-    // No binding yet -> nothing is a mismatch (an unbound tab never false-fences).
-    FF.authBindIdentity(null);
-    eq(FF.authIdentityMismatch('user-A'), false, 'an unbound tab never reports a mismatch');
-    // Bound to account A: A's own session matches; a foreign id (shared-storage swap) mismatches.
-    FF.authBindIdentity('user-A');
-    eq(FF.authIdentityMismatch('user-A'), false, 'the bound account is not a mismatch');
-    ok(FF.authIdentityMismatch('user-B') === true, 'a different account on the shared session IS a mismatch');
-    // A missing session id (mid-refresh) is not treated as a swap.
-    eq(FF.authIdentityMismatch(null), false, 'a null session id does not fence');
-    eq(FF.authIdentityMismatch(undefined), false, 'an undefined session id does not fence');
-    // Deliberate in-tab switch: clearing the binding first means the imminent SIGNED_IN isn't misread.
-    FF.authBindIdentity(null);
-    eq(FF.authIdentityMismatch('user-B'), false, 'cleared binding: a fresh login is not a foreign swap');
-    FF.authBindIdentity(saved || null);
-  });
-
   // ---- Joining a party: Total Level 5000 + the PREVIOUS layer cleared (like starting your own) ----
   suite('dungeons: join requirements + party code', function(){
     var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;
@@ -19022,69 +18964,6 @@
     eq(FF.formatDuration(3661000), '1:01:01', 'h:mm:ss for long jobs');
   });
 
-  // ---- Estate job "already running" refusal ---------------------------------------------
-  // The server used to answer a refused start with {ok:true, claimed:false}, which the client
-  // read as a generic failure. It now answers {ok:false, error:'inprogress', job, remainingMs}.
-  // The client must recognise BOTH shapes so a new client is correct against either server.
-  // ---- Discord feed: no webhook in the client, structured events only -------------------------
-  // The webhook URL used to be a literal in index.html, so it shipped to every player in clear text.
-  // These tests pin the two properties that keep it that way: nothing in the client resembles a webhook
-  // URL, and discordFeedPost queues a STRUCTURED event (never prose) for the server to render.
-  // ---- Auth CAPTCHA (Cloudflare Turnstile) ----------------------------------------------------------
-  // The rollout is only safe in ONE order: client-with-site-key first, Supabase CAPTCHA switch second.
-  // These pin the property that makes that safe -- with no site key configured, every auth path is byte-for
-  // -byte what it was, so this build can ship before the Dashboard switch is flipped.
-  suite('auth captcha', function(){
-    ok(typeof FF.captchaOn === 'function' && typeof FF.captchaAuthOpts === 'function', 'captcha helpers exported');
-    var saved = FF.CHAT_CONFIG.turnstileSiteKey;
-    try {
-      // ---- OFF (shipped default): nothing added to the sign-in call at all.
-      FF.CHAT_CONFIG.turnstileSiteKey = '';
-      ok(!FF.captchaOn(), 'captcha is off when no site key is configured');
-      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'with no site key the sign-in options are empty');
-      FF._turnstileSetToken('tok_abc');
-      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'even holding a token, an unconfigured captcha sends nothing');
-
-      // ---- ON: the token rides along, and only when we actually have one.
-      FF.CHAT_CONFIG.turnstileSiteKey = '0x_test_site_key';
-      ok(FF.captchaOn(), 'captcha is on once a site key is set');
-      eq(JSON.stringify(FF.captchaAuthOpts()), '{"captchaToken":"tok_abc"}', 'the token is passed to signInWithPassword');
-      FF._turnstileSetToken('');
-      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'no token yet -> no captchaToken key (never send an empty one)');
-
-      // ---- Single use: a redeemed token must be cleared, or the NEXT attempt reuses a dead token and a
-      // correct password gets rejected. This is the bug most likely to reach players, so it is pinned.
-      FF._turnstileSetToken('tok_xyz');
-      FF.captchaConsume();
-      eq(FF._turnstileToken(), '', 'captchaConsume clears the spent token');
-      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'a consumed token is not sent again');
-
-      // Registration needs TWO tokens: `register` spends one at siteverify, then GoTrue spends another on
-      // the sign-in that follows. Reusing one created the account and then refused the sign-in. The waiter
-      // queue is what lets the register flow wait for a second token, so its mechanics are pinned here --
-      // synchronously, because suite() discards a returned promise and would report nothing.
-      ok(typeof FF.captchaAwaitToken === 'function', 'captchaAwaitToken exported');
-      eq(FF._turnstileWaiterCount(), 0, 'no waiters at rest');
-      FF._turnstileSetToken('');
-      FF.captchaAwaitToken(50);                     // captcha ON + no token -> must queue a waiter
-      eq(FF._turnstileWaiterCount(), 1, 'awaiting a token with none in hand queues a waiter');
-      FF._turnstileFlushWaiters('tok_fresh');
-      eq(FF._turnstileWaiterCount(), 0, 'flushing on a new token drains the queue');
-      // The fast path must NOT queue: a token already in hand means the register flow proceeds at once.
-      FF._turnstileSetToken('tok_held');
-      FF.captchaAwaitToken(50);
-      eq(FF._turnstileWaiterCount(), 0, 'a token already in hand resolves without queueing');
-      // Captcha off must also not queue, or a build with no site key would hang on registration.
-      FF.CHAT_CONFIG.turnstileSiteKey = '';
-      FF._turnstileSetToken('');
-      FF.captchaAwaitToken(50);
-      eq(FF._turnstileWaiterCount(), 0, 'with captcha off, awaiting never queues');
-    } finally {
-      FF.CHAT_CONFIG.turnstileSiteKey = saved;
-      FF._turnstileSetToken('');
-    }
-  });
-
   suite('discord feed relay', function(){
     ok(typeof FF.discordFeedPost === 'function', 'discordFeedPost exported');
     // The seam sets DISCORD_FEED_ENABLED=false, so posting must be inert -- this is also the guard that
@@ -19154,30 +19033,6 @@
       Object.keys(open).forEach(function(k){ delete open[k]; });
       Object.keys(saved).forEach(function(k){ open[k] = saved[k]; });
     }
-  });
-
-  // ---- Two browsers on one account: a fenced tab must not act ------------------------------------
-  // Ticket (ITxToxic): two browsers each rendered an estate job start, and the displaced tab kept running.
-  // The server only ever runs one job per account (estate_jobs is keyed on user_id), but a fenced tab could
-  // still fire actions during the window before it noticed -- and spend materials it can never persist.
-  suite('fenced tab cannot start estate work', function(){
-    ok(typeof FF.estateEnqueueOrStart === 'function' && typeof FF._setCloudFenced === 'function', 'estate start + fence flag exported');
-    var S = FF._state, savedInv = S.inventory, savedEstate = S.estate;
-    try {
-      var g = [];
-      for(var x=0; x<3; x++){ g[x]=[]; for(var y=0; y<3; y++) g[x][y] = { type:'dirt', height:5, obstacle:null, fieldTier:null, owned:true }; }
-      S.estate = { grid:g, job:null, queue:[] };
-      S.inventory = { digging_t3: 500 };
-      FF._setCloudFenced(true);
-      FF.estateEnqueueOrStart('field', 1, 1, {fieldTier:3}, 1000, { jobFields:{fieldTier:3}, startedMsg:'x', queuedMsg:'x' });
-      eq(S.inventory.digging_t3, 500, 'a fenced tab spends no materials');
-      eq(S.estate.job, null, 'a fenced tab starts no job');
-      eq(S.estate.queue.length, 0, 'a fenced tab queues nothing');
-    } finally {
-      FF._setCloudFenced(false);
-      S.inventory = savedInv; S.estate = savedEstate;
-    }
-    ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
   });
 
   // ---- Architecture gates estate UPGRADES, not just fresh builds (ticket-0134, SteakHouse) ----------
@@ -19271,22 +19126,6 @@
     } finally {
       if(saved) de.style.setProperty('--ui-scale', saved); else de.style.removeProperty('--ui-scale');
     }
-  });
-
-  suite('wake staleness: the cloud-newer decision', function(){
-    ok(typeof FF.wakeStalenessCheck === 'function', 'the wake peek is exported');
-    var TOL = FF.WAKE_STALE_TOLERANCE_MS;
-    ok(TOL > 0 && TOL < 60000, 'the skew tolerance is positive and well under a real away window');
-    var t = 1700000000000;
-    ok(FF.wakeCloudIsNewer(t, t + TOL + 1), 'a cloud save newer than tolerance means another writer -> adopt');
-    ok(FF.wakeCloudIsNewer(t, t + 3600000), 'an hour-newer cloud save (the Valuren case) -> adopt');
-    ok(!FF.wakeCloudIsNewer(t, t + TOL - 1), 'inside the tolerance is clock skew, not a writer -> credit locally');
-    ok(!FF.wakeCloudIsNewer(t, t), 'an identical timestamp is our own last push -> credit locally');
-    ok(!FF.wakeCloudIsNewer(t, t - 5000), 'an older cloud save (our hide-push never landed) -> credit locally');
-    ok(!FF.wakeCloudIsNewer(t, 0), 'no cloud row is not evidence of a writer -> credit locally');
-    ok(!FF.wakeCloudIsNewer(t, NaN) && !FF.wakeCloudIsNewer(t, undefined), 'garbage from the peek fails open');
-    ok(!FF.wakeCloudIsNewer(0, 0), 'a fresh local state with no cloud row stays put');
-    ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
   });
 
   // ---- Improvement tier labels match the card chips (ticket: "t20 crystals demanded as tier 21+") --
@@ -19765,96 +19604,6 @@
     } finally { S.collapsedCards = sv || {}; }
   });
 
-  // ---- The landing page joins the marble-and-stone layout (owner approval, v0.0.86.18) ------------
-  // The gate was the LAST surface on the tan page + old ivy-vine SVG frame era. Pinned via the injected
-  // landing stylesheet and computed styles on its classes: white marble ground and gate plaque, dark
-  // marble stat chips / feature cards / combat demo in the arena stone, and the ivy-SVG frame retired
-  // file-wide (its data-URI is gone, so a straggler would render NO frame and fail the border checks).
-  suite('landing page: marble ground, stone frames, the ivy-vine frame retired', function(){
-    FF.ensureLandingStyle();
-    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
-    ok(css.indexOf('ivy_field.png') !== -1, 'the page ground and gate plaque tile the white marble');
-    ok(css.indexOf('marble_dark.png') !== -1, 'chips/cards/demo sit on the black marble');
-    ok(css.indexOf('ivy_stretch.png') !== -1, 'framed in the arena stone');
-    ok(css.indexOf('ivy-frame') === -1, 'the landing no longer references the old ivy-vine frame');
-    var probe = document.createElement('div');
-    probe.innerHTML = '<div class="ff-land-chip"><b>170+</b><span>Skills</span></div>'
-      + '<div class="ff-land-card"><div class="ff-land-card-t">t</div><div class="ff-land-card-b">b</div></div>'
-      + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div></div>';
-    document.body.appendChild(probe);
-    try {
-      var chip = getComputedStyle(probe.querySelector('.ff-land-chip'));
-      ok(chip.backgroundImage.indexOf('marble_dark') !== -1 && chip.borderImageSource.indexOf('ivy_stretch') !== -1, 'stat chips are black marble in the stone cut');
-      eq(getComputedStyle(probe.querySelector('.ff-land-chip b')).color, 'rgb(221, 187, 102)', 'chip numbers read in the stage gold');
-      var card = getComputedStyle(probe.querySelector('.ff-land-card'));
-      ok(card.backgroundImage.indexOf('marble_dark') !== -1 && card.borderImageSource.indexOf('ivy_stretch') !== -1, 'feature cards take the item-card treatment');
-      eq(getComputedStyle(probe.querySelector('.ff-land-card-b')).color, 'rgb(192, 179, 148)', 'card bodies read in parchment on the dark ground');
-      var auth = getComputedStyle(probe.querySelector('.ff-land-auth'));
-      ok(auth.backgroundImage.indexOf('ivy_field') !== -1 && auth.borderImageSource.indexOf('ivy_stretch') !== -1, 'the gate is ONE white-marble plaque in stone (the double frame is gone)');
-    } finally { probe.remove(); }
-  });
-
-  // ---- Landing live combat: the REAL stage in miniature (owner request, v0.0.86.19) ----------------
-  // The CSS-only vignette (two bobbing portraits, keyframed damage numbers) is retired: the gate now
-  // mounts renderArena() itself into #ffPrevArena and a demo loop drives it. Pinned here: the demo
-  // activity is FLAGGED (landingPreview) so teardown can recognise it; mounting renders the actual
-  // .ar2 stage markup; the wrap kills all interactivity and hides the two player-only panels; and
-  // landingFightStop restores a clean idle state -- it runs first in startGameOnline precisely so a
-  // brand-new account's first save can never be written from the staged fight.
-  suite('landing live combat: the real arena, mounted small, torn down clean', function(){
-    var S = FF._state;
-    var svAct = S.activity, svHp = S.playerHp;
-    try {
-      // The old vignette is gone from the stylesheet, replaced by the scaled-stage rules.
-      FF.ensureLandingStyle();
-      var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
-      ok(css.indexOf('ffPrevArena') !== -1, 'the landing stylesheet targets the arena host');
-      ok(css.indexOf('ffPrevLunge') === -1 && css.indexOf('ff-prev-port') === -1, 'the CSS-only vignette (bobbing portraits) is retired');
-      // Seeding: a flagged, fully-formed combat activity for a real bestiary foe.
-      var m = FF.landingFightSeed(FF.LANDING_FOES[0]);
-      ok(!!m && m.id === FF.LANDING_FOES[0], 'the seed resolves a real bestiary foe');
-      eq(S.activity.type, 'combat', 'the demo fight is a real combat activity');
-      ok(S.activity.landingPreview === true, 'and it is FLAGGED as the landing preview');
-      eq(S.activity.monsterHp, m.hp, 'the foe enters at full health');
-      ok(S.activity.duelStartedAt > 0, 'duelStartedAt is stamped, so the foe orb refills per rotation');
-      ok(FF.landingFightActive(), 'landingFightActive sees the flagged fight');
-      // Every showcase foe is real and carries a NAMED special, so the charge bar always means something.
-      FF.LANDING_FOES.forEach(function(id){
-        var f = FF.monsterById(id);
-        ok(!!(f && f.special && f.special.name), 'showcase foe ' + id + ' exists and has a named special');
-      });
-      // Mounting: the host receives the genuine stage markup, scaled and centered.
-      var wrap = document.createElement('div');
-      wrap.className = 'ff-prev-wrap';
-      wrap.style.width = '600px';
-      wrap.innerHTML = '<div id="ffPrevArena"></div>';
-      document.body.appendChild(wrap);
-      try {
-        FF.landingFightMount();
-        var host = document.getElementById('ffPrevArena');
-        ok(host.innerHTML.indexOf('ar2 ivy') !== -1, 'the host holds the REAL combat stage (.ar2 ivy), not a mockup');
-        ok(host.innerHTML.indexOf('ar2Orb-foe') !== -1 && host.innerHTML.indexOf('arenaMiniLog') !== -1, 'orbs and the mini feed are the live ones');
-        ok(/scale\(/.test(host.style.transform), 'the stage is transform-scaled down to the wrap');
-        ok(parseInt(wrap.style.height, 10) > 0, 'the wrap takes the SCALED height so the page lays out around it');
-        eq(getComputedStyle(wrap).pointerEvents, 'none', 'the whole preview is inert -- no control can be clicked');
-        var btn = host.querySelector('.action-btn');
-        ok(btn && getComputedStyle(btn).display === 'none', 'Retreat (and every stage button) is display-gated in the preview');
-        var tray = host.querySelector('.ar2-tray');
-        ok(tray && getComputedStyle(tray).display === 'none', 'the consumables/Auto-Eat tray is hidden -- meaningless logged out');
-      } finally {
-        FF.landingFightStop();
-        wrap.remove();
-      }
-      // Teardown: the demo leaves NO trace on the guest state.
-      eq(S.activity.type, null, 'stop() restores the idle activity');
-      ok(!FF.landingFightActive(), 'no preview fight remains');
-      // stop() only tears down ITS OWN flagged fight -- a real one is never touched.
-      S.activity = { type:'combat', playerSwungOnce:true, monsterId:FF.LANDING_FOES[0], monsterHp:5, tickAccum:0, monsterTickAccum:0, duelStartedAt:1 };
-      FF.landingFightStop();
-      eq(S.activity.type, 'combat', 'a REAL fight (no landingPreview flag) survives landingFightStop untouched');
-    } finally { S.activity = svAct; S.playerHp = svHp; }
-  });
-
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');
@@ -19999,111 +19748,6 @@
       FF.queueCraftBatch({}, 0);
       eq(S.popupQueue.length, 0, 'no creations, no screen');
     } finally { S.popupQueue = sv.q; S.popupBatchTotal = sv.bt; S.settings = sv.set; FF._setOfflineCapture(null); }
-  });
-
-  // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
-  // A brand-new player was granted the full 12h catch-up off one tab flick: the wall clock (the only
-  // clock the credit used) jumped while the tab was hidden. The bound takes min(wall, server-witnessed
-  // absence + slack) -- witnessed absence is always >= the true absence, so the bound can only strip
-  // inflation, never legitimate credit.
-  suite('offline catch-up: the server-witnessed credit bound', function(){
-    var B = FF.offlineCreditBound, SLACK = FF.OFFLINE_BOUND_SLACK_MS, H = 3600*1000;
-    ok(SLACK >= 15000 && SLACK <= 5*60*1000, 'the slack absorbs push latency without re-opening the hole');
-    eq(B(12*H, 20*60*1000), 20*60*1000 + SLACK, 'a 12h wall claim against 20 witnessed minutes credits ~20 minutes (the ticket)');
-    eq(B(30*60*1000, 12*H), 30*60*1000, 'a witnessed absence LARGER than the wall claim never inflates it');
-    eq(B(5*H, 5*H - 30000), 5*H, 'agreement within the slack credits the full wall figure');
-    eq(B(8*H, null), 8*H, 'no server data (offline wake, pre-migration backend) -> the wall figure stands');
-    eq(B(8*H, NaN), 8*H, 'garbage server data fails open');
-    eq(B(8*H, -5), 8*H, 'a negative witness fails open');
-    // Device transition (v0.0.99.7): loaded.lastSaved is ANOTHER device's clock, so a returning device
-    // whose clock lags reads a zero/negative wall. The server witness is skew-free -> credit IT, not 0
-    // (the old return-0 was the "nothing restored, refresh does not help" bug on device transitions).
-    eq(B(0, 2*H), 2*H, 'zero wall with a server witness credits the witnessed absence (cross-device clock skew)');
-    eq(B(-100, 2*H), 2*H, 'a negative wall (returning device clock behind the last one) credits the server witness');
-    eq(B(0, 0), 0, 'zero wall and zero witness is zero credit (a genuine quick refresh)');
-    eq(B(0, null), 0, 'zero wall with NO server witness stays zero (nothing trustworthy to credit)');
-    eq(B(-100, null), 0, 'a negative wall with no witness credits nothing (unchanged: cannot trust anything)');
-    // The write hold: while a wake reconcile is in flight, cloud pushes must wait -- otherwise the
-    // resumed loop's 4s cadence can push this tab's stale memory before the peek resolves.
-    ok(FF.CLOUD_WAKE_HOLD_MAX_MS >= 10000 && FF.CLOUD_WAKE_HOLD_MAX_MS <= 60000, 'the hold backstop releases well before the watchdog banner would fire');
-    FF.cloudWakeHoldSet(true);
-    ok(FF._cloudWakeHold() === true, 'the hold engages');
-    FF.cloudWakeHoldSet(false);
-    ok(FF._cloudWakeHold() === false, 'the hold releases');
-    ok(Array.isArray(FF.WAKE_PEEK_TRIES) && FF.WAKE_PEEK_TRIES.length >= 2, 'the wake peek retries through the no-network window instead of failing open on one shot');
-  });
-
-  // ---- Save watchdog (v0.0.77.22: "lost 25 minutes on a refresh") ---------------------------------
-  // cloudSave used to read exactly one field of the push response (data.fenced); a 409 stale, expired
-  // token, 413, 429 or network throw was silently swallowed while the player kept playing an
-  // unsaveable session. The watchdog classifies every outcome, surfaces a soft banner once no save has
-  // confirmed for CLOUD_WARN_AFTER_MS, and on a 409 STALE raises a LOUD persistent banner (owner call,
-  // ticket-0208) letting the player reload onto the ahead-on-another-device cloud save themselves.
-  suite('save watchdog: push results are classified, not swallowed', function(){
-    var C = FF.cloudClassifyResult;
-    // supabase-js invoke() resolves {data, error:FunctionsHttpError{context:Response}} on non-2xx.
-    var httpErr = function(status){ return { data:null, error:{ context:{ status:status } } }; };
-    eq(C({ data:{ ok:true, version:9 } }).kind, 'ok', 'a 200 ok body confirms the save');
-    eq(C({ data:{ ok:false, fenced:true } }).kind, 'fenced', 'fenced rides a 200 body and outranks everything');
-    eq(C(httpErr(409)).kind, 'stale', 'a 409 is the forward-only guard rejecting us');
-    eq(C(httpErr(401)).kind, 'auth', 'a 401 is a dead token');
-    eq(C(httpErr(403)).kind, 'auth', 'a 403 counts as auth too');
-    eq(C(httpErr(413)).kind, 'toobig', 'a 413 is the saves_size_chk constraint');
-    eq(C(httpErr(429)).kind, 'ratelimit', 'a 429 is rl_hit');
-    eq(C(httpErr(500)).kind, 'error', 'a 500 is a server fault');
-    eq(C({ data:null, error:{} }).kind, 'error', 'an error with no readable status still classifies');
-    eq(C(null).kind, 'error', 'a null result never throws the hot path');
-  });
-
-  suite('save watchdog: the warn predicate and the stale-adopt threshold', function(){
-    var WARN = FF.CLOUD_WARN_AFTER_MS, t = 1700000000000;
-    ok(WARN >= 30000 && WARN <= 300000, 'the warning window is between 30s and 5min');
-    ok(FF.cloudSaveWarnDue(t, t - WARN, 5, false), 'no confirmed save for the whole window -> warn');
-    ok(FF.cloudSaveWarnDue(t, t - 3600000, 5, false), 'an hour unsaved (the ticket) -> warn');
-    ok(!FF.cloudSaveWarnDue(t, t - WARN + 1, 5, false), 'inside the window -> quiet');
-    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 0, false), 'a zero-progress account has nothing to lose -> quiet');
-    ok(!FF.cloudSaveWarnDue(t, 0, 5, false), 'no boot stamp yet -> quiet (never warn before a save was possible)');
-    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 5, true), 'blocked (fenced / signed out / sync off) -> quiet, other UX owns it');
-  });
-
-  suite('save watchdog: result bookkeeping and the banner element', function(){
-    var saved = FF._cloudWatch();
-    try {
-      // A failure records the reason without touching the confirmed clock...
-      FF._cloudWatchSet({ lastConfirmed: 1234, stale409s: 0, reason: '' });
-      FF.cloudNoteSaveResult({ kind:'network' });
-      var w = FF._cloudWatch();
-      ok(w.reason.length > 0, 'a network failure records a player-facing reason');
-      eq(w.lastConfirmed, 1234, 'a failure never advances the confirmed clock');
-      eq(w.lastPush, 0, 'a transient failure resets the debounce so the next 4s tick retries');
-      // ...a stale strike counts AND raises the loud persistent banner at once (owner call, ticket-0208):
-      // no auto-reload, so the test page is never yanked -- the player adopts the cloud save via the banner.
-      FF.cloudNoteSaveResult({ kind:'stale' });
-      eq(FF._cloudWatch().stale409s, 1, 'a 409 counts one strike');
-      ok(!!document.getElementById('ffStaleWarn'), 'a stale reject raises the loud persistent banner immediately');
-      ok(FF._cloudWatch().reason.indexOf('another device') !== -1, 'the reason names the other device');
-      // ...and a confirmed save clears everything, banner included.
-      FF.cloudNoteSaveResult({ kind:'ok' });
-      w = FF._cloudWatch();
-      ok(w.lastConfirmed > 1234, 'an ok advances the confirmed clock');
-      eq(w.stale409s, 0, 'an ok clears the stale strikes');
-      eq(w.reason, '', 'an ok clears the reason');
-      ok(!document.getElementById('ffStaleWarn'), 'a confirmed save takes the loud stale banner down');
-      // The banner is a body-level element (render() rebuilds #content 10x/sec and would strobe it there).
-      FF.ffSaveWarnUpdate(true, 'watchdog test banner');
-      var el = document.getElementById('ffSaveWarn');
-      ok(!!el, 'the banner mounts');
-      eq(el.textContent, 'watchdog test banner', 'the banner carries the message');
-      ok(el.parentElement === document.body, 'the banner lives on document.body, outside #content');
-      FF.ffSaveWarnUpdate(true, 'updated');
-      eq(document.getElementById('ffSaveWarn').textContent, 'updated', 'a second call updates in place');
-      FF.ffSaveWarnUpdate(false);
-      ok(!document.getElementById('ffSaveWarn'), 'hiding removes the element');
-    } finally {
-      FF._cloudWatchSet(saved);
-      FF.ffSaveWarnUpdate(false);
-      FF.cloudStaleBannerShow(false);
-    }
   });
 
   // ---- Combat log: class/effect damage must be visible --------------------------------------------
@@ -22563,32 +22207,6 @@
     }
   });
 
-  // ---- Landing preview containment (owner report: the stage overlaid the landing content) ----------
-  // The preview is a fixed 900px stage scaled down, so its HEIGHT is content- and width-dependent (log
-  // rows arrive, effect rows appear, and under 820px .ar2-low stops being a two-column split). The wrap
-  // carries an explicit height from a point-in-time measurement, and it used to be overflow:visible -- so
-  // any lag between the two painted the stage over the feature cards and the login panel. Reproduced with
-  // a forced-stale slot: 394px of spill covering 13 landing elements. Two independent guards now: the wrap
-  // CLIPS, and a ResizeObserver keeps the slot exact so there is nothing to clip.
-  suite('landing preview: the stage is contained and cannot overlay the page', function(){
-    ok(typeof FF.landingFightScale === 'function' && typeof FF.landingFightMount === 'function', 'preview helpers exported');
-    // The stylesheet is built as a string by ensureLandingStyle; assert the containment is IN it, and that
-    // the badge was moved inside the wrap (at top:-9px it was the one thing clipping would have eaten).
-    var host = document.createElement('div');
-    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;';
-    document.body.appendChild(host);
-    try {
-      FF.ensureLandingStyle();
-      host.innerHTML = '<div class="ff-prev-wrap"><div class="ff-prev-badge">Live combat</div><div id="ffPrevArenaTest"></div></div>';
-      var wrap = host.querySelector('.ff-prev-wrap');
-      var badge = host.querySelector('.ff-prev-badge');
-      eq(getComputedStyle(wrap).overflow, 'hidden', 'the preview wrap clips its stage');
-      // top:0, not the old -9px: the badge must sit INSIDE the clipping box or it disappears.
-      eq(getComputedStyle(badge).top, '0px', 'the badge sits inside the clip, so it survives containment');
-      ok(getComputedStyle(wrap).position === 'relative', 'the wrap is still the badge\'s positioning context');
-    } finally { host.parentNode.removeChild(host); }
-  });
-
   // ---- ticket-0159: the first-swing gate must not eat EARNED payouts (Mr Cookie) -------------------
   // Regression from v0.0.86.28. The gate holds carried per-second engines until the encounter's first
   // swing, which is right for Bramble/Blaze/Plague. But two engines are the DELAYED PAYOUT of a swing
@@ -23285,10 +22903,6 @@
       scan(FF[k], k, 0);
     });
     eq(offenders.join(' | '), '', 'no exported def table carries an em dash (first offenders shown)');
-    // And the rendered landing gate copy (built from string literals, not defs) is clean too.
-    FF.ensureLandingStyle();
-    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
-    ok(css.indexOf('—') === -1, 'the landing stylesheet content carries no em dash');
   });
 
   // ---- No emojis in player-facing copy (owner order, v0.0.86.22) -----------------------------------
@@ -24722,51 +24336,6 @@
     } finally { if(el.parentNode) el.parentNode.removeChild(el); }
   });
 
-  // ---- Cloud save payload: prune zero-defaults + transient buffers (ticket: "save too large") ----
-  suite('cloudSaveData: trims the save without touching gameplay or the live state', function(){
-    var src = {
-      gold: 12345, mortal: false,
-      xp: { mining: 999, staff: 42 },
-      inventory: { held_a: 7, held_b: 1, spent_c: 0, weird_d: -3 },
-      itemEarnedTotal: { earned_a: 1000, never_b: 0 },
-      stats: { kills: 500, made_x: 10, dead_y: 0, hoursBuffed: -2 },
-      uniqueItems: { u1: { uid:'u1', enhance:15 } },
-      quests: { claimed: { q1:true }, completed: { q1:true } },
-      familiars: { forestry: { owned:true, level:100, stars:3 } },
-      log: [{ msg:'x', cls:'combat', t:1 }],
-      popupQueue: [{ kind:'rare' }],
-      companionCast: { forestry:{ accum:1, index:2 } },
-      deathReport: { by:'a Rabbit' }
-    };
-    var out = FF.cloudSaveData(src);
-    // Zero / negative / never-held keys are dropped from the per-item maps (a missing key reads as 0).
-    eq(out.inventory.held_a, 7, 'a held stack survives');
-    eq(out.inventory.held_b, 1, 'a stack of one survives');
-    ok(!('spent_c' in out.inventory), 'a spent (0-qty) stack is pruned');
-    ok(!('weird_d' in out.inventory), 'a negative inventory entry is pruned');
-    ok(!('never_b' in out.itemEarnedTotal), 'a 0 lifetime-earned entry is pruned');
-    eq(out.itemEarnedTotal.earned_a, 1000, 'a real lifetime total survives');
-    // Stats: exact-0 dropped, non-zero kept, a legitimate negative counter kept.
-    ok(!('dead_y' in out.stats), 'a 0 stat counter is pruned');
-    eq(out.stats.made_x, 10, 'a live stat counter survives');
-    eq(out.stats.hoursBuffed, -2, 'a negative stat (hoursBuffed) is kept');
-    // Transient display / combat buffers are stripped (they backfill from newGame() on load).
-    ok(out.log === undefined && out.popupQueue === undefined, 'transient log + popup queue are stripped');
-    ok(out.companionCast === undefined && out.deathReport === undefined, 'transient combat buffers are stripped');
-    // Gameplay data is carried through untouched.
-    eq(out.gold, 12345, 'gold carries through');
-    eq(out.xp.mining, 999, 'skill xp carries through');
-    ok(out.uniqueItems.u1 && out.uniqueItems.u1.enhance === 15, 'unique items carry through');
-    ok(out.quests.claimed.q1 === true, 'quest claims carry through');
-    ok(out.familiars.forestry && out.familiars.forestry.stars === 3, 'familiars carry through');
-    // The LIVE state object is never mutated (the pruned maps are fresh copies).
-    ok('spent_c' in src.inventory && src.inventory.spent_c === 0, 'the live inventory still holds the 0-qty key');
-    ok(Array.isArray(src.log) && src.log.length === 1, 'the live log is untouched');
-    ok(out.inventory !== src.inventory && out.stats !== src.stats, 'pruned maps are new objects, not the live ones');
-    // The result is smaller than the raw state.
-    ok(JSON.stringify(out).length < JSON.stringify(src).length, 'the pruned payload is smaller than the raw state');
-  });
-
   // ---- Prayer raises max Faith by 100 per level (owner change) ----
   suite('faithMax: +100 max Faith per Prayer level', function(){
     var s = FF._state;
@@ -24970,14 +24539,6 @@
       FF._setWfStageFocus(svF);
       Object.keys(open).forEach(function(k){ delete open[k]; }); var back = JSON.parse(svOpen); Object.keys(back).forEach(function(k){ open[k] = back[k]; });
     }
-  });
-
-  // ---- Guests are told where the upgrade is (guest chat question, 2026-10-08) ----------------------
-  suite('guest upgrade: a starter tip names the two ways in', function(){
-    var tip = FF.TICKER_STARTER_TIPS.filter(function(x){ return /Playing as a guest/.test(x); })[0];
-    ok(!!tip, 'a starter tip addresses guests');
-    ok(/<b>Upgrade<\/b> button beside Settings/.test(tip) && /Settings &rarr; Account/.test(tip), 'it names the top-bar chip and the Settings tab');
-    ok(/pick your own name/.test(tip) && /carries over/.test(tip), 'and says the name is theirs to choose and progress carries over');
   });
 
   // ---- Belt stepper honours "only show items I have mats for" (Anferny, Aug to Oct 2026) ----------
@@ -25344,38 +24905,6 @@
       FF._setImproveConfirm(sv.conf); FF._setUniqueDetailUid(sv.det); s.uniqueItems = sv.uq; FF.renderUniqueDetailOverlay();
       if(made && ov.parentNode) ov.parentNode.removeChild(ov);
     }
-  });
-
-  // ---- The move to pere.games/fantasyfrontiers: the old home hands the session over in the fragment ----
-  // Saves are cloud-only, but a guest exists only as the Supabase session in the old origin's localStorage,
-  // so the forwarding carries the refresh token as #ffho=<token>, consumed once at the new home. These are
-  // the pure pieces; the sender ships INERT (FF_NEW_HOME '') until the new address answers.
-  suite('move: the session handoff between homes', function(){
-    eq(FF.FF_NEW_HOME, '', 'the in-app sender ships inert: FF_NEW_HOME is empty until pere.games/fantasyfrontiers answers');
-    ok(FF.FF_OLD_HOMES.indexOf('fantasyfrontiers.online') >= 0 && FF.FF_OLD_HOMES.indexOf('www.fantasyfrontiers.online') >= 0, 'both spellings of the old home are listed');
-    eq(FF.supabaseStorageKey('https://varyclnmlrgdzgdxhcyd.supabase.co'), 'sb-varyclnmlrgdzgdxhcyd-auth-token', 'the stored-session key follows supabase-js v2 (sb-<ref>-auth-token)');
-    eq(FF.supabaseStorageKey(''), null, 'no URL, no key');
-    var tok = 'v1.AbC-dEf_123.ghi', stored = JSON.stringify({ access_token:'x', refresh_token:tok, user:{ id:'u1' } });
-    eq(FF.handoffRefreshToken(stored), tok, 'the refresh token is read off the stored session');
-    eq(FF.handoffRefreshToken(JSON.stringify({ currentSession:{ refresh_token:tok } })), tok, 'and off the older wrapped shape');
-    eq(FF.handoffRefreshToken('not json'), null, 'garbage yields nothing');
-    eq(FF.handoffRefreshToken(JSON.stringify({ refresh_token:'bad token with spaces' })), null, 'a token that is not URL-safe is refused');
-    eq(FF.handoffRefreshToken(null), null, 'no stored session, no token');
-    var home = 'https://pere.games/fantasyfrontiers/';
-    eq(FF.handoffTarget('', 'fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), null, 'an empty new home never redirects (the inert default)');
-    eq(FF.handoffTarget(home, 'pere.games', FF.FF_OLD_HOMES, stored), null, 'the new home itself never redirects');
-    eq(FF.handoffTarget(home, 'localhost', FF.FF_OLD_HOMES, stored), null, 'nor any other host');
-    eq(FF.handoffTarget(home, 'fantasyfrontiers.online', FF.FF_OLD_HOMES, null), home, 'an old home with no session forwards plain');
-    eq(FF.handoffTarget(home, 'WWW.fantasyfrontiers.online', FF.FF_OLD_HOMES, stored), home + '#ffho=' + encodeURIComponent(tok), 'an old home with a session carries the token in the fragment (host match is case-insensitive)');
-    // The receiver's parsing: the token comes back out, other fragment parts survive, nothing else matches.
-    eq(FF.handoffParse('#ffho=' + encodeURIComponent(tok)), tok, 'the token parses back out of the fragment');
-    eq(FF.handoffParse('#tab=x&ffho=' + encodeURIComponent(tok) + '&y=1'), tok, 'wherever it sits among other parts');
-    eq(FF.handoffParse('#ffhox=abc'), null, 'a near-miss name does not match');
-    eq(FF.handoffParse('#ffho=%E0%A4%A'), null, 'a malformed encoding is refused, not thrown');
-    eq(FF.handoffParse(''), null, 'no fragment, no token');
-    eq(FF.handoffStripHash('#ffho=' + tok), '', 'stripping the only part leaves no fragment at all');
-    eq(FF.handoffStripHash('#tab=x&ffho=' + tok + '&y=1'), '#tab=x&y=1', 'other parts survive the strip');
-    eq(FF.handoffStripHash(''), '', 'an empty fragment stays empty');
   });
 
   // ---- ticket-0253: Merchant's Savvy trains per item sold, by tier ----

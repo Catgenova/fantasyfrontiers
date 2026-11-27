@@ -134,27 +134,26 @@ console.log(`seamcheck: ${assigned.size} act.* fields assigned, ${cleared.size} 
 // today only by an `await` that reads like a formality, and the failure is invisible in play (a slow drip,
 // not an error). The browser suite cannot cover it either: boot is async, and suite() is synchronous and
 // discards its return value, so an assertion inside a .then() runs after the report is written. Hence here.
+// LOCAL-ONLY BUILD: there is no item sync any more. What survives of the check is the boot's one ordering
+// rule: startGameLocal must `await initGame()` (the save load + offline catch-up) before the loop starts.
 {
-  const at = script.indexOf("async function startGameOnline()");
+  const at = script.indexOf("async function startGameLocal()");
   if (at === -1) {
-    fail("startGameOnline() not found -- the boot-order check cannot run.");
+    fail("startGameLocal() not found -- the boot-order check cannot run.");
   } else {
     const fn = script.slice(at);
     const body = fn.slice(0, fn.indexOf("\n  }") + 4);
     const awaitInit = body.indexOf("await initGame()");
-    const sync = body.search(/\bitemSync\s*\(/);
+    const loopStart = body.indexOf("scheduleLoop()");
     if (awaitInit === -1) {
-      fail("startGameOnline no longer awaits initGame().\n"
-         + "       initGame runs applyOfflineProgress. Without the await, the item sync can land first and\n"
-         + "       throttle every returning player's allowance against a freshly reset synced_at clock.");
-    } else if (sync !== -1 && sync < awaitInit) {
-      fail("startGameOnline calls itemSync() BEFORE `await initGame()`.\n"
-         + "       initGame runs applyOfflineProgress. The ledger's rate clock reads synced_at, so syncing\n"
-         + "       first throttles every returning player's item allowance. Move the sync after the await.");
+      fail("startGameLocal no longer awaits initGame().\n"
+         + "       initGame loads the save and runs applyOfflineProgress; the loop must not start on an empty state.");
+    } else if (loopStart !== -1 && loopStart < awaitInit) {
+      fail("startGameLocal starts the loop BEFORE `await initGame()`: the first frames would simulate an empty state.");
     }
   }
 }
-console.log("seamcheck: boot order (offline catch-up before item sync) intact.");
+console.log("seamcheck: boot order (save load + offline catch-up before the loop) intact.");
 
 // ---- CHECK 4: no damage source may be invisible in the combat log ----------------------------------
 // The standing rule is that every damage source shows in the Combat log. It was broken in eight places at
